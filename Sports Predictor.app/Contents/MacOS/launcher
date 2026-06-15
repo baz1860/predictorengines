@@ -1,0 +1,61 @@
+#!/bin/bash
+# Sports Predictor launcher — no Terminal window.
+# Finds the project relative to this .app (it lives inside the project folder),
+# so it works wherever you move the folder. Keep the .app inside the project.
+
+# Load shell env FIRST so user dotfiles can't clobber our (sp_-prefixed) vars.
+for f in "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+  [ -f "$f" ] && source "$f" >/dev/null 2>&1
+done
+command -v pyenv >/dev/null 2>&1 && eval "$(pyenv init - 2>/dev/null)" >/dev/null 2>&1
+
+# Locate the project by walking up from the .app's real location (primary),
+# then a couple of known fallbacks.
+sp_dir=""
+sp_d="$(cd "$(dirname "$0")" && pwd)"
+for sp_i in 1 2 3 4 5 6; do sp_d="$(dirname "$sp_d")"; [ -f "$sp_d/app/main.py" ] && { sp_dir="$sp_d"; break; }; done
+if [ -z "$sp_dir" ]; then
+  for sp_guess in "$HOME/Soccer Prediction" "$HOME/SportsPredictor" "/Users/lucky/Documents/Claude/Projects/Soccer Prediction"; do
+    [ -f "$sp_guess/app/main.py" ] && { sp_dir="$sp_guess"; break; }
+  done
+fi
+if [ -z "$sp_dir" ]; then
+  osascript -e 'display alert "Sports Predictor" message "Could not find the project folder. Keep Sports Predictor.app inside the Soccer Prediction folder."'
+  exit 1
+fi
+
+# Choose a Python that has the app's dependencies.
+sp_cands=()
+for v in "$sp_dir/.venv/bin/python3" "$sp_dir/.venv/bin/python" "$sp_dir/venv/bin/python3" "$sp_dir/venv/bin/python"; do
+  [ -x "$v" ] && sp_cands+=("$v")
+done
+for sp_name in python3 python; do sp_p="$(command -v "$sp_name" 2>/dev/null)"; [ -n "$sp_p" ] && sp_cands+=("$sp_p"); done
+for sp_p in /opt/homebrew/bin/python3 /usr/local/bin/python3 "$HOME/.pyenv/shims/python3"; do
+  [ -x "$sp_p" ] && sp_cands+=("$sp_p")
+done
+if [ -d "$HOME/.pyenv/versions" ]; then
+  for sp_p in "$HOME/.pyenv/versions"/*/bin/python3; do [ -x "$sp_p" ] && sp_cands+=("$sp_p"); done
+fi
+sp_py=""; sp_first=""
+for sp_c in "${sp_cands[@]}"; do
+  [ -z "$sp_first" ] && sp_first="$sp_c"
+  if "$sp_c" -c "import webview, fastapi, uvicorn, pandas" >/dev/null 2>&1; then sp_py="$sp_c"; break; fi
+done
+if [ -z "$sp_py" ]; then
+  sp_msg="No python3 with the app's deps was found."
+  [ -n "$sp_first" ] && sp_msg="Python at $sp_first is missing deps. In Terminal: pip3 install -r app/requirements.txt"
+  osascript -e "display alert \"Sports Predictor\" message \"$sp_msg\""
+  exit 1
+fi
+
+export APP_DIR="$sp_dir"
+sp_log="$sp_dir/.launch_error.log"
+{ echo "=== launch $(date) ==="; echo "PY=$sp_py"; echo "APP_DIR=$APP_DIR"; } > "$sp_log"
+"$sp_py" -c "import os,sys; sys.path.insert(0, os.environ['APP_DIR']); import runpy; runpy.run_module('app.main', run_name='__main__')" >>"$sp_log" 2>&1
+sp_rc=$?
+if [ "$sp_rc" -ne 0 ]; then
+  sp_err="$(tail -c 1400 "$sp_log" 2>/dev/null)"
+  [ -z "$sp_err" ] && sp_err="(no output captured)"
+  osascript -e "display alert \"Sports Predictor\" message \"Failed to start (exit $sp_rc).\nPython: $sp_py\n\n$sp_err\""
+  exit 1
+fi

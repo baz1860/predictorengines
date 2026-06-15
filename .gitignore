@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.DS_Store
+.launch_error.log
+.claude/settings.local.json
+.env
+.venv/
+venv/
+
+# Local app settings may contain API keys.
+data/app_settings.json
+data/api_keys.json
+
+# Generated reports and queues.
+edge_report.csv
+bet_queue.csv
+dashboard.html
+golf/data/edge_report.csv
+golf/data/predictions*.csv
+cfb/edge_report.csv
+
+# Spreadsheet locks and ad-hoc backups.
+~$*
+*.bak
+*.bak2
+*.bak.*
+edge.py.bak

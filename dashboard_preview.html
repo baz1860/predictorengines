@@ -1,0 +1,1654 @@
+<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Sports Predictor — interactive preview</title><style>/* =========================================================================
+   Sports Predictor — design system
+   Tokens + light/dark themes + depth + components. No external deps.
+   Existing markup hooks from app.js are preserved; this file restyles them.
+   ========================================================================= */
+
+:root {
+  /* Warm editorial — paper, ink, terracotta. Earthy, crafted, characterful. */
+
+  /* Accent / brand (terracotta) */
+  --accent: #c0562f;
+  --accent-strong: #a3441f;
+  --accent-soft: rgba(192, 86, 47, .12);
+  --accent-ring: rgba(192, 86, 47, .30);
+
+  /* Semantic — earthy win/draw/loss */
+  --win: #3f7d5a;   /* forest */
+  --draw: #c2a14e;  /* ochre */
+  --loss: #b5482f;  /* clay */
+  --pos: #3f7d5a;
+  --neg: #b5482f;
+  --warn: #c2873a;
+
+  /* Surfaces (warm paper) */
+  --bg: #f3ece0;
+  --surface: #fffdf8;
+  --surface-2: #f7f0e4;
+  --surface-3: #efe6d6;
+  --border: #e6dcc9;
+  --border-strong: #d6c8af;
+
+  /* Sidebar (warm espresso, both themes) */
+  --sidebar: #2a221b;
+  --sidebar-2: #362b22;
+  --sidebar-fg: #cdbfa9;
+  --sidebar-fg-dim: rgba(205, 191, 169, .5);
+
+  /* Text (warm ink) */
+  --text: #2c2620;
+  --text-2: #5b5043;
+  --muted: #8b7d6a;
+
+  /* Shape & motion — softer, more generous */
+  --radius: 14px;
+  --radius-sm: 9px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 1px 2px rgba(74, 55, 36, .05), 0 2px 6px rgba(74, 55, 36, .06);
+  --shadow-md: 0 2px 8px rgba(74, 55, 36, .07), 0 10px 28px rgba(74, 55, 36, .10);
+  --shadow-lg: 0 16px 48px rgba(74, 55, 36, .20);
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --fast: .14s;
+  --med: .24s;
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", sans-serif;
+  --serif: "New York", "Iowan Old Style", "Charter", "Palatino", "Palatino Linotype", Georgia, serif;
+  --mono: "SF Mono", "JetBrains Mono", ui-monospace, "Menlo", monospace;
+  font-family: var(--font);
+}
+
+[data-theme="dark"] {
+  /* Warm dark — espresso & candlelight */
+  --accent: #e0794e;
+  --accent-strong: #cf6a40;
+  --accent-soft: rgba(224, 121, 78, .16);
+  --accent-ring: rgba(224, 121, 78, .38);
+
+  --win: #5fa57b;
+  --draw: #d2b15e;
+  --loss: #e0664a;
+  --pos: #5fa57b;
+  --neg: #e0664a;
+  --warn: #d99a4a;
+
+  --bg: #1a1410;
+  --surface: #241d17;
+  --surface-2: #2c241c;
+  --surface-3: #352a20;
+  --border: #3a2f24;
+  --border-strong: #4a3c2d;
+
+  --sidebar: #140f0b;
+  --sidebar-2: #1f1812;
+  --sidebar-fg: #cbbca6;
+  --sidebar-fg-dim: rgba(203, 188, 166, .5);
+
+  --text: #f0e8da;
+  --text-2: #c9bba6;
+  --muted: #9d8e78;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, .6);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--med) var(--ease), color var(--med) var(--ease);
+}
+
+#app { display: flex; height: 100vh; }
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+#sidebar {
+  width: 224px; flex-shrink: 0;
+  background: linear-gradient(180deg, var(--sidebar-2), var(--sidebar));
+  color: var(--sidebar-fg);
+  display: flex; flex-direction: column;
+  padding: 18px 12px 14px;
+  border-right: 1px solid rgba(255, 255, 255, .05);
+}
+.brand {
+  font-weight: 700; font-size: 15px; color: #fff;
+  padding: 4px 10px 18px; letter-spacing: .2px;
+  display: flex; align-items: center; gap: 9px;
+}
+.brand .brand-mark {
+  width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent), #d99a4a);
+  display: grid; place-items: center; box-shadow: 0 2px 8px var(--accent-ring);
+}
+.brand .brand-mark svg { width: 13px; height: 13px; }
+.nav-heading {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--sidebar-fg-dim); padding: 10px 12px 6px; font-weight: 700;
+}
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  text-align: left; background: none; border: none; color: var(--sidebar-fg);
+  padding: 9px 11px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13.5px;
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.nav-item svg { width: 16px; height: 16px; opacity: .85; flex-shrink: 0; }
+.nav-item:hover:not(.disabled) { background: rgba(255, 255, 255, .07); color: #fff; }
+.nav-item.active {
+  background: linear-gradient(90deg, var(--accent-soft), transparent);
+  color: #fff; box-shadow: inset 2px 0 0 var(--accent);
+}
+.nav-item.active svg { opacity: 1; color: var(--accent); }
+.nav-item.disabled { opacity: .4; cursor: default; }
+.nav-item .sport-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .8; }
+.soon { margin-left: auto; font-size: 10px; text-transform: uppercase; opacity: .7; }
+.nav-divider { height: 1px; background: rgba(255, 255, 255, .08); margin: 12px 8px; }
+.suite .nav-item { font-size: 13px; }
+.sidebar-foot { margin-top: auto; padding: 8px 6px 0; }
+
+/* ── Main / topbar ────────────────────────────────────────────────────── */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#topbar {
+  padding: 16px 28px 0; border-bottom: 1px solid var(--border);
+  background: var(--surface); position: relative; z-index: 2;
+}
+.topbar-row { display: flex; align-items: center; gap: 16px; }
+#engine-title { margin: 0 0 12px; font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-bottom: 12px; }
+.icon-btn {
+  width: 34px; height: 34px; border-radius: var(--radius-sm); cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);
+  display: grid; place-items: center; transition: all var(--fast) var(--ease);
+}
+.icon-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
+.icon-btn svg { width: 17px; height: 17px; }
+
+.tabs { display: flex; gap: 2px; }
+.tab {
+  background: none; border: none; padding: 9px 15px; cursor: pointer;
+  font-size: 13.5px; color: var(--muted); border-bottom: 2px solid transparent;
+  margin-bottom: -1px; font-weight: 600; transition: color var(--fast) var(--ease);
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab.disabled { opacity: .45; cursor: default; }
+
+#content { padding: 24px 28px; overflow-y: auto; }
+.panel { max-width: 760px; animation: fade-in var(--med) var(--ease); }
+.panel.wide { max-width: 1040px; }
+.panel.full { max-width: 1240px; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* ── Cards ────────────────────────────────────────────────────────────── */
+.form-card, .result-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+}
+.card-title { font-size: 13px; font-weight: 700; margin-bottom: 14px; letter-spacing: .01em; }
+.card-title.with-sub { margin-bottom: 4px; }
+.card-sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+/* ── Forms ────────────────────────────────────────────────────────────── */
+.row { display: flex; gap: 14px; align-items: flex-end; }
+.row.controls { margin-top: 16px; align-items: center; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.field-label { font-size: 11.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+input, select {
+  padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-size: 14px; background: var(--surface); color: var(--text);
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+input::placeholder { color: var(--muted); }
+input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.vs { color: var(--muted); padding-bottom: 10px; font-style: italic; }
+.checkbox { display: flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.checkbox input { width: auto; accent-color: var(--accent); }
+.inline-options { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.inline-options .checkbox { white-space: nowrap; }
+.model-field { max-width: 140px; }
+.filter-field { min-width: 150px; max-width: 220px; }
+
+/* Buttons */
+button.primary {
+  margin-left: auto; background: var(--accent); color: #fff; border: none;
+  padding: 10px 22px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600;
+  cursor: pointer; box-shadow: 0 1px 2px rgba(16, 24, 40, .12); transition: all var(--fast) var(--ease);
+}
+button.primary:hover { background: var(--accent-strong); box-shadow: 0 4px 14px var(--accent-ring); transform: translateY(-1px); }
+button.primary:active { transform: none; }
+button.primary:disabled { opacity: .6; cursor: default; transform: none; box-shadow: none; }
+button.ghost {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+  padding: 9px 16px; border-radius: var(--radius-sm); font-size: 14px; cursor: pointer;
+  transition: all var(--fast) var(--ease);
+}
+button.ghost:hover { background: var(--surface-2); border-color: var(--muted); }
+button.ghost.danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 35%, var(--border)); }
+button.ghost.danger:hover { background: color-mix(in srgb, var(--loss) 8%, var(--surface)); }
+.small-input { width: 90px; }
+.spacer { flex: 1; }
+.error { color: var(--loss); margin-top: 12px; font-size: 13px; }
+.muted-note { color: var(--muted); font-size: 13px; margin-top: 12px; }
+.saved-note { color: var(--pos); font-weight: 600; align-self: center; }
+
+/* Segmented control (model / market toggles) */
+.segmented { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px; gap: 2px; }
+.segmented button {
+  border: none; background: none; color: var(--text-2); font-size: 13px; font-weight: 600;
+  padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: all var(--fast) var(--ease);
+}
+.segmented button.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
+
+/* Badges / pills */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; letter-spacing: .02em;
+}
+.badge.pos { background: color-mix(in srgb, var(--pos) 14%, transparent); color: var(--pos); }
+.badge.neg { background: color-mix(in srgb, var(--neg) 14%, transparent); color: var(--neg); }
+.badge.neutral { background: var(--surface-3); color: var(--text-2); }
+.badge.accent { background: var(--accent-soft); color: var(--accent); }
+
+/* ── Result: prediction ───────────────────────────────────────────────── */
+.result-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.team-block { flex: 1; }
+.team-block.right { text-align: right; }
+.team-name { font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+.elo { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.xg { font-size: 22px; font-weight: 700; padding: 0 18px; color: var(--text-2); }
+.headline { color: var(--muted); font-size: 13px; margin: -6px 0 16px; }
+
+.prob-bar { display: flex; height: 28px; border-radius: var(--radius-sm); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.04); }
+.seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; min-width: 0; transition: width var(--med) var(--ease); }
+.seg.win { background: var(--win); }
+.seg.draw { background: var(--draw); }
+.seg.loss { background: var(--loss); }
+.seg.neutral { background: #8b9bb4; }
+.prob-legend { display: flex; justify-content: space-between; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.prob-legend b { color: var(--text); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.dot.win { background: var(--win); } .dot.draw { background: var(--draw); } .dot.loss { background: var(--loss); } .dot.neutral { background: #8b9bb4; }
+
+.scorelines { margin-top: 22px; }
+.scorelines-title { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .03em; }
+.scoreline-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.scoreline-score { width: 42px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.scoreline-track { flex: 1; background: var(--surface-3); border-radius: 4px; height: 14px; overflow: hidden; }
+.scoreline-fill { height: 100%; background: var(--accent); opacity: .6; border-radius: 4px; }
+.scoreline-pct { width: 48px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.stat-chips { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+.chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 14px; }
+.chip-label { display: block; font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.chip-val { display: block; font-size: 15px; font-weight: 700; margin-top: 3px; }
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+.table-scroll { overflow-x: auto; border-radius: var(--radius-sm); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; color: var(--muted); font-weight: 700; padding: 9px 11px;
+  border-bottom: 2px solid var(--border); position: sticky; top: 0; background: var(--surface);
+  white-space: nowrap; font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em;
+}
+.data-table th.sortable { cursor: pointer; user-select: none; }
+.data-table th.sortable:hover { color: var(--text); }
+.data-table th .sort-ind { opacity: .5; font-size: 9px; margin-left: 3px; }
+.data-table td { padding: 9px 11px; border-bottom: 1px solid var(--border); white-space: nowrap; color: var(--text-2); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--surface-2); }
+.data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table .pos { color: var(--pos); font-weight: 600; }
+.data-table .neg { color: var(--neg); }
+.data-table .muted { color: var(--muted); font-style: italic; }
+.cellbar { position: relative; min-width: 90px; }
+.cellbar span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); border-radius: 3px; }
+.cellbar em { position: relative; font-style: normal; }
+.table-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.table-search { max-width: 220px; padding: 7px 11px; }
+
+/* ── Stat tiles ───────────────────────────────────────────────────────── */
+.stat-row { display: flex; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.stat {
+  flex: 1; min-width: 150px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden;
+}
+.stat-label { font-size: 11.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.stat-value { font-size: 26px; font-weight: 800; margin-top: 6px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stat-value.pos { color: var(--pos); } .stat-value.neg { color: var(--neg); }
+.stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.stat-spark { position: absolute; right: 12px; bottom: 10px; opacity: .9; }
+
+/* ── Dashboard grid ───────────────────────────────────────────────────── */
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+.dash-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 18px; box-shadow: var(--shadow-sm);
+}
+.dash-card.span-2 { grid-column: span 2; }
+.dash-card h2 { font-size: 13px; font-weight: 700; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.dash-card h2 .h-meta { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 500; }
+@media (max-width: 880px) { .dash-card.span-2 { grid-column: span 1; } }
+
+/* ── Charts ───────────────────────────────────────────────────────────── */
+.chart-wrap { position: relative; }
+.chart-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-axis text { fill: var(--muted); font-size: 10px; }
+.chart-grid { stroke: var(--border); }
+.chart-baseline { stroke: var(--muted); stroke-dasharray: 4 3; opacity: .6; }
+.chart-tip {
+  position: absolute; pointer-events: none; background: var(--text); color: var(--surface);
+  font-size: 11px; font-weight: 600; padding: 5px 8px; border-radius: 6px; white-space: nowrap;
+  transform: translate(-50%, -130%); opacity: 0; transition: opacity var(--fast) var(--ease); box-shadow: var(--shadow-md);
+}
+.chart-tip.show { opacity: 1; }
+.chart-dot { transition: opacity var(--fast) var(--ease); }
+.chart-legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+.chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.hbar-table td { border: none; padding: 4px 8px 4px 0; }
+.hbar-table tr:hover td { background: none; }
+.hbar-track { background: var(--surface-3); border-radius: 4px; height: 10px; overflow: hidden; }
+.hbar-track span { display: block; height: 100%; border-radius: 4px; transition: width var(--med) var(--ease); }
+
+/* ── Toasts ───────────────────────────────────────────────────────────── */
+#toast-host { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+.toast {
+  background: var(--text); color: var(--surface); padding: 11px 16px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 9px;
+  animation: toast-in var(--med) var(--ease);
+}
+.toast.pos { background: var(--pos); color: #fff; }
+.toast.neg { background: var(--neg); color: #fff; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ── Skeleton / loading / empty ───────────────────────────────────────── */
+.skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 37%, var(--surface-2) 63%); background-size: 400% 100%; border-radius: 6px; animation: shimmer 1.3s infinite; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.skeleton-line { height: 12px; margin: 8px 0; }
+.placeholder { text-align: center; color: var(--muted); padding: 60px 20px; }
+.placeholder-title { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.empty-mini { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.key-field { margin-bottom: 14px; }
+
+/* ── Warm-editorial typography ──────────────────────────────────────────────
+   Serif display headings give the suite an editorial, crafted character while
+   numerals and UI labels stay in the humanist sans for clarity. */
+.brand { font-family: var(--serif); font-size: 17px; letter-spacing: .01em; }
+#engine-title { font-family: var(--serif); font-size: 27px; font-weight: 700; letter-spacing: -.005em; }
+.dash-card h2 { font-family: var(--serif); font-size: 16.5px; font-weight: 700; letter-spacing: .003em; }
+.team-name { font-family: var(--serif); font-size: 20px; font-weight: 700; }
+.stat-value { font-family: var(--serif); }
+.placeholder-title { font-family: var(--serif); }
+.xg { font-family: var(--serif); }
+/* a touch more air between editorial headings and their content */
+.dash-card h2 { margin-bottom: 14px; }
+#topbar { padding-top: 18px; }
+
+/* Interactive table extras */
+.mt-row { cursor: pointer; }
+.mt-row:hover td { background: var(--surface-2); }
+.mt-toggle { width: 22px; color: var(--muted); text-align: center; }
+.mt-detail td { background: var(--surface-2); padding: 12px 14px; }
+.mt-detail .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 18px; }
+.kv > div { display: flex; flex-direction: column; gap: 1px; }
+.kv span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); font-weight: 700; }
+.kv b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.mt-scroll { overflow-x: auto; }
+
+/* Stat value flash on update */
+.stat-value.flash, #bk-bankroll.flash, #bk-pnl.flash { animation: flash-pulse .65s var(--ease); }
+@keyframes flash-pulse {
+  0% { background: var(--accent-soft); box-shadow: 0 0 0 6px var(--accent-soft); }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}
+</style></head><body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">
+        <span class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M16 8h5v5"/></svg>
+        </span>
+        Sports&nbsp;Predictor
+      </div>
+      <nav class="nav-group suite">
+        <button class="nav-item" id="nav-dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+          Dashboard
+        </button>
+        <button class="nav-item" id="nav-fixtures">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          Fixtures
+        </button>
+        <button class="nav-item" id="nav-outrights">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21 1.18.53 2.03 2.02 2.03 3.79M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>
+          Outrights
+        </button>
+      </nav>
+      <div class="nav-heading">Engines</div>
+      <nav id="engine-list" class="nav-group"></nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-group suite">
+        <button class="nav-item" id="nav-bankroll">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg>
+          Bankroll
+        </button>
+        <button class="nav-item" id="nav-history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+          History
+        </button>
+        <button class="nav-item" id="nav-settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H.1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 1.4 6a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 6 1.5h.1A1.6 1.6 0 0 0 7.2.4V.3a2 2 0 1 1 4 0" transform="translate(5.5 1.5) scale(.7)"/></svg>
+          Settings
+        </button>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <header id="topbar">
+        <div class="topbar-row">
+          <h1 id="engine-title">—</h1>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="theme-toggle" title="Toggle dark / light">
+              <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="tabs" class="tabs"></div>
+      </header>
+
+      <section id="content">
+        <!-- DASHBOARD (suite home) -->
+        <div id="panel-dashboard" class="panel full" hidden>
+          <div class="stat-row" id="dash-stats"></div>
+          <div class="dash-grid" id="dash-grid"></div>
+        </div>
+
+        <!-- FIXTURES (suite) -->
+        <div id="panel-fixtures" class="panel full" hidden>
+          <div class="form-card" style="margin-bottom:16px">
+            <div class="row controls" style="margin-top:0">
+              <label class="field model-field"><span class="field-label">Day</span><select id="fx-day"></select></label>
+              <label class="checkbox"><input type="checkbox" id="fx-picks-only" /><span>Only fixtures with edge picks</span></label>
+              <span class="spacer"></span>
+              <input id="fx-search" class="table-search" placeholder="Search team…" />
+            </div>
+          </div>
+          <div id="fx-host"></div>
+        </div>
+
+        <!-- OUTRIGHTS (suite) -->
+        <div id="panel-outrights" class="panel full" hidden>
+          <div class="dash-grid">
+            <div class="dash-card span-2"><h2>Title-race movement<span class="h-meta" id="or-meta"></span></h2><div id="or-chart" class="chart-host"></div><div id="or-legend" class="chart-legend"></div></div>
+            <div class="dash-card span-2"><h2>Championship odds</h2><div id="or-table"></div></div>
+          </div>
+        </div>
+
+        <!-- HISTORY (suite) -->
+        <div id="panel-history" class="panel full" hidden>
+          <div class="stat-row" id="hist-stats"></div>
+          <div class="dash-grid">
+            <div class="dash-card span-2"><h2>Cumulative P&amp;L<span class="h-meta">settled bets, in order</span></h2><div id="hist-curve" class="chart-host"></div></div>
+            <div class="dash-card"><h2>By market</h2><div id="hist-market"></div></div>
+            <div class="dash-card"><h2>By sport</h2><div id="hist-sport"></div></div>
+          </div>
+          <div class="result-card">
+            <div class="table-toolbar">
+              <div class="card-title" style="margin:0">Bet ledger</div>
+              <span class="spacer"></span>
+              <select id="hist-f-sport" class="filter-field"></select>
+              <select id="hist-f-market" class="filter-field"></select>
+              <select id="hist-f-status" class="filter-field"></select>
+              <input id="hist-search" class="table-search" placeholder="Search…" />
+            </div>
+            <div id="hist-table"></div>
+          </div>
+        </div>
+
+        <!-- PREDICT -->
+        <div id="panel-predict" class="panel" hidden>
+          <div class="form-card">
+            <div class="row">
+              <label class="field">
+                <span id="label-team1" class="field-label">Team 1</span>
+                <input id="team1" list="team-names" autocomplete="off" placeholder="Start typing…" />
+              </label>
+              <div class="vs">vs</div>
+              <label class="field">
+                <span id="label-team2" class="field-label">Team 2</span>
+                <input id="team2" list="team-names" autocomplete="off" placeholder="Start typing…" />
+              </label>
+            </div>
+            <datalist id="team-names"></datalist>
+            <div class="row controls">
+              <label id="home-wrap" class="checkbox">
+                <input type="checkbox" id="home" />
+                <span>Home advantage for <em id="home-team-name">Team 1</em></span>
+              </label>
+              <label class="field model-field">
+                <span class="field-label">Model</span>
+                <select id="model"></select>
+              </label>
+              <div id="predict-filters" class="inline-options"></div>
+              <button id="compare-btn" class="ghost" hidden>Compare models</button>
+              <button id="predict-btn" class="primary">Predict</button>
+            </div>
+            <div id="predict-error" class="error" hidden></div>
+          </div>
+
+          <div id="result" class="result-card" hidden></div>
+          <div id="compare-result" class="result-card" hidden></div>
+        </div>
+
+        <!-- SIMULATE -->
+        <div id="panel-simulate" class="panel wide" hidden>
+          <div class="form-card">
+            <div class="row controls">
+              <label class="field model-field"><span class="field-label">Model</span><select id="sim-model"></select></label>
+              <label class="field model-field"><span class="field-label">Simulations</span><select id="sim-count"></select></label>
+              <button id="sim-btn" class="primary">Run simulation</button>
+            </div>
+            <div id="sim-note" class="muted-note" hidden></div>
+            <div id="sim-error" class="error" hidden></div>
+          </div>
+          <div id="sim-result" class="result-card" hidden>
+            <div class="table-scroll"><table id="sim-table" class="data-table"></table></div>
+          </div>
+        </div>
+
+        <!-- EDGE -->
+        <div id="panel-edge" class="panel wide" hidden>
+          <div class="form-card">
+            <div class="row controls">
+              <label class="field model-field"><span class="field-label">Model</span><select id="edge-model"></select></label>
+              <label class="field model-field"><span class="field-label">Odds source</span><select id="edge-source"></select></label>
+              <label class="checkbox"><input type="checkbox" id="edge-record" /><span>Record positive-edge picks to bankroll</span></label>
+              <div id="edge-filters" class="inline-options"></div>
+              <div id="edge-options" class="inline-options"></div>
+              <button id="edge-template-btn" class="ghost">Write odds template</button>
+              <button id="edge-btn" class="primary">Find edges</button>
+            </div>
+            <div id="edge-note" class="muted-note" hidden></div>
+            <div id="edge-error" class="error" hidden></div>
+          </div>
+          <div id="edge-result" class="result-card" hidden>
+            <div class="table-scroll"><table id="edge-table" class="data-table"></table></div>
+          </div>
+        </div>
+
+        <!-- BANKROLL (suite) -->
+        <div id="panel-bankroll" class="panel wide" hidden>
+          <div class="stat-row">
+            <div class="stat"><div class="stat-label">Bankroll</div><div class="stat-value" id="bk-bankroll">—</div></div>
+            <div class="stat"><div class="stat-label">Peak</div><div class="stat-value" id="bk-peak">—</div></div>
+            <div class="stat"><div class="stat-label">Net P&amp;L</div><div class="stat-value" id="bk-pnl">—</div></div>
+            <div class="stat"><div class="stat-label">Open at risk</div><div class="stat-value" id="bk-risk">—</div></div>
+          </div>
+          <div class="form-card">
+            <div class="row controls">
+              <button id="bk-settle" class="primary">Settle results</button>
+              <span class="spacer"></span>
+              <input id="bk-reset-amt" type="number" placeholder="100" class="small-input" />
+              <button id="bk-reset" class="ghost danger">Reset bankroll</button>
+            </div>
+            <div id="bk-note" class="muted-note" hidden></div>
+          </div>
+          <div class="result-card">
+            <div class="card-title">By sport</div>
+            <div id="bk-sport-host"></div>
+          </div>
+          <div class="result-card">
+            <div class="card-title">Open bets</div>
+            <div id="bk-open-host"></div>
+          </div>
+          <div class="result-card">
+            <div class="card-title">Recently settled</div>
+            <div id="bk-settled-host"></div>
+          </div>
+        </div>
+
+        <!-- SETTINGS (suite) -->
+        <div id="panel-settings" class="panel" hidden>
+          <div class="form-card">
+            <div class="card-title">Odds API keys</div>
+            <p class="muted-note">Stored locally on this Mac. Keys are masked after saving.</p>
+            <div id="settings-keys"></div>
+          </div>
+          <div class="form-card">
+            <div class="card-title">Defaults</div>
+            <div class="row">
+              <label class="field"><span class="field-label">Default model</span><select id="set-model"><option>blend</option><option>elo</option><option>dc</option></select></label>
+              <label class="field"><span class="field-label">Kelly fraction</span><input id="set-kelly" type="number" step="0.05" /></label>
+            </div>
+          </div>
+          <div class="row controls">
+            <button id="settings-save" class="primary">Save settings</button>
+            <span id="settings-saved" class="saved-note" hidden>Saved ✓</span>
+          </div>
+        </div>
+
+        <!-- placeholder -->
+        <div id="panel-placeholder" class="panel" hidden>
+          <div class="placeholder"><div class="placeholder-title" id="placeholder-title"></div><p>Coming in a later phase.</p></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="toast-host"></div>
+  
+  
+<script>"use strict";
+/* Sports Predictor — tiny dependency-free SVG chart kit.
+   Theme-aware (reads CSS variables), offline, reused by dashboard + panels. */
+
+const Charts = (() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const cssVar = (name) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
+  const num = (v) => (typeof v === "number" ? v : (v && v.v));
+
+  // ---- area/line chart with hover tooltip -------------------------------
+  // host: container element. series: [{i,v}] or [numbers]. opts: {color, fmt, baseline, height}
+  function areaLine(host, series, opts = {}) {
+    host.innerHTML = "";
+    const vals = series.map(num);
+    if (vals.length < 2) { host.innerHTML = `<div class="empty-mini">Not enough data yet.</div>`; return; }
+    const w = 560, h = opts.height || 180, padL = 38, padR = 12, padT = 14, padB = 22;
+    const color = opts.color || cssVar("--accent");
+    const fmt = opts.fmt || ((v) => v.toFixed(2));
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (opts.baseline != null) { lo = Math.min(lo, opts.baseline); hi = Math.max(hi, opts.baseline); }
+    if (hi === lo) hi = lo + 1;
+    const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    const X = (i) => padL + (w - padL - padR) * (i / (vals.length - 1));
+    const Y = (v) => h - padB - (h - padT - padB) * ((v - lo) / (hi - lo));
+
+    let grid = "", axis = "";
+    for (let g = 0; g <= 2; g++) {
+      const frac = g / 2, y = padT + (h - padT - padB) * frac, val = hi - (hi - lo) * frac;
+      grid += `<line class="chart-grid" x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}"/>`;
+      axis += `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${fmt(val)}</text>`;
+    }
+    let base = "";
+    if (opts.baseline != null && opts.baseline >= lo && opts.baseline <= hi) {
+      const yb = Y(opts.baseline);
+      base = `<line class="chart-baseline" x1="${padL}" y1="${yb.toFixed(1)}" x2="${w - padR}" y2="${yb.toFixed(1)}"/>`;
+    }
+    const linePts = vals.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+    const areaPts = `${X(0).toFixed(1)},${(h - padB)} ${linePts} ${X(vals.length - 1).toFixed(1)},${h - padB}`;
+    const gid = "g" + Math.random().toString(36).slice(2, 8);
+
+    host.classList.add("chart-wrap");
+    host.innerHTML = `
+      <svg viewBox="0 0 ${w} ${h}" class="chart-axis" preserveAspectRatio="none">
+        <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+        </linearGradient></defs>
+        ${grid}${base}
+        <polygon points="${areaPts}" fill="url(#${gid})"/>
+        <polyline points="${linePts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>
+        <circle class="chart-dot" r="4" fill="${color}" stroke="var(--surface)" stroke-width="2" style="opacity:0"/>
+        ${axis}
+      </svg>
+      <div class="chart-tip"></div>`;
+    // hover
+    const svg = host.querySelector("svg"), dot = host.querySelector(".chart-dot"), tip = host.querySelector(".chart-tip");
+    svg.addEventListener("mousemove", (e) => {
+      const r = svg.getBoundingClientRect();
+      const xRel = ((e.clientX - r.left) / r.width) * w;
+      let i = Math.round(((xRel - padL) / (w - padL - padR)) * (vals.length - 1));
+      i = Math.max(0, Math.min(vals.length - 1, i));
+      const cx = X(i), cy = Y(vals[i]);
+      dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.style.opacity = 1;
+      tip.style.left = (cx / w * 100) + "%"; tip.style.top = (cy / h * 100) + "%";
+      tip.textContent = fmt(vals[i]); tip.classList.add("show");
+    });
+    svg.addEventListener("mouseleave", () => { dot.style.opacity = 0; tip.classList.remove("show"); });
+  }
+
+  // ---- sparkline (inline, no axes) --------------------------------------
+  function sparkline(values, opts = {}) {
+    const vals = values.map(num);
+    const w = opts.w || 88, h = opts.h || 26, color = opts.color || cssVar("--accent");
+    if (vals.length < 2) return "";
+    let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) hi = lo + 1;
+    const X = (i) => (w) * (i / (vals.length - 1));
+    const Y = (v) => h - 2 - (h - 4) * ((v - lo) / (hi - lo));
+    const pts = vals.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+    return `<svg class="stat-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  }
+
+  // ---- horizontal bars (title odds etc.) --------------------------------
+  // rows: [{label, value, pct(0-1), delta?}]
+  function hbars(rows, opts = {}) {
+    if (!rows || !rows.length) return `<div class="empty-mini">No data.</div>`;
+    const max = Math.max(...rows.map((r) => r.value), 1e-9);
+    const color = opts.color || cssVar("--accent");
+    const fmt = opts.fmt || ((v) => (v * 100).toFixed(1) + "%");
+    return `<table class="data-table hbar-table">` + rows.map((r) => {
+      const w = Math.max(2, (r.value / max) * 100);
+      let d = "";
+      if (r.delta != null) {
+        const up = r.delta > 0;
+        d = `<span class="badge ${up ? "pos" : "neg"}">${up ? "▲" : "▼"}${Math.abs(r.delta).toFixed(1)}</span>`;
+      }
+      return `<tr>
+        <td style="width:30%">${esc(r.label)}</td>
+        <td style="width:46%"><div class="hbar-track"><span style="width:${w.toFixed(0)}%;background:${color}"></span></div></td>
+        <td class="num" style="width:14%">${fmt(r.value)}</td>
+        <td class="num" style="width:10%">${d}</td></tr>`;
+    }).join("") + `</table>`;
+  }
+
+  // ---- multi-line chart (title-race movement) ---------------------------
+  // lines: [{label, color, points:[{date,v}]}]  dates: ordered x labels
+  function multiLine(host, lines, dates, opts = {}) {
+    host.innerHTML = "";
+    const usable = (lines || []).filter((l) => l.points.some((p) => p.v != null));
+    if (!usable.length || dates.length < 2) { host.innerHTML = `<div class="empty-mini">Not enough snapshots yet — movement appears after the next daily run.</div>`; return; }
+    const w = 560, h = opts.height || 200, padL = 38, padR = 12, padT = 12, padB = 24;
+    const fmt = opts.fmt || ((v) => v.toFixed(1) + "%");
+    let lo = Infinity, hi = -Infinity;
+    usable.forEach((l) => l.points.forEach((p) => { if (p.v != null) { lo = Math.min(lo, p.v); hi = Math.max(hi, p.v); } }));
+    if (hi === lo) hi = lo + 1;
+    const padv = (hi - lo) * 0.1; lo = Math.max(0, lo - padv); hi += padv;
+    const X = (i) => padL + (w - padL - padR) * (i / (dates.length - 1));
+    const Y = (v) => h - padB - (h - padT - padB) * ((v - lo) / (hi - lo));
+    let grid = "", axis = "";
+    for (let g = 0; g <= 2; g++) {
+      const frac = g / 2, y = padT + (h - padT - padB) * frac, val = hi - (hi - lo) * frac;
+      grid += `<line class="chart-grid" x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}"/>`;
+      axis += `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${fmt(val)}</text>`;
+    }
+    let paths = "";
+    usable.forEach((l) => {
+      const pts = l.points.map((p, i) => p.v == null ? null : `${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).filter(Boolean).join(" ");
+      paths += `<polyline points="${pts}" fill="none" stroke="${l.color}" stroke-width="2" stroke-linejoin="round"/>`;
+      const last = l.points[l.points.length - 1];
+      if (last && last.v != null) paths += `<circle cx="${X(dates.length - 1).toFixed(1)}" cy="${Y(last.v).toFixed(1)}" r="3" fill="${l.color}"/>`;
+    });
+    host.classList.add("chart-wrap");
+    host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" class="chart-axis" preserveAspectRatio="none">${grid}${paths}
+      <text x="${padL}" y="${h - 4}">${esc(dates[0])}</text>
+      <text x="${w - padR}" y="${h - 4}" text-anchor="end">${esc(dates[dates.length - 1])}</text></svg>`;
+  }
+
+  // ---- calibration scatter/line -----------------------------------------
+  function calibration(host, sides) {
+    if (!sides) { host.innerHTML = `<div class="empty-mini">Not fitted yet (validate.py --calibrate).</div>`; return; }
+    const w = 240, h = 240, pad = 26;
+    const X = (v) => pad + (w - 2 * pad) * v, Y = (v) => h - pad - (h - 2 * pad) * v;
+    const colors = { home: cssVar("--win"), draw: cssVar("--warn"), away: cssVar("--pos") };
+    let parts = `<line class="chart-baseline" x1="${X(0)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(1)}"/>`;
+    for (const side of ["home", "draw", "away"]) {
+      const m = sides[side]; if (!m) continue;
+      const pts = m.map((p) => `${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join(" ");
+      parts += `<polyline points="${pts}" fill="none" stroke="${colors[side]}" stroke-width="2"/>`;
+    }
+    host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" class="chart-axis">${parts}
+      <text x="${w / 2}" y="${h - 4}" text-anchor="middle">predicted →</text></svg>
+      <div class="chart-legend">
+        <span><i style="background:${colors.home}"></i>home</span>
+        <span><i style="background:${colors.draw}"></i>draw</span>
+        <span><i style="background:${colors.away}"></i>away</span></div>`;
+  }
+
+  // shared win/draw/loss probability bar
+  function probBar(home, draw, away) {
+    const seg = (p, cls) => `<div class="seg ${cls}" style="width:${(p * 100).toFixed(1)}%">${p > 0.1 ? (p * 100).toFixed(0) : ""}</div>`;
+    return `<div class="prob-bar">${seg(home, "win")}${draw != null ? seg(draw, "draw") : ""}${seg(away, "loss")}</div>`;
+  }
+
+  function esc(v) {
+    return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // palette for multi-series charts
+  const PALETTE = ["#4f6bff", "#2fbf71", "#e0a83a", "#f4636b", "#9b6bff", "#21b8c4", "#ec6f4c", "#5a9bff"];
+
+  return { areaLine, sparkline, hbars, calibration, probBar, multiLine, cssVar, PALETTE };
+})();
+window.Charts = Charts;
+</script><script>
+const MOCK={"engines": {"engines": [{"id": "worldcup", "name": "World Cup 2026", "sport": "soccer", "capabilities": ["edge", "predict", "simulate"], "predict_schema": {"kind": "match", "names": ["Abkhazia", "Afghanistan", "Albania", "Alderney", "Algeria", "Ambazonia", "American Samoa", "Andalusia", "Andorra", "Angola", "Anguilla", "Antigua and Barbuda", "Arameans Suryoye", "Argentina", "Armenia", "Artsakh", "Aruba", "Asturias", "Australia", "Austria", "Aymara", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barawa", "Barbados", "Basque Country", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Biafra", "Bolivia", "Bonaire", "Bosnia and Herzegovina", "Botswana", "Brazil", "British Virgin Islands", "Brittany", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cambodia", "Cameroon", "Canada", "Canary Islands", "Cape Verde", "Cascadia", "Catalonia", "Cayman Islands", "Central African Republic", "Central Spain", "Chad", "Chagos Islands", "Chameria", "Chechnya", "Chile", "China", "Cilento", "Colombia", "Comoros", "Congo", "Cook Islands", "Corsica", "Costa Rica", "County of Nice", "Crimea", "Croatia", "Cuba", "Cura\u00e7ao", "Cyprus", "Czech Republic", "Czechoslovakia", "DR Congo", "Darfur", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Donetsk PR", "D\u00e9lvid\u00e9k", "East Turkestan", "Ecuador", "Egypt", "El Salvador", "Elba Island", "Ellan Vannin", "England", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Falkland Islands", "Faroe Islands", "Felvid\u00e9k", "Fiji", "Finland", "France", "Franconia", "French Guiana", "Fr\u00f8ya", "Gabon", "Galicia", "Gambia", "Georgia", "German DR", "Germany", "Ghana", "Gibraltar", "Gotland", "Gozo", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guernsey", "Guinea", "Guinea-Bissau", "Guyana", "G\u0103g\u0103uzia", "Haiti", "Hitra", "Hmong", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Iraqi Kurdistan", "Isle of Man", "Isle of Wight", "Israel", "Italy", "Ivory Coast", "Jamaica", "Japan", "Jersey", "Jordan", "Kabylia", "Kazakhstan", "Kenya", "Kernow", "Kiribati", "Kosovo", "Kurdistan", "Kuwait", "Kyrgyzstan", "K\u00e1rp\u00e1talja", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luhansk PR", "Luxembourg", "Macau", "Madagascar", "Madrid", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Manchukuo", "Mapuche", "Marshall Islands", "Martinique", "Matabeleland", "Maule Sur", "Mauritania", "Mauritius", "Mayotte", "Menorca", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nepal", "Netherlands", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "North Korea", "North Macedonia", "North Vietnam", "Northern Cyprus", "Northern Ireland", "Northern Mariana Islands", "Norway", "Occitania", "Oman", "Orkney", "Padania", "Pakistan", "Palau", "Palestine", "Panama", "Panjab", "Papua New Guinea", "Paraguay", "Parishes of Jersey", "Peru", "Philippines", "Poland", "Portugal", "Provence", "Puerto Rico", "Qatar", "Quebec", "Raetia", "Republic of Ireland", "Republic of St. Pauli", "Rhodes", "Romani people", "Romania", "Russia", "Rwanda", "Ry\u016bky\u016b", "R\u00e9union", "Saare County", "Saarland", "Saint Barth\u00e9lemy", "Saint Helena", "Saint Kitts and Nevis", "Saint Lucia", "Saint Martin", "Saint Pierre and Miquelon", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sark", "Saudi Arabia", "Saugeais", "Scotland", "Sealand", "Seborga", "Senegal", "Serbia", "Seychelles", "Shetland", "Sierra Leone", "Silesia", "Singapore", "Sint Maarten", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "Somaliland", "South Africa", "South Korea", "South Ossetia", "South Sudan", "South Yemen", "Spain", "Sri Lanka", "Sudan", "Suriname", "Surrey", "Sweden", "Switzerland", "Syria", "Sz\u00e9kely Land", "S\u00e1pmi", "S\u00e3o Tom\u00e9 and Pr\u00edncipe", "Tahiti", "Taiwan", "Tajikistan", "Tamil Eelam", "Tanzania", "Thailand", "Tibet", "Ticino", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Two Sicilies", "Uganda", "Ukraine", "United Arab Emirates", "United Koreans in Japan", "United States", "United States Virgin Islands", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Vietnam Republic", "Wales", "Wallis Islands and Futuna", "West Papua", "Western Armenia", "Western Australia", "Western Isles", "Western Sahara", "Yemen", "Yemen DPR", "Ynys M\u00f4n", "Yorkshire", "Yoruba Nation", "Yugoslavia", "Zambia", "Zanzibar", "Zimbabwe", "\u00c5land Islands"], "models": ["blend"], "supports_home": true, "team_label": "Team"}, "schemas": {"edge": {"models": ["blend", "elo", "dc"], "odds_sources": [{"id": "api", "label": "Live odds (The Odds API)"}, {"id": "manual", "label": "Manual odds.csv"}], "adjustments": [{"id": "calibrated", "label": "Calibrated"}, {"id": "market_blend", "label": "Market blend"}, {"id": "context", "label": "Context"}, {"id": "squad_adj", "label": "Squad availability"}, {"id": "no_portfolio", "label": "Disable portfolio caps"}], "api_source_id": "the-odds-api", "has_template": true}, "simulate": {"models": ["blend", "elo", "dc"], "default_sims": 10000, "sim_options": [2000, 10000, 50000], "stages": ["win_group", "reach_R32", "reach_R16", "reach_QF", "reach_SF", "reach_final", "champion"]}, "predict": {"kind": "match", "names": ["Abkhazia", "Afghanistan", "Albania", "Alderney", "Algeria", "Ambazonia", "American Samoa", "Andalusia", "Andorra", "Angola", "Anguilla", "Antigua and Barbuda", "Arameans Suryoye", "Argentina", "Armenia", "Artsakh", "Aruba", "Asturias", "Australia", "Austria", "Aymara", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barawa", "Barbados", "Basque Country", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Biafra", "Bolivia", "Bonaire", "Bosnia and Herzegovina", "Botswana", "Brazil", "British Virgin Islands", "Brittany", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cambodia", "Cameroon", "Canada", "Canary Islands", "Cape Verde", "Cascadia", "Catalonia", "Cayman Islands", "Central African Republic", "Central Spain", "Chad", "Chagos Islands", "Chameria", "Chechnya", "Chile", "China", "Cilento", "Colombia", "Comoros", "Congo", "Cook Islands", "Corsica", "Costa Rica", "County of Nice", "Crimea", "Croatia", "Cuba", "Cura\u00e7ao", "Cyprus", "Czech Republic", "Czechoslovakia", "DR Congo", "Darfur", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Donetsk PR", "D\u00e9lvid\u00e9k", "East Turkestan", "Ecuador", "Egypt", "El Salvador", "Elba Island", "Ellan Vannin", "England", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Falkland Islands", "Faroe Islands", "Felvid\u00e9k", "Fiji", "Finland", "France", "Franconia", "French Guiana", "Fr\u00f8ya", "Gabon", "Galicia", "Gambia", "Georgia", "German DR", "Germany", "Ghana", "Gibraltar", "Gotland", "Gozo", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guernsey", "Guinea", "Guinea-Bissau", "Guyana", "G\u0103g\u0103uzia", "Haiti", "Hitra", "Hmong", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Iraqi Kurdistan", "Isle of Man", "Isle of Wight", "Israel", "Italy", "Ivory Coast", "Jamaica", "Japan", "Jersey", "Jordan", "Kabylia", "Kazakhstan", "Kenya", "Kernow", "Kiribati", "Kosovo", "Kurdistan", "Kuwait", "Kyrgyzstan", "K\u00e1rp\u00e1talja", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luhansk PR", "Luxembourg", "Macau", "Madagascar", "Madrid", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Manchukuo", "Mapuche", "Marshall Islands", "Martinique", "Matabeleland", "Maule Sur", "Mauritania", "Mauritius", "Mayotte", "Menorca", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nepal", "Netherlands", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "North Korea", "North Macedonia", "North Vietnam", "Northern Cyprus", "Northern Ireland", "Northern Mariana Islands", "Norway", "Occitania", "Oman", "Orkney", "Padania", "Pakistan", "Palau", "Palestine", "Panama", "Panjab", "Papua New Guinea", "Paraguay", "Parishes of Jersey", "Peru", "Philippines", "Poland", "Portugal", "Provence", "Puerto Rico", "Qatar", "Quebec", "Raetia", "Republic of Ireland", "Republic of St. Pauli", "Rhodes", "Romani people", "Romania", "Russia", "Rwanda", "Ry\u016bky\u016b", "R\u00e9union", "Saare County", "Saarland", "Saint Barth\u00e9lemy", "Saint Helena", "Saint Kitts and Nevis", "Saint Lucia", "Saint Martin", "Saint Pierre and Miquelon", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sark", "Saudi Arabia", "Saugeais", "Scotland", "Sealand", "Seborga", "Senegal", "Serbia", "Seychelles", "Shetland", "Sierra Leone", "Silesia", "Singapore", "Sint Maarten", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "Somaliland", "South Africa", "South Korea", "South Ossetia", "South Sudan", "South Yemen", "Spain", "Sri Lanka", "Sudan", "Suriname", "Surrey", "Sweden", "Switzerland", "Syria", "Sz\u00e9kely Land", "S\u00e1pmi", "S\u00e3o Tom\u00e9 and Pr\u00edncipe", "Tahiti", "Taiwan", "Tajikistan", "Tamil Eelam", "Tanzania", "Thailand", "Tibet", "Ticino", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Two Sicilies", "Uganda", "Ukraine", "United Arab Emirates", "United Koreans in Japan", "United States", "United States Virgin Islands", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Vietnam Republic", "Wales", "Wallis Islands and Futuna", "West Papua", "Western Armenia", "Western Australia", "Western Isles", "Western Sahara", "Yemen", "Yemen DPR", "Ynys M\u00f4n", "Yorkshire", "Yoruba Nation", "Yugoslavia", "Zambia", "Zanzibar", "Zimbabwe", "\u00c5land Islands"], "models": ["blend"], "supports_home": true, "team_label": "Team"}}}, {"id": "cfb", "name": "College Football", "sport": "cfb", "capabilities": ["edge", "predict"], "predict_schema": {"kind": "match", "names": ["Air Force", "Akron", "Alabama", "App State", "Arizona", "Arizona State", "Arkansas", "Arkansas State", "Army", "Auburn", "BYU", "Ball State", "Baylor", "Boise State", "Boston College", "Bowling Green", "Buffalo", "California", "Central Michigan", "Charlotte", "Cincinnati", "Clemson", "Coastal Carolina", "Colorado", "Colorado State", "Delaware", "Duke", "East Carolina", "Eastern Michigan", "FCS", "Florida", "Florida Atlantic", "Florida International", "Florida State", "Fresno State", "Georgia", "Georgia Southern", "Georgia State", "Georgia Tech", "Hawai'i", "Houston", "Illinois", "Indiana", "Iowa", "Iowa State", "Jacksonville State", "James Madison", "Kansas", "Kansas State", "Kennesaw State", "Kent State", "Kentucky", "LSU", "Liberty", "Louisiana", "Louisiana Tech", "Louisville", "Marshall", "Maryland", "Massachusetts", "Memphis", "Miami", "Miami (OH)", "Michigan", "Michigan State", "Middle Tennessee", "Minnesota", "Mississippi State", "Missouri", "Missouri State", "NC State", "Navy", "Nebraska", "Nevada", "New Mexico", "New Mexico State", "North Carolina", "North Texas", "Northern Illinois", "Northwestern", "Notre Dame", "Ohio", "Ohio State", "Oklahoma", "Oklahoma State", "Old Dominion", "Ole Miss", "Oregon", "Oregon State", "Penn State", "Pittsburgh", "Purdue", "Rice", "Rutgers", "SMU", "Sam Houston", "San Diego State", "San Jos\u00e9 State", "South Alabama", "South Carolina", "South Florida", "Southern Miss", "Stanford", "Syracuse", "TCU", "Temple", "Tennessee", "Texas", "Texas A&M", "Texas State", "Texas Tech", "Toledo", "Troy", "Tulane", "Tulsa", "UAB", "UCF", "UCLA", "UConn", "UL Monroe", "UNLV", "USC", "UTEP", "UTSA", "Utah", "Utah State", "Vanderbilt", "Virginia", "Virginia Tech", "Wake Forest", "Washington", "Washington State", "West Virginia", "Western Kentucky", "Western Michigan", "Wisconsin", "Wyoming"], "models": ["blend", "elo", "power"], "supports_home": false, "neutral_toggle": true, "team_label": "Team"}, "schemas": {"edge": {"models": ["blend", "elo", "power"], "odds_sources": [{"id": "manual", "label": "Manual cfb/odds.csv"}], "has_template": true}, "predict": {"kind": "match", "names": ["Air Force", "Akron", "Alabama", "App State", "Arizona", "Arizona State", "Arkansas", "Arkansas State", "Army", "Auburn", "BYU", "Ball State", "Baylor", "Boise State", "Boston College", "Bowling Green", "Buffalo", "California", "Central Michigan", "Charlotte", "Cincinnati", "Clemson", "Coastal Carolina", "Colorado", "Colorado State", "Delaware", "Duke", "East Carolina", "Eastern Michigan", "FCS", "Florida", "Florida Atlantic", "Florida International", "Florida State", "Fresno State", "Georgia", "Georgia Southern", "Georgia State", "Georgia Tech", "Hawai'i", "Houston", "Illinois", "Indiana", "Iowa", "Iowa State", "Jacksonville State", "James Madison", "Kansas", "Kansas State", "Kennesaw State", "Kent State", "Kentucky", "LSU", "Liberty", "Louisiana", "Louisiana Tech", "Louisville", "Marshall", "Maryland", "Massachusetts", "Memphis", "Miami", "Miami (OH)", "Michigan", "Michigan State", "Middle Tennessee", "Minnesota", "Mississippi State", "Missouri", "Missouri State", "NC State", "Navy", "Nebraska", "Nevada", "New Mexico", "New Mexico State", "North Carolina", "North Texas", "Northern Illinois", "Northwestern", "Notre Dame", "Ohio", "Ohio State", "Oklahoma", "Oklahoma State", "Old Dominion", "Ole Miss", "Oregon", "Oregon State", "Penn State", "Pittsburgh", "Purdue", "Rice", "Rutgers", "SMU", "Sam Houston", "San Diego State", "San Jos\u00e9 State", "South Alabama", "South Carolina", "South Florida", "Southern Miss", "Stanford", "Syracuse", "TCU", "Temple", "Tennessee", "Texas", "Texas A&M", "Texas State", "Texas Tech", "Toledo", "Troy", "Tulane", "Tulsa", "UAB", "UCF", "UCLA", "UConn", "UL Monroe", "UNLV", "USC", "UTEP", "UTSA", "Utah", "Utah State", "Vanderbilt", "Virginia", "Virginia Tech", "Wake Forest", "Washington", "Washington State", "West Virginia", "Western Kentucky", "Western Michigan", "Wisconsin", "Wyoming"], "models": ["blend", "elo", "power"], "supports_home": false, "neutral_toggle": true, "team_label": "Team"}}}, {"id": "golf", "name": "Golf (PGA Tour)", "sport": "golf", "capabilities": ["edge", "predict", "simulate"], "predict_schema": {"kind": "match", "names": ["Adam Scott", "Brian Harman", "Brooks Koepka", "Bryson DeChambeau", "Cameron Young", "Collin Morikawa", "Corey Conners", "Hideki Matsuyama", "Jason Day", "Jon Rahm", "Justin Thomas", "Keegan Bradley", "Ludvig Aberg", "Matt Fitzpatrick", "Max Homa", "Min Woo Lee", "Nicolai Hojgaard", "Patrick Cantlay", "Rory McIlroy", "Russell Henley", "Sahith Theegala", "Scottie Scheffler", "Shane Lowry", "Sungjae Im", "Tom Kim", "Tommy Fleetwood", "Tony Finau", "Tyrrell Hatton", "Viktor Hovland", "Xander Schauffele"], "models": [], "label_a": "Player A", "label_b": "Player B"}, "schemas": {"edge": {"models": [], "odds_sources": [{"id": "manual", "label": "Manual golf/data/odds.csv (+ matchups.csv / threeballs.csv)"}], "needs_sim_first": false, "options": [{"id": "calibrated", "label": "Calibrated", "default": true}, {"id": "market_blend", "label": "Market blend", "default": true}]}, "simulate": {"models": [], "default_sims": 50000, "sim_options": [10000, 50000, 100000], "field_based": true}, "predict": {"kind": "match", "names": ["Adam Scott", "Brian Harman", "Brooks Koepka", "Bryson DeChambeau", "Cameron Young", "Collin Morikawa", "Corey Conners", "Hideki Matsuyama", "Jason Day", "Jon Rahm", "Justin Thomas", "Keegan Bradley", "Ludvig Aberg", "Matt Fitzpatrick", "Max Homa", "Min Woo Lee", "Nicolai Hojgaard", "Patrick Cantlay", "Rory McIlroy", "Russell Henley", "Sahith Theegala", "Scottie Scheffler", "Shane Lowry", "Sungjae Im", "Tom Kim", "Tommy Fleetwood", "Tony Finau", "Tyrrell Hatton", "Viktor Hovland", "Xander Schauffele"], "models": [], "label_a": "Player A", "label_b": "Player B"}}}, {"id": "club_soccer", "name": "Club Soccer", "sport": "soccer", "capabilities": ["edge", "predict"], "predict_schema": {"kind": "match", "names": ["AC Milan", "AC Sparta Praha", "AFC Ajax", "AFC Wimbledon", "APOEL Nikosia", "AZ Alkmaar", "Aberdeen", "Accrington", "Airdrie Utd", "Ajaccio", "Alaves", "Albion Rvs", "Alloa", "Almeria", "Angers", "Annan Athletic", "Arbroath", "Arsenal", "Aston Villa", "Atalanta", "Athletic Bilbao", "Atletico Madrid", "Augsburg", "Auxerre", "Ayr", "BSC Young Boys", "Barcelona", "Barnet", "Barnsley", "Barrow", "Bayer Leverkusen", "Bayern Munich", "Betis", "Be\u015fikta\u015f", "Birmingham", "Blackburn", "Blackpool", "Bochum", "Bologna", "Bolton", "Bonnyrigg Rose", "Borac Banja Luka", "Borussia Dortmund", "Bournemouth", "Bradford", "Brentford", "Brest", "Brighton", "Bristol City", "Bristol Rvs", "Bromley", "Burnley", "Burton", "CS Petrocub", "Cadiz", "Cagliari", "Cambridge", "Cardiff", "Carlisle", "Celta", "Celtic", "Cercle Brugge", "Charlton", "Chelsea", "Cheltenham", "Chesterfield", "Clermont", "Club Brugge KV", "Clyde", "Colchester", "Como", "Cove Rangers", "Coventry", "Crawley Town", "Cremonese", "Crewe", "Crystal Palace", "Darmstadt", "Derby", "Dinamo Kiev", "Dinamo Minsk", "Djurg\u00e5rdens IF", "Doncaster", "Dumbarton", "Dundee", "Dundee United", "Dunfermline", "East Fife", "East Kilbride", "Edinburgh City", "Eintracht Frankfurt", "Elche", "Elgin", "Empoli", "Espanol", "Everton", "Exeter", "FC Edinburgh", "FC Koln", "FC K\u00f8benhavn", "FC Lugano", "FC Midtjylland", "FC Noah", "FC Porto", "FC Red Bull Salzburg", "FC St. Gallen", "FC Twente", "FCSB", "FK Astana", "FK Bod\u00f8/Glimt", "FK Crvena Zvezda", "FK Kairat", "FK Mlad\u00e1 Boleslav", "FK RFS", "FK Shakhtar Donetsk", "Falkirk", "Fenerbah\u00e7e", "Ferencv\u00e1rosi TC", "Feyenoord Rotterdam", "Fiorentina", "Fleetwood Town", "Forest Green", "Forfar", "Freiburg", "Frosinone", "Fulham", "GNK Dinamo Zagreb", "Galatasaray", "Galatasaray SK", "Genoa", "Getafe", "Gillingham", "Girona", "Granada", "Grimsby", "HJK Helsinki", "Hamburg", "Hamilton", "Harrogate", "Hartlepool", "Heart of Midlothian", "Hearts", "Heidenheim", "Hertha", "Hibernian", "Hoffenheim", "Holstein Kiel", "Huddersfield", "Hull", "IF Elfsborg", "Inter", "Inverness C", "Ipswich", "Jagiellonia Bia\u0142ystok", "Juventus", "KAA Gent", "Kelty Hearts", "Kilmarnock", "LASK", "Larne FC", "Las Palmas", "Lazio", "Le Havre", "Lecce", "Leeds", "Leganes", "Legia Warszawa", "Leicester", "Lens", "Levante", "Leyton Orient", "Lille", "Lincoln", "Liverpool", "Livingston", "Lorient", "Luton", "Lyon", "M'gladbach", "Maccabi Tel Aviv", "Mainz", "Mallorca", "Malm\u00f6 FF", "Manchester City", "Manchester United", "Mansfield", "Marseille", "Metz", "Middlesbrough", "Millwall", "Milton Keynes Dons", "Molde FK", "Monaco", "Montpellier", "Montrose", "Monza", "Morecambe", "Morton", "Motherwell", "NK Celje", "Nantes", "Napoli", "Newcastle United", "Newport County", "Nice", "Northampton", "Norwich", "Nottingham Forest", "Notts County", "Oldham", "Olimpija Ljubljana", "Olympiakos Piraeus", "Omonia Nikosia", "Osasuna", "Oviedo", "Oxford", "PAE Olympiakos SFP", "PAOK Saloniki", "PFC Ludogorets Razgrad", "PSV", "Panathinaikos", "Paphos FC", "Paris FC", "Paris Saint-Germain", "Parma", "Partick", "Peterboro", "Peterhead", "Pisa", "Plymouth", "Port Vale", "Portsmouth", "Preston", "QPR", "Qaraba\u011f A\u011fdam FK", "Qaraba\u011f FK", "Queen of Sth", "Queens Park", "RB Leipzig", "RSC Anderlecht", "Raith Rvs", "Rangers", "Rapid Wien", "Reading", "Real Madrid", "Real Sociedad", "Reims", "Rennes", "Rochdale", "Roma", "Ross County", "Rotherham", "Royale Union Saint-Gilloise", "SK Slavia Praha", "SK Sturm Graz", "Salernitana", "Salford", "Sampdoria", "Sassuolo", "Schalke 04", "Sevilla", "Shamrock Rovers", "Sheffield Utd", "Sheffield Weds", "Shrewsbury", "Slavia Praha", "Southampton", "Spartans", "Spezia", "Sport Lisboa e Benfica", "Sporting Braga", "Sporting Clube de Portugal", "St Etienne", "St Johnstone", "St Mirren", "St Pauli", "Stenhousemuir", "Stevenage", "Stirling", "Stockport", "Stoke", "Stranraer", "Strasbourg", "Stuttgart", "Sunderland", "Sutton", "Swansea", "Swindon", "TSC Ba\u010dka Topola", "The New Saints", "Torino", "Tottenham", "Toulouse", "Tranmere", "Troyes", "Udinese", "Union Berlin", "Union Saint-Gilloise", "Valencia", "Valladolid", "Vallecano", "Venezia", "Verona", "Viktoria Plze\u0148", "Villarreal", "Vit\u00f3ria Guimar\u00e3es", "V\u00edkingur Reykjav\u00edk", "Walsall", "Watford", "Werder Bremen", "West Brom", "West Ham", "Wigan", "Wolfsburg", "Wolverhampton", "Wrexham", "Wycombe", "\u0130stanbul Ba\u015fak\u015fehir", "\u0160K Slovan Bratislava"], "models": ["ensemble", "goals", "elo"], "supports_home": false, "neutral_toggle": true, "team_label": "Club", "filters": [{"id": "competition", "label": "Competition", "options": ["", "Premier League", "Championship", "League One", "League Two", "FA Cup", "EFL Cup", "Scottish Premiership", "Scottish Championship", "Scottish League One", "Scottish League Two", "Scottish Cup", "Scottish League Cup", "Bundesliga", "DFB-Pokal", "Serie A", "Coppa Italia", "Ligue 1", "Coupe de France", "La Liga", "Copa del Rey", "Champions League", "Europa League", "Conference League", "UEFA Super Cup"]}, {"id": "season", "label": "Season", "options": ["", "2027", "2026", "2025", "2024", "2023", "2022"]}, {"id": "date_from", "label": "From", "type": "date"}, {"id": "date_to", "label": "To", "type": "date"}]}, "schemas": {"edge": {"models": ["ensemble", "goals", "elo"], "odds_sources": [{"id": "manual", "label": "Manual club_soccer/data/odds.csv"}, {"id": "api", "label": "API-Football odds"}, {"id": "the-odds-api", "label": "The Odds API"}], "has_template": true, "filters": [{"id": "competition", "label": "Competition", "options": ["", "Premier League", "Championship", "League One", "League Two", "FA Cup", "EFL Cup", "Scottish Premiership", "Scottish Championship", "Scottish League One", "Scottish League Two", "Scottish Cup", "Scottish League Cup", "Bundesliga", "DFB-Pokal", "Serie A", "Coppa Italia", "Ligue 1", "Coupe de France", "La Liga", "Copa del Rey", "Champions League", "Europa League", "Conference League", "UEFA Super Cup"]}, {"id": "season", "label": "Season", "options": ["", "2027", "2026", "2025", "2024", "2023", "2022"]}, {"id": "date_from", "label": "From", "type": "date"}, {"id": "date_to", "label": "To", "type": "date"}]}, "predict": {"kind": "match", "names": ["AC Milan", "AC Sparta Praha", "AFC Ajax", "AFC Wimbledon", "APOEL Nikosia", "AZ Alkmaar", "Aberdeen", "Accrington", "Airdrie Utd", "Ajaccio", "Alaves", "Albion Rvs", "Alloa", "Almeria", "Angers", "Annan Athletic", "Arbroath", "Arsenal", "Aston Villa", "Atalanta", "Athletic Bilbao", "Atletico Madrid", "Augsburg", "Auxerre", "Ayr", "BSC Young Boys", "Barcelona", "Barnet", "Barnsley", "Barrow", "Bayer Leverkusen", "Bayern Munich", "Betis", "Be\u015fikta\u015f", "Birmingham", "Blackburn", "Blackpool", "Bochum", "Bologna", "Bolton", "Bonnyrigg Rose", "Borac Banja Luka", "Borussia Dortmund", "Bournemouth", "Bradford", "Brentford", "Brest", "Brighton", "Bristol City", "Bristol Rvs", "Bromley", "Burnley", "Burton", "CS Petrocub", "Cadiz", "Cagliari", "Cambridge", "Cardiff", "Carlisle", "Celta", "Celtic", "Cercle Brugge", "Charlton", "Chelsea", "Cheltenham", "Chesterfield", "Clermont", "Club Brugge KV", "Clyde", "Colchester", "Como", "Cove Rangers", "Coventry", "Crawley Town", "Cremonese", "Crewe", "Crystal Palace", "Darmstadt", "Derby", "Dinamo Kiev", "Dinamo Minsk", "Djurg\u00e5rdens IF", "Doncaster", "Dumbarton", "Dundee", "Dundee United", "Dunfermline", "East Fife", "East Kilbride", "Edinburgh City", "Eintracht Frankfurt", "Elche", "Elgin", "Empoli", "Espanol", "Everton", "Exeter", "FC Edinburgh", "FC Koln", "FC K\u00f8benhavn", "FC Lugano", "FC Midtjylland", "FC Noah", "FC Porto", "FC Red Bull Salzburg", "FC St. Gallen", "FC Twente", "FCSB", "FK Astana", "FK Bod\u00f8/Glimt", "FK Crvena Zvezda", "FK Kairat", "FK Mlad\u00e1 Boleslav", "FK RFS", "FK Shakhtar Donetsk", "Falkirk", "Fenerbah\u00e7e", "Ferencv\u00e1rosi TC", "Feyenoord Rotterdam", "Fiorentina", "Fleetwood Town", "Forest Green", "Forfar", "Freiburg", "Frosinone", "Fulham", "GNK Dinamo Zagreb", "Galatasaray", "Galatasaray SK", "Genoa", "Getafe", "Gillingham", "Girona", "Granada", "Grimsby", "HJK Helsinki", "Hamburg", "Hamilton", "Harrogate", "Hartlepool", "Heart of Midlothian", "Hearts", "Heidenheim", "Hertha", "Hibernian", "Hoffenheim", "Holstein Kiel", "Huddersfield", "Hull", "IF Elfsborg", "Inter", "Inverness C", "Ipswich", "Jagiellonia Bia\u0142ystok", "Juventus", "KAA Gent", "Kelty Hearts", "Kilmarnock", "LASK", "Larne FC", "Las Palmas", "Lazio", "Le Havre", "Lecce", "Leeds", "Leganes", "Legia Warszawa", "Leicester", "Lens", "Levante", "Leyton Orient", "Lille", "Lincoln", "Liverpool", "Livingston", "Lorient", "Luton", "Lyon", "M'gladbach", "Maccabi Tel Aviv", "Mainz", "Mallorca", "Malm\u00f6 FF", "Manchester City", "Manchester United", "Mansfield", "Marseille", "Metz", "Middlesbrough", "Millwall", "Milton Keynes Dons", "Molde FK", "Monaco", "Montpellier", "Montrose", "Monza", "Morecambe", "Morton", "Motherwell", "NK Celje", "Nantes", "Napoli", "Newcastle United", "Newport County", "Nice", "Northampton", "Norwich", "Nottingham Forest", "Notts County", "Oldham", "Olimpija Ljubljana", "Olympiakos Piraeus", "Omonia Nikosia", "Osasuna", "Oviedo", "Oxford", "PAE Olympiakos SFP", "PAOK Saloniki", "PFC Ludogorets Razgrad", "PSV", "Panathinaikos", "Paphos FC", "Paris FC", "Paris Saint-Germain", "Parma", "Partick", "Peterboro", "Peterhead", "Pisa", "Plymouth", "Port Vale", "Portsmouth", "Preston", "QPR", "Qaraba\u011f A\u011fdam FK", "Qaraba\u011f FK", "Queen of Sth", "Queens Park", "RB Leipzig", "RSC Anderlecht", "Raith Rvs", "Rangers", "Rapid Wien", "Reading", "Real Madrid", "Real Sociedad", "Reims", "Rennes", "Rochdale", "Roma", "Ross County", "Rotherham", "Royale Union Saint-Gilloise", "SK Slavia Praha", "SK Sturm Graz", "Salernitana", "Salford", "Sampdoria", "Sassuolo", "Schalke 04", "Sevilla", "Shamrock Rovers", "Sheffield Utd", "Sheffield Weds", "Shrewsbury", "Slavia Praha", "Southampton", "Spartans", "Spezia", "Sport Lisboa e Benfica", "Sporting Braga", "Sporting Clube de Portugal", "St Etienne", "St Johnstone", "St Mirren", "St Pauli", "Stenhousemuir", "Stevenage", "Stirling", "Stockport", "Stoke", "Stranraer", "Strasbourg", "Stuttgart", "Sunderland", "Sutton", "Swansea", "Swindon", "TSC Ba\u010dka Topola", "The New Saints", "Torino", "Tottenham", "Toulouse", "Tranmere", "Troyes", "Udinese", "Union Berlin", "Union Saint-Gilloise", "Valencia", "Valladolid", "Vallecano", "Venezia", "Verona", "Viktoria Plze\u0148", "Villarreal", "Vit\u00f3ria Guimar\u00e3es", "V\u00edkingur Reykjav\u00edk", "Walsall", "Watford", "Werder Bremen", "West Brom", "West Ham", "Wigan", "Wolfsburg", "Wolverhampton", "Wrexham", "Wycombe", "\u0130stanbul Ba\u015fak\u015fehir", "\u0160K Slovan Bratislava"], "models": ["ensemble", "goals", "elo"], "supports_home": false, "neutral_toggle": true, "team_label": "Club", "filters": [{"id": "competition", "label": "Competition", "options": ["", "Premier League", "Championship", "League One", "League Two", "FA Cup", "EFL Cup", "Scottish Premiership", "Scottish Championship", "Scottish League One", "Scottish League Two", "Scottish Cup", "Scottish League Cup", "Bundesliga", "DFB-Pokal", "Serie A", "Coppa Italia", "Ligue 1", "Coupe de France", "La Liga", "Copa del Rey", "Champions League", "Europa League", "Conference League", "UEFA Super Cup"]}, {"id": "season", "label": "Season", "options": ["", "2027", "2026", "2025", "2024", "2023", "2022"]}, {"id": "date_from", "label": "From", "type": "date"}, {"id": "date_to", "label": "To", "type": "date"}]}}}]}, "dashboard": {"generated": "2026-06-15", "bankroll": {"bankroll": 115.38, "peak": 126.26, "start": 100.0, "net_pnl": 18.4, "open_stake": 11.84, "open_count": 8, "settled_count": 16, "won": 6, "roi": 0.3897, "hit_rate": 0.375, "curve": [{"i": 0, "v": 100.0}, {"i": 1, "v": 104.13}, {"i": 2, "v": 114.13}, {"i": 3, "v": 111.35}, {"i": 4, "v": 102.91}, {"i": 5, "v": 98.25}, {"i": 6, "v": 122.39}, {"i": 7, "v": 119.71}, {"i": 8, "v": 116.41}, {"i": 9, "v": 126.26}, {"i": 10, "v": 125.24}, {"i": 11, "v": 124.24}, {"i": 12, "v": 123.24}, {"i": 13, "v": 116.45}, {"i": 14, "v": 116.78}, {"i": 15, "v": 116.05}, {"i": 16, "v": 115.38}], "by_sport": [{"sport": "golf", "open": 0, "settled": 3, "net_pnl": -3.02}, {"sport": "soccer", "open": 8, "settled": 13, "net_pnl": 21.42}]}, "clv": [], "calibration": {"home": [{"x": 0.0005717882851190874, "y": 0.0}, {"x": 0.008108366661956247, "y": 0.0}, {"x": 0.014741859149784792, "y": 0.01694915254237288}, {"x": 0.020523586190800476, "y": 0.01694915254237288}, {"x": 0.024404434177903937, "y": 0.01694915254237288}, {"x": 0.03284444153451874, "y": 0.01694915254237288}, {"x": 0.03821768623856688, "y": 0.043478260869565216}, {"x": 0.04501572292929036, "y": 0.045454545454545456}, {"x": 0.053374148336300414, "y": 0.045454545454545456}, {"x": 0.05744437491153204, "y": 0.045454545454545456}, {"x": 0.06387148136791151, "y": 0.04878048780487805}, {"x": 0.06664428063091506, "y": 0.04878048780487805}, {"x": 0.0725104500093093, "y": 0.04878048780487805}, {"x": 0.07481879458720518, "y": 0.058823529411764705}, {"x": 0.07989445184815033, "y": 0.09090909090909091}, {"x": 0.08406007714209712, "y": 0.09523809523809523}, {"x": 0.08761616135857447, "y": 0.11353711790393013}, {"x": 0.09182688217223717, "y": 0.11353711790393013}, {"x": 0.09523981299828305, "y": 0.11353711790393013}, {"x": 0.09812982741002398, "y": 0.11353711790393013}, {"x": 0.10353950914862073, "y": 0.11353711790393013}, {"x": 0.1074586825148797, "y": 0.11353711790393013}, {"x": 0.11118475444905446, "y": 0.11353711790393013}, {"x": 0.11256139162215045, "y": 0.11353711790393013}, {"x": 0.11965028967294378, "y": 0.11353711790393013}, {"x": 0.12306850072634451, "y": 0.11353711790393013}, {"x": 0.12535101300003704, "y": 0.11353711790393013}, {"x": 0.13200186436672212, "y": 0.11353711790393013}, {"x": 0.13331933065272294, "y": 0.11353711790393013}, {"x": 0.1352052670099983, "y": 0.11353711790393013}, {"x": 0.1384750175827425, "y": 0.11353711790393013}, {"x": 0.14128138203445, "y": 0.11570247933884298}, {"x": 0.1447032285642303, "y": 0.11570247933884298}, {"x": 0.14651354363808392, "y": 0.11570247933884298}, {"x": 0.15034257290133207, "y": 0.11570247933884298}, {"x": 0.1520867568105696, "y": 0.11570247933884298}, {"x": 0.155050746356791, "y": 0.11570247933884298}, {"x": 0.1593675136970953, "y": 0.11570247933884298}, {"x": 0.1615419930106456, "y": 0.11570247933884298}, {"x": 0.16391724910991212, "y": 0.14}, {"x": 0.16658579940869994, "y": 0.14}, {"x": 0.1689847222982482, "y": 0.14}, {"x": 0.1712548667229289, "y": 0.15827338129496402}, {"x": 0.17326266003366797, "y": 0.15827338129496402}, {"x": 0.17639405311850348, "y": 0.15827338129496402}, {"x": 0.1798894416016783, "y": 0.15827338129496402}, {"x": 0.18236529346203817, "y": 0.15827338129496402}, {"x": 0.18665913098155082, "y": 0.15827338129496402}, {"x": 0.18937753319137665, "y": 0.15827338129496402}, {"x": 0.19371421236331782, "y": 0.15827338129496402}, {"x": 0.1968358580894272, "y": 0.15827338129496402}, {"x": 0.2010313670226209, "y": 0.17721518987341772}, {"x": 0.20314221377014396, "y": 0.17721518987341772}, {"x": 0.20564752393757812, "y": 0.17721518987341772}, {"x": 0.20896194542795643, "y": 0.17721518987341772}, {"x": 0.2119688158916731, "y": 0.17721518987341772}, {"x": 0.21438356450570495, "y": 0.17721518987341772}, {"x": 0.21739587387329729, "y": 0.21014492753623187}, {"x": 0.2200980136638973, "y": 0.21014492753623187}, {"x": 0.22242299367035737, "y": 0.21014492753623187}, {"x": 0.2247252483924518, "y": 0.21014492753623187}, {"x": 0.22703201951295127, "y": 0.21014492753623187}, {"x": 0.22898186727141343, "y": 0.21014492753623187}, {"x": 0.23310065463010368, "y": 0.21014492753623187}, {"x": 0.23679757024253145, "y": 0.21014492753623187}, {"x": 0.24027714921725868, "y": 0.21014492753623187}, {"x": 0.24308866742552024, "y": 0.25}, {"x": 0.24651401996144426, "y": 0.27184466019417475}, {"x": 0.24809770021465843, "y": 0.27184466019417475}, {"x": 0.250855400991393, "y": 0.27184466019417475}, {"x": 0.25230654190553786, "y": 0.27184466019417475}, {"x": 0.2554866203088013, "y": 0.27184466019417475}, {"x": 0.2574535328946062, "y": 0.27184466019417475}, {"x": 0.25960186795984763, "y": 0.3}, {"x": 0.26134670216611955, "y": 0.3}, {"x": 0.26604387577865707, "y": 0.3}, {"x": 0.26885084503646006, "y": 0.3}, {"x": 0.27123224457736606, "y": 0.3}, {"x": 0.2741490610000814, "y": 0.3}, {"x": 0.27668238507813014, "y": 0.3}, {"x": 0.2792423193204339, "y": 0.3}, {"x": 0.2806490909548075, "y": 0.3}, {"x": 0.28299731781113835, "y": 0.3}, {"x": 0.28519153622309146, "y": 0.3}, {"x": 0.2872703443360941, "y": 0.3}, {"x": 0.28917513011915674, "y": 0.3}, {"x": 0.2917583433237374, "y": 0.3}, {"x": 0.29385828052286467, "y": 0.3}, {"x": 0.29621911074082385, "y": 0.3}, {"x": 0.2981620796470768, "y": 0.3}, {"x": 0.302158870555844, "y": 0.3}, {"x": 0.30499047248525496, "y": 0.3}, {"x": 0.306894009325836, "y": 0.3}, {"x": 0.31048362054623146, "y": 0.3}, {"x": 0.3129071022120259, "y": 0.3}, {"x": 0.314877110183418, "y": 0.3}, {"x": 0.3168821708507901, "y": 0.3}, {"x": 0.3210323117687747, "y": 0.3}, {"x": 0.32262695939173885, "y": 0.3}, {"x": 0.3245919598090976, "y": 0.3076923076923077}, {"x": 0.3278865560713141, "y": 0.36046511627906974}, {"x": 0.3296268387561897, "y": 0.36046511627906974}, {"x": 0.33204125415641844, "y": 0.36046511627906974}, {"x": 0.33510377833843824, "y": 0.36046511627906974}, {"x": 0.3377368256421784, "y": 0.36046511627906974}, {"x": 0.3394950320253886, "y": 0.36538461538461536}, {"x": 0.3415664034128393, "y": 0.36538461538461536}, {"x": 0.3440219429904843, "y": 0.36538461538461536}, {"x": 0.3467432451898014, "y": 0.36538461538461536}, {"x": 0.350133196143186, "y": 0.36538461538461536}, {"x": 0.35172263656416014, "y": 0.36538461538461536}, {"x": 0.354024692049812, "y": 0.36538461538461536}, {"x": 0.35570185654966446, "y": 0.36538461538461536}, {"x": 0.35776119409291857, "y": 0.36538461538461536}, {"x": 0.3594760423433684, "y": 0.36538461538461536}, {"x": 0.3607949540204292, "y": 0.36538461538461536}, {"x": 0.3624135389149785, "y": 0.4146341463414634}, {"x": 0.3658556202831173, "y": 0.4146341463414634}, {"x": 0.3694215085023416, "y": 0.4146341463414634}, {"x": 0.37173985382011726, "y": 0.4146341463414634}, {"x": 0.37388414685269344, "y": 0.4146341463414634}, {"x": 0.37654417183817446, "y": 0.43}, {"x": 0.3788041644898389, "y": 0.43}, {"x": 0.3816577574259912, "y": 0.43}, {"x": 0.38429281233668566, "y": 0.43}, {"x": 0.386704706508457, "y": 0.43}, {"x": 0.38823703189783987, "y": 0.43}, {"x": 0.3910579526136523, "y": 0.43}, {"x": 0.39387197216761893, "y": 0.47216035634743875}, {"x": 0.3960662756792579, "y": 0.47216035634743875}, {"x": 0.3981610709154051, "y": 0.47216035634743875}, {"x": 0.3999619044302795, "y": 0.47216035634743875}, {"x": 0.40152290371998484, "y": 0.47216035634743875}, {"x": 0.40355169018024384, "y": 0.47216035634743875}, {"x": 0.4053044670699468, "y": 0.47216035634743875}, {"x": 0.4077472448783712, "y": 0.47216035634743875}, {"x": 0.40989732580720417, "y": 0.47216035634743875}, {"x": 0.4123226436112793, "y": 0.47216035634743875}, {"x": 0.4150659569045123, "y": 0.47216035634743875}, {"x": 0.41703939385229505, "y": 0.47216035634743875}, {"x": 0.4192824418263087, "y": 0.47216035634743875}, {"x": 0.42229087609365895, "y": 0.47216035634743875}, {"x": 0.42545045227927025, "y": 0.47216035634743875}, {"x": 0.4276479304983699, "y": 0.47216035634743875}, {"x": 0.42952812930558637, "y": 0.47216035634743875}, {"x": 0.4322133010828256, "y": 0.47216035634743875}, {"x": 0.43360952805583197, "y": 0.47216035634743875}, {"x": 0.4356233579048362, "y": 0.47216035634743875}, {"x": 0.43789328102744923, "y": 0.47216035634743875}, {"x": 0.4402063499533687, "y": 0.47216035634743875}, {"x": 0.44270221317453357, "y": 0.47216035634743875}, {"x": 0.4445042926983453, "y": 0.47216035634743875}, {"x": 0.44641281492545093, "y": 0.47216035634743875}, {"x": 0.44913588048519, "y": 0.47216035634743875}, {"x": 0.45041587492455903, "y": 0.47216035634743875}, {"x": 0.45343782372855346, "y": 0.47216035634743875}, {"x": 0.4551411026710749, "y": 0.47216035634743875}, {"x": 0.4574352300758736, "y": 0.5287610619469026}, {"x": 0.4595605890309552, "y": 0.5287610619469026}, {"x": 0.46226812522261196, "y": 0.5287610619469026}, {"x": 0.464549013222944, "y": 0.5287610619469026}, {"x": 0.4670222330655749, "y": 0.5287610619469026}, {"x": 0.4703516081234682, "y": 0.5287610619469026}, {"x": 0.47221486162213666, "y": 0.5287610619469026}, {"x": 0.4750028268530012, "y": 0.5287610619469026}, {"x": 0.4782977429448217, "y": 0.5287610619469026}, {"x": 0.47991529564736574, "y": 0.5287610619469026}, {"x": 0.48280133933237, "y": 0.5287610619469026}, {"x": 0.4844233815033948, "y": 0.5287610619469026}, {"x": 0.4859230888237557, "y": 0.5287610619469026}, {"x": 0.4879392572030462, "y": 0.5287610619469026}, {"x": 0.49121509054772516, "y": 0.5287610619469026}, {"x": 0.49387607386053656, "y": 0.5287610619469026}, {"x": 0.49711980795475885, "y": 0.5287610619469026}, {"x": 0.4998672906872314, "y": 0.5287610619469026}, {"x": 0.502195390906051, "y": 0.5287610619469026}, {"x": 0.5041638382260605, "y": 0.5287610619469026}, {"x": 0.5076674988391525, "y": 0.5287610619469026}, {"x": 0.5107239990949975, "y": 0.5287610619469026}, {"x": 0.5141501231530975, "y": 0.5287610619469026}, {"x": 0.5160327141528092, "y": 0.5287610619469026}, {"x": 0.5182488349924734, "y": 0.5287610619469026}, {"x": 0.5206193509689396, "y": 0.5287610619469026}, {"x": 0.5237653920191577, "y": 0.5287610619469026}, {"x": 0.5270501173699281, "y": 0.5287610619469026}, {"x": 0.5294112703433552, "y": 0.5287610619469026}, {"x": 0.5318247934720105, "y": 0.5287610619469026}, {"x": 0.5336287632809463, "y": 0.5344827586206896}, {"x": 0.5358041626072718, "y": 0.5344827586206896}, {"x": 0.5377139968033189, "y": 0.5344827586206896}, {"x": 0.5400943750889128, "y": 0.5344827586206896}, {"x": 0.542194217680902, "y": 0.5932642487046632}, {"x": 0.5450657902013817, "y": 0.5932642487046632}, {"x": 0.5472164134747547, "y": 0.5932642487046632}, {"x": 0.5498384008994737, "y": 0.5932642487046632}, {"x": 0.5534457302153295, "y": 0.5932642487046632}, {"x": 0.5562420669815094, "y": 0.5932642487046632}, {"x": 0.5589319941628188, "y": 0.5932642487046632}, {"x": 0.5620153335191396, "y": 0.5932642487046632}, {"x": 0.5657553931143939, "y": 0.5932642487046632}, {"x": 0.5680317042156451, "y": 0.5932642487046632}, {"x": 0.570790638838817, "y": 0.5932642487046632}, {"x": 0.5729179167032754, "y": 0.5932642487046632}, {"x": 0.5750596485722794, "y": 0.5932642487046632}, {"x": 0.5780243469293274, "y": 0.5932642487046632}, {"x": 0.5800114428812658, "y": 0.5932642487046632}, {"x": 0.5827057986984716, "y": 0.5932642487046632}, {"x": 0.5856649899636657, "y": 0.5932642487046632}, {"x": 0.5877136397197747, "y": 0.5932642487046632}, {"x": 0.5913243228173044, "y": 0.5932642487046632}, {"x": 0.5935269416223735, "y": 0.5932642487046632}, {"x": 0.5963364646405649, "y": 0.5932642487046632}, {"x": 0.5988309824689623, "y": 0.5932642487046632}, {"x": 0.6022121750868502, "y": 0.5932642487046632}, {"x": 0.6044021902821984, "y": 0.5932642487046632}, {"x": 0.6076957493911341, "y": 0.5932642487046632}, {"x": 0.6126343586753343, "y": 0.6190476190476191}, {"x": 0.6170003484522679, "y": 0.641860465116279}, {"x": 0.6201751205955051, "y": 0.641860465116279}, {"x": 0.6236257350632435, "y": 0.641860465116279}, {"x": 0.626140684953707, "y": 0.641860465116279}, {"x": 0.6289202480785197, "y": 0.641860465116279}, {"x": 0.6306748030622102, "y": 0.641860465116279}, {"x": 0.6331976629200193, "y": 0.641860465116279}, {"x": 0.6369402484447928, "y": 0.641860465116279}, {"x": 0.6396486213920598, "y": 0.641860465116279}, {"x": 0.6433608532573369, "y": 0.641860465116279}, {"x": 0.6458717881679489, "y": 0.641860465116279}, {"x": 0.6481619092069509, "y": 0.641860465116279}, {"x": 0.6512234644993824, "y": 0.641860465116279}, {"x": 0.654387880560534, "y": 0.641860465116279}, {"x": 0.6575071126273697, "y": 0.703125}, {"x": 0.6605223537830185, "y": 0.703125}, {"x": 0.6646324681928484, "y": 0.703125}, {"x": 0.6673613918938728, "y": 0.703125}, {"x": 0.6714752992664409, "y": 0.703125}, {"x": 0.673566220675786, "y": 0.7708333333333334}, {"x": 0.6762564625650036, "y": 0.7708333333333334}, {"x": 0.678293402268292, "y": 0.7708333333333334}, {"x": 0.6812448981408838, "y": 0.7934782608695652}, {"x": 0.6847923597516996, "y": 0.7934782608695652}, {"x": 0.6890127093523079, "y": 0.7934782608695652}, {"x": 0.6911849796417457, "y": 0.7934782608695652}, {"x": 0.6934651075501845, "y": 0.7934782608695652}, {"x": 0.6969080237447911, "y": 0.7934782608695652}, {"x": 0.7012804982021927, "y": 0.8006042296072508}, {"x": 0.7038981290025637, "y": 0.8006042296072508}, {"x": 0.7072352982464475, "y": 0.8006042296072508}, {"x": 0.7106121844482127, "y": 0.8006042296072508}, {"x": 0.7152401722977562, "y": 0.8006042296072508}, {"x": 0.719032081496052, "y": 0.8006042296072508}, {"x": 0.7219616850210973, "y": 0.8006042296072508}, {"x": 0.7252135331291212, "y": 0.8006042296072508}, {"x": 0.7288693413053698, "y": 0.8006042296072508}, {"x": 0.7319279305415932, "y": 0.8006042296072508}, {"x": 0.736414131850845, "y": 0.8006042296072508}, {"x": 0.739760843370706, "y": 0.8006042296072508}, {"x": 0.741500525382357, "y": 0.8006042296072508}, {"x": 0.7437664251054433, "y": 0.8006042296072508}, {"x": 0.748897256638045, "y": 0.8006042296072508}, {"x": 0.7516845176596487, "y": 0.8006042296072508}, {"x": 0.7563079532817745, "y": 0.8006042296072508}, {"x": 0.7599819981645165, "y": 0.8006042296072508}, {"x": 0.7644385639559392, "y": 0.8006042296072508}, {"x": 0.7675875106763287, "y": 0.8006042296072508}, {"x": 0.7727059430009686, "y": 0.8006042296072508}, {"x": 0.7788011992792188, "y": 0.8006042296072508}, {"x": 0.7821665797328414, "y": 0.8157894736842105}, {"x": 0.7871742563956525, "y": 0.8157894736842105}, {"x": 0.7911916802746308, "y": 0.865546218487395}, {"x": 0.7974209921116403, "y": 0.865546218487395}, {"x": 0.8009067901671764, "y": 0.865546218487395}, {"x": 0.8036632320599594, "y": 0.865546218487395}, {"x": 0.8066005766446304, "y": 0.865546218487395}, {"x": 0.811930614329271, "y": 0.865546218487395}, {"x": 0.8157582636944276, "y": 0.865546218487395}, {"x": 0.8196042247974916, "y": 0.865546218487395}, {"x": 0.8260279349200764, "y": 0.8955223880597015}, {"x": 0.8305440995302991, "y": 0.8955223880597015}, {"x": 0.8342774686077776, "y": 0.8955223880597015}, {"x": 0.8396066460450923, "y": 0.8955223880597015}, {"x": 0.8433932372922789, "y": 0.9019607843137255}, {"x": 0.8496071060366519, "y": 0.9019607843137255}, {"x": 0.8549298904703607, "y": 0.9019607843137255}, {"x": 0.8595361058496691, "y": 0.9019607843137255}, {"x": 0.8663786916661808, "y": 0.9019607843137255}, {"x": 0.8730561378532012, "y": 0.9019607843137255}, {"x": 0.8784776388097664, "y": 0.9019607843137255}, {"x": 0.8835188655921464, "y": 0.9259259259259259}, {"x": 0.8889350906048981, "y": 0.9259259259259259}, {"x": 0.8962699060185192, "y": 0.9393939393939394}, {"x": 0.9030940819457474, "y": 0.9393939393939394}, {"x": 0.9127416282191458, "y": 0.9647058823529412}, {"x": 0.9204027390349081, "y": 0.9647058823529412}, {"x": 0.932794134067567, "y": 0.9647058823529412}, {"x": 0.9422789911771834, "y": 0.9647058823529412}, {"x": 0.9535396435431858, "y": 0.9647058823529412}, {"x": 0.9695186942434839, "y": 1.0}, {"x": 0.9825371496627004, "y": 1.0}, {"x": 0.9987336285826633, "y": 1.0}], "draw": [{"x": 0.0011561601016795938, "y": 0.0}, {"x": 0.009028921297472806, "y": 0.0}, {"x": 0.020296363851234026, "y": 0.0}, {"x": 0.030184141140644084, "y": 0.028846153846153848}, {"x": 0.03835699799357038, "y": 0.028846153846153848}, {"x": 0.04286891876716574, "y": 0.028846153846153848}, {"x": 0.04891534076685404, "y": 0.028846153846153848}, {"x": 0.05488783077082485, "y": 0.028846153846153848}, {"x": 0.05992537996090003, "y": 0.028846153846153848}, {"x": 0.06373893004844398, "y": 0.028846153846153848}, {"x": 0.06777452033770004, "y": 0.045454545454545456}, {"x": 0.07093571234306065, "y": 0.045454545454545456}, {"x": 0.0763745282443509, "y": 0.045454545454545456}, {"x": 0.0807675091923971, "y": 0.05084745762711865}, {"x": 0.08427520748361, "y": 0.05084745762711865}, {"x": 0.08780644221878356, "y": 0.05084745762711865}, {"x": 0.09039538872563632, "y": 0.05084745762711865}, {"x": 0.0950237289324521, "y": 0.05263157894736842}, {"x": 0.09719913559346079, "y": 0.0625}, {"x": 0.09988500527741442, "y": 0.0625}, {"x": 0.10264108749447672, "y": 0.0625}, {"x": 0.10564004222489272, "y": 0.0625}, {"x": 0.10781807090017323, "y": 0.0625}, {"x": 0.11099368500325199, "y": 0.0625}, {"x": 0.11363518992406484, "y": 0.0625}, {"x": 0.11567636257635074, "y": 0.08823529411764706}, {"x": 0.1182130252809836, "y": 0.08823529411764706}, {"x": 0.12104460800538103, "y": 0.08823529411764706}, {"x": 0.12335995758458806, "y": 0.08823529411764706}, {"x": 0.12571002742935247, "y": 0.08823529411764706}, {"x": 0.12860387581496552, "y": 0.10975609756097561}, {"x": 0.13142447804724544, "y": 0.10975609756097561}, {"x": 0.13277869373751156, "y": 0.10975609756097561}, {"x": 0.1341896086649697, "y": 0.10975609756097561}, {"x": 0.13660682230257876, "y": 0.10975609756097561}, {"x": 0.13820849690409584, "y": 0.10975609756097561}, {"x": 0.13948257661466293, "y": 0.13424657534246576}, {"x": 0.14175485175166477, "y": 0.13424657534246576}, {"x": 0.14322360572972948, "y": 0.13424657534246576}, {"x": 0.1460503610840426, "y": 0.13424657534246576}, {"x": 0.1475881334793389, "y": 0.13424657534246576}, {"x": 0.14983418664724235, "y": 0.13424657534246576}, {"x": 0.15213470070467278, "y": 0.13424657534246576}, {"x": 0.15458506436002778, "y": 0.13424657534246576}, {"x": 0.1563668079948023, "y": 0.13424657534246576}, {"x": 0.15815438819379668, "y": 0.13424657534246576}, {"x": 0.1590907582732235, "y": 0.13424657534246576}, {"x": 0.16052797155837223, "y": 0.13424657534246576}, {"x": 0.1622484283903911, "y": 0.13424657534246576}, {"x": 0.16389121103103926, "y": 0.13424657534246576}, {"x": 0.1654339202550821, "y": 0.13424657534246576}, {"x": 0.16634837259181368, "y": 0.13424657534246576}, {"x": 0.1685026729809288, "y": 0.13424657534246576}, {"x": 0.1700719702955422, "y": 0.13424657534246576}, {"x": 0.17185065235302202, "y": 0.13424657534246576}, {"x": 0.17322796369300036, "y": 0.13424657534246576}, {"x": 0.1741316570778405, "y": 0.13424657534246576}, {"x": 0.17578010928330734, "y": 0.13424657534246576}, {"x": 0.1768065968506881, "y": 0.13424657534246576}, {"x": 0.1776597289863581, "y": 0.13424657534246576}, {"x": 0.1789211894788269, "y": 0.13424657534246576}, {"x": 0.18085302839840905, "y": 0.13424657534246576}, {"x": 0.18276404851236358, "y": 0.13424657534246576}, {"x": 0.18411092768179718, "y": 0.13424657534246576}, {"x": 0.18594315559059235, "y": 0.13424657534246576}, {"x": 0.1867445220883619, "y": 0.13424657534246576}, {"x": 0.1875796274133737, "y": 0.13424657534246576}, {"x": 0.1889425253828145, "y": 0.13424657534246576}, {"x": 0.19010085115760478, "y": 0.13424657534246576}, {"x": 0.19155790514408835, "y": 0.13424657534246576}, {"x": 0.19284438006485483, "y": 0.13424657534246576}, {"x": 0.1943327242058531, "y": 0.13424657534246576}, {"x": 0.19532343320944257, "y": 0.13424657534246576}, {"x": 0.19695160701618242, "y": 0.13424657534246576}, {"x": 0.19790169242577743, "y": 0.13424657534246576}, {"x": 0.19861750090474384, "y": 0.13424657534246576}, {"x": 0.1999968379750383, "y": 0.13424657534246576}, {"x": 0.20100100712825797, "y": 0.13424657534246576}, {"x": 0.20168103787153288, "y": 0.13424657534246576}, {"x": 0.20259922455226825, "y": 0.13424657534246576}, {"x": 0.20368048846130016, "y": 0.13424657534246576}, {"x": 0.2047488639858802, "y": 0.13424657534246576}, {"x": 0.20541286054384872, "y": 0.13424657534246576}, {"x": 0.2067075940780102, "y": 0.13424657534246576}, {"x": 0.20775943617094583, "y": 0.1693548387096774}, {"x": 0.20882258997532627, "y": 0.1693548387096774}, {"x": 0.20956972826374465, "y": 0.1693548387096774}, {"x": 0.21057279599043627, "y": 0.1693548387096774}, {"x": 0.21181899561240997, "y": 0.1693548387096774}, {"x": 0.2127948747981953, "y": 0.1693548387096774}, {"x": 0.2138642372609768, "y": 0.1693548387096774}, {"x": 0.21485112152197328, "y": 0.1693548387096774}, {"x": 0.21543441663795437, "y": 0.23255813953488372}, {"x": 0.21617147301904716, "y": 0.23255813953488372}, {"x": 0.21706743876428425, "y": 0.23255813953488372}, {"x": 0.21799885376478734, "y": 0.23255813953488372}, {"x": 0.21870589179006156, "y": 0.23255813953488372}, {"x": 0.21936977508296018, "y": 0.23255813953488372}, {"x": 0.22043699425418545, "y": 0.23255813953488372}, {"x": 0.22119319278096966, "y": 0.23255813953488372}, {"x": 0.22180984184030866, "y": 0.23255813953488372}, {"x": 0.222760666438996, "y": 0.23255813953488372}, {"x": 0.22372467620121714, "y": 0.23255813953488372}, {"x": 0.224694491927298, "y": 0.23255813953488372}, {"x": 0.2252273124065566, "y": 0.23255813953488372}, {"x": 0.22633132086223454, "y": 0.23255813953488372}, {"x": 0.22719563494690392, "y": 0.23255813953488372}, {"x": 0.22813857018139777, "y": 0.23255813953488372}, {"x": 0.22910554582855042, "y": 0.23255813953488372}, {"x": 0.2296224771748207, "y": 0.23255813953488372}, {"x": 0.23027507725836954, "y": 0.23255813953488372}, {"x": 0.23088238196438615, "y": 0.23255813953488372}, {"x": 0.23184202415061272, "y": 0.23255813953488372}, {"x": 0.23247794121344031, "y": 0.23255813953488372}, {"x": 0.23363169990920307, "y": 0.2413793103448276}, {"x": 0.23410739714809806, "y": 0.2413793103448276}, {"x": 0.23525209228111008, "y": 0.2624113475177305}, {"x": 0.23585908576698872, "y": 0.2624113475177305}, {"x": 0.2366684649286863, "y": 0.2624113475177305}, {"x": 0.2372671996823474, "y": 0.2624113475177305}, {"x": 0.23793033966765864, "y": 0.2624113475177305}, {"x": 0.23843947231588078, "y": 0.2624113475177305}, {"x": 0.2390958135212018, "y": 0.2624113475177305}, {"x": 0.23968677426481783, "y": 0.2624113475177305}, {"x": 0.24035242234316326, "y": 0.2624113475177305}, {"x": 0.24095995522638808, "y": 0.2624113475177305}, {"x": 0.24177180659181755, "y": 0.2624113475177305}, {"x": 0.24236701666591964, "y": 0.2624113475177305}, {"x": 0.24315465876838926, "y": 0.2624113475177305}, {"x": 0.2439923317972721, "y": 0.2624113475177305}, {"x": 0.24470213881124375, "y": 0.2624113475177305}, {"x": 0.24505429100527165, "y": 0.2624113475177305}, {"x": 0.24556324779881178, "y": 0.2624113475177305}, {"x": 0.24615158368151158, "y": 0.2624113475177305}, {"x": 0.24675125489716207, "y": 0.2624113475177305}, {"x": 0.24738341623788634, "y": 0.2624113475177305}, {"x": 0.24808212872203966, "y": 0.2624113475177305}, {"x": 0.24860235040505227, "y": 0.2624113475177305}, {"x": 0.2491419807902543, "y": 0.2624113475177305}, {"x": 0.24963646388559593, "y": 0.2624113475177305}, {"x": 0.25038202833998563, "y": 0.2624113475177305}, {"x": 0.2509676604826751, "y": 0.2624113475177305}, {"x": 0.25183957601345386, "y": 0.2624113475177305}, {"x": 0.2522641545440078, "y": 0.2624113475177305}, {"x": 0.2527294959720804, "y": 0.2624113475177305}, {"x": 0.2533648402727835, "y": 0.2624113475177305}, {"x": 0.25423650213428967, "y": 0.2624113475177305}, {"x": 0.25475528278913534, "y": 0.2624113475177305}, {"x": 0.25520501780397836, "y": 0.2624113475177305}, {"x": 0.25569579932129816, "y": 0.2624113475177305}, {"x": 0.25615032908477764, "y": 0.2624113475177305}, {"x": 0.2564725175220208, "y": 0.2624113475177305}, {"x": 0.25703122834657893, "y": 0.2624113475177305}, {"x": 0.2573939024281791, "y": 0.2624113475177305}, {"x": 0.2578839335185402, "y": 0.2624113475177305}, {"x": 0.2584277143385877, "y": 0.2624113475177305}, {"x": 0.25889229424817395, "y": 0.2624113475177305}, {"x": 0.2593121334615821, "y": 0.2624113475177305}, {"x": 0.25963515612615595, "y": 0.2624113475177305}, {"x": 0.2599349765557691, "y": 0.2624113475177305}, {"x": 0.26057406386283277, "y": 0.2624113475177305}, {"x": 0.26099289178638435, "y": 0.2624113475177305}, {"x": 0.2614787753757013, "y": 0.2624113475177305}, {"x": 0.2620036542164548, "y": 0.2624113475177305}, {"x": 0.2626738593181054, "y": 0.2624113475177305}, {"x": 0.26333423027082115, "y": 0.2624113475177305}, {"x": 0.2640871217562515, "y": 0.2624113475177305}, {"x": 0.2645927663026626, "y": 0.2624113475177305}, {"x": 0.26478477553594204, "y": 0.2624113475177305}, {"x": 0.26520205196470986, "y": 0.2624113475177305}, {"x": 0.26558974412796754, "y": 0.2624113475177305}, {"x": 0.2660717528502965, "y": 0.2624113475177305}, {"x": 0.26662442254654634, "y": 0.2624113475177305}, {"x": 0.2672027577447586, "y": 0.2624113475177305}, {"x": 0.26747567767396996, "y": 0.2624113475177305}, {"x": 0.26809491792426693, "y": 0.2624113475177305}, {"x": 0.268382400164631, "y": 0.2624113475177305}, {"x": 0.2688024296184086, "y": 0.2624113475177305}, {"x": 0.26934893002006266, "y": 0.2624113475177305}, {"x": 0.2698554195778148, "y": 0.2624113475177305}, {"x": 0.27022654860478657, "y": 0.2624113475177305}, {"x": 0.2705548020733881, "y": 0.26666666666666666}, {"x": 0.27087650786169526, "y": 0.26666666666666666}, {"x": 0.2713226702146786, "y": 0.26666666666666666}, {"x": 0.2716885668699822, "y": 0.26666666666666666}, {"x": 0.2722984785630328, "y": 0.26666666666666666}, {"x": 0.27260495914707217, "y": 0.26666666666666666}, {"x": 0.27316568945039343, "y": 0.2777777777777778}, {"x": 0.27340905443556984, "y": 0.2818991097922849}, {"x": 0.27379804609196656, "y": 0.2818991097922849}, {"x": 0.27415956020671106, "y": 0.2818991097922849}, {"x": 0.27444158739728874, "y": 0.2818991097922849}, {"x": 0.2751106362018546, "y": 0.2818991097922849}, {"x": 0.27545009370662765, "y": 0.2818991097922849}, {"x": 0.27587135470075774, "y": 0.2818991097922849}, {"x": 0.27631319486148376, "y": 0.2818991097922849}, {"x": 0.2766454160718068, "y": 0.2818991097922849}, {"x": 0.2768971499239955, "y": 0.2818991097922849}, {"x": 0.2771962651537151, "y": 0.2818991097922849}, {"x": 0.27756522756843727, "y": 0.2818991097922849}, {"x": 0.27787587750113324, "y": 0.2818991097922849}, {"x": 0.27816749738387114, "y": 0.2818991097922849}, {"x": 0.27861919557613246, "y": 0.2818991097922849}, {"x": 0.27897952598614284, "y": 0.2818991097922849}, {"x": 0.2794706831238414, "y": 0.2818991097922849}, {"x": 0.27994958547199683, "y": 0.2818991097922849}, {"x": 0.28030224353420696, "y": 0.2818991097922849}, {"x": 0.28062044135000463, "y": 0.2818991097922849}, {"x": 0.2809803932522743, "y": 0.2818991097922849}, {"x": 0.28130048489923776, "y": 0.2818991097922849}, {"x": 0.2816921499502727, "y": 0.2818991097922849}, {"x": 0.2819696128679633, "y": 0.2818991097922849}, {"x": 0.28232324817811993, "y": 0.2818991097922849}, {"x": 0.28266002013383595, "y": 0.2818991097922849}, {"x": 0.2829865443985895, "y": 0.2818991097922849}, {"x": 0.2831881210376629, "y": 0.2818991097922849}, {"x": 0.2835152266170585, "y": 0.2818991097922849}, {"x": 0.28379035275555203, "y": 0.2818991097922849}, {"x": 0.2840022807229711, "y": 0.2818991097922849}, {"x": 0.2842199506674057, "y": 0.2818991097922849}, {"x": 0.28454736611348413, "y": 0.2818991097922849}, {"x": 0.28477720480379765, "y": 0.2818991097922849}, {"x": 0.2851223706226539, "y": 0.2818991097922849}, {"x": 0.2855243016010506, "y": 0.2818991097922849}, {"x": 0.2857751993686434, "y": 0.2818991097922849}, {"x": 0.28601942168246053, "y": 0.2818991097922849}, {"x": 0.2863493086772225, "y": 0.2818991097922849}, {"x": 0.2865799766478625, "y": 0.2818991097922849}, {"x": 0.286805146054028, "y": 0.2818991097922849}, {"x": 0.28710570337279245, "y": 0.2818991097922849}, {"x": 0.2876032749289045, "y": 0.2818991097922849}, {"x": 0.28808534979572, "y": 0.2818991097922849}, {"x": 0.2883722335404742, "y": 0.2818991097922849}, {"x": 0.28872789018520456, "y": 0.3125}, {"x": 0.2890429908829925, "y": 0.3125}, {"x": 0.2894390030452526, "y": 0.323499491353001}, {"x": 0.2897454887110907, "y": 0.323499491353001}, {"x": 0.29002540773351954, "y": 0.323499491353001}, {"x": 0.2903729194766298, "y": 0.323499491353001}, {"x": 0.2906794387257987, "y": 0.323499491353001}, {"x": 0.2911321251666689, "y": 0.323499491353001}, {"x": 0.2913517481295096, "y": 0.323499491353001}, {"x": 0.2917079673377839, "y": 0.323499491353001}, {"x": 0.2920458276360284, "y": 0.323499491353001}, {"x": 0.2925245673846951, "y": 0.323499491353001}, {"x": 0.29280775504567547, "y": 0.323499491353001}, {"x": 0.2932608446043701, "y": 0.323499491353001}, {"x": 0.29343340869596, "y": 0.323499491353001}, {"x": 0.2938844957089587, "y": 0.323499491353001}, {"x": 0.29416702963886115, "y": 0.323499491353001}, {"x": 0.29461311651869637, "y": 0.323499491353001}, {"x": 0.2948979711907393, "y": 0.323499491353001}, {"x": 0.2953643075785888, "y": 0.323499491353001}, {"x": 0.2957523288684118, "y": 0.323499491353001}, {"x": 0.29615806604314565, "y": 0.323499491353001}, {"x": 0.29650129145361026, "y": 0.323499491353001}, {"x": 0.29694719394996644, "y": 0.323499491353001}, {"x": 0.29717554062247975, "y": 0.323499491353001}, {"x": 0.29756499698677863, "y": 0.323499491353001}, {"x": 0.29803162164123953, "y": 0.323499491353001}, {"x": 0.2983558124506749, "y": 0.323499491353001}, {"x": 0.2986340352839454, "y": 0.323499491353001}, {"x": 0.2990132075674719, "y": 0.323499491353001}, {"x": 0.2994019203459394, "y": 0.323499491353001}, {"x": 0.29994838537251256, "y": 0.323499491353001}, {"x": 0.3001981216714593, "y": 0.323499491353001}, {"x": 0.30068783322904274, "y": 0.323499491353001}, {"x": 0.30117855063001203, "y": 0.323499491353001}, {"x": 0.30149073916323926, "y": 0.323499491353001}, {"x": 0.3018797683586675, "y": 0.323499491353001}, {"x": 0.302299958673382, "y": 0.323499491353001}, {"x": 0.3026002137686635, "y": 0.323499491353001}, {"x": 0.3030568189019948, "y": 0.323499491353001}, {"x": 0.30364530721522554, "y": 0.323499491353001}, {"x": 0.30407031280950547, "y": 0.323499491353001}, {"x": 0.30461189621294993, "y": 0.323499491353001}, {"x": 0.3052830595054207, "y": 0.323499491353001}, {"x": 0.3058922274210564, "y": 0.323499491353001}, {"x": 0.3064937452705072, "y": 0.323499491353001}, {"x": 0.30694221775602337, "y": 0.323499491353001}, {"x": 0.3077126502566566, "y": 0.323499491353001}, {"x": 0.3083733069841288, "y": 0.323499491353001}, {"x": 0.3088622153957321, "y": 0.323499491353001}, {"x": 0.3095328395940694, "y": 0.323499491353001}, {"x": 0.3102742735107377, "y": 0.323499491353001}, {"x": 0.3115025757196123, "y": 0.323499491353001}, {"x": 0.3122630121973061, "y": 0.323499491353001}, {"x": 0.3130473171471361, "y": 0.323499491353001}, {"x": 0.3137958853661069, "y": 0.323499491353001}, {"x": 0.31456892820406895, "y": 0.323499491353001}, {"x": 0.3154087301451225, "y": 0.323499491353001}, {"x": 0.31658177615503613, "y": 0.323499491353001}, {"x": 0.31791281632587287, "y": 0.323499491353001}, {"x": 0.3192206552098581, "y": 0.323499491353001}, {"x": 0.32058467244573696, "y": 0.323499491353001}, {"x": 0.32244024107070934, "y": 0.323499491353001}, {"x": 0.3245520803237837, "y": 0.323499491353001}, {"x": 0.32795680293053187, "y": 0.323499491353001}, {"x": 0.33077302384645607, "y": 0.323499491353001}, {"x": 0.3490398376579613, "y": 1.0}], "away": [{"x": 0.00010907809111596363, "y": 0.0}, {"x": 0.002259034813266156, "y": 0.0}, {"x": 0.005270206084395303, "y": 0.0}, {"x": 0.00793331869374432, "y": 0.0}, {"x": 0.01053167123338168, "y": 0.0}, {"x": 0.01398893922177858, "y": 0.0}, {"x": 0.01683443491919565, "y": 0.0}, {"x": 0.019580285132883717, "y": 0.0}, {"x": 0.021864317174766792, "y": 0.0}, {"x": 0.023699769053527293, "y": 0.0}, {"x": 0.02557545417985807, "y": 0.0}, {"x": 0.02714493685058985, "y": 0.0}, {"x": 0.02873818237650439, "y": 0.0}, {"x": 0.03047205063421443, "y": 0.01639344262295082}, {"x": 0.03257108589715395, "y": 0.01639344262295082}, {"x": 0.034189276563332455, "y": 0.01639344262295082}, {"x": 0.03773303960491472, "y": 0.01639344262295082}, {"x": 0.03980135037589747, "y": 0.01639344262295082}, {"x": 0.041557997220242504, "y": 0.01639344262295082}, {"x": 0.04298598331745544, "y": 0.01639344262295082}, {"x": 0.045241596437323346, "y": 0.01639344262295082}, {"x": 0.04633147803792356, "y": 0.01639344262295082}, {"x": 0.04741108801934465, "y": 0.01639344262295082}, {"x": 0.048454908747175944, "y": 0.01639344262295082}, {"x": 0.049687202942817164, "y": 0.01639344262295082}, {"x": 0.05148786807733928, "y": 0.01639344262295082}, {"x": 0.05363348459435613, "y": 0.01639344262295082}, {"x": 0.05513445599946448, "y": 0.01639344262295082}, {"x": 0.056291026713942996, "y": 0.01639344262295082}, {"x": 0.057224515407695735, "y": 0.01639344262295082}, {"x": 0.059186174912371894, "y": 0.01639344262295082}, {"x": 0.060986803059978646, "y": 0.01639344262295082}, {"x": 0.06317997381174856, "y": 0.01639344262295082}, {"x": 0.06589084720810699, "y": 0.06419753086419754}, {"x": 0.06764235803048504, "y": 0.06419753086419754}, {"x": 0.07005780206359835, "y": 0.06419753086419754}, {"x": 0.07298509821244058, "y": 0.06419753086419754}, {"x": 0.07444456522257069, "y": 0.06419753086419754}, {"x": 0.07649881191462989, "y": 0.06419753086419754}, {"x": 0.07770056536201805, "y": 0.06419753086419754}, {"x": 0.07957564057503115, "y": 0.06419753086419754}, {"x": 0.08089363351968476, "y": 0.06419753086419754}, {"x": 0.08277666450111082, "y": 0.06419753086419754}, {"x": 0.08412928535340286, "y": 0.06419753086419754}, {"x": 0.08570341146193614, "y": 0.06419753086419754}, {"x": 0.08728413550734782, "y": 0.06419753086419754}, {"x": 0.0891179708780368, "y": 0.06419753086419754}, {"x": 0.09008248476126073, "y": 0.06419753086419754}, {"x": 0.09169073474368675, "y": 0.06419753086419754}, {"x": 0.09354356468026324, "y": 0.06419753086419754}, {"x": 0.09505838849007936, "y": 0.06419753086419754}, {"x": 0.09680963903419462, "y": 0.06419753086419754}, {"x": 0.09824822555330986, "y": 0.06419753086419754}, {"x": 0.09971427321795279, "y": 0.06419753086419754}, {"x": 0.10196596094263165, "y": 0.06419753086419754}, {"x": 0.10389435210009076, "y": 0.06419753086419754}, {"x": 0.1050863618083459, "y": 0.06419753086419754}, {"x": 0.10654648630024544, "y": 0.06419753086419754}, {"x": 0.10806322290424597, "y": 0.06419753086419754}, {"x": 0.10947836407793543, "y": 0.0761904761904762}, {"x": 0.11082200105783037, "y": 0.0761904761904762}, {"x": 0.11193708030523551, "y": 0.0761904761904762}, {"x": 0.1131393457995123, "y": 0.0761904761904762}, {"x": 0.11468196798627465, "y": 0.0761904761904762}, {"x": 0.11663455558616133, "y": 0.0761904761904762}, {"x": 0.11809483963279538, "y": 0.0761904761904762}, {"x": 0.11973706275457499, "y": 0.11244979919678715}, {"x": 0.12158054042465856, "y": 0.11244979919678715}, {"x": 0.12364886815078108, "y": 0.11244979919678715}, {"x": 0.12535632000845914, "y": 0.11244979919678715}, {"x": 0.1271111894378954, "y": 0.11244979919678715}, {"x": 0.12939432491849673, "y": 0.11244979919678715}, {"x": 0.13072268570267467, "y": 0.11244979919678715}, {"x": 0.13247851057449914, "y": 0.11244979919678715}, {"x": 0.13448566665690773, "y": 0.11244979919678715}, {"x": 0.1363218387782553, "y": 0.11244979919678715}, {"x": 0.13743432167582045, "y": 0.11244979919678715}, {"x": 0.13911223723987765, "y": 0.11244979919678715}, {"x": 0.14055009134218122, "y": 0.11244979919678715}, {"x": 0.14257524635908952, "y": 0.11244979919678715}, {"x": 0.14419840501773418, "y": 0.11244979919678715}, {"x": 0.14553908424620313, "y": 0.11244979919678715}, {"x": 0.14720500605458522, "y": 0.1206896551724138}, {"x": 0.14945828458189353, "y": 0.1206896551724138}, {"x": 0.1531892685978281, "y": 0.1206896551724138}, {"x": 0.15427213809771628, "y": 0.1206896551724138}, {"x": 0.15564392398613672, "y": 0.13333333333333333}, {"x": 0.15758898483254336, "y": 0.13333333333333333}, {"x": 0.1587357934789686, "y": 0.13333333333333333}, {"x": 0.16081728531785539, "y": 0.13333333333333333}, {"x": 0.16292872014888504, "y": 0.13333333333333333}, {"x": 0.16450726003106625, "y": 0.13333333333333333}, {"x": 0.16688196185135767, "y": 0.13333333333333333}, {"x": 0.16853598668077796, "y": 0.13333333333333333}, {"x": 0.17049898726712398, "y": 0.13333333333333333}, {"x": 0.17182430408461385, "y": 0.13333333333333333}, {"x": 0.1727469511819319, "y": 0.13333333333333333}, {"x": 0.17431800711793155, "y": 0.13333333333333333}, {"x": 0.17528209582690657, "y": 0.13333333333333333}, {"x": 0.17779816392170855, "y": 0.13333333333333333}, {"x": 0.17928045399182074, "y": 0.13333333333333333}, {"x": 0.18089088614194632, "y": 0.13333333333333333}, {"x": 0.18302192351867685, "y": 0.13333333333333333}, {"x": 0.1848446973037145, "y": 0.13333333333333333}, {"x": 0.1866217737593225, "y": 0.13333333333333333}, {"x": 0.1882022503561246, "y": 0.13333333333333333}, {"x": 0.19138366345410193, "y": 0.13333333333333333}, {"x": 0.19293119775959194, "y": 0.13333333333333333}, {"x": 0.19410801627261118, "y": 0.13333333333333333}, {"x": 0.1959745813362739, "y": 0.13333333333333333}, {"x": 0.19740768875326542, "y": 0.13333333333333333}, {"x": 0.19885994766695933, "y": 0.13333333333333333}, {"x": 0.20077194116999436, "y": 0.14285714285714285}, {"x": 0.20278939711616384, "y": 0.2014388489208633}, {"x": 0.20463824455998753, "y": 0.2014388489208633}, {"x": 0.20617105869896563, "y": 0.2014388489208633}, {"x": 0.20781835031135498, "y": 0.2014388489208633}, {"x": 0.2088703692876473, "y": 0.2014388489208633}, {"x": 0.21034404299002518, "y": 0.2014388489208633}, {"x": 0.2122490036357793, "y": 0.2014388489208633}, {"x": 0.21379385810616527, "y": 0.2014388489208633}, {"x": 0.2148439726218064, "y": 0.2014388489208633}, {"x": 0.2162931840133866, "y": 0.20229885057471264}, {"x": 0.21865189846348232, "y": 0.20229885057471264}, {"x": 0.22104884632100694, "y": 0.20229885057471264}, {"x": 0.22281992566380948, "y": 0.20229885057471264}, {"x": 0.22473695123385773, "y": 0.20229885057471264}, {"x": 0.22583668335214854, "y": 0.20229885057471264}, {"x": 0.22855174505626985, "y": 0.20229885057471264}, {"x": 0.23031369269913363, "y": 0.20229885057471264}, {"x": 0.23157573869913695, "y": 0.20229885057471264}, {"x": 0.23375302790258357, "y": 0.20229885057471264}, {"x": 0.23587307134334018, "y": 0.20229885057471264}, {"x": 0.23715156374683882, "y": 0.20229885057471264}, {"x": 0.23893387350399745, "y": 0.20229885057471264}, {"x": 0.2416679006499691, "y": 0.20229885057471264}, {"x": 0.2432908468860408, "y": 0.20229885057471264}, {"x": 0.2455661076959637, "y": 0.20229885057471264}, {"x": 0.24763118503962542, "y": 0.20229885057471264}, {"x": 0.24999935799219003, "y": 0.20229885057471264}, {"x": 0.25209179756689054, "y": 0.20229885057471264}, {"x": 0.25358933953306206, "y": 0.20229885057471264}, {"x": 0.25567288822466444, "y": 0.20229885057471264}, {"x": 0.25773200458037804, "y": 0.20229885057471264}, {"x": 0.26005700953075866, "y": 0.20229885057471264}, {"x": 0.2618246200452263, "y": 0.20229885057471264}, {"x": 0.2641206913614821, "y": 0.20229885057471264}, {"x": 0.2654990956001686, "y": 0.20229885057471264}, {"x": 0.2670158327949693, "y": 0.20229885057471264}, {"x": 0.26868224398679236, "y": 0.20229885057471264}, {"x": 0.27065922700773637, "y": 0.20229885057471264}, {"x": 0.2722215035156418, "y": 0.23809523809523808}, {"x": 0.27442011051398274, "y": 0.23809523809523808}, {"x": 0.2772709387223713, "y": 0.23809523809523808}, {"x": 0.2792915418209629, "y": 0.23809523809523808}, {"x": 0.2806160999541194, "y": 0.25}, {"x": 0.282184217129226, "y": 0.2948207171314741}, {"x": 0.284183519249198, "y": 0.2948207171314741}, {"x": 0.2855672249345061, "y": 0.2948207171314741}, {"x": 0.28747259278094184, "y": 0.2948207171314741}, {"x": 0.2894350788218189, "y": 0.2948207171314741}, {"x": 0.29059780520892986, "y": 0.2948207171314741}, {"x": 0.2926878754545398, "y": 0.2948207171314741}, {"x": 0.2946029854473575, "y": 0.2948207171314741}, {"x": 0.29768516595191363, "y": 0.2948207171314741}, {"x": 0.29989310953596515, "y": 0.2948207171314741}, {"x": 0.30100900206474945, "y": 0.2948207171314741}, {"x": 0.30245366055120754, "y": 0.2948207171314741}, {"x": 0.304471113469064, "y": 0.2948207171314741}, {"x": 0.30677669813488234, "y": 0.2948207171314741}, {"x": 0.30884850201550823, "y": 0.2948207171314741}, {"x": 0.31030169935996293, "y": 0.2948207171314741}, {"x": 0.31248783494504395, "y": 0.3125}, {"x": 0.31448254437756884, "y": 0.3125}, {"x": 0.3162744048921809, "y": 0.3125}, {"x": 0.31821729065219584, "y": 0.3125}, {"x": 0.3201888222764584, "y": 0.3125}, {"x": 0.32324271140673677, "y": 0.3125}, {"x": 0.32492850162509235, "y": 0.3125}, {"x": 0.3267508709383361, "y": 0.3125}, {"x": 0.32880920017232534, "y": 0.3125}, {"x": 0.33217479304585007, "y": 0.3125}, {"x": 0.3342917452110088, "y": 0.3125}, {"x": 0.3358063281692002, "y": 0.3125}, {"x": 0.3392836294440216, "y": 0.3389261744966443}, {"x": 0.3425223035738157, "y": 0.3389261744966443}, {"x": 0.3449571729353846, "y": 0.3389261744966443}, {"x": 0.34683984135913143, "y": 0.3389261744966443}, {"x": 0.3501001410106206, "y": 0.3389261744966443}, {"x": 0.3521621413484501, "y": 0.3389261744966443}, {"x": 0.3542250846011025, "y": 0.3389261744966443}, {"x": 0.35591237755874694, "y": 0.3389261744966443}, {"x": 0.3574665039944061, "y": 0.3389261744966443}, {"x": 0.35970491553177886, "y": 0.3389261744966443}, {"x": 0.3636936272421223, "y": 0.3389261744966443}, {"x": 0.36588141692643184, "y": 0.3389261744966443}, {"x": 0.36872340266804815, "y": 0.3389261744966443}, {"x": 0.37044085917045577, "y": 0.3389261744966443}, {"x": 0.3733387921320293, "y": 0.3389261744966443}, {"x": 0.37674748290547416, "y": 0.3389261744966443}, {"x": 0.3788199937491754, "y": 0.3389261744966443}, {"x": 0.3815445979594096, "y": 0.3389261744966443}, {"x": 0.3841929800656438, "y": 0.3389261744966443}, {"x": 0.38890406998129207, "y": 0.34177215189873417}, {"x": 0.39115790629080377, "y": 0.34177215189873417}, {"x": 0.394290426777866, "y": 0.34177215189873417}, {"x": 0.3962964110774168, "y": 0.34177215189873417}, {"x": 0.3988875807288681, "y": 0.34177215189873417}, {"x": 0.4011461999853546, "y": 0.375}, {"x": 0.4043280556586029, "y": 0.375}, {"x": 0.4071489117229954, "y": 0.375}, {"x": 0.411169935684772, "y": 0.4258373205741627}, {"x": 0.41360750623501685, "y": 0.4258373205741627}, {"x": 0.4164608259835255, "y": 0.4258373205741627}, {"x": 0.41989466123153474, "y": 0.4258373205741627}, {"x": 0.4223677544947501, "y": 0.4258373205741627}, {"x": 0.4246953322847444, "y": 0.4258373205741627}, {"x": 0.4279690733685286, "y": 0.4258373205741627}, {"x": 0.42977437404216967, "y": 0.4258373205741627}, {"x": 0.4325490839424383, "y": 0.4258373205741627}, {"x": 0.4358631550117112, "y": 0.4258373205741627}, {"x": 0.4377918737213434, "y": 0.4258373205741627}, {"x": 0.4395758926359499, "y": 0.4258373205741627}, {"x": 0.4429458496263019, "y": 0.4258373205741627}, {"x": 0.44605440304080385, "y": 0.4258373205741627}, {"x": 0.45092848728970863, "y": 0.44}, {"x": 0.45309146536494654, "y": 0.44}, {"x": 0.456944905198153, "y": 0.44}, {"x": 0.4594639744124255, "y": 0.44}, {"x": 0.4629890866336863, "y": 0.44}, {"x": 0.46549688007159884, "y": 0.44}, {"x": 0.4673827497889329, "y": 0.44}, {"x": 0.4718697124334207, "y": 0.44}, {"x": 0.4770642357124556, "y": 0.44}, {"x": 0.4796299455964126, "y": 0.44}, {"x": 0.48253900701718, "y": 0.44}, {"x": 0.4877723389339472, "y": 0.44}, {"x": 0.4908674284852607, "y": 0.44}, {"x": 0.494576436973633, "y": 0.46511627906976744}, {"x": 0.4979092833051073, "y": 0.46511627906976744}, {"x": 0.5012436038364168, "y": 0.46511627906976744}, {"x": 0.5050810553037972, "y": 0.4857142857142857}, {"x": 0.508069428661952, "y": 0.4857142857142857}, {"x": 0.513006242332405, "y": 0.4857142857142857}, {"x": 0.5177465768244667, "y": 0.4857142857142857}, {"x": 0.5207566820996195, "y": 0.4857142857142857}, {"x": 0.5270751545086325, "y": 0.4857142857142857}, {"x": 0.5309189090743096, "y": 0.4857142857142857}, {"x": 0.5349889309972813, "y": 0.5087719298245614}, {"x": 0.5387916596929916, "y": 0.5087719298245614}, {"x": 0.5432665734561765, "y": 0.5087719298245614}, {"x": 0.5482798706411547, "y": 0.5087719298245614}, {"x": 0.5552870241903006, "y": 0.5172413793103449}, {"x": 0.5606516816441021, "y": 0.5172413793103449}, {"x": 0.5642508075621433, "y": 0.5172413793103449}, {"x": 0.5690617474173054, "y": 0.5172413793103449}, {"x": 0.573531926267003, "y": 0.5172413793103449}, {"x": 0.5780352269584392, "y": 0.5172413793103449}, {"x": 0.5827923304767285, "y": 0.6236559139784946}, {"x": 0.5867908161637966, "y": 0.6236559139784946}, {"x": 0.5903278504722989, "y": 0.6236559139784946}, {"x": 0.5938534468847838, "y": 0.6236559139784946}, {"x": 0.5997610917270421, "y": 0.6236559139784946}, {"x": 0.6024208900332145, "y": 0.6236559139784946}, {"x": 0.6075697957845075, "y": 0.6236559139784946}, {"x": 0.6120517373873581, "y": 0.6236559139784946}, {"x": 0.6165323520489844, "y": 0.6236559139784946}, {"x": 0.62233485182977, "y": 0.6236559139784946}, {"x": 0.628500714687089, "y": 0.6236559139784946}, {"x": 0.631450165761098, "y": 0.6236559139784946}, {"x": 0.6371814982555692, "y": 0.6666666666666666}, {"x": 0.6421382622003144, "y": 0.6666666666666666}, {"x": 0.6465137895138877, "y": 0.6910112359550562}, {"x": 0.6541004088447697, "y": 0.6910112359550562}, {"x": 0.6570866732645316, "y": 0.6910112359550562}, {"x": 0.6634221879715831, "y": 0.6910112359550562}, {"x": 0.6686504730062847, "y": 0.6910112359550562}, {"x": 0.6800881293706041, "y": 0.6910112359550562}, {"x": 0.6850184645931603, "y": 0.6910112359550562}, {"x": 0.6901026220543016, "y": 0.6910112359550562}, {"x": 0.7006971557452992, "y": 0.6910112359550562}, {"x": 0.712641970702953, "y": 0.6910112359550562}, {"x": 0.7223697113580969, "y": 0.6910112359550562}, {"x": 0.7277750469290927, "y": 0.6910112359550562}, {"x": 0.7388755848060641, "y": 0.7333333333333333}, {"x": 0.749069974034935, "y": 0.7333333333333333}, {"x": 0.7560565058435316, "y": 0.7777777777777778}, {"x": 0.7660442895278817, "y": 0.8181818181818182}, {"x": 0.7730683170684376, "y": 0.8181818181818182}, {"x": 0.7878648987420058, "y": 0.8235294117647058}, {"x": 0.7996376294847988, "y": 0.8235294117647058}, {"x": 0.8181302290552219, "y": 0.875}, {"x": 0.8328985501114919, "y": 0.875}, {"x": 0.8522599817125089, "y": 0.8888888888888888}, {"x": 0.8668138394709799, "y": 0.9714285714285714}, {"x": 0.8926840000797193, "y": 0.9714285714285714}, {"x": 0.9103642693136496, "y": 0.9714285714285714}, {"x": 0.9263335784176995, "y": 0.9714285714285714}, {"x": 0.9498363900489992, "y": 1.0}, {"x": 0.9949433702111083, "y": 1.0}]}, "fixtures": {"day": "2026-06-15", "rows": [{"match": "Belgium v Egypt", "p_home": 0.518, "p_draw": 0.277, "p_away": 0.205, "p_btts": 0.485, "likely": "1-1"}, {"match": "Iran v New Zealand", "p_home": 0.558, "p_draw": 0.264, "p_away": 0.178, "p_btts": 0.477, "likely": "1-1"}, {"match": "Spain v Cape Verde", "p_home": 0.917, "p_draw": 0.067, "p_away": 0.016, "p_btts": 0.329, "likely": "3-0"}, {"match": "Saudi Arabia v Uruguay", "p_home": 0.112, "p_draw": 0.218, "p_away": 0.67, "p_btts": 0.45, "likely": "0-2"}]}, "queue": {"adjustments": "raw-model", "rows": [{"match": "Saudi Arabia v Uruguay", "bet": "Under 2.5 goals", "odds": 1.75, "edge": 0.057, "stake": 1.7}, {"match": "England v Croatia", "bet": "Under 2.5 goals", "odds": 1.7, "edge": 0.04, "stake": 0.68}, {"match": "Belgium v Egypt", "bet": "Under 2.5 goals", "odds": 1.9, "edge": 0.088, "stake": 3.19}, {"match": "Uzbekistan v Colombia", "bet": "Under 2.5 goals", "odds": 1.83, "edge": 0.05, "stake": 1.1}, {"match": "France v Senegal", "bet": "Under 2.5 goals", "odds": 1.92, "edge": 0.065, "stake": 1.96}, {"match": "Iraq v Norway", "bet": "Under 2.5 goals", "odds": 2.41, "edge": 0.167, "stake": 5.64}, {"match": "Portugal v DR Congo", "bet": "Under 2.5 goals", "odds": 2.13, "edge": 0.115, "stake": 3.75}, {"match": "Iran v New Zealand", "bet": "Iran win", "odds": 1.83, "edge": 0.016, "stake": 0.62}, {"match": "Austria v Jordan", "bet": "Under 2.5 goals", "odds": 2.2, "edge": 0.115, "stake": 3.68}, {"match": "Argentina v Algeria", "bet": "Under 2.5 goals", "odds": 1.88, "edge": 0.018, "stake": 0.6}, {"match": "Ghana v Panama", "bet": "Panama win", "odds": 3.47, "edge": 0.217, "stake": 6.63}]}, "title": {"rows": [{"team": "Argentina", "champion": 0.1739, "delta": 0.51}, {"team": "Spain", "champion": 0.1641, "delta": 0.6}, {"team": "France", "champion": 0.0713, "delta": 0.25}, {"team": "Brazil", "champion": 0.0684, "delta": -0.06}, {"team": "England", "champion": 0.0657, "delta": null}, {"team": "Colombia", "champion": 0.0515, "delta": -0.24}, {"team": "Portugal", "champion": 0.0474, "delta": 0.11}, {"team": "Mexico", "champion": 0.0423, "delta": -0.78}, {"team": "Germany", "champion": 0.0348, "delta": 0.54}, {"team": "Morocco", "champion": 0.0343, "delta": 0.16}, {"team": "Japan", "champion": 0.0302, "delta": 0.09}, {"team": "Netherlands", "champion": 0.0241, "delta": -0.31}], "first_snapshot": false}}, "fixtures": {"days": [{"date": "2026-06-15", "rows": [{"match": "Belgium v Egypt", "home": "Belgium", "away": "Egypt", "p_home": 0.518, "p_draw": 0.277, "p_away": 0.205, "p_btts": 0.485, "xg_home": 1.57, "xg_away": 0.91, "likely": "1-1", "picks": [{"bet": "Under 2.5 goals", "odds": 1.9, "edge": 0.088}]}, {"match": "Iran v New Zealand", "home": "Iran", "away": "New Zealand", "p_home": 0.558, "p_draw": 0.264, "p_away": 0.178, "p_btts": 0.477, "xg_home": 1.68, "xg_away": 0.85, "likely": "1-1", "picks": [{"bet": "Iran win", "odds": 1.83, "edge": 0.016}]}, {"match": "Saudi Arabia v Uruguay", "home": "Saudi Arabia", "away": "Uruguay", "p_home": 0.112, "p_draw": 0.218, "p_away": 0.67, "p_btts": 0.45, "xg_home": 0.71, "xg_away": 2.01, "likely": "0-2", "picks": [{"bet": "Under 2.5 goals", "odds": 1.75, "edge": 0.057}]}, {"match": "Spain v Cape Verde", "home": "Spain", "away": "Cape Verde", "p_home": 0.917, "p_draw": 0.067, "p_away": 0.016, "p_btts": 0.329, "xg_home": 3.49, "xg_away": 0.41, "likely": "3-0", "picks": []}]}, {"date": "2026-06-16", "rows": [{"match": "Argentina v Algeria", "home": "Argentina", "away": "Algeria", "p_home": 0.709, "p_draw": 0.198, "p_away": 0.092, "p_btts": 0.437, "xg_home": 2.15, "xg_away": 0.66, "likely": "2-0", "picks": [{"bet": "Under 2.5 goals", "odds": 1.88, "edge": 0.018}]}, {"match": "Austria v Jordan", "home": "Austria", "away": "Jordan", "p_home": 0.487, "p_draw": 0.285, "p_away": 0.228, "p_btts": 0.489, "xg_home": 1.5, "xg_away": 0.95, "likely": "1-1", "picks": [{"bet": "Under 2.5 goals", "odds": 2.2, "edge": 0.115}]}, {"match": "France v Senegal", "home": "France", "away": "Senegal", "p_home": 0.604, "p_draw": 0.247, "p_away": 0.149, "p_btts": 0.467, "xg_home": 1.8, "xg_away": 0.79, "likely": "1-0", "picks": [{"bet": "Under 2.5 goals", "odds": 1.92, "edge": 0.065}]}, {"match": "Iraq v Norway", "home": "Iraq", "away": "Norway", "p_home": 0.131, "p_draw": 0.234, "p_away": 0.635, "p_btts": 0.459, "xg_home": 0.75, "xg_away": 1.9, "likely": "0-2", "picks": [{"bet": "Under 2.5 goals", "odds": 2.41, "edge": 0.167}]}]}, {"date": "2026-06-17", "rows": [{"match": "England v Croatia", "home": "England", "away": "Croatia", "p_home": 0.487, "p_draw": 0.285, "p_away": 0.227, "p_btts": 0.489, "xg_home": 1.5, "xg_away": 0.95, "likely": "1-1", "picks": [{"bet": "Under 2.5 goals", "odds": 1.7, "edge": 0.04}]}, {"match": "Ghana v Panama", "home": "Ghana", "away": "Panama", "p_home": 0.152, "p_draw": 0.249, "p_away": 0.599, "p_btts": 0.469, "xg_home": 0.8, "xg_away": 1.79, "likely": "0-1", "picks": [{"bet": "Panama win", "odds": 3.47, "edge": 0.217}]}, {"match": "Portugal v DR Congo", "home": "Portugal", "away": "DR Congo", "p_home": 0.687, "p_draw": 0.21, "p_away": 0.103, "p_btts": 0.444, "xg_home": 2.07, "xg_away": 0.69, "likely": "2-0", "picks": [{"bet": "Under 2.5 goals", "odds": 2.13, "edge": 0.115}]}, {"match": "Uzbekistan v Colombia", "home": "Uzbekistan", "away": "Colombia", "p_home": 0.136, "p_draw": 0.238, "p_away": 0.626, "p_btts": 0.462, "xg_home": 0.76, "xg_away": 1.87, "likely": "0-2", "picks": [{"bet": "Under 2.5 goals", "odds": 1.83, "edge": 0.05}]}]}, {"date": "2026-06-18", "rows": [{"match": "Canada v Qatar", "home": "Canada", "away": "Qatar", "p_home": 0.747, "p_draw": 0.178, "p_away": 0.075, "p_btts": 0.423, "xg_home": 2.31, "xg_away": 0.62, "likely": "2-0", "picks": []}, {"match": "Czech Republic v South Africa", "home": "Czech Republic", "away": "South Africa", "p_home": 0.498, "p_draw": 0.282, "p_away": 0.219, "p_btts": 0.488, "xg_home": 1.53, "xg_away": 0.94, "likely": "1-1", "picks": []}, {"match": "Mexico v South Korea", "home": "Mexico", "away": "South Korea", "p_home": 0.524, "p_draw": 0.275, "p_away": 0.201, "p_btts": 0.484, "xg_home": 1.59, "xg_away": 0.9, "likely": "1-1", "picks": []}, {"match": "Switzerland v Bosnia and Herzegovina", "home": "Switzerland", "away": "Bosnia and Herzegovina", "p_home": 0.641, "p_draw": 0.231, "p_away": 0.128, "p_btts": 0.458, "xg_home": 1.92, "xg_away": 0.75, "likely": "2-0", "picks": []}]}, {"date": "2026-06-19", "rows": [{"match": "Brazil v Haiti", "home": "Brazil", "away": "Haiti", "p_home": 0.786, "p_draw": 0.155, "p_away": 0.059, "p_btts": 0.407, "xg_home": 2.49, "xg_away": 0.57, "likely": "2-0", "picks": []}, {"match": "Scotland v Morocco", "home": "Scotland", "away": "Morocco", "p_home": 0.214, "p_draw": 0.28, "p_away": 0.506, "p_btts": 0.487, "xg_home": 0.92, "xg_away": 1.54, "likely": "1-1", "picks": []}, {"match": "Turkey v Paraguay", "home": "Turkey", "away": "Paraguay", "p_home": 0.413, "p_draw": 0.299, "p_away": 0.288, "p_btts": 0.497, "xg_home": 1.33, "xg_away": 1.07, "likely": "1-1", "picks": []}, {"match": "United States v Australia", "home": "United States", "away": "Australia", "p_home": 0.363, "p_draw": 0.303, "p_away": 0.333, "p_btts": 0.499, "xg_home": 1.23, "xg_away": 1.16, "likely": "1-1", "picks": []}]}, {"date": "2026-06-20", "rows": [{"match": "Ecuador v Cura\u00e7ao", "home": "Ecuador", "away": "Cura\u00e7ao", "p_home": 0.79, "p_draw": 0.153, "p_away": 0.058, "p_btts": 0.405, "xg_home": 2.51, "xg_away": 0.57, "likely": "2-0", "picks": []}, {"match": "Germany v Ivory Coast", "home": "Germany", "away": "Ivory Coast", "p_home": 0.537, "p_draw": 0.271, "p_away": 0.192, "p_btts": 0.481, "xg_home": 1.62, "xg_away": 0.88, "likely": "1-1", "picks": []}, {"match": "Netherlands v Sweden", "home": "Netherlands", "away": "Sweden", "p_home": 0.57, "p_draw": 0.26, "p_away": 0.17, "p_btts": 0.475, "xg_home": 1.71, "xg_away": 0.84, "likely": "1-1", "picks": []}, {"match": "Tunisia v Japan", "home": "Tunisia", "away": "Japan", "p_home": 0.089, "p_draw": 0.195, "p_away": 0.716, "p_btts": 0.435, "xg_home": 0.66, "xg_away": 2.18, "likely": "0-2", "picks": []}]}, {"date": "2026-06-21", "rows": [{"match": "Belgium v Iran", "home": "Belgium", "away": "Iran", "p_home": 0.41, "p_draw": 0.3, "p_away": 0.29, "p_btts": 0.497, "xg_home": 1.32, "xg_away": 1.08, "likely": "1-1", "picks": []}, {"match": "New Zealand v Egypt", "home": "New Zealand", "away": "Egypt", "p_home": 0.257, "p_draw": 0.294, "p_away": 0.449, "p_btts": 0.494, "xg_home": 1.01, "xg_away": 1.41, "likely": "1-1", "picks": []}, {"match": "Spain v Saudi Arabia", "home": "Spain", "away": "Saudi Arabia", "p_home": 0.896, "p_draw": 0.083, "p_away": 0.022, "p_btts": 0.345, "xg_home": 3.25, "xg_away": 0.44, "likely": "3-0", "picks": []}, {"match": "Uruguay v Cape Verde", "home": "Uruguay", "away": "Cape Verde", "p_home": 0.71, "p_draw": 0.198, "p_away": 0.092, "p_btts": 0.437, "xg_home": 2.16, "xg_away": 0.66, "likely": "2-0", "picks": []}]}, {"date": "2026-06-22", "rows": [{"match": "Argentina v Austria", "home": "Argentina", "away": "Austria", "p_home": 0.697, "p_draw": 0.205, "p_away": 0.099, "p_btts": 0.441, "xg_home": 2.11, "xg_away": 0.68, "likely": "2-0", "picks": []}, {"match": "France v Iraq", "home": "France", "away": "Iraq", "p_home": 0.789, "p_draw": 0.153, "p_away": 0.058, "p_btts": 0.406, "xg_home": 2.5, "xg_away": 0.57, "likely": "2-0", "picks": []}, {"match": "Jordan v Algeria", "home": "Jordan", "away": "Algeria", "p_home": 0.238, "p_draw": 0.289, "p_away": 0.473, "p_btts": 0.491, "xg_home": 0.97, "xg_away": 1.47, "likely": "1-1", "picks": []}, {"match": "Norway v Senegal", "home": "Norway", "away": "Senegal", "p_home": 0.43, "p_draw": 0.297, "p_away": 0.273, "p_btts": 0.496, "xg_home": 1.37, "xg_away": 1.04, "likely": "1-1", "picks": []}]}, {"date": "2026-06-23", "rows": [{"match": "Colombia v DR Congo", "home": "Colombia", "away": "DR Congo", "p_home": 0.702, "p_draw": 0.202, "p_away": 0.096, "p_btts": 0.44, "xg_home": 2.12, "xg_away": 0.67, "likely": "2-0", "picks": []}, {"match": "England v Ghana", "home": "England", "away": "Ghana", "p_home": 0.85, "p_draw": 0.114, "p_away": 0.036, "p_btts": 0.375, "xg_home": 2.87, "xg_away": 0.5, "likely": "2-0", "picks": []}, {"match": "Panama v Croatia", "home": "Panama", "away": "Croatia", "p_home": 0.219, "p_draw": 0.282, "p_away": 0.499, "p_btts": 0.488, "xg_home": 0.93, "xg_away": 1.53, "likely": "1-1", "picks": []}, {"match": "Portugal v Uzbekistan", "home": "Portugal", "away": "Uzbekistan", "p_home": 0.611, "p_draw": 0.244, "p_away": 0.145, "p_btts": 0.466, "xg_home": 1.82, "xg_away": 0.78, "likely": "1-0", "picks": []}]}, {"date": "2026-06-24", "rows": [{"match": "Bosnia and Herzegovina v Qatar", "home": "Bosnia and Herzegovina", "away": "Qatar", "p_home": 0.454, "p_draw": 0.293, "p_away": 0.254, "p_btts": 0.493, "xg_home": 1.42, "xg_away": 1.0, "likely": "1-1", "picks": []}, {"match": "Canada v Switzerland", "home": "Canada", "away": "Switzerland", "p_home": 0.355, "p_draw": 0.303, "p_away": 0.342, "p_btts": 0.499, "xg_home": 1.21, "xg_away": 1.18, "likely": "1-1", "picks": []}, {"match": "Mexico v Czech Republic", "home": "Mexico", "away": "Czech Republic", "p_home": 0.671, "p_draw": 0.217, "p_away": 0.112, "p_btts": 0.449, "xg_home": 2.01, "xg_away": 0.71, "likely": "2-0", "picks": []}, {"match": "Morocco v Haiti", "home": "Morocco", "away": "Haiti", "p_home": 0.73, "p_draw": 0.187, "p_away": 0.083, "p_btts": 0.43, "xg_home": 2.23, "xg_away": 0.64, "likely": "2-0", "picks": []}, {"match": "Scotland v Brazil", "home": "Scotland", "away": "Brazil", "p_home": 0.168, "p_draw": 0.259, "p_away": 0.573, "p_btts": 0.474, "xg_home": 0.83, "xg_away": 1.72, "likely": "0-1", "picks": []}, {"match": "South Africa v South Korea", "home": "South Africa", "away": "South Korea", "p_home": 0.125, "p_draw": 0.229, "p_away": 0.647, "p_btts": 0.456, "xg_home": 0.74, "xg_away": 1.93, "likely": "0-2", "picks": []}]}, {"date": "2026-06-25", "rows": [{"match": "Cura\u00e7ao v Ivory Coast", "home": "Cura\u00e7ao", "away": "Ivory Coast", "p_home": 0.108, "p_draw": 0.213, "p_away": 0.679, "p_btts": 0.447, "xg_home": 0.7, "xg_away": 2.04, "likely": "0-2", "picks": []}, {"match": "Ecuador v Germany", "home": "Ecuador", "away": "Germany", "p_home": 0.292, "p_draw": 0.3, "p_away": 0.408, "p_btts": 0.497, "xg_home": 1.08, "xg_away": 1.32, "likely": "1-1", "picks": []}, {"match": "Japan v Sweden", "home": "Japan", "away": "Sweden", "p_home": 0.552, "p_draw": 0.266, "p_away": 0.182, "p_btts": 0.479, "xg_home": 1.66, "xg_away": 0.86, "likely": "1-1", "picks": []}, {"match": "Paraguay v Australia", "home": "Paraguay", "away": "Australia", "p_home": 0.246, "p_draw": 0.291, "p_away": 0.463, "p_btts": 0.492, "xg_home": 0.99, "xg_away": 1.44, "likely": "1-1", "picks": []}, {"match": "Tunisia v Netherlands", "home": "Tunisia", "away": "Netherlands", "p_home": 0.082, "p_draw": 0.186, "p_away": 0.732, "p_btts": 0.429, "xg_home": 0.64, "xg_away": 2.24, "likely": "0-2", "picks": []}, {"match": "United States v Turkey", "home": "United States", "away": "Turkey", "p_home": 0.412, "p_draw": 0.299, "p_away": 0.288, "p_btts": 0.497, "xg_home": 1.33, "xg_away": 1.07, "likely": "1-1", "picks": []}]}, {"date": "2026-06-26", "rows": [{"match": "Cape Verde v Saudi Arabia", "home": "Cape Verde", "away": "Saudi Arabia", "p_home": 0.309, "p_draw": 0.302, "p_away": 0.389, "p_btts": 0.498, "xg_home": 1.11, "xg_away": 1.28, "likely": "1-1", "picks": []}, {"match": "Egypt v Iran", "home": "Egypt", "away": "Iran", "p_home": 0.255, "p_draw": 0.293, "p_away": 0.452, "p_btts": 0.493, "xg_home": 1.01, "xg_away": 1.42, "likely": "1-1", "picks": []}, {"match": "New Zealand v Belgium", "home": "New Zealand", "away": "Belgium", "p_home": 0.138, "p_draw": 0.239, "p_away": 0.622, "p_btts": 0.463, "xg_home": 0.77, "xg_away": 1.86, "likely": "0-2", "picks": []}, {"match": "Norway v France", "home": "Norway", "away": "France", "p_home": 0.205, "p_draw": 0.277, "p_away": 0.518, "p_btts": 0.485, "xg_home": 0.91, "xg_away": 1.57, "likely": "1-1", "picks": []}, {"match": "Senegal v Iraq", "home": "Senegal", "away": "Iraq", "p_home": 0.551, "p_draw": 0.267, "p_away": 0.183, "p_btts": 0.479, "xg_home": 1.66, "xg_away": 0.86, "likely": "1-1", "picks": []}, {"match": "Uruguay v Spain", "home": "Uruguay", "away": "Spain", "p_home": 0.125, "p_draw": 0.229, "p_away": 0.646, "p_btts": 0.457, "xg_home": 0.74, "xg_away": 1.93, "likely": "0-2", "picks": []}]}, {"date": "2026-06-27", "rows": [{"match": "Algeria v Austria", "home": "Algeria", "away": "Austria", "p_home": 0.336, "p_draw": 0.303, "p_away": 0.361, "p_btts": 0.499, "xg_home": 1.17, "xg_away": 1.22, "likely": "1-1", "picks": []}, {"match": "Colombia v Portugal", "home": "Colombia", "away": "Portugal", "p_home": 0.363, "p_draw": 0.303, "p_away": 0.334, "p_btts": 0.499, "xg_home": 1.23, "xg_away": 1.16, "likely": "1-1", "picks": []}, {"match": "Croatia v Ghana", "home": "Croatia", "away": "Ghana", "p_home": 0.742, "p_draw": 0.18, "p_away": 0.077, "p_btts": 0.425, "xg_home": 2.29, "xg_away": 0.62, "likely": "2-0", "picks": []}, {"match": "DR Congo v Uzbekistan", "home": "DR Congo", "away": "Uzbekistan", "p_home": 0.278, "p_draw": 0.298, "p_away": 0.424, "p_btts": 0.496, "xg_home": 1.05, "xg_away": 1.36, "likely": "1-1", "picks": []}, {"match": "Jordan v Argentina", "home": "Jordan", "away": "Argentina", "p_home": 0.048, "p_draw": 0.137, "p_away": 0.815, "p_btts": 0.394, "xg_home": 0.54, "xg_away": 2.64, "likely": "0-2", "picks": []}, {"match": "Panama v England", "home": "Panama", "away": "England", "p_home": 0.128, "p_draw": 0.231, "p_away": 0.641, "p_btts": 0.458, "xg_home": 0.74, "xg_away": 1.92, "likely": "0-2", "picks": []}]}]}, "outrights": {"teams": [{"team": "Argentina", "champion": 0.1739, "delta": 0.51, "series": [{"date": "2026-06-14", "v": 16.88}, {"date": "2026-06-15", "v": 17.39}]}, {"team": "Spain", "champion": 0.1641, "delta": 0.6, "series": [{"date": "2026-06-14", "v": 15.81}, {"date": "2026-06-15", "v": 16.41}]}, {"team": "France", "champion": 0.0713, "delta": 0.25, "series": [{"date": "2026-06-14", "v": 6.88}, {"date": "2026-06-15", "v": 7.13}]}, {"team": "Brazil", "champion": 0.0684, "delta": -0.06, "series": [{"date": "2026-06-14", "v": 6.9}, {"date": "2026-06-15", "v": 6.84}]}, {"team": "England", "champion": 0.0657, "delta": null, "series": [{"date": "2026-06-14", "v": 6.53}, {"date": "2026-06-15", "v": 6.57}]}, {"team": "Colombia", "champion": 0.0515, "delta": -0.24, "series": [{"date": "2026-06-14", "v": 5.39}, {"date": "2026-06-15", "v": 5.15}]}, {"team": "Portugal", "champion": 0.0474, "delta": 0.11, "series": [{"date": "2026-06-14", "v": 4.63}, {"date": "2026-06-15", "v": 4.74}]}, {"team": "Mexico", "champion": 0.0423, "delta": -0.78, "series": [{"date": "2026-06-14", "v": 5.01}, {"date": "2026-06-15", "v": 4.23}]}, {"team": "Germany", "champion": 0.0348, "delta": 0.54, "series": [{"date": "2026-06-14", "v": 2.94}, {"date": "2026-06-15", "v": 3.48}]}, {"team": "Morocco", "champion": 0.0343, "delta": 0.16, "series": [{"date": "2026-06-14", "v": 3.27}, {"date": "2026-06-15", "v": 3.43}]}, {"team": "Japan", "champion": 0.0302, "delta": 0.09, "series": [{"date": "2026-06-14", "v": 2.93}, {"date": "2026-06-15", "v": 3.02}]}, {"team": "Netherlands", "champion": 0.0241, "delta": -0.31, "series": [{"date": "2026-06-14", "v": 2.72}, {"date": "2026-06-15", "v": 2.41}]}, {"team": "Belgium", "champion": 0.0203, "delta": null, "series": [{"date": "2026-06-14", "v": null}, {"date": "2026-06-15", "v": 2.03}]}, {"team": "United States", "champion": 0.019, "delta": null, "series": [{"date": "2026-06-14", "v": null}, {"date": "2026-06-15", "v": 1.9}]}, {"team": "Uruguay", "champion": 0.0181, "delta": null, "series": [{"date": "2026-06-14", "v": null}, {"date": "2026-06-15", "v": 1.81}]}, {"team": "Australia", "champion": 0.0157, "delta": null, "series": [{"date": "2026-06-14", "v": null}, {"date": "2026-06-15", "v": 1.57}]}], "dates": ["2026-06-14", "2026-06-15"], "first_snapshot": false}, "history": {"rows": [{"placed_on": "2026-06-11", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-11", "match": "South Korea v Czech Republic", "bet": "South Korea win", "market": "1X2 / ML", "odds": 2.6, "stake": 2.58, "status": "won", "pnl": 4.13}, {"placed_on": "2026-06-11", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-11", "match": "Mexico v South Africa", "bet": "Mexico win (SkyBet boost)", "market": "1X2 / ML", "odds": 2.0, "stake": 10.0, "status": "won", "pnl": 10.0}, {"placed_on": "2026-06-11", "engine": "worldcup", "sport": "soccer", "match_date": "2026-07-19", "match": "Argentina", "bet": "Argentina to win World Cup", "market": "1X2 / ML", "odds": 11.0, "stake": 2.22, "status": "open", "pnl": 0.0}, {"placed_on": "2026-06-11", "engine": "worldcup", "sport": "soccer", "match_date": "2026-07-19", "match": "Mexico", "bet": "Mexico to win World Cup (EW win part)", "market": "1X2 / ML", "odds": 67.0, "stake": 0.65, "status": "open", "pnl": 0.0}, {"placed_on": "2026-06-11", "engine": "worldcup", "sport": "soccer", "match_date": "2026-07-19", "match": "Mexico", "bet": "Mexico top 2 (EW place part, 1/2 odds)", "market": "Other", "odds": 34.0, "stake": 0.65, "status": "open", "pnl": 0.0}, {"placed_on": "2026-06-11", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-11", "match": "Mexico v South Africa", "bet": "Over 2.5 goals", "market": "Totals", "odds": 2.19, "stake": 2.78, "status": "lost", "pnl": -2.78}, {"placed_on": "2026-06-12", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-12", "match": "Canada v Bosnia and Herzegovina", "bet": "Canada win", "market": "1X2 / ML", "odds": 1.83, "stake": 8.44, "status": "lost", "pnl": -8.44}, {"placed_on": "2026-06-12", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-13", "match": "United States v Paraguay", "bet": "Paraguay win", "market": "1X2 / ML", "odds": 4.0, "stake": 1.64, "status": "lost", "pnl": -1.64}, {"placed_on": "2026-06-13", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-13", "match": "Australia v Turkey", "bet": "Australia win", "market": "1X2 / ML", "odds": 5.25, "stake": 5.68, "status": "won", "pnl": 24.14}, {"placed_on": "2026-06-13", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-14", "match": "Netherlands v Japan", "bet": "Japan win", "market": "1X2 / ML", "odds": 3.8, "stake": 3.53, "status": "lost", "pnl": -3.53}, {"placed_on": "2026-06-13", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-14", "match": "Ivory Coast v Ecuador", "bet": "Ecuador win", "market": "1X2 / ML", "odds": 2.42, "stake": 3.3, "status": "lost", "pnl": -3.3}, {"placed_on": "2026-06-13", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-13", "match": "Haiti v Scotland", "bet": "Under 2.5 goals", "market": "Totals", "odds": 2.27, "stake": 3.05, "status": "won", "pnl": 3.87}, {"placed_on": "2026-06-13", "engine": "golf", "sport": "golf", "match_date": "2026-06-15", "match": "Matt Fitzpatrick v RBC Canadian Open", "bet": "win outright", "market": "Outright", "odds": 47.55, "stake": 1.02, "status": "lost", "pnl": -1.02}, {"placed_on": "2026-06-13", "engine": "golf", "sport": "golf", "match_date": "2026-06-15", "match": "Brooks Koepka v RBC Canadian Open", "bet": "win outright", "market": "Outright", "odds": 14.3, "stake": 1.0, "status": "lost", "pnl": -1.0}, {"placed_on": "2026-06-13", "engine": "golf", "sport": "golf", "match_date": "2026-06-15", "match": "Robert MacIntyre v RBC Canadian Open", "bet": "win outright", "market": "Outright", "odds": 41.85, "stake": 1.0, "status": "lost", "pnl": -1.0}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-15", "match": "Spain v Cape Verde", "bet": "Spain win", "market": "1X2 / ML", "odds": 1.09, "stake": 1.04, "status": "open", "pnl": 0.0}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-14", "match": "Germany v Cura\u00e7ao", "bet": "Germany win", "market": "1X2 / ML", "odds": 1.04, "stake": 0.98, "status": "won", "pnl": 0.04}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-14", "match": "Ivory Coast v Ecuador", "bet": "Under 2.5 goals", "market": "Totals", "odds": 1.41, "stake": 0.81, "status": "won", "pnl": 0.33}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-15", "match": "Saudi Arabia v Uruguay", "bet": "Under 2.5 goals", "market": "Totals", "odds": 1.8, "stake": 2.71, "status": "open", "pnl": 0.0}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-15", "match": "Belgium v Egypt", "bet": "Under 2.5 goals", "market": "Totals", "odds": 1.87, "stake": 3.04, "status": "open", "pnl": 0.0}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-14", "match": "Sweden v Tunisia", "bet": "Under 2.5 goals", "market": "Totals", "odds": 1.7, "stake": 0.73, "status": "lost", "pnl": -0.73}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-15", "match": "Iran v New Zealand", "bet": "Under 2.5 goals", "market": "Totals", "odds": 1.58, "stake": 0.67, "status": "open", "pnl": 0.0}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-14", "match": "Netherlands v Japan", "bet": "Under 2.5 goals", "market": "Totals", "odds": 1.85, "stake": 0.67, "status": "lost", "pnl": -0.67}, {"placed_on": "2026-06-14", "engine": "worldcup", "sport": "soccer", "match_date": "2026-06-15", "match": "Iran v New Zealand", "bet": "Iran win", "market": "1X2 / ML", "odds": 1.83, "stake": 0.86, "status": "open", "pnl": 0.0}], "pnl_curve": [{"i": 0, "v": 0.0}, {"i": 1, "v": 4.13}, {"i": 2, "v": 14.13}, {"i": 3, "v": 11.35}, {"i": 4, "v": 2.91}, {"i": 5, "v": 1.27}, {"i": 6, "v": 25.41}, {"i": 7, "v": 21.88}, {"i": 8, "v": 18.58}, {"i": 9, "v": 22.45}, {"i": 10, "v": 21.43}, {"i": 11, "v": 20.43}, {"i": 12, "v": 19.43}, {"i": 13, "v": 19.47}, {"i": 14, "v": 19.8}, {"i": 15, "v": 19.07}, {"i": 16, "v": 18.4}], "summary": {"total": 24, "open": 8, "settled": 16, "won": 6, "net_pnl": 18.4, "staked": 47.21, "roi": 0.3897, "hit_rate": 0.375}, "by_market": [{"market": "1X2 / ML", "bets": 12, "settled": 8, "won": 4, "net_pnl": 21.4, "roi": 0.592, "hit_rate": 0.5}, {"market": "Totals", "bets": 8, "settled": 5, "won": 2, "net_pnl": 0.02, "roi": 0.0025, "hit_rate": 0.4}, {"market": "Other", "bets": 1, "settled": 0, "won": 0, "net_pnl": 0.0, "roi": 0.0, "hit_rate": 0.0}, {"market": "Outright", "bets": 3, "settled": 3, "won": 0, "net_pnl": -3.02, "roi": -1.0, "hit_rate": 0.0}], "by_sport": [{"sport": "soccer", "bets": 21, "settled": 13, "won": 6, "net_pnl": 21.42, "roi": 0.4847, "hit_rate": 0.4615}, {"sport": "golf", "bets": 3, "settled": 3, "won": 0, "net_pnl": -3.02, "roi": -1.0, "hit_rate": 0.0}], "options": {"sports": ["golf", "soccer"], "engines": ["golf", "worldcup"], "markets": ["1X2 / ML", "Other", "Outright", "Totals"], "statuses": ["lost", "open", "won"]}}, "settings": {"sources": [{"id": "the-odds-api", "label": "The Odds API (the-odds-api.com)"}, {"id": "api-football", "label": "API-Football (injuries.py)"}, {"id": "datagolf", "label": "DataGolf (golf/fetch.py)"}], "odds_api_keys_set": {"the-odds-api": true, "api-football": true, "datagolf": true}, "odds_api_keys_masked": {"the-odds-api": "\u202698c0", "api-football": "\u20261c7f", "datagolf": "\u2026here"}, "default_kelly": 0.2, "default_model": "blend"}, "bankroll": {"bankroll": 115.38, "peak": 126.26, "start": 100.0, "open": [{"sport": "soccer", "match_date": "2026-07-19", "match": "Argentina", "bet": "Argentina to win World Cup", "odds": 11.0, "stake": 2.22, "status": "open", "pnl": 0.0}, {"sport": "soccer", "match_date": "2026-07-19", "match": "Mexico", "bet": "Mexico to win World Cup (EW win part)", "odds": 67.0, "stake": 0.65, "status": "open", "pnl": 0.0}, {"sport": "soccer", "match_date": "2026-07-19", "match": "Mexico", "bet": "Mexico top 2 (EW place part, 1/2 odds)", "odds": 34.0, "stake": 0.65, "status": "open", "pnl": 0.0}, {"sport": "soccer", "match_date": "2026-06-15", "match": "Spain v Cape Verde", "bet": "Spain win", "odds": 1.09, "stake": 1.04, "status": "open", "pnl": 0.0}, {"sport": "soccer", "match_date": "2026-06-15", "match": "Saudi Arabia v Uruguay", "bet": "Under 2.5 goals", "odds": 1.8, "stake": 2.71, "status": "open", "pnl": 0.0}, {"sport": "soccer", "match_date": "2026-06-15", "match": "Belgium v Egypt", "bet": "Under 2.5 goals", "odds": 1.87, "stake": 3.04, "status": "open", "pnl": 0.0}, {"sport": "soccer", "match_date": "2026-06-15", "match": "Iran v New Zealand", "bet": "Under 2.5 goals", "odds": 1.58, "stake": 0.67, "status": "open", "pnl": 0.0}, {"sport": "soccer", "match_date": "2026-06-15", "match": "Iran v New Zealand", "bet": "Iran win", "odds": 1.83, "stake": 0.86, "status": "open", "pnl": 0.0}], "settled": [{"sport": "soccer", "match_date": "2026-06-14", "match": "Netherlands v Japan", "bet": "Under 2.5 goals", "odds": 1.85, "stake": 0.67, "status": "lost", "pnl": -0.67}, {"sport": "soccer", "match_date": "2026-06-14", "match": "Sweden v Tunisia", "bet": "Under 2.5 goals", "odds": 1.7, "stake": 0.73, "status": "lost", "pnl": -0.73}, {"sport": "soccer", "match_date": "2026-06-14", "match": "Ivory Coast v Ecuador", "bet": "Under 2.5 goals", "odds": 1.41, "stake": 0.81, "status": "won", "pnl": 0.33}, {"sport": "soccer", "match_date": "2026-06-14", "match": "Germany v Cura\u00e7ao", "bet": "Germany win", "odds": 1.04, "stake": 0.98, "status": "won", "pnl": 0.04}, {"sport": "golf", "match_date": "2026-06-15", "match": "Robert MacIntyre v RBC Canadian Open", "bet": "win outright", "odds": 41.85, "stake": 1.0, "status": "lost", "pnl": -1.0}, {"sport": "golf", "match_date": "2026-06-15", "match": "Brooks Koepka v RBC Canadian Open", "bet": "win outright", "odds": 14.3, "stake": 1.0, "status": "lost", "pnl": -1.0}, {"sport": "golf", "match_date": "2026-06-15", "match": "Matt Fitzpatrick v RBC Canadian Open", "bet": "win outright", "odds": 47.55, "stake": 1.02, "status": "lost", "pnl": -1.02}, {"sport": "soccer", "match_date": "2026-06-13", "match": "Haiti v Scotland", "bet": "Under 2.5 goals", "odds": 2.27, "stake": 3.05, "status": "won", "pnl": 3.87}, {"sport": "soccer", "match_date": "2026-06-14", "match": "Ivory Coast v Ecuador", "bet": "Ecuador win", "odds": 2.42, "stake": 3.3, "status": "lost", "pnl": -3.3}, {"sport": "soccer", "match_date": "2026-06-14", "match": "Netherlands v Japan", "bet": "Japan win", "odds": 3.8, "stake": 3.53, "status": "lost", "pnl": -3.53}, {"sport": "soccer", "match_date": "2026-06-13", "match": "Australia v Turkey", "bet": "Australia win", "odds": 5.25, "stake": 5.68, "status": "won", "pnl": 24.14}, {"sport": "soccer", "match_date": "2026-06-13", "match": "United States v Paraguay", "bet": "Paraguay win", "odds": 4.0, "stake": 1.64, "status": "lost", "pnl": -1.64}, {"sport": "soccer", "match_date": "2026-06-12", "match": "Canada v Bosnia and Herzegovina", "bet": "Canada win", "odds": 1.83, "stake": 8.44, "status": "lost", "pnl": -8.44}, {"sport": "soccer", "match_date": "2026-06-11", "match": "Mexico v South Africa", "bet": "Over 2.5 goals", "odds": 2.195, "stake": 2.78, "status": "lost", "pnl": -2.78}, {"sport": "soccer", "match_date": "2026-06-11", "match": "Mexico v South Africa", "bet": "Mexico win (SkyBet boost)", "odds": 2.0, "stake": 10.0, "status": "won", "pnl": 10.0}, {"sport": "soccer", "match_date": "2026-06-11", "match": "South Korea v Czech Republic", "bet": "South Korea win", "odds": 2.6, "stake": 2.58, "status": "won", "pnl": 4.13}], "by_sport": [{"sport": "golf", "open": 0, "settled": 3, "net_pnl": -3.02}, {"sport": "soccer", "open": 8, "settled": 13, "net_pnl": 21.42}], "totals": {"open_count": 8, "open_stake": 11.84, "settled_count": 16, "won": 6, "net_pnl": 18.4}}, "predict": {"competitors": [{"name": "Abkhazia", "sub": "Elo 1631"}, {"name": "Afghanistan", "sub": "Elo 1179"}], "headline": "3.28 \u2013 0.43 expected goals \u00b7 home advantage: Abkhazia", "outcomes": [{"label": "Abkhazia win", "prob": 0.8987, "kind": "win"}, {"label": "Draw", "prob": 0.0805, "kind": "draw"}, {"label": "Afghanistan win", "prob": 0.0208, "kind": "loss"}], "table": {"title": "Most likely scorelines", "columns": [{"key": "score", "label": "Score", "fmt": "text"}, {"key": "prob", "label": "Prob", "fmt": "pct"}], "rows": [{"score": "3-0", "prob": 0.1433}, {"score": "2-0", "prob": 0.131}, {"score": "4-0", "prob": 0.1176}, {"score": "5-0", "prob": 0.0772}, {"score": "1-0", "prob": 0.0763}], "bar": "prob"}}, "simulate": {"note": "50,000 simulations (preview sample)", "columns": [{"key": "team", "label": "Team", "fmt": "text"}, {"key": "champion", "label": "Champion", "fmt": "pct"}, {"key": "final", "label": "Final", "fmt": "pct"}, {"key": "semi", "label": "Semi", "fmt": "pct"}], "rows": [{"team": "Argentina", "champion": 0.174, "final": 0.3654, "semi": 0.5915999999999999}, {"team": "Spain", "champion": 0.164, "final": 0.34440000000000004, "semi": 0.5576}, {"team": "France", "champion": 0.071, "final": 0.14909999999999998, "semi": 0.24139999999999998}, {"team": "Brazil", "champion": 0.068, "final": 0.1428, "semi": 0.23120000000000002}, {"team": "England", "champion": 0.066, "final": 0.1386, "semi": 0.22440000000000002}]}, "edge": {"note": "11 positive-edge picks (preview sample)", "bankroll": 115.38, "recorded": 0, "columns": [{"key": "match", "label": "Match", "fmt": "text"}, {"key": "bet", "label": "Bet", "fmt": "text"}, {"key": "odds", "label": "Odds", "fmt": "num"}, {"key": "edge", "label": "Edge", "fmt": "signed_pct"}, {"key": "stake", "label": "Stake", "fmt": "gbp"}], "rows": [{"match": "Saudi Arabia v Uruguay", "bet": "Under 2.5 goals", "odds": 1.75, "edge": 0.057, "stake": 1.7}, {"match": "England v Croatia", "bet": "Under 2.5 goals", "odds": 1.7, "edge": 0.04, "stake": 0.68}, {"match": "Belgium v Egypt", "bet": "Under 2.5 goals", "odds": 1.9, "edge": 0.088, "stake": 3.19}, {"match": "Uzbekistan v Colombia", "bet": "Under 2.5 goals", "odds": 1.83, "edge": 0.05, "stake": 1.1}, {"match": "France v Senegal", "bet": "Under 2.5 goals", "odds": 1.92, "edge": 0.065, "stake": 1.96}, {"match": "Iraq v Norway", "bet": "Under 2.5 goals", "odds": 2.41, "edge": 0.167, "stake": 5.64}, {"match": "Portugal v DR Congo", "bet": "Under 2.5 goals", "odds": 2.13, "edge": 0.115, "stake": 3.75}, {"match": "Iran v New Zealand", "bet": "Iran win", "odds": 1.83, "edge": 0.016, "stake": 0.62}, {"match": "Austria v Jordan", "bet": "Under 2.5 goals", "odds": 2.2, "edge": 0.115, "stake": 3.68}, {"match": "Argentina v Algeria", "bet": "Under 2.5 goals", "odds": 1.88, "edge": 0.018, "stake": 0.6}, {"match": "Ghana v Panama", "bet": "Panama win", "odds": 3.47, "edge": 0.217, "stake": 6.63}]}};
+function route(m,p,b){const G={'/api/engines':MOCK.engines,'/api/dashboard':MOCK.dashboard,'/api/fixtures':MOCK.fixtures,'/api/outrights':MOCK.outrights,'/api/history':MOCK.history,'/api/settings':MOCK.settings,'/api/predict':MOCK.predict,'/api/simulate':MOCK.simulate,'/api/edge':MOCK.edge};if(G[p]!==undefined)return G[p];if(p==='/api/bankroll'){if(b.action==='settle')return Object.assign({result:{settled:0,still_open:MOCK.bankroll.totals.open_count}},MOCK.bankroll);return MOCK.bankroll;}if(p==='/api/edge/template')return{path:'odds_template.csv'};return{};}
+window.fetch=async(p,o={})=>{let b={};if(o.body){try{b=JSON.parse(o.body)}catch(e){}}return{ok:true,status:200,statusText:'OK',json:async()=>route((o.method||'GET').toUpperCase(),p,b)};};
+</script><script>"use strict";
+
+const ALL_CAPS = [
+  { id: "predict", label: "Predict" },
+  { id: "simulate", label: "Simulate" },
+  { id: "edge", label: "Edge" },
+];
+const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "bankroll", "settings", "placeholder"];
+
+const state = { engines: [], current: null, activeCap: "predict", view: "engine" };
+
+// ---------- persisted UI preferences (local to this Mac) ----------
+const prefs = {
+  get(k, fallback) { try { const v = localStorage.getItem("sp-" + k); return v == null ? fallback : JSON.parse(v); } catch (e) { return fallback; } },
+  set(k, v) { try { localStorage.setItem("sp-" + k, JSON.stringify(v)); } catch (e) { /* ignore */ } },
+};
+
+// ---------- theme ----------
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("sp-theme", theme); } catch (e) { /* ignore */ }
+}
+function initTheme() {
+  let theme;
+  try { theme = localStorage.getItem("sp-theme"); } catch (e) { theme = null; }
+  if (!theme) theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  applyTheme(theme);
+  const btn = $("theme-toggle");
+  if (btn) btn.onclick = () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    if (state.view === "dashboard") openDashboard();  // re-render charts in new theme
+  };
+}
+
+// ---------- toast ----------
+function toast(msg, kind = "") {
+  const host = $("toast-host");
+  if (!host) return;
+  const el = document.createElement("div");
+  el.className = "toast " + kind;
+  el.textContent = msg;
+  host.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 250); }, 2600);
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+const post = (path, payload) =>
+  api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+
+const $ = (id) => document.getElementById(id);
+const pct = (x) => `${(x * 100).toFixed(1)}%`;
+const gbp = (x) => `£${Number(x).toFixed(2)}`;
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+}[ch]));
+const safeClass = (v) => String(v || "").replace(/[^a-z0-9_-]/gi, "");
+
+function showPanel(name) {
+  PANELS.forEach((p) => { $("panel-" + p).hidden = p !== name; });
+}
+
+async function init() {
+  initTheme();
+  $("nav-dashboard").onclick = openDashboard;
+  $("nav-fixtures").onclick = openFixtures;
+  $("nav-outrights").onclick = openOutrights;
+  $("nav-history").onclick = openHistory;
+  $("nav-bankroll").onclick = openBankroll;
+  $("nav-settings").onclick = openSettings;
+  try {
+    const { engines } = await api("/api/engines");
+    state.engines = engines;
+    renderSidebar();
+    openDashboard();
+  } catch (e) {
+    $("engine-title").textContent = "Failed to load engines";
+    console.error(e);
+  }
+}
+
+function renderSidebar() {
+  const list = $("engine-list");
+  list.innerHTML = "";
+  state.engines.forEach((eng) => {
+    const btn = document.createElement("button");
+    const active = state.view === "engine" && state.current === eng.id;
+    btn.className = "nav-item" + (active ? " active" : "");
+    btn.innerHTML = `<span class="sport-dot"></span>${esc(eng.name)}`;
+    btn.onclick = () => selectEngine(eng.id);
+    list.appendChild(btn);
+  });
+  [["dashboard", "nav-dashboard"], ["fixtures", "nav-fixtures"], ["outrights", "nav-outrights"],
+   ["history", "nav-history"], ["bankroll", "nav-bankroll"], ["settings", "nav-settings"]]
+    .forEach(([v, id]) => $(id).classList.toggle("active", state.view === v));
+}
+
+const currentEngine = () => state.engines.find((e) => e.id === state.current);
+
+function selectEngine(id) {
+  state.view = "engine";
+  state.current = id;
+  prefs.set("last-engine", id);
+  const eng = currentEngine();
+  $("engine-title").textContent = eng.name;
+  state.activeCap = eng.capabilities.includes("predict") ? "predict" : eng.capabilities[0];
+  renderSidebar();
+  renderTabs();
+  renderActiveCap();
+}
+
+function renderTabs() {
+  const eng = currentEngine();
+  const tabs = $("tabs");
+  tabs.innerHTML = "";
+  if (state.view !== "engine") return;
+  ALL_CAPS.forEach((cap) => {
+    if (!eng.capabilities.includes(cap.id)) return;
+    const btn = document.createElement("button");
+    btn.className = "tab" + (state.activeCap === cap.id ? " active" : "");
+    btn.textContent = cap.label;
+    btn.onclick = () => { state.activeCap = cap.id; renderTabs(); renderActiveCap(); };
+    tabs.appendChild(btn);
+  });
+}
+
+function renderActiveCap() {
+  const cap = state.activeCap;
+  showPanel(cap);
+  if (cap === "predict") setupPredict();
+  else if (cap === "simulate") setupSimulate();
+  else if (cap === "edge") setupEdge();
+}
+
+// ---------- PREDICT ----------
+function setupPredict() {
+  const eng = currentEngine();
+  const schema = (eng.schemas && eng.schemas.predict) || eng.predict_schema || {};
+  const names = schema.names || [];
+  const label = schema.team_label || "Team";
+  $("label-team1").textContent = `${label} 1`;
+  $("label-team2").textContent = `${label} 2`;
+  $("team-names").innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
+  const models = schema.models || [];
+  const modelSel = $("model");
+  modelSel.innerHTML = models.map((m) => `<option>${esc(m)}</option>`).join("");
+  modelSel.parentElement.style.display = models.length > 1 ? "" : "none";
+  const savedModel = prefs.get("model-" + eng.id);
+  if (savedModel && models.includes(savedModel)) modelSel.value = savedModel;
+  modelSel.onchange = () => prefs.set("model-" + eng.id, modelSel.value);
+  // model comparison available when an engine exposes more than one model
+  const cmp = $("compare-btn");
+  cmp.hidden = models.length < 2;
+  cmp.onclick = runCompare;
+  $("compare-result").hidden = true;
+  renderFilters("predict-filters", schema.filters || [], "predict");
+
+  // Venue control: some engines use a home-advantage toggle (soccer), others a
+  // neutral-site toggle (CFB defaults to home). Driven by the schema.
+  const wrap = $("home-wrap");
+  const cb = $("home");
+  const t1 = $("team1");
+  if (schema.neutral_toggle) {
+    wrap.style.display = "";
+    wrap.dataset.mode = "neutral";
+    cb.checked = false;
+    $("home-team-name").parentElement.firstChild.textContent = "Neutral site";
+    $("home-team-name").textContent = "";
+  } else if (schema.supports_home) {
+    wrap.style.display = "";
+    wrap.dataset.mode = "home";
+    $("home-team-name").parentElement.firstChild.textContent = "Home advantage for ";
+    t1.oninput = () => { $("home-team-name").textContent = t1.value || `${label} 1`; };
+    $("home-team-name").textContent = t1.value || `${label} 1`;
+  } else {
+    wrap.style.display = "none";
+    wrap.dataset.mode = "";
+  }
+  $("predict-btn").onclick = runPredict;
+}
+
+async function runPredict() {
+  const eng = currentEngine();
+  const btn = $("predict-btn"), err = $("predict-error"), result = $("result");
+  err.hidden = true;
+  const mode = $("home-wrap").dataset.mode;
+  const params = {
+    team1: $("team1").value.trim(), team2: $("team2").value.trim(),
+    model: $("model").value || undefined,
+  };
+  if (mode === "home") params.home = $("home").checked;
+  else if (mode === "neutral") params.neutral = $("home").checked;
+  readFilters("predict-filters", "predict", params);
+  await withSpin(btn, "Predict", async () => {
+    try {
+      const r = await post("/api/predict", { engine: eng.id, params });
+      renderPredict(r); result.hidden = false;
+    } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
+  });
+}
+
+// Generic, engine-agnostic prediction result (competitors, outcome bar,
+// optional stat chips, optional table).
+function renderPredict(r) {
+  const comp = (r.competitors || []).map((c, i) =>
+    `<div class="team-block${i ? " right" : ""}"><div class="team-name">${esc(c.name)}</div>
+     <div class="elo">${esc(c.sub || "")}</div></div>`);
+  const headSep = comp.length === 2 ? `<div class="xg">vs</div>` : "";
+  const head = `<div class="result-head">${comp[0] || ""}${headSep}${comp[1] || ""}</div>`;
+  const headline = r.headline ? `<div class="headline">${esc(r.headline)}</div>` : "";
+
+  const outs = r.outcomes || [];
+  const bar = `<div class="prob-bar">` +
+    outs.map((o) => `<div class="seg ${safeClass(o.kind) || "neutral"}" style="width:${o.prob * 100}%">${o.prob > 0.08 ? esc(pct(o.prob)) : ""}</div>`).join("") +
+    `</div>`;
+  const legend = `<div class="prob-legend">` +
+    outs.map((o) => `<span><i class="dot ${safeClass(o.kind) || "neutral"}"></i>${esc(o.label)} <b>${esc(pct(o.prob))}</b></span>`).join("") +
+    `</div>`;
+  const probs = outs.length ? `<div class="probs">${bar}${legend}</div>` : "";
+
+  const stats = (r.stats && r.stats.length)
+    ? `<div class="stat-chips">` + r.stats.map((s) =>
+        `<div class="chip"><span class="chip-label">${esc(s.label)}</span><span class="chip-val">${esc(s.value)}</span></div>`).join("") + `</div>`
+    : "";
+
+  const table = r.table ? `<div class="scorelines"><div class="scorelines-title">${esc(r.table.title || "")}</div>${renderTable(r.table.columns, r.table.rows, r.table.bar)}</div>` : "";
+
+  $("result").innerHTML = head + headline + probs + stats + table;
+}
+
+// Run the same fixture through every model the engine exposes, side by side.
+async function runCompare() {
+  const eng = currentEngine();
+  const models = (eng.schemas.predict || {}).models || [];
+  const err = $("predict-error"), box = $("compare-result");
+  err.hidden = true;
+  const mode = $("home-wrap").dataset.mode;
+  const base = { team1: $("team1").value.trim(), team2: $("team2").value.trim() };
+  if (mode === "home") base.home = $("home").checked;
+  else if (mode === "neutral") base.neutral = $("home").checked;
+  readFilters("predict-filters", "predict", base);
+  await withSpin($("compare-btn"), "Compare models", async () => {
+    try {
+      const results = [];
+      for (const m of models) {
+        const r = await post("/api/predict", { engine: eng.id, params: Object.assign({}, base, { model: m }) });
+        results.push({ model: m, r });
+      }
+      renderCompare(results); box.hidden = false;
+    } catch (e) { err.textContent = e.message; err.hidden = false; box.hidden = true; }
+  });
+}
+
+function renderCompare(results) {
+  const labels = (results[0].r.outcomes || []).map((o) => o.label);
+  const columns = [{ key: "model", label: "Model", fmt: "text" }]
+    .concat(labels.map((l) => ({ key: l, label: l, fmt: "pct" })))
+    .concat([{ key: "likely", label: "Likely", fmt: "text" }]);
+  const rows = results.map(({ model, r }) => {
+    const row = { model };
+    (r.outcomes || []).forEach((o) => { row[o.label] = o.prob; });
+    if (r.table && r.table.rows && r.table.rows.length) {
+      const top = r.table.rows[0];
+      row.likely = top.score || top.label || top.scoreline || "";
+    } else row.likely = r.headline ? "" : "";
+    return row;
+  });
+  $("compare-result").innerHTML = `<div class="card-title">Model comparison</div>` + renderTable(columns, rows);
+}
+
+// Generic table from column metadata. `barKey` (optional) draws a mini-bar
+// behind that column's values, scaled to the column max.
+function fmtCell(val, fmt) {
+  if (val == null || val === "") return "";
+  switch (fmt) {
+    case "pct": return pct(val);
+    case "pct1": return `${(val * 100).toFixed(2)}%`;
+    case "gbp": return gbp(val);
+    case "gbp_signed": return `${Number(val) >= 0 ? "+" : ""}${gbp(val)}`;
+    case "signed_pct": return `${(val * 100 >= 0 ? "" : "") + (val * 100).toFixed(1)}%`;
+    case "signed_num": return `${val >= 0 ? "+" : ""}${Number(val).toFixed(2)}`;
+    case "num1": return Number(val).toFixed(1);
+    case "num": return typeof val === "number" ? String(val) : val;
+    default: return val;
+  }
+}
+function renderTable(columns, rows, barKey) {
+  if (!rows || !rows.length) return `<table class="data-table"><tr><td class="muted">No rows.</td></tr></table>`;
+  const numFmts = new Set(["pct", "pct1", "gbp", "gbp_signed", "signed_pct", "signed_num", "num", "num1"]);
+  const head = "<tr>" + columns.map((c) => `<th class="${numFmts.has(c.fmt) ? "num" : ""}">${esc(c.label)}</th>`).join("") + "</tr>";
+  const max = barKey ? Math.max(...rows.map((r) => Number(r[barKey]) || 0), 0.0001) : 0;
+  const body = rows.map((row) => "<tr>" + columns.map((c) => {
+    const raw = row[c.key];
+    let cls = numFmts.has(c.fmt) ? "num" : "";
+    if (c.fmt === "signed_pct") cls += raw > 0.03 ? " pos" : (raw < 0 ? " neg" : "");
+    if (c.fmt === "signed_num") cls += raw > 0 ? " pos" : (raw < 0 ? " neg" : "");
+    if (c.fmt === "gbp_signed") cls += raw > 0 ? " pos" : (raw < 0 ? " neg" : "");
+    const cell = fmtCell(raw, c.fmt);
+    if (barKey && c.key === barKey) {
+      const w = Math.max(0, Math.min(100, ((Number(raw) || 0) / max) * 100));
+      return `<td class="${cls}"><div class="cellbar"><span style="width:${w}%"></span><em>${esc(cell)}</em></div></td>`;
+    }
+    return `<td class="${cls}">${esc(cell)}</td>`;
+  }).join("") + "</tr>").join("");
+  return `<table class="data-table">${head}${body}</table>`;
+}
+
+// Interactive table: click-to-sort headers, optional search box, optional
+// expandable per-row detail. Mounts into `host` and manages its own state.
+const NUM_FMTS = new Set(["pct", "pct1", "gbp", "gbp_signed", "signed_pct", "signed_num", "num", "num1"]);
+function mountTable(host, columns, rows, opts = {}) {
+  if (!host) return;
+  const data = (rows || []).map((r, i) => Object.assign({ _id: i }, r));
+  const st = { sort: opts.initialSort || null, q: "", open: new Set() };
+  const toolbar = opts.search
+    ? `<div class="table-toolbar"><span class="spacer"></span><input class="table-search mt-search" placeholder="Search…"></div>` : "";
+  host.innerHTML = toolbar + `<div class="mt-scroll"></div>`;
+  const scroll = host.querySelector(".mt-scroll");
+  const searchEl = host.querySelector(".mt-search");
+  if (searchEl) searchEl.oninput = () => { st.q = searchEl.value.trim().toLowerCase(); draw(); };
+
+  function view() {
+    let r = data.slice();
+    if (st.q) r = r.filter((row) => columns.some((c) => String(row[c.key] ?? "").toLowerCase().includes(st.q)));
+    if (st.sort) {
+      const { key, dir } = st.sort;
+      r.sort((a, b) => {
+        const av = a[key], bv = b[key];
+        const na = parseFloat(av), nb = parseFloat(bv);
+        const numeric = !isNaN(na) && !isNaN(nb) && av !== "" && bv !== "" && av != null && bv != null;
+        const cmp = numeric ? na - nb : String(av ?? "").localeCompare(String(bv ?? ""));
+        return dir === "asc" ? cmp : -cmp;
+      });
+    }
+    return r;
+  }
+  function draw() {
+    const r = view();
+    if (!r.length) { scroll.innerHTML = `<table class="data-table"><tr><td class="muted">No rows.</td></tr></table>`; return; }
+    const head = "<tr>" + (opts.detail ? "<th></th>" : "") + columns.map((c) => {
+      const ind = st.sort && st.sort.key === c.key ? `<span class="sort-ind">${st.sort.dir === "asc" ? "▲" : "▼"}</span>` : "";
+      return `<th class="sortable ${NUM_FMTS.has(c.fmt) ? "num" : ""}" data-key="${esc(c.key)}">${esc(c.label)}${ind}</th>`;
+    }).join("") + "</tr>";
+    const bodyRows = r.map((row) => {
+      const cells = columns.map((c) => {
+        const raw = row[c.key];
+        let cls = NUM_FMTS.has(c.fmt) ? "num" : "";
+        if (c.fmt === "signed_pct") cls += raw > 0.0001 ? " pos" : (raw < 0 ? " neg" : "");
+        if (c.fmt === "signed_num" || c.fmt === "gbp_signed") cls += raw > 0 ? " pos" : (raw < 0 ? " neg" : "");
+        if (c.status) cls += raw === "won" ? " pos" : (raw === "lost" ? " neg" : "");
+        return `<td class="${cls}">${esc(fmtCell(raw, c.fmt))}</td>`;
+      }).join("");
+      const toggle = opts.detail ? `<td class="mt-toggle">${st.open.has(row._id) ? "▾" : "▸"}</td>` : "";
+      let tr = `<tr class="${opts.detail ? "mt-row" : ""}" data-id="${row._id}">${toggle}${cells}</tr>`;
+      if (opts.detail && st.open.has(row._id))
+        tr += `<tr class="mt-detail"><td colspan="${columns.length + 1}">${opts.detail(row, columns) || ""}</td></tr>`;
+      return tr;
+    }).join("");
+    scroll.innerHTML = `<table class="data-table">${head}${bodyRows}</table>`;
+    scroll.querySelectorAll("th.sortable").forEach((th) => th.onclick = () => {
+      const key = th.dataset.key;
+      st.sort = st.sort && st.sort.key === key ? { key, dir: st.sort.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" };
+      draw();
+    });
+    if (opts.detail) scroll.querySelectorAll("tr.mt-row").forEach((tr) => tr.onclick = () => {
+      const id = Number(tr.dataset.id);
+      st.open.has(id) ? st.open.delete(id) : st.open.add(id);
+      draw();
+    });
+  }
+  draw();
+}
+
+// Generic key/value drill-down for a table row (shows every field).
+function kvDetail(row, columns) {
+  const shown = new Map(columns.map((c) => [c.key, c]));
+  const pairs = columns.map((c) => [c.label, fmtCell(row[c.key], c.fmt)]);
+  Object.keys(row).filter((k) => !shown.has(k) && !k.startsWith("_")).forEach((k) => pairs.push([k, row[k]]));
+  return `<div class="kv">` + pairs.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("") + `</div>`;
+}
+
+function flash(el) { if (!el) return; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+
+// ---------- SIMULATE ----------
+function setupSimulate() {
+  const s = currentEngine().schemas.simulate || {};
+  fillSelect("sim-model", s.models || ["blend"]);
+  const counts = s.sim_options || [10000];
+  $("sim-count").innerHTML = counts.map((c) => `<option value="${esc(c)}">${esc(c.toLocaleString())}</option>`).join("");
+  if (s.default_sims) $("sim-count").value = s.default_sims;
+  $("sim-btn").onclick = runSimulate;
+}
+
+async function runSimulate() {
+  const eng = currentEngine();
+  const btn = $("sim-btn"), err = $("sim-error"), note = $("sim-note"), result = $("sim-result");
+  err.hidden = true;
+  const params = { model: $("sim-model").value, sims: Number($("sim-count").value) };
+  await withSpin(btn, "Run simulation", async () => {
+    try {
+      const r = await post("/api/simulate", { engine: eng.id, params });
+      note.textContent = r.note || ""; note.hidden = false;
+      mountTable($("sim-result").querySelector(".table-scroll"), r.columns, r.rows, { search: true });
+      result.hidden = false;
+    } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
+  });
+}
+
+// ---------- EDGE ----------
+function setupEdge() {
+  const eng = currentEngine();
+  const s = eng.schemas.edge || {};
+  const models = s.models || [];
+  fillSelect("edge-model", models);
+  $("edge-model").parentElement.style.display = models.length > 1 ? "" : "none";
+  $("edge-source").innerHTML = (s.odds_sources || []).map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");
+  $("edge-source").parentElement.style.display = (s.odds_sources || []).length > 1 ? "" : "none";
+  const opts = s.adjustments || [];
+  $("edge-options").innerHTML = opts.map((o) =>
+    `<label class="checkbox"><input type="checkbox" data-edge-option="${esc(o.id)}" /><span>${esc(o.label)}</span></label>`
+  ).join("");
+  $("edge-options").style.display = opts.length ? "" : "none";
+  renderFilters("edge-filters", s.filters || (eng.schemas.predict && eng.schemas.predict.filters) || [], "edge");
+  $("edge-template-btn").style.display = s.has_template ? "" : "none";
+  $("edge-btn").onclick = runEdge;
+  $("edge-template-btn").onclick = runEdgeTemplate;
+}
+
+async function runEdgeTemplate() {
+  const eng = currentEngine();
+  const note = $("edge-note"), err = $("edge-error");
+  err.hidden = true;
+  try {
+    const r = await post("/api/edge/template", { engine: eng.id });
+    note.textContent = `Wrote ${r.path}. Fill in decimal odds, then choose "Manual odds.csv".`;
+    note.hidden = false;
+  } catch (e) { err.textContent = e.message; err.hidden = false; }
+}
+
+async function runEdge() {
+  const eng = currentEngine();
+  const btn = $("edge-btn"), err = $("edge-error"), note = $("edge-note"), result = $("edge-result");
+  err.hidden = true;
+  const params = {
+    model: $("edge-model").value, odds_source: $("edge-source").value,
+    record: $("edge-record").checked,
+  };
+  document.querySelectorAll("#edge-options input[data-edge-option]").forEach((i) => {
+    params[i.dataset.edgeOption] = i.checked;
+  });
+  readFilters("edge-filters", "edge", params);
+  await withSpin(btn, "Find edges", async () => {
+    try {
+      const r = await post("/api/edge", { engine: eng.id, params });
+      let msg = `${r.note} · bankroll ${gbp(r.bankroll)}`;
+      if (r.recorded) msg += ` · recorded ${r.recorded} bet(s)`;
+      note.textContent = msg; note.hidden = false;
+      mountTable($("edge-result").querySelector(".table-scroll"), r.columns, r.rows, { search: true, detail: kvDetail });
+      result.hidden = false;
+    } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
+  });
+}
+
+// ---------- DASHBOARD (suite home) ----------
+async function openDashboard() {
+  state.view = "dashboard"; state.current = null;
+  $("engine-title").textContent = "Dashboard";
+  $("tabs").innerHTML = "";
+  renderSidebar(); showPanel("dashboard");
+  const stats = $("dash-stats"), grid = $("dash-grid");
+  stats.innerHTML = `<div class="stat"><div class="skeleton skeleton-line" style="width:60%"></div><div class="skeleton skeleton-line" style="width:40%;height:24px"></div></div>`.repeat(4);
+  grid.innerHTML = `<div class="dash-card"><div class="skeleton skeleton-line" style="width:40%"></div><div class="skeleton" style="height:150px;margin-top:12px"></div></div>`.repeat(4);
+  try {
+    renderDashboard(await api("/api/dashboard"));
+  } catch (e) {
+    grid.innerHTML = `<div class="dash-card"><div class="empty-mini">Could not load dashboard: ${esc(e.message)}</div></div>`;
+  }
+}
+
+function statTile(label, value, opts = {}) {
+  const cls = opts.cls ? " " + opts.cls : "";
+  const sub = opts.sub ? `<div class="stat-sub">${esc(opts.sub)}</div>` : "";
+  const spark = opts.spark || "";
+  return `<div class="stat"><div class="stat-label">${esc(label)}</div>
+    <div class="stat-value${cls}">${esc(value)}</div>${sub}${spark}</div>`;
+}
+
+function dashCard(title, meta, bodyHtml, span) {
+  const m = meta ? `<span class="h-meta">${esc(meta)}</span>` : "";
+  return `<div class="dash-card${span ? " span-2" : ""}"><h2>${esc(title)}${m}</h2>${bodyHtml}</div>`;
+}
+
+function renderDashboard(d) {
+  const bk = d.bankroll;
+  const curveVals = bk.curve.map((p) => p.v);
+  const pnlCls = bk.net_pnl > 0 ? "pos" : bk.net_pnl < 0 ? "neg" : "";
+  const pnlStr = (bk.net_pnl >= 0 ? "+" : "") + gbp(bk.net_pnl);
+  $("dash-stats").innerHTML =
+    statTile("Bankroll", gbp(bk.bankroll), { sub: `peak ${gbp(bk.peak)}`, spark: Charts.sparkline(curveVals, { color: Charts.cssVar("--pos") }) }) +
+    statTile("Net P&L", pnlStr, { cls: pnlCls, sub: `${bk.settled_count} settled` }) +
+    statTile("Open at risk", gbp(bk.open_stake), { sub: `${bk.open_count} open bet${bk.open_count === 1 ? "" : "s"}` }) +
+    statTile("Record / ROI", `${bk.won}/${bk.settled_count}`, { sub: `hit ${pct(bk.hit_rate)} · ROI ${(bk.roi >= 0 ? "+" : "") + pct(bk.roi)}` });
+
+  const grid = $("dash-grid");
+  grid.innerHTML = "";
+
+  // Bankroll curve (wide)
+  grid.insertAdjacentHTML("beforeend", dashCard("Bankroll curve", `start ${gbp(bk.start)}`, `<div class="chart-host" id="ch-bankroll"></div>`, true));
+  Charts.areaLine($("ch-bankroll"), curveVals, { color: Charts.cssVar("--pos"), fmt: (v) => "£" + v.toFixed(0), baseline: bk.start });
+
+  // CLV
+  grid.insertAdjacentHTML("beforeend", dashCard("CLV trend", "rolling mean", `<div class="chart-host" id="ch-clv"></div>`));
+  if (d.clv && d.clv.length) Charts.areaLine($("ch-clv"), d.clv.map((p) => p.v), { color: Charts.cssVar("--accent"), fmt: (v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%", baseline: 0 });
+  else $("ch-clv").innerHTML = `<div class="empty-mini">No closing-odds snapshots yet (clv.py --snapshot before kickoffs).</div>`;
+
+  // Calibration
+  grid.insertAdjacentHTML("beforeend", dashCard("Calibration", "isotonic vs diagonal", `<div id="ch-cal" class="chart-wrap"></div>`));
+  Charts.calibration($("ch-cal"), d.calibration);
+
+  // Fixtures (wide)
+  const fx = d.fixtures;
+  let fxBody;
+  if (fx.rows.length) {
+    fxBody = `<table class="data-table"><tr><th>Match</th><th style="width:160px">Win / Draw / Loss</th><th class="num">BTTS</th><th>Likely</th></tr>` +
+      fx.rows.map((r) => `<tr><td>${esc(r.match)}</td>
+        <td>${Charts.probBar(r.p_home, r.p_draw, r.p_away)}</td>
+        <td class="num">${r.p_btts != null ? pct(r.p_btts) : "—"}</td>
+        <td>${esc(r.likely)}</td></tr>`).join("") + `</table>`;
+  } else fxBody = `<div class="empty-mini">No upcoming fixtures predicted.</div>`;
+  grid.insertAdjacentHTML("beforeend", dashCard("Fixtures", fx.day || "", fxBody, true));
+
+  // Bet queue
+  const q = d.queue;
+  let qBody;
+  if (q.rows.length) {
+    qBody = `<table class="data-table"><tr><th>Match</th><th>Bet</th><th class="num">Odds</th><th class="num">Edge</th><th class="num">Stake</th></tr>` +
+      q.rows.map((r) => `<tr><td>${esc(r.match)}</td><td>${esc(r.bet)}</td>
+        <td class="num">${r.odds.toFixed(2)}</td>
+        <td class="num pos">+${(r.edge * 100).toFixed(1)}%</td>
+        <td class="num">${gbp(r.stake)}</td></tr>`).join("") + `</table>`;
+  } else qBody = `<div class="empty-mini">No positive-edge picks queued.</div>`;
+  grid.insertAdjacentHTML("beforeend", dashCard("Today's bet queue", q.adjustments || "", qBody, true));
+
+  // Title odds
+  const t = d.title;
+  const titleBody = Charts.hbars(t.rows.map((r) => ({ label: r.team, value: r.champion, delta: r.delta })));
+  grid.insertAdjacentHTML("beforeend", dashCard("Title odds", t.first_snapshot ? "first snapshot" : "▲▼ vs last", titleBody, true));
+}
+
+// ---------- shared suite-view helpers ----------
+function setSuiteView(view, title) {
+  state.view = view; state.current = null;
+  $("engine-title").textContent = title;
+  $("tabs").innerHTML = "";
+  renderSidebar(); showPanel(view);
+}
+
+// ---------- FIXTURES (suite) ----------
+let fxData = null;
+async function openFixtures() {
+  setSuiteView("fixtures", "Fixtures");
+  $("fx-host").innerHTML = `<div class="dash-card"><div class="skeleton skeleton-line" style="width:30%"></div><div class="skeleton" style="height:120px;margin-top:12px"></div></div>`;
+  try {
+    fxData = await api("/api/fixtures");
+    const days = fxData.days || [];
+    $("fx-day").innerHTML = `<option value="">All upcoming</option>` + days.map((d) => `<option value="${esc(d.date)}">${esc(d.date)}</option>`).join("");
+    $("fx-day").onchange = renderFixtures;
+    $("fx-picks-only").onchange = renderFixtures;
+    $("fx-search").oninput = renderFixtures;
+    renderFixtures();
+  } catch (e) { $("fx-host").innerHTML = `<div class="dash-card"><div class="empty-mini">Could not load fixtures: ${esc(e.message)}</div></div>`; }
+}
+
+function renderFixtures() {
+  const days = (fxData && fxData.days) || [];
+  const dayFilter = $("fx-day").value;
+  const picksOnly = $("fx-picks-only").checked;
+  const q = $("fx-search").value.trim().toLowerCase();
+  const host = $("fx-host");
+  host.innerHTML = "";
+  let shown = 0;
+  days.filter((d) => !dayFilter || d.date === dayFilter).forEach((day) => {
+    let rows = day.rows;
+    if (picksOnly) rows = rows.filter((r) => r.picks.length);
+    if (q) rows = rows.filter((r) => r.match.toLowerCase().includes(q));
+    if (!rows.length) return;
+    shown += rows.length;
+    const body = `<table class="data-table"><tr><th>Match</th><th style="width:170px">Win / Draw / Loss</th><th class="num">BTTS</th><th class="num">xG</th><th>Likely</th><th>Edge picks</th></tr>` +
+      rows.map((r) => {
+        const picks = r.picks.length
+          ? r.picks.map((p) => `<span class="badge accent" title="edge +${(p.edge * 100).toFixed(1)}%">${esc(p.bet)} @ ${p.odds.toFixed(2)}</span>`).join(" ")
+          : `<span class="muted">—</span>`;
+        return `<tr><td><b>${esc(r.match)}</b></td>
+          <td>${Charts.probBar(r.p_home, r.p_draw, r.p_away)}</td>
+          <td class="num">${r.p_btts != null ? pct(r.p_btts) : "—"}</td>
+          <td class="num">${r.xg_home.toFixed(1)}–${r.xg_away.toFixed(1)}</td>
+          <td>${esc(r.likely)}</td><td>${picks}</td></tr>`;
+      }).join("") + `</table>`;
+    host.insertAdjacentHTML("beforeend", dashCard(day.date, `${rows.length} match${rows.length === 1 ? "" : "es"}`, body, true));
+  });
+  if (!shown) host.innerHTML = `<div class="dash-card"><div class="empty-mini">No fixtures match these filters.</div></div>`;
+}
+
+// ---------- OUTRIGHTS (suite) ----------
+async function openOutrights() {
+  setSuiteView("outrights", "Outrights");
+  $("or-table").innerHTML = `<div class="skeleton" style="height:200px"></div>`;
+  $("or-chart").innerHTML = "";
+  try {
+    const d = await api("/api/outrights");
+    $("or-meta").textContent = d.first_snapshot ? "first snapshot" : (d.dates.length ? `${d.dates.length} snapshots` : "");
+    const top = d.teams.slice(0, 8);
+    const lines = top.map((t, i) => ({ label: t.team, color: Charts.PALETTE[i % Charts.PALETTE.length], points: t.series }));
+    Charts.multiLine($("or-chart"), lines, d.dates, { fmt: (v) => v.toFixed(0) + "%" });
+    $("or-legend").innerHTML = top.map((t, i) => `<span><i style="background:${Charts.PALETTE[i % Charts.PALETTE.length]}"></i>${esc(t.team)}</span>`).join("");
+    $("or-table").innerHTML = Charts.hbars(d.teams.map((t) => ({ label: t.team, value: t.champion, delta: t.delta })));
+  } catch (e) { $("or-table").innerHTML = `<div class="empty-mini">Could not load outrights: ${esc(e.message)}</div>`; }
+}
+
+// ---------- HISTORY (bet explorer) ----------
+let histData = null;
+async function openHistory() {
+  setSuiteView("history", "Bet history");
+  $("hist-stats").innerHTML = `<div class="stat"><div class="skeleton skeleton-line" style="width:50%"></div><div class="skeleton skeleton-line" style="width:40%;height:22px"></div></div>`.repeat(4);
+  $("hist-table").innerHTML = "";
+  try {
+    histData = await api("/api/history");
+    renderHistory(histData);
+  } catch (e) { $("hist-table").innerHTML = `<div class="empty-mini">Could not load history: ${esc(e.message)}</div>`; }
+}
+
+function renderHistory(d) {
+  const s = d.summary || {};
+  if (!d.rows || !d.rows.length) {
+    $("hist-stats").innerHTML = "";
+    $("hist-table").innerHTML = `<div class="empty-mini">No bets recorded yet.</div>`;
+    return;
+  }
+  const pnlCls = s.net_pnl > 0 ? "pos" : s.net_pnl < 0 ? "neg" : "";
+  $("hist-stats").innerHTML =
+    statTile("Net P&L", (s.net_pnl >= 0 ? "+" : "") + gbp(s.net_pnl), { cls: pnlCls, sub: `£${s.staked} staked` }) +
+    statTile("ROI", (s.roi >= 0 ? "+" : "") + pct(s.roi), { cls: s.roi >= 0 ? "pos" : "neg", sub: "on settled stakes" }) +
+    statTile("Hit rate", pct(s.hit_rate), { sub: `${s.won}/${s.settled} won` }) +
+    statTile("Bets", `${s.total}`, { sub: `${s.open} open · ${s.settled} settled` });
+
+  Charts.areaLine($("hist-curve"), (d.pnl_curve || []).map((p) => p.v), { color: Charts.cssVar(s.net_pnl >= 0 ? "--pos" : "--neg"), fmt: (v) => (v >= 0 ? "+" : "") + "£" + v.toFixed(0), baseline: 0 });
+
+  $("hist-market").innerHTML = renderTable([
+    { key: "market", label: "Market", fmt: "text" },
+    { key: "settled", label: "Settled", fmt: "num" },
+    { key: "net_pnl", label: "P&L", fmt: "gbp_signed" },
+    { key: "roi", label: "ROI", fmt: "signed_pct" },
+  ], d.by_market || []);
+  $("hist-sport").innerHTML = renderTable([
+    { key: "sport", label: "Sport", fmt: "text" },
+    { key: "settled", label: "Settled", fmt: "num" },
+    { key: "net_pnl", label: "P&L", fmt: "gbp_signed" },
+    { key: "roi", label: "ROI", fmt: "signed_pct" },
+  ], d.by_sport || []);
+
+  const opt = (arr) => `<option value="">All</option>` + arr.map((x) => `<option>${esc(x)}</option>`).join("");
+  $("hist-f-sport").innerHTML = opt(d.options.sports);
+  $("hist-f-market").innerHTML = opt(d.options.markets);
+  $("hist-f-status").innerHTML = opt(d.options.statuses);
+  ["hist-f-sport", "hist-f-market", "hist-f-status"].forEach((id) => $(id).onchange = drawHistoryTable);
+  $("hist-search").oninput = drawHistoryTable;
+  drawHistoryTable();
+}
+
+function drawHistoryTable() {
+  const fs = $("hist-f-sport").value, fm = $("hist-f-market").value, fst = $("hist-f-status").value;
+  const q = $("hist-search").value.trim().toLowerCase();
+  let rows = histData.rows;
+  if (fs) rows = rows.filter((r) => r.sport === fs);
+  if (fm) rows = rows.filter((r) => r.market === fm);
+  if (fst) rows = rows.filter((r) => r.status === fst);
+  if (q) rows = rows.filter((r) => (r.match + " " + r.bet).toLowerCase().includes(q));
+  mountTable($("hist-table"), [
+    { key: "match_date", label: "Date", fmt: "text" },
+    { key: "match", label: "Match", fmt: "text" },
+    { key: "bet", label: "Bet", fmt: "text" },
+    { key: "market", label: "Market", fmt: "text" },
+    { key: "sport", label: "Sport", fmt: "text" },
+    { key: "odds", label: "Odds", fmt: "num" },
+    { key: "stake", label: "Stake", fmt: "gbp" },
+    { key: "status", label: "Result", fmt: "text", status: true },
+    { key: "pnl", label: "P&L", fmt: "gbp_signed" },
+  ], rows, { initialSort: { key: "match_date", dir: "desc" }, detail: kvDetail });
+}
+
+// ---------- BANKROLL (suite) ----------
+async function openBankroll() {
+  state.view = "bankroll"; state.current = null;
+  $("engine-title").textContent = "Bankroll";
+  $("tabs").innerHTML = "";
+  renderSidebar(); showPanel("bankroll");
+  $("bk-settle").onclick = () => withSpin($("bk-settle"), "Settle results", async () => {
+    const r = await post("/api/bankroll", { action: "settle" });
+    const res = r.result || {};
+    renderBankroll(r); flash($("bk-bankroll")); flash($("bk-pnl"));
+    toast(res.settled ? `Settled ${res.settled} bet(s) · ${res.still_open || 0} still open` : "No bets ready to settle yet", res.settled ? "pos" : "");
+  });
+  $("bk-reset").onclick = async () => {
+    const amt = Number($("bk-reset-amt").value);
+    if (!amt || amt <= 0) { toast("Enter a reset amount first", "neg"); return; }
+    if (!confirm(`Reset the shared bankroll to ${gbp(amt)}? The current ledger is backed up.`)) return;
+    const r = await post("/api/bankroll", { action: "reset", amount: amt });
+    renderBankroll(r); flash($("bk-bankroll"));
+    toast(`Bankroll reset to ${gbp(amt)} — ledger backed up`, "pos");
+  };
+  try { renderBankroll(await post("/api/bankroll", { action: "status" })); }
+  catch (e) { $("bk-note").textContent = e.message; $("bk-note").hidden = false; }
+}
+
+function renderBankroll(d) {
+  $("bk-bankroll").textContent = gbp(d.bankroll);
+  $("bk-peak").textContent = gbp(d.peak);
+  const pnl = d.totals.net_pnl;
+  const pe = $("bk-pnl");
+  pe.textContent = (pnl >= 0 ? "+" : "") + gbp(pnl).replace("£", "£");
+  pe.className = "stat-value " + (pnl > 0 ? "pos" : pnl < 0 ? "neg" : "");
+  $("bk-risk").textContent = gbp(d.totals.open_stake);
+
+  mountTable($("bk-sport-host"), [
+    { key: "sport", label: "Sport", fmt: "text" },
+    { key: "open", label: "Open", fmt: "num" },
+    { key: "settled", label: "Settled", fmt: "num" },
+    { key: "net_pnl", label: "Net P&L", fmt: "gbp_signed" },
+  ], d.by_sport || []);
+
+  mountTable($("bk-open-host"), [
+    { key: "sport", label: "Sport", fmt: "text" },
+    { key: "match_date", label: "Date", fmt: "text" },
+    { key: "match", label: "Match", fmt: "text" },
+    { key: "bet", label: "Bet", fmt: "text" },
+    { key: "odds", label: "Odds", fmt: "num" },
+    { key: "stake", label: "Stake", fmt: "gbp" },
+  ], d.open || [], { search: true, initialSort: { key: "match_date", dir: "asc" } });
+
+  mountTable($("bk-settled-host"), [
+    { key: "sport", label: "Sport", fmt: "text" },
+    { key: "match_date", label: "Date", fmt: "text" },
+    { key: "match", label: "Match", fmt: "text" },
+    { key: "bet", label: "Bet", fmt: "text" },
+    { key: "odds", label: "Odds", fmt: "num" },
+    { key: "stake", label: "Stake", fmt: "gbp" },
+    { key: "status", label: "Result", fmt: "text", status: true },
+    { key: "pnl", label: "P&L", fmt: "gbp_signed" },
+  ], d.settled || [], { search: true });
+}
+
+// ---------- SETTINGS (suite) ----------
+async function openSettings() {
+  state.view = "settings"; state.current = null;
+  $("engine-title").textContent = "Settings";
+  $("tabs").innerHTML = "";
+  renderSidebar(); showPanel("settings");
+  const s = await api("/api/settings");
+  $("settings-keys").innerHTML = s.sources.map((src) => `
+    <label class="field key-field">
+      <span class="field-label">${esc(src.label)}</span>
+      <input data-src="${esc(src.id)}" placeholder="${esc(s.odds_api_keys_set[src.id] ? "saved (" + s.odds_api_keys_masked[src.id] + ") — type to replace" : "not set")}" autocomplete="off" />
+    </label>`).join("");
+  $("set-model").value = s.default_model;
+  $("set-kelly").value = s.default_kelly;
+  $("settings-save").onclick = saveSettings;
+}
+
+async function saveSettings() {
+  const keys = {};
+  document.querySelectorAll("#settings-keys input").forEach((i) => {
+    if (i.value.trim()) keys[i.dataset.src] = i.value.trim();
+  });
+  const patch = { default_model: $("set-model").value, default_kelly: Number($("set-kelly").value) };
+  if (Object.keys(keys).length) patch.odds_api_keys = keys;
+  await post("/api/settings", patch);
+  const saved = $("settings-saved");
+  saved.hidden = false;
+  setTimeout(() => { saved.hidden = true; }, 1800);
+  openSettings();
+}
+
+// ---------- helpers ----------
+function fillSelect(id, opts) { $(id).innerHTML = opts.map((o) => `<option>${esc(o)}</option>`).join(""); }
+function renderFilters(id, filters, prefix) {
+  const wrap = $(id);
+  if (!wrap) return;
+  if (!filters || !filters.length) {
+    wrap.innerHTML = "";
+    wrap.style.display = "none";
+    return;
+  }
+  wrap.innerHTML = filters.map((f) => {
+    if (f.type === "date") {
+      return `<label class="field filter-field">
+        <span class="field-label">${esc(f.label || f.id)}</span>
+        <input type="date" data-${prefix}-filter="${esc(f.id)}" />
+      </label>`;
+    }
+    const options = (f.options || []).map((o) => {
+      const value = typeof o === "object" ? o.value : o;
+      const label = typeof o === "object" ? (o.label ?? o.value) : o;
+      return `<option value="${esc(value)}">${esc(label)}</option>`;
+    }).join("");
+    return `<label class="field filter-field">
+      <span class="field-label">${esc(f.label || f.id)}</span>
+      <select data-${prefix}-filter="${esc(f.id)}">${options}</select>
+    </label>`;
+  }).join("");
+  wrap.style.display = "";
+}
+function readFilters(id, prefix, params) {
+  document.querySelectorAll(`#${id} [data-${prefix}-filter]`).forEach((s) => {
+    const value = s.value;
+    if (value !== "") params[s.dataset[`${prefix}Filter`]] = value;
+  });
+}
+async function withSpin(btn, label, fn) {
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try { await fn(); } finally { btn.disabled = false; btn.textContent = label; }
+}
+
+init();
+</script></body></html>
