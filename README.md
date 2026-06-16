@@ -1,40 +1,161 @@
-# World Cup 2026 Prediction Engine
+# Sports Predictor
 
-Predicts match outcomes (win/draw/loss probabilities and likely scorelines) using an Elo rating system feeding a Poisson goal model with a Dixon-Coles draw adjustment.
+A local-first sports prediction and betting-analysis suite for World Cup 2026,
+club soccer, college football, and PGA golf.
 
-## How it works
+The project combines model-driven predictions, market/odds comparison,
+bankroll tracking, validation gates, and a desktop-style web UI. It is designed
+for research, paper trading, and model evaluation rather than blind wagering.
 
-Two match models, blended 50/50 by default (the blend beats either alone out-of-sample):
+> Betting markets are noisy and sharp. Treat edge output as analytical
+> information, not financial advice.
 
-1. **Elo + Poisson** (`predictor.py`) — Elo ratings over ~49,000 international matches (1872–present), K scaled by tournament importance and goal margin; expected goals from a Poisson regression on Elo difference; fixed Dixon-Coles draw adjustment (rho = -0.10).
-2. **Dixon-Coles attack/defense** (`dixoncoles.py`) — per-team attack and defense parameters fitted by weighted maximum likelihood (exponential time-decay, 2.5-year half-life, 12-year window), with fitted home advantage and low-score correlation rho, plus L2 shrinkage so sparse-data teams stay sane. Separates *how* teams are strong: e.g. Morocco rates mid-pack on attack but elite on defense — invisible to a single Elo number.
+## What Is Included
+
+- **Desktop app**: FastAPI backend + PyWebView/macOS launcher + dependency-free
+  HTML/CSS/JS frontend in `app/`.
+- **World Cup 2026 engine**: Elo/Poisson and Dixon-Coles blend, tournament
+  simulation, squad/context adjustments, edge finding, CLV, and bankroll tools.
+- **Club soccer engine**: goals/Elo/shot-form ensemble for domestic and European
+  club competitions.
+- **College football engine**: Elo + power-rating blend for win probability,
+  spreads, totals, and win-total projections.
+- **Golf engine**: PGA/majors round-history model, Monte Carlo tournament
+  simulation, calibrated/market-anchored edge pricing, matchup and placement
+  markets.
+- **Shared suite layer**: engine contracts, suite ledger, pooled bankroll,
+  portfolio caps, settlement, dashboard payloads, validation gates, and
+  security checks.
+
+## Quick Start
+
+Clone the repository and install the app dependencies:
 
 ```bash
-python3 dixoncoles.py --fit               # refit and save data/dc_params.json
-python3 dixoncoles.py "Brazil" "Morocco"  # DC-only match prediction
-python3 dixoncoles.py --ratings           # attack/defense table
-python3 dixoncoles.py --backtest          # compare Elo vs DC vs blend
+git clone https://github.com/baz1860/predictorengines.git
+cd predictorengines
+python3 -m pip install -r app/requirements.txt
 ```
 
-`simulate.py` and `edge.py` accept `--model elo|dc|blend` (default blend). After refreshing `data/results.csv`, run `dixoncoles.py --fit` to update DC parameters.
-
-## Usage
+Run the desktop app:
 
 ```bash
-python3 predictor.py "Brazil" "Morocco"             # one match, neutral venue
-python3 predictor.py "Mexico" "South Africa" --home # team 1 has home advantage
-python3 predictor.py --worldcup   # all unplayed WC 2026 fixtures -> predictions_worldcup_2026.csv
-python3 predictor.py --backtest   # walk-forward evaluation on matches since 2024
-python3 predictor.py --ratings    # top 30 current Elo ratings
+python3 -m app.main
 ```
 
-Team names must match the dataset (e.g. "United States", "South Korea", "Ivory Coast").
+Or run the backend for browser development:
 
-## API keys
+```bash
+uvicorn app.server:app --port 8765
+```
 
-Live odds/injury fetchers read API keys from `data/api_keys.json` (ignored by
-git). Copy `data/api_keys.example.json` to `data/api_keys.json` and fill in the
-providers you use:
+Then open `http://127.0.0.1:8765`.
+
+On macOS, the included `Sports Predictor.app` launcher can start the app without
+opening a terminal, provided it remains inside the project folder and your
+Python environment has the dependencies installed.
+
+## Repository Layout
+
+```text
+.
+├── app/                  # Desktop/web app, API, adapters, shared suite logic
+│   ├── engines/          # Engine adapters and isolated subprocess runners
+│   └── web/              # Frontend shell, charts, styles
+├── club_soccer/          # Club soccer model, fetchers, calibration, edge
+├── cfb/                  # College football models, validation, edge, data
+├── golf/                 # Golf model, providers, simulation, edge, validation
+├── data/                 # World Cup data, suite ledger, shared model artifacts
+├── predictor.py          # World Cup match prediction CLI
+├── simulate.py           # World Cup tournament simulation
+├── edge.py               # World Cup odds/edge CLI
+├── validate_all.py       # Cross-engine validation gate
+├── preflight.py          # Offline readiness/key/data check
+└── *_PLAN.md / *_NOTES.md
+```
+
+Engine-specific details live in:
+
+- [app/README.md](app/README.md)
+- [club_soccer/README.md](club_soccer/README.md)
+- [cfb/README.md](cfb/README.md)
+- [golf/README.md](golf/README.md)
+- [V3_PLAN.md](V3_PLAN.md) and [V3_NOTES.md](V3_NOTES.md)
+
+## Desktop App
+
+The app is capability-driven. Each engine adapter declares what it supports
+(`predict`, `simulate`, `edge`), and the UI renders the relevant tabs and forms
+from that schema.
+
+Main app routes:
+
+- `/api/engines` - registered engines and schemas
+- `/api/predict` - engine-specific predictions
+- `/api/simulate` - tournament/event simulations
+- `/api/edge` - odds comparison and recommended stakes
+- `/api/bankroll` - shared bankroll status, settle, reset
+- `/api/dashboard`, `/api/history`, `/api/fixtures`, `/api/outrights`
+
+## CLI Examples
+
+World Cup match prediction:
+
+```bash
+python3 predictor.py "Brazil" "Morocco"
+python3 predictor.py "Mexico" "South Africa" --home
+python3 predictor.py --worldcup
+```
+
+World Cup tournament simulation:
+
+```bash
+python3 simulate.py
+python3 simulate.py -n 50000
+```
+
+World Cup edge report:
+
+```bash
+python3 edge.py --template
+# fill odds.csv with decimal odds, then:
+python3 edge.py --calibrated --market-blend --context
+```
+
+Club soccer:
+
+```bash
+python3 club_soccer/model.py "Arsenal" "Chelsea" --competition "Premier League"
+python3 club_soccer/edge.py --template
+python3 club_soccer/validate.py --gate
+```
+
+College football:
+
+```bash
+python3 cfb/predictor.py "Ohio State" "Michigan"
+python3 cfb/predictor.py "Georgia" "Texas" --neutral --model blend
+python3 cfb/validate.py --quiet --gate
+```
+
+Golf:
+
+```bash
+python3 golf/model.py --fit
+python3 golf/simulate.py --sims 50000
+python3 golf/edge.py --min-edge 1.0
+```
+
+## API Keys
+
+Live odds and injury/data fetchers can read keys from `data/api_keys.json`, which
+is ignored by Git. Start from the example file:
+
+```bash
+cp data/api_keys.example.json data/api_keys.json
+```
+
+Expected shape:
 
 ```json
 {
@@ -44,140 +165,73 @@ providers you use:
 }
 ```
 
-Explicit CLI flags still win (`--api-key`, `--dg-key`, `--odds-key`), and
-environment variables still work (`THE_ODDS_API_KEY`, `API_FOOTBALL_KEY`,
-`DG_API_KEY`).
+Explicit CLI flags and environment variables can also be used:
 
-## Tournament simulator
+- `THE_ODDS_API_KEY`
+- `API_FOOTBALL_KEY`
+- `DG_API_KEY`
 
-```bash
-python3 simulate.py            # 10,000 Monte Carlo runs
-python3 simulate.py -n 50000   # more precision (~5s)
-```
+Do not commit real API keys. GitHub secret scanning is enabled on public repos
+and will block pushes containing provider-shaped tokens.
 
-Simulates the group stage (already-played matches count as fixed results — refresh `data/results.csv` mid-tournament and re-run), applies FIFA tiebreakers (points, GD, GF, head-to-head, lots), ranks the eight best third-placed teams, and plays the official Round-of-32 bracket through the final. Knockout draws go to extra time (1/3 intensity) then 50/50 penalties; hosts (US/Mexico/Canada) keep home advantage. Third-place teams are assigned to bracket slots from FIFA's exact **Annex C** table (`data/annexc_thirds.json`, all 495 scenarios) when present, falling back to constraint matching otherwise. Output: `tournament_odds.csv` — per-team probabilities of winning the group, reaching each round, and lifting the trophy.
+## Validation And Tests
 
-## Squad availability adjustment (squads.py / injuries.py)
-
-The results-based models can't see team news. `squads.py` quantifies it: each squad (data/squads.csv — FIFA's official lists, with EA-derived proxy squads for 12 federations whose lists weren't parseable; see the `source` column) is matched to EA FC 26 player ratings (data/ea_players.csv), and squad power is a starter-weighted mean (best XI full, ranks 12–18 half). Squad *quality* is already priced into Elo/DC ratings, so predictions are adjusted only by the gap between full-strength and currently-available power, converted to Elo points via a cross-team calibration (~25 Elo per rating point) and **split into attack/defence by the absent players' positions** (v2 M5). Teams with fewer than 15 EA-matched players (mostly smaller Asian/African federations) get no adjustment — the model falls back to unadjusted output.
+Fast checks:
 
 ```bash
-python3 squads.py                 # refresh data/squad_ratings.csv
-python3 squads.py --report        # power table + listed absences
-python3 squads.py --match "Canada" "Bosnia and Herzegovina" --home \
-                  --without "Alphonso Davies"        # what-if, not persisted
-python3 injuries.py --api-key KEY # pull live WC injury list (api-football.com,
-                                  # free key; run locally, writes absences_api.csv)
-python3 edge.py --squad-adj       # edge report with availability adjustments
+python3 test_engines_contract.py
+python3 test_security.py
+python3 test_bankroll.py
 ```
 
-Confirmed absences live in `data/absences.csv` (manual, one `team,player,note` row each) and `data/absences_api.csv` (rewritten by injuries.py; the manual file wins on duplicates). The adjustment is **opt-in** (`--squad-adj` on edge.py) — compare adjusted and unadjusted edges while the approach accumulates evidence.
-
-## Edge finder (betting odds comparison)
+Full cross-engine validation gate:
 
 ```bash
-python3 edge.py --template     # writes odds.csv with all upcoming fixtures
-# fill in decimal odds from your bookmaker, then:
-python3 edge.py                # edge report, EV, quarter-Kelly stakes
-python3 edge.py --api-key KEY  # or pull live median odds from the-odds-api.com
-python3 edge.py --bankroll 500 # convert Kelly fractions to currency stakes
+python3 validate_all.py --gate --sims 4000
 ```
 
-For each outcome it removes the bookmaker's vig (overround), compares the implied probability to the model's, and reports edge, expected value per unit, and a quarter-Kelly stake in £. Output: `edge_report.csv`. `odds_sample.csv` shows the format with illustrative (not real) odds. Edges under ~3% are within model noise; closing lines at sharp books are hard to beat consistently.
-
-### Bankroll tracking
-
-Stakes are sized from a live bankroll (started £100, stored in `data/bankroll.json`). `edge.py` auto-records its recommendations (edge ≥ 3%, best outcome per match) in `data/ledger.csv`; pass `--no-bet` to skip. After results come in:
+Preflight readiness report:
 
 ```bash
-python3 bankroll.py --settle   # settle open bets, compound the bankroll
-python3 bankroll.py            # status: bankroll, open bets, P&L
-python3 bankroll.py --reset 100
+python3 preflight.py
+python3 preflight.py --json
 ```
 
-`update.sh` settles automatically each run, so stakes always reflect the current bankroll. Knockout settlement is on the **90-minute** score (v2 M4): group-stage bets settle exactly from the dataset, and for any knockout that went to extra time, add a `data/ko_overrides.csv` row (`date,home,away,score90`) so the 1X2/O-U/BTTS markets settle correctly.
+The validation system is intentionally conservative: model changes should pass
+engine-specific gates before being treated as defaults.
 
-## Performance (out-of-sample, ~2,540 matches since Jan 2024)
+## Data And Generated Files
 
-| Model | Accuracy | Brier (lower = better) |
-|---|---|---|
-| Elo + Poisson | 60.2% | 0.5070 |
-| Dixon-Coles | 59.8% | 0.5089 |
-| **50/50 blend** | **60.4%** | **0.5038** |
+The repository includes several local datasets and fitted model artifacts so the
+engines can run offline. Generated reports, local app settings, local API keys,
+Python caches, backup ledgers, and launcher logs are ignored by `.gitignore`.
 
-Random chance Brier = 0.667. Both models fitted only on pre-2024 data for this test.
+Important data sources include:
 
-## Data
+- World Cup/international results: `data/results.csv`
+- CFB games and lines: `cfb/data/`
+- Golf round history: `golf/data/rounds.csv`
+- Club soccer fixtures/model artifacts: `club_soccer/data/`
 
-`data/results.csv` from [martj42/international_results](https://github.com/martj42/international_results), which includes the 2026 World Cup fixtures. Re-download to refresh ratings as group-stage results come in:
+Refresh scripts exist per engine (`update.sh`, `golf/update.sh`,
+`club_soccer/update.sh`) but may require local API keys depending on the source.
 
-```bash
-git clone --depth 1 https://github.com/martj42/international_results /tmp/intres
-cp /tmp/intres/results.csv data/results.csv
-```
+## Current Direction
 
-## v2 (new)
+The current product direction is the local web/desktop app, not a native Swift
+rewrite. V3 focused on risk reduction: shared engine contracts, request
+hardening, validation gates, pooled bankroll/ledger behavior, and event-safe
+settlement.
 
-All v2 additions are **opt-in flags** (except portfolio staking, which is a default
-safety layer); the default behaviour of every command is unchanged. See
-`V2_NOTES.md` for fitted parameters and acceptance numbers, and `V2_PLAN.md` for
-the design. Quick reference:
+Near-term refactor targets:
 
-**Validation harness — `validate.py`** (the yardstick everything is measured against)
-```bash
-python3 validate.py               # walk-forward accuracy/Brier/log-loss + reliability
-python3 validate.py --gate        # CI gate: non-zero exit if blend Brier regressed >0.002
-python3 validate.py --calibrate   # fit isotonic calibration -> data/calibration.json
-```
+- split backend routes by responsibility;
+- factor shared adapter edge/recording helpers;
+- separate bankroll state, ledger IO, and settlement;
+- modularize `app/web/app.js`;
+- add suite-level CLV and data-provenance manifests.
 
-**Probability calibration (M2)** — isotonic per-outcome, fit by `validate.py --calibrate`:
-```bash
-python3 edge.py --calibrated      # apply calibration to the model's 1X2
-```
+## License
 
-**Market anchoring + CLV (M3)**
-```bash
-python3 market_blend.py --fit     # fit model/market weight w on WC2022 -> data/market_blend.json
-python3 edge.py --market-blend    # anchor model 1X2 toward the de-vigged market (logit blend)
-python3 clv.py --snapshot         # record current odds for open bets (The Odds API)
-python3 clv.py --report           # closing-line-value per settled bet, rolling mean CLV
-```
-
-**Knockout correctness (M4)** — 1X2/O-U/BTTS settle on the **90-minute** score.
-`data/results.csv` records the after-extra-time score, so for any knockout that
-went to extra time add a row to `data/ko_overrides.csv` (`date,home,away,score90`)
-and `bankroll.py --settle` uses it. The exact FIFA **Annex C** third-place table
-(`data/annexc_thirds.json`, 495 scenarios) is used by `simulate.py` when present.
-
-**Squad layer v2 (M5)** — `--squad-adj` now splits an absence into attack vs
-defence by position (a missing forward lowers the team's own goals; a missing
-defender raises the opponent's) and weights players by likely minutes. All 48
-squads use official lists.
-
-**Context features (M6)**
-```bash
-python3 context.py --fit          # fit rest/altitude lambda correction -> data/context_coef.json
-python3 edge.py --context         # apply rest/altitude correction per fixture
-```
-Only the altitude effect proved significant (a sea-level side at Mexico City scores
-~27% fewer goals); rest and travel were dropped as insignificant.
-
-**Portfolio staking (M7, default on)** — `edge.py` sizes same-day bets jointly:
-single-match cap 10%, daily cap 25%, correlated-exposure cap 15% (shared-team,
-incl. open outrights), and a drawdown brake that halves Kelly below 70% of the
-bankroll's running peak (tracked in `data/bankroll.json`). Disable with
-`--no-portfolio`.
-
-**Ops (M8)**
-```bash
-python3 report.py                 # -> dashboard.html (offline: bankroll, CLV, calibration, queue, title movers)
-```
-`edge.py` writes `bet_queue.csv` (the day's reviewable candidates with active
-adjustments). `update.sh` now also runs `clv.py --snapshot`, `validate.py --gate`
-(warns, never blocks), and `report.py`.
-
-Flags combine, applied in this order: `--calibrated` → `--market-blend` →
-`--context` (and `--squad-adj` / `--conf-adj` on the ratings). Example:
-```bash
-python3 edge.py --squad-adj --calibrated --market-blend --context
-```
+No license is currently declared. Until a license is added, all rights are
+reserved by the repository owner.
