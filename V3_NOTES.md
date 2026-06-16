@@ -289,10 +289,79 @@ track closing line value (CLV) — the most reliable +EV signal — for every en
 
 ---
 
+## 2026-06-16 · M6 — Engine-specific modelling upgrades (gated)
+
+**Goal:** improve each engine *only* where held-out validation says it helps;
+otherwise document the measurement and leave the default unchanged. This pass was
+run conservatively: measure first, flip nothing that doesn't clearly and
+consistently win, keep new capability default-OFF.
+
+**What shipped (CFB tunable blend weight)**
+
+- `cfb/predictor.py` — `blend_predict()` gained a `w_elo` blend weight (weight on
+  Elo for win-prob + margin; power always supplies the total) and a
+  `load_blend_weight()` that reads `cfb/data/blend_weight.json` *if present*,
+  else **0.50 — the V2 50/50 blend**. No weight file is shipped, so default
+  predict/edge output is byte-for-byte unchanged.
+- `cfb/validate.py` — `walk_forward()` honours the stored weight; new
+  `choose_weight()` (pure, unit-tested) + `--tune-blend [--write]` print a
+  before/after table and can opt into the validated weight.
+- `test_cfb_blend.py` *(new, 11 checks)*.
+
+**Before/after (walk-forward 2023–2025, 2394 FBS-vs-FBS games, leak-free):**
+
+| w_elo | ml_brier | margin_mae |
+|------:|---------:|-----------:|
+| 0.50 (default) | 0.18849 | 12.786 |
+| **0.60 (chosen)** | **0.18787** | **12.784** |
+| 0.70 (Brier min) | 0.18765 | 12.818 |
+
+Brier improves by −0.00062 and is LOSO-stable (every held-out season prefers
+w>0.5: Brier optima 0.65/0.75/0.75). `choose_weight` picks the Brier-minimising
+weight **subject to margin MAE not regressing** vs the 0.5 blend — so it never
+trades away accuracy on ATS (the market CFB actually bets). The improvement is
+real but modest, so per the M6 "default-OFF" guardrail it ships as an explicit
+opt-in (`--tune-blend --write`, then `--gate --update-baseline`), not a forced
+flip.
+
+**Measured and deliberately NOT changed (documented per acceptance)**
+
+- **CFB moneyline calibration.** LOSO Platt scaling moved Brier 0.18849 →
+  0.18830 (−0.0002; global fit a≈1.17, b≈−0.03 ≈ identity). The blend is already
+  well-calibrated → no calibration layer added.
+- **CFB ATS/totals ROI.** Recorded by the gate, still not gated (single-season
+  betting ROI is too high-variance) — unchanged from M3.
+- **Club Soccer ensemble weights.** `ENSEMBLE_W = {goals .20, elo .25, xg .30,
+  xgf .25}` is *already* "chosen by held-out walk-forward search" (model.py).
+  Re-tuning blindly risks degrading a validated default for no measured gain;
+  left as-is. Market blend + CLV (the M6 prerequisites for more aggressive
+  staking) landed in M5 behind an experimental flag — staking aggressiveness is
+  unchanged.
+- **Golf.** The two structural items are already implemented: cut/no-cut markets
+  are suppressed when the cut doesn't bind (`__cut_binds__` / `cut_binds` in
+  `golf/edge.py`, `golf/simulate.py`), and market blend + CLV exist in
+  `golf/market.py` (`blend`, `closing_fair`, `clv_pct`). **Deferred:**
+  simulation vectorization — it's a performance-only change with real risk of
+  perturbing seeded outputs and no accuracy benefit; the gate already passes in
+  ~45s, so it belongs in a dedicated perf pass, not a conservative modelling one.
+- **World Cup.** Richer (totals/BTTS or stage-specific knockout) calibration
+  needs enough *post-V2* data; the 2026 tournament only kicked off 2026-06-11, so
+  there are too few completed matches to fit a non-overfit calibration. Deferred
+  until a meaningful 2026 sample exists; squad/context adjustments stay opt-in
+  (unchanged).
+
+**Verified**
+
+- `python3 test_cfb_blend.py` → 11 pass. Full regression green (all 13 fast
+  suites). Default CFB gate identical to the M3 baseline (ml_brier 0.1885,
+  margin_mae 12.786, total_mae 13.05) with no weight file present.
+
+---
+
 ## Scope note
 
-The M1–M4 risk-reduction core plus M5 (market blend + CLV) are delivered. M6–M9
-(gated modelling upgrades, data provenance, power-user UX, release docs) remain
-open. Leverage available for them: `app/engines/contracts.py`,
+The M1–M4 risk-reduction core, M5 (market blend + CLV) and M6 (gated modelling
+upgrades) are delivered. M7–M9 (data provenance, power-user UX, release docs)
+remain open. Leverage available for them: `app/engines/contracts.py`,
 `app/security.py` (`safe_get`), `app/portfolio.py`, `app/market_blend.py`,
 `clv_suite.py`, `validate_all.py`, and `preflight.py`.

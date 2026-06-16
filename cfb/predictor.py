@@ -9,7 +9,9 @@ Usage:
   python3 predictor.py --backtest [--since 2023]           # walk-forward eval
 """
 import argparse
+import json
 import math
+import os
 
 import numpy as np
 import pandas as pd
@@ -17,8 +19,29 @@ import pandas as pd
 import elo as E
 import power as P
 
+# V3 M6: the elo/power blend weight is tunable. `w_elo` is the weight on Elo for
+# the win-prob and margin blend (power always supplies the total). It defaults to
+# 0.50 (the V2 50/50 blend) so default behaviour is unchanged. A validated weight
+# can be opted into by writing cfb/data/blend_weight.json {"w_elo": <float>} via
+# `python3 validate.py --tune-blend --write` — see V3_NOTES.md (M6).
+DEFAULT_W_ELO = 0.50
+_BLEND_WEIGHT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "data", "blend_weight.json")
 
-def blend_predict(eparams, pparams, t1, t2, neutral=False, model="blend"):
+
+def load_blend_weight() -> float:
+    """Stored elo blend weight, or DEFAULT_W_ELO (0.5) when not opted into."""
+    try:
+        if os.path.exists(_BLEND_WEIGHT_FILE):
+            w = float(json.load(open(_BLEND_WEIGHT_FILE))["w_elo"])
+            return min(max(w, 0.0), 1.0)
+    except Exception:
+        pass
+    return DEFAULT_W_ELO
+
+
+def blend_predict(eparams, pparams, t1, t2, neutral=False, model="blend",
+                  w_elo=None):
     games, ratings, slope, sigma_e = eparams
     pe = E.predict(ratings, slope, sigma_e, t1, t2, neutral)
     pp = P.predict(pparams, t1, t2, neutral)
@@ -26,8 +49,9 @@ def blend_predict(eparams, pparams, t1, t2, neutral=False, model="blend"):
         return {"p1": pe["p1"], "margin": pe["margin"], "total": pp["total"]}
     if model == "power":
         return {"p1": pp["p1"], "margin": pp["margin"], "total": pp["total"]}
-    return {"p1": 0.5 * (pe["p1"] + pp["p1"]),
-            "margin": 0.5 * (pe["margin"] + pp["margin"]),
+    w = load_blend_weight() if w_elo is None else float(w_elo)
+    return {"p1": w * pe["p1"] + (1.0 - w) * pp["p1"],
+            "margin": w * pe["margin"] + (1.0 - w) * pp["margin"],
             "total": pp["total"]}
 
 
