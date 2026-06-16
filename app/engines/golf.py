@@ -108,9 +108,11 @@ class GolfAdapter(EngineAdapter):
 
     def predict_schema(self) -> dict[str, Any]:
         # head-to-head matchup: pick two players from the field
+        from .. import provenance
         s = self._run("schema")
         return {"kind": "match", "names": s.get("names", []), "models": [],
-                "label_a": "Player A", "label_b": "Player B"}
+                "label_a": "Player A", "label_b": "Player B",
+                "freshness": provenance.freshness_warnings(self.id)}
 
     def simulate_schema(self) -> dict[str, Any]:
         s = self._run("schema")

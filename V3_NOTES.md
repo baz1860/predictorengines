@@ -358,10 +358,64 @@ flip.
 
 ---
 
+## 2026-06-16 · M7 — Data provenance & refresh hygiene
+
+**Goal:** know what data produced a prediction, warn when it's stale, and catch
+manual-odds mistakes with actionable errors — all **offline** (no network, never
+blocks operation).
+
+**Files changed**
+
+- `app/provenance.py` *(new)* — dependency-light (csv + json, no pandas):
+  - `ENGINE_INPUTS` registry of each engine's key inputs (path, role, source).
+  - `build_manifest()` / `write_manifest()` / `read_manifest()` →
+    `data_manifest.json` per engine (path, `fetched_at` = file mtime, row count,
+    `schema_version`, source label).
+  - `freshness()` / `freshness_warnings()` — staleness from file mtimes only
+    (results/games 3d, fixtures 3d, rounds 3d, field 2d, odds 1d, model 30d);
+    `freshness_warnings` never raises so it can't break a schema call.
+  - `validate_odds_file()` — long-format (club/CFB) and wide-format (WC/golf)
+    manual-odds schema checks returning **row / column / value / expected** per
+    error (bad market, bad side-for-market, non-numeric odds ≤ 1.0, missing
+    spread/total line, bad neutral flag, missing header column).
+  - CLI: `python3 -m app.provenance --write [--engine X] | --freshness |
+    --check-odds <engine>`.
+- `app/engines/{worldcup,club_soccer,cfb,golf}.py` — `predict_schema()` now
+  includes a `freshness` list (UI staleness badges); CFB and Club Soccer `edge()`
+  attach `odds_issues` for a malformed manual odds file (non-fatal — the edge
+  still runs on the usable rows).
+- `update.sh`, `club_soccer/update.sh`, `golf/update.sh` — write the manifest
+  after a refresh (offline-safe, `|| true`; engine scripts run it from repo
+  root). CFB has no update script; its manifest is written via the CLI.
+- `.gitignore` — ignore generated `data_manifest.json` (local mtimes) and
+  `data/clv_history.csv`.
+- `test_provenance.py` *(new, 19 checks)*.
+
+**Verified**
+
+- `python3 test_provenance.py` → 19 pass (fresh/stale/missing detection on a temp
+  tree with no network; manifest row counts + source + schema_version; CFB and
+  WC odds errors carry row/column/expected; valid file → no errors;
+  `freshness_warnings` safe on an unknown engine).
+- CLI smoke: `--freshness` flags stale odds/games/field across all four engines;
+  `--check-odds cfb` passes on the real file. Adapter schemas now carry
+  `freshness` (e.g. CFB `['games: 4.5d old (> 3d)', 'odds: 1.9d old (> 1d)']`).
+- Full regression green (all 14 fast suites).
+
+**Rejected / deferred**
+
+- Freshness is computed from **live file mtimes**, not the stored manifest, so a
+  fresh checkout (or a machine that hasn't run the update scripts) still reports
+  correctly. The manifest is the richer record (source/rows), written on refresh.
+- Manifests are **gitignored**, not committed: they encode local mtimes and would
+  otherwise churn on every refresh.
+
+---
+
 ## Scope note
 
-The M1–M4 risk-reduction core, M5 (market blend + CLV) and M6 (gated modelling
-upgrades) are delivered. M7–M9 (data provenance, power-user UX, release docs)
-remain open. Leverage available for them: `app/engines/contracts.py`,
+The M1–M4 risk-reduction core, M5 (market blend + CLV), M6 (gated modelling
+upgrades) and M7 (data provenance) are delivered. M8–M9 (power-user UX, release
+docs) remain open. Leverage available for them: `app/engines/contracts.py`,
 `app/security.py` (`safe_get`), `app/portfolio.py`, `app/market_blend.py`,
 `clv_suite.py`, `validate_all.py`, and `preflight.py`.
