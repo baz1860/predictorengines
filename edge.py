@@ -60,6 +60,7 @@ RECORD_MIN_EDGE = 0.0 # only auto-record per-market picks with edge strictly abo
                       # (model prob > bookmaker implied prob); raise for stronger value only
                       # (ensures we're backing genuine predictions, not noise)
 MAX_ELO_GAP  = 350    # informational only — shown in report, not used as bet filter
+WORLD_CUP_SPORT_KEY = "soccer_fifa_world_cup"
 
 # bookmaker/API name -> dataset name
 ALIASES = {
@@ -228,6 +229,20 @@ def write_template(upcoming):
           "Fill in decimal odds (e.g. 2.50), then run: python edge.py")
 
 
+def _select_worldcup_sport_key(sports):
+    """Choose the match-odds sport key, not an unrelated World Cup competition."""
+    keys = [s.get("key", "") for s in sports]
+    if WORLD_CUP_SPORT_KEY in keys:
+        return WORLD_CUP_SPORT_KEY
+    for s in sports:
+        key = s.get("key", "")
+        title = s.get("title", "").lower()
+        if (key.startswith("soccer_") and "world cup" in title
+                and "winner" not in key):
+            return key
+    return None
+
+
 def fetch_api_odds(api_key, exit_on_error=True):
     """Pull h2h odds for the World Cup from the-odds-api.com (v4)."""
     base = "https://api.the-odds-api.com/v4"
@@ -246,9 +261,8 @@ def fetch_api_odds(api_key, exit_on_error=True):
         if not exit_on_error:
             raise ValueError(msg)
         sys.exit(msg)
-    keys = [s["key"] for s in sports
-            if "world cup" in s["title"].lower() and "winner" not in s["key"]]
-    if not keys:
+    sport_key = _select_worldcup_sport_key(sports)
+    if not sport_key:
         msg = "No World Cup match odds found on The Odds API right now."
         if not exit_on_error:
             raise ValueError(msg)
@@ -257,7 +271,7 @@ def fetch_api_odds(api_key, exit_on_error=True):
     # (e.g. btts not on this plan) silently dropping all the others.
     events_by_id = {}
     for mkt in ("h2h", "totals", "btts"):
-        mkt_url = (f"{base}/sports/{keys[0]}/odds/?apiKey={api_key}"
+        mkt_url = (f"{base}/sports/{sport_key}/odds/?apiKey={api_key}"
                    f"&regions=eu&markets={mkt}&oddsFormat=decimal")
         try:
             with urllib.request.urlopen(mkt_url) as r:
