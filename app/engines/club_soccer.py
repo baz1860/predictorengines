@@ -29,7 +29,8 @@ class ClubSoccerAdapter(EngineAdapter):
     def predict_schema(self) -> dict[str, Any]:
         if self._schema is None:
             self._schema = self._run("schema")
-        return self._schema
+        from .. import provenance
+        return {**self._schema, "freshness": provenance.freshness_warnings(self.id)}
 
     def edge_schema(self) -> dict[str, Any]:
         return {"models": ["ensemble", "goals", "elo"],
@@ -57,6 +58,11 @@ class ClubSoccerAdapter(EngineAdapter):
         result = self._run("edge", {**params, "bankroll": bankroll})
         result["bankroll"] = round(bankroll, 2)
         result["recorded"] = 0
+        if odds_source == "manual":
+            from .. import provenance
+            issues = provenance.validate_odds_file(self.id)
+            if issues:
+                result["odds_issues"] = [e["message"] for e in issues]
         rows = result.get("rows") or []
         if params.get("market_blend"):
             from .. import market_blend as MB
