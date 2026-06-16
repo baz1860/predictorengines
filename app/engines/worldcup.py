@@ -266,9 +266,10 @@ class WorldCupAdapter(EngineAdapter):
     def write_odds_template(self) -> dict[str, Any]:
         import edge as E
         from predictor import load_matches
+        from .contracts import enrich_template_result
         _, upcoming = load_matches()
         E.write_template(upcoming)
-        return {"path": E.ODDS_CSV.name}
+        return enrich_template_result({"path": E.ODDS_CSV.name})
 
     # ── settlement (called by the suite bankroll store) ──────────────────────
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:

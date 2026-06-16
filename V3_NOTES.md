@@ -412,10 +412,63 @@ blocks operation).
 
 ---
 
+## 2026-06-16 · M8 — App UX for power users
+
+**Goal:** expose the V3 controls (audit, filters, dry-run, provenance) without
+making the app noisier, and keep the one-click predict/simulate/edge flows.
+
+**Files changed**
+
+- `app/model_audit.py` *(new)* — offline `audit(engine)` assembling last
+  validation status + one-line summary (from `data/validation_suite.json`),
+  model-params age and data freshness (from `app.provenance`), manifest time, and
+  active modelling flags (blend weight opted-in?, market blend on/off,
+  calibration present?). Reads local files only.
+- `app/server.py` — `GET /api/engines/{id}/audit` (404 for unknown engine).
+- `app/engines/contracts.py` — `enrich_template_result()` adds an **absolute
+  path** and **data-row count** to a write-odds-template result.
+- `app/engines/{worldcup,club_soccer,cfb}.py` — `write_odds_template()` returns
+  the enriched result.
+- `app/web/index.html`, `app.js`, `style.css`:
+  - **Model-audit panel** at the top of the Edge tab (PASS/FAIL/unknown badge,
+    params age, freshness warnings, active flags).
+  - **Edge result filters** (client-side): min edge %, min EV, market, source,
+    recommended-only — built from the rows actually returned.
+  - **Dry-run / record split**: "Find edges" always previews (never writes);
+    a separate "Record N recommended" button appears only when there are
+    recommendations and is the only thing that writes the ledger.
+  - **CSV export** on the edge and simulate tables (exports the *visible*
+    columns/rows after search+filter — no internal `_id` or secret fields).
+  - **Odds-file issues** surfaced inline (from M7's `odds_issues`).
+  - Template button now reports the absolute path + row count.
+- `test_model_audit.py` *(new, 26 checks)*.
+
+**Verified**
+
+- `python3 test_model_audit.py` → 26 pass (audit structure for all engines;
+  validation→unknown when no suite; flags; template abs-path/rows; audit payload
+  leaks no API-key values).
+- `node --check app/web/app.js` clean. Route handlers smoke-tested directly
+  (`engine_audit` PASS + flags + freshness; unknown→HTTPException; template
+  `abs_path` + `rows=6`; edge preview 6 rows / 3 recommended; experimental
+  `market_blend` still shrinks edges 0.194→0.101). Full regression green (15
+  suites).
+
+**Rejected / deferred**
+
+- Did not install `httpx` to use FastAPI's `TestClient`; route handlers are plain
+  functions and were exercised directly. The frontend changes are additive and
+  CSS-scoped to new classes, so existing layouts are untouched.
+- CSV export is **client-side** (Blob download) and only serialises the rendered
+  table cells — keys/paths never enter an export, satisfying the M8 safety
+  acceptance.
+
+---
+
 ## Scope note
 
 The M1–M4 risk-reduction core, M5 (market blend + CLV), M6 (gated modelling
-upgrades) and M7 (data provenance) are delivered. M8–M9 (power-user UX, release
-docs) remain open. Leverage available for them: `app/engines/contracts.py`,
+upgrades), M7 (data provenance) and M8 (power-user UX) are delivered. Only M9
+(release & ops docs) remains. Leverage available for them: `app/engines/contracts.py`,
 `app/security.py` (`safe_get`), `app/portfolio.py`, `app/market_blend.py`,
 `clv_suite.py`, `validate_all.py`, and `preflight.py`.

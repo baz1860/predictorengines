@@ -98,7 +98,8 @@ class ClubSoccerAdapter(EngineAdapter):
             r["recommended"] = True
 
     def write_odds_template(self) -> dict[str, Any]:
-        return self._run("edge_template")
+        from .contracts import enrich_template_result
+        return enrich_template_result(self._run("edge_template"))
 
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:
         import importlib.util

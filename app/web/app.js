@@ -317,12 +317,17 @@ function mountTable(host, columns, rows, opts = {}) {
   if (!host) return;
   const data = (rows || []).map((r, i) => Object.assign({ _id: i }, r));
   const st = { sort: opts.initialSort || null, q: "", open: new Set() };
-  const toolbar = opts.search
-    ? `<div class="table-toolbar"><span class="spacer"></span><input class="table-search mt-search" placeholder="Search…"></div>` : "";
+  const tools = [];
+  if (opts.search) tools.push(`<input class="table-search mt-search" placeholder="Search…">`);
+  if (opts.export) tools.push(`<button type="button" class="ghost mt-export">Export CSV</button>`);
+  const toolbar = tools.length
+    ? `<div class="table-toolbar"><span class="spacer"></span>${tools.join("")}</div>` : "";
   host.innerHTML = toolbar + `<div class="mt-scroll"></div>`;
   const scroll = host.querySelector(".mt-scroll");
   const searchEl = host.querySelector(".mt-search");
   if (searchEl) searchEl.oninput = () => { st.q = searchEl.value.trim().toLowerCase(); draw(); };
+  const exportEl = host.querySelector(".mt-export");
+  if (exportEl) exportEl.onclick = () => downloadCSV(opts.export, columns, view());
 
   function view() {
     let r = data.slice();
@@ -376,6 +381,25 @@ function mountTable(host, columns, rows, opts = {}) {
   draw();
 }
 
+// CSV export of the currently-shown rows (respects search/filter/sort). Exports
+// only the visible columns — no internal (_id) or secret fields ever leak.
+function downloadCSV(name, columns, rows) {
+  const cell = (v) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = columns.map((c) => cell(c.label)).join(",");
+  const body = (rows || []).map((row) =>
+    columns.map((c) => cell(row[c.key])).join(",")).join("\n");
+  const blob = new Blob([header + "\n" + body], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(name || "table").replace(/[^a-z0-9_-]+/gi, "_")}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // Generic key/value drill-down for a table row (shows every field).
 function kvDetail(row, columns) {
   const shown = new Map(columns.map((c) => [c.key, c]));
@@ -405,13 +429,16 @@ async function runSimulate() {
     try {
       const r = await post("/api/simulate", { engine: eng.id, params });
       note.textContent = r.note || ""; note.hidden = false;
-      mountTable($("sim-result").querySelector(".table-scroll"), r.columns, r.rows, { search: true });
+      mountTable($("sim-result").querySelector(".table-scroll"), r.columns, r.rows,
+        { search: true, export: `${eng.id}_simulation` });
       result.hidden = false;
     } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
   });
 }
 
 // ---------- EDGE ----------
+const edgeState = { full: [], columns: [], engineId: null };
+
 function setupEdge() {
   const eng = currentEngine();
   const s = eng.schemas.edge || {};
@@ -420,15 +447,42 @@ function setupEdge() {
   $("edge-model").parentElement.style.display = models.length > 1 ? "" : "none";
   $("edge-source").innerHTML = (s.odds_sources || []).map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");
   $("edge-source").parentElement.style.display = (s.odds_sources || []).length > 1 ? "" : "none";
-  const opts = s.adjustments || [];
+  const opts = s.adjustments || s.options || [];
   $("edge-options").innerHTML = opts.map((o) =>
-    `<label class="checkbox"><input type="checkbox" data-edge-option="${esc(o.id)}" /><span>${esc(o.label)}</span></label>`
+    `<label class="checkbox"><input type="checkbox" data-edge-option="${esc(o.id)}" ${o.default ? "checked" : ""}/><span>${esc(o.label)}</span></label>`
   ).join("");
   $("edge-options").style.display = opts.length ? "" : "none";
   renderFilters("edge-filters", s.filters || (eng.schemas.predict && eng.schemas.predict.filters) || [], "edge");
   $("edge-template-btn").style.display = s.has_template ? "" : "none";
-  $("edge-btn").onclick = runEdge;
+  $("edge-btn").onclick = () => runEdge(false);
   $("edge-template-btn").onclick = runEdgeTemplate;
+  $("edge-record-btn").onclick = () => runEdge(true);
+  $("edge-record-btn").hidden = true;
+  $("edge-result").hidden = true;
+  $("edge-issues").hidden = true;
+  loadEdgeAudit(eng.id);
+}
+
+// Compact "is this engine fit to bet?" panel (offline audit endpoint).
+async function loadEdgeAudit(engineId) {
+  const host = $("edge-audit");
+  host.hidden = true;
+  try {
+    const a = await api(`/api/engines/${encodeURIComponent(engineId)}/audit`);
+    const v = a.validation || {};
+    const badge = `<span class="audit-badge ${safeClass((v.status || "unknown").toLowerCase())}">${esc(v.status || "unknown")}</span>`;
+    const age = a.params_age_days == null ? "—" : `${a.params_age_days.toFixed(1)}d`;
+    const warns = (a.freshness_warnings || []).length
+      ? `<div class="audit-warn">⚠ ${a.freshness_warnings.map(esc).join(" · ")}</div>` : "";
+    const flags = (a.flags || []).map((f) =>
+      `<span class="audit-flag ${f.active ? "on" : "off"}">${esc(f.label)}${f.note ? `: ${esc(f.note)}` : ""}</span>`
+    ).join("");
+    host.innerHTML =
+      `<div class="audit-head">Model audit ${badge}
+         <span class="audit-meta">params ${esc(age)} old${v.summary ? " · " + esc(v.summary) : ""}</span></div>
+       ${warns}<div class="audit-flags">${flags}</div>`;
+    host.hidden = false;
+  } catch (e) { /* audit is advisory — never block the Edge tab */ }
 }
 
 async function runEdgeTemplate() {
@@ -437,33 +491,87 @@ async function runEdgeTemplate() {
   err.hidden = true;
   try {
     const r = await post("/api/edge/template", { engine: eng.id });
-    note.textContent = `Wrote ${r.path}. Fill in decimal odds, then choose "Manual odds.csv".`;
+    const where = r.abs_path ? r.abs_path : r.path;
+    const rows = (r.rows != null) ? ` (${r.rows} row${r.rows === 1 ? "" : "s"})` : "";
+    note.textContent = `Wrote ${where}${rows}. Fill in decimal odds, then choose "Manual odds.csv".`;
     note.hidden = false;
   } catch (e) { err.textContent = e.message; err.hidden = false; }
 }
 
-async function runEdge() {
+async function runEdge(record) {
   const eng = currentEngine();
-  const btn = $("edge-btn"), err = $("edge-error"), note = $("edge-note"), result = $("edge-result");
+  const btn = record ? $("edge-record-btn") : $("edge-btn");
+  const err = $("edge-error"), note = $("edge-note"), issues = $("edge-issues"), result = $("edge-result");
   err.hidden = true;
   const params = {
     model: $("edge-model").value, odds_source: $("edge-source").value,
-    record: $("edge-record").checked,
+    record: !!record,
   };
   document.querySelectorAll("#edge-options input[data-edge-option]").forEach((i) => {
     params[i.dataset.edgeOption] = i.checked;
   });
   readFilters("edge-filters", "edge", params);
-  await withSpin(btn, "Find edges", async () => {
+  await withSpin(btn, record ? "Record recommended" : "Find edges", async () => {
     try {
       const r = await post("/api/edge", { engine: eng.id, params });
       let msg = `${r.note} · bankroll ${gbp(r.bankroll)}`;
-      if (r.recorded) msg += ` · recorded ${r.recorded} bet(s)`;
+      if (record) msg += ` · recorded ${r.recorded || 0} bet(s)`;
       note.textContent = msg; note.hidden = false;
-      mountTable($("edge-result").querySelector(".table-scroll"), r.columns, r.rows, { search: true, detail: kvDetail });
+      if (r.odds_issues && r.odds_issues.length) {
+        issues.textContent = `Odds file issues: ${r.odds_issues.join(" · ")}`;
+        issues.hidden = false;
+      } else issues.hidden = true;
+      edgeState.full = r.rows || [];
+      edgeState.columns = r.columns || [];
+      edgeState.engineId = eng.id;
+      renderEdgeResultFilters();
+      applyEdgeFilters();
       result.hidden = false;
+      const recCount = edgeState.full.filter((x) => x.recommended).length;
+      const recBtn = $("edge-record-btn");
+      if (record) { recBtn.hidden = true; if (r.recorded) toast(`Recorded ${r.recorded} bet(s)`, "ok"); }
+      else { recBtn.hidden = recCount === 0; recBtn.textContent = `Record ${recCount} recommended`; }
     } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
   });
+}
+
+// Result-level edge filters (client-side): min edge, min EV, market, source,
+// recommended-only. Built from the columns/rows actually returned.
+function renderEdgeResultFilters() {
+  const host = $("edge-result-filters");
+  if (!host) return;
+  const rows = edgeState.full;
+  const distinct = (key) => [...new Set(rows.map((r) => r[key]).filter((v) => v != null && v !== ""))];
+  const hasMarket = rows.some((r) => r.market != null && r.market !== "");
+  const hasSource = rows.some((r) => r.source != null && r.source !== "");
+  const opt = (vals) => `<option value="">all</option>` + vals.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  host.innerHTML =
+    `<label class="rf">min edge %<input type="number" step="0.5" id="ef-edge" class="rf-num"></label>
+     <label class="rf">min EV<input type="number" step="0.01" id="ef-ev" class="rf-num"></label>
+     ${hasMarket ? `<label class="rf">market<select id="ef-market">${opt(distinct("market"))}</select></label>` : ""}
+     ${hasSource ? `<label class="rf">source<select id="ef-source">${opt(distinct("source"))}</select></label>` : ""}
+     <label class="rf checkbox"><input type="checkbox" id="ef-rec"><span>recommended only</span></label>`;
+  ["ef-edge", "ef-ev", "ef-market", "ef-source", "ef-rec"].forEach((id) => {
+    const el = $(id); if (el) el.oninput = el.onchange = applyEdgeFilters;
+  });
+}
+
+function applyEdgeFilters() {
+  const num = (id) => { const el = $(id); const v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? null : v; };
+  const val = (id) => { const el = $(id); return el ? el.value : ""; };
+  const minEdge = num("ef-edge"), minEV = num("ef-ev");
+  const market = val("ef-market"), source = val("ef-source");
+  const recOnly = $("ef-rec") && $("ef-rec").checked;
+  const rows = edgeState.full.filter((r) => {
+    if (minEdge != null && !(Number(r.edge) * 100 >= minEdge)) return false;
+    if (minEV != null && !(Number(r.ev_per_unit) >= minEV)) return false;
+    if (market && String(r.market) !== market) return false;
+    if (source && String(r.source) !== source) return false;
+    if (recOnly && !r.recommended) return false;
+    return true;
+  });
+  mountTable($("edge-result").querySelector(".table-scroll"), edgeState.columns, rows,
+    { search: true, detail: kvDetail, export: `${edgeState.engineId}_edges` });
 }
 
 // ---------- DASHBOARD (suite home) ----------

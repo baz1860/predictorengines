@@ -259,6 +259,26 @@ def normalize_edge_result(result: dict, *, source: str, model: str,
     return result
 
 
+def enrich_template_result(result: dict) -> dict:
+    """Add an absolute path and data-row count to a write-odds-template result
+    (V3 M8). The runner returns a repo-relative `path`; the UI wants to show the
+    user exactly where the file landed and how many rows it has to fill in."""
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[2]
+    rel = str(result.get("path", "")).strip()
+    if not rel:
+        return result
+    p = repo_root / rel
+    result["abs_path"] = str(p)
+    if p.exists() and p.suffix.lower() == ".csv":
+        try:
+            with p.open(newline="") as f:
+                result["rows"] = max(0, sum(1 for _ in f) - 1)
+        except Exception:
+            pass
+    return result
+
+
 def validate_edge_rows(rows: Iterable[dict]) -> None:
     """Assert every row carries the canonical fields and is finite."""
     for i, r in enumerate(rows):

@@ -163,20 +163,23 @@
 
         <!-- EDGE -->
         <div id="panel-edge" class="panel wide" hidden>
+          <div id="edge-audit" class="audit-card" hidden></div>
           <div class="form-card">
             <div class="row controls">
               <label class="field model-field"><span class="field-label">Model</span><select id="edge-model"></select></label>
               <label class="field model-field"><span class="field-label">Odds source</span><select id="edge-source"></select></label>
-              <label class="checkbox"><input type="checkbox" id="edge-record" /><span>Record positive-edge picks to bankroll</span></label>
               <div id="edge-filters" class="inline-options"></div>
               <div id="edge-options" class="inline-options"></div>
               <button id="edge-template-btn" class="ghost">Write odds template</button>
               <button id="edge-btn" class="primary">Find edges</button>
+              <button id="edge-record-btn" class="primary" hidden>Record recommended</button>
             </div>
             <div id="edge-note" class="muted-note" hidden></div>
+            <div id="edge-issues" class="muted-note warn" hidden></div>
             <div id="edge-error" class="error" hidden></div>
           </div>
           <div id="edge-result" class="result-card" hidden>
+            <div id="edge-result-filters" class="result-filters"></div>
             <div class="table-scroll"><table id="edge-table" class="data-table"></table></div>
           </div>
         </div>
