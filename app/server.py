@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from . import bankroll_store, dashboard_data, settings_store
+from . import bankroll_store, dashboard_data, model_audit, settings_store
 from .engines import registry
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -127,6 +127,17 @@ def engine_info(engine_id: str):
         return registry.get(engine_id).info()
     except KeyError:
         raise HTTPException(404, f"Unknown engine: {engine_id}")
+
+
+@app.get("/api/engines/{engine_id}/audit")
+def engine_audit(engine_id: str):
+    """Model-audit panel: validation status, params age, data freshness, flags.
+    Offline — reads local files only."""
+    try:
+        registry.get(engine_id)
+    except KeyError:
+        raise HTTPException(404, f"Unknown engine: {engine_id}")
+    return model_audit.audit(engine_id)
 
 
 @app.post("/api/predict")
