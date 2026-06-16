@@ -176,29 +176,48 @@ and will block pushes containing provider-shaped tokens.
 
 ## Validation And Tests
 
-Fast checks:
+One command runs every fast offline test suite (contract, security, bankroll,
+per-milestone, and the V3 suites) and, with `--gates`, the per-engine validation
+gates:
+
+```bash
+python3 run_checks.py              # all fast suites (~13s)
+python3 run_checks.py --gates      # also run validation gates (~1 min)
+```
+
+Individual fast checks and the full cross-engine gate also run standalone:
 
 ```bash
 python3 test_engines_contract.py
-python3 test_security.py
-python3 test_bankroll.py
-```
-
-Full cross-engine validation gate:
-
-```bash
 python3 validate_all.py --gate --sims 4000
 ```
 
 Preflight readiness report:
 
 ```bash
-python3 preflight.py
+python3 preflight.py            # offline data/key check
 python3 preflight.py --json
 ```
 
 The validation system is intentionally conservative: model changes should pass
 engine-specific gates before being treated as defaults.
+
+## Suite Tooling (V3)
+
+Offline operations helpers shared across engines:
+
+```bash
+python3 daily_summary.py             # gates, freshness, recommendations, CLV, bankroll
+python3 clv_suite.py --snapshot      # record current odds for open bets
+python3 clv_suite.py --report        # closing-line value per settled bet
+python3 -m app.provenance --freshness     # per-engine data-staleness warnings
+python3 -m app.provenance --check-odds cfb  # validate a manual odds file
+python3 cfb/validate.py --tune-blend       # CFB elo/power blend-weight table
+```
+
+Market blending is generalised in `app/market_blend.py` (the World Cup keeps its
+own 1X2 blend; Club Soccer and CFB expose an experimental, default-OFF blend).
+Per-engine data manifests and the model-audit panel are surfaced in the app.
 
 ## Data And Generated Files
 
@@ -219,17 +238,24 @@ Refresh scripts exist per engine (`update.sh`, `golf/update.sh`,
 ## Current Direction
 
 The current product direction is the local web/desktop app, not a native Swift
-rewrite. V3 focused on risk reduction: shared engine contracts, request
-hardening, validation gates, pooled bankroll/ledger behavior, and event-safe
-settlement.
+rewrite. V3 is complete (see [V3_NOTES.md](V3_NOTES.md)):
+
+- **M1–M4** — shared engine contracts, request/subprocess hardening, validation
+  gates, pooled bankroll/ledger with event-safe settlement.
+- **M5** — generalised market blending + suite-level CLV (`clv_suite.py`).
+- **M6** — gated, validated modelling upgrades (CFB tunable blend weight; other
+  engines measured and left at validated defaults).
+- **M7** — data-provenance manifests, freshness warnings, manual-odds checks.
+- **M8** — power-user UX: model-audit panel, edge filters, dry-run/record split,
+  CSV export.
+- **M9** — `run_checks.py`, `daily_summary.py`, and refreshed docs.
 
 Near-term refactor targets:
 
 - split backend routes by responsibility;
 - factor shared adapter edge/recording helpers;
 - separate bankroll state, ledger IO, and settlement;
-- modularize `app/web/app.js`;
-- add suite-level CLV and data-provenance manifests.
+- modularize `app/web/app.js`.
 
 ## License
 

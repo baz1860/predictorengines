@@ -465,10 +465,56 @@ making the app noisier, and keep the one-click predict/simulate/edge flows.
 
 ---
 
-## Scope note
+## 2026-06-16 · M9 — Release & ops
 
-The M1–M4 risk-reduction core, M5 (market blend + CLV), M6 (gated modelling
-upgrades), M7 (data provenance) and M8 (power-user UX) are delivered. Only M9
-(release & ops docs) remains. Leverage available for them: `app/engines/contracts.py`,
+**Goal:** make V3 reproducible and maintainable — one checks command, a daily
+read-out, and refreshed docs.
+
+**Files changed**
+
+- `run_checks.py` *(new)* — one command running every fast offline test suite
+  (auto-discovered, contract suite first) and, with `--gates`, the per-engine
+  validation gates via `validate_all.py`. Compact pass/fail table; non-zero exit
+  on any failure (CI / pre-bet sanity).
+- `daily_summary.py` *(new)* — offline suite read-out: per-engine validation
+  status, data-freshness warnings, recommendation count (read-only edge preview),
+  CLV status, and bankroll state. Unavailable inputs degrade to a clear local
+  action (e.g. "run `clv_suite.py --snapshot`"). `--json` for machines.
+- `update.sh` — prints the daily summary at the end of the World Cup update.
+- `README.md` — V3 test/tooling sections (`run_checks.py`, `daily_summary.py`,
+  `clv_suite.py`, `app.provenance`, `cfb/validate.py --tune-blend`); "Current
+  Direction" now lists V3 M1–M9 as complete.
+- `cfb/README.md`, `app/README.md` — per-engine V3 tooling notes.
+- `test_release.py` *(new, 9 checks)*.
+
+**Verified**
+
+- `python3 run_checks.py` → 16/16 suites pass in ~13s.
+- `python3 daily_summary.py` → all four gates PASS, CFB 3 / Club 5 recommended,
+  CLV "no snapshots" with the snapshot action, bankroll line — no odds files
+  touched (edge previews are read-only).
+- `python3 test_release.py` → 9 pass (suite discovery; offline summary assembly;
+  CLV degrades to an action; no API-key leakage).
+
+**Acceptance**
+
+- Fresh local run reproduces the app + checks from the README (`pip install -r
+  app/requirements.txt`, `python3 -m app.main`, `python3 run_checks.py`).
+- V3 default recommendations are backed by passing gates (`run_checks.py
+  --gates`, surfaced per engine in `daily_summary.py` and the model-audit panel).
+- Unavailable providers degrade with a clear local action (CLV no-data message,
+  freshness warnings, preflight) — never a crash.
+
+---
+
+## Scope note — V3 COMPLETE
+
+All nine milestones are delivered: M1 engine contracts, M2 security hardening,
+M3 validation gates, M4 shared bankroll/settlement, M5 market blend + CLV, M6
+gated modelling upgrades, M7 data provenance, M8 power-user UX, M9 release & ops.
+Per the V3 definition of done: every engine shares one app/edge/ledger contract,
+every engine has a regression gate, settlement is event-safe, keys and
+subprocesses are hardened, and no new modelling default ships without
+demonstrated held-out improvement. Leverage available for them: `app/engines/contracts.py`,
 `app/security.py` (`safe_get`), `app/portfolio.py`, `app/market_blend.py`,
 `clv_suite.py`, `validate_all.py`, and `preflight.py`.

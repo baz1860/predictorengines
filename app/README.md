@@ -41,3 +41,15 @@ app/
 
 The sidebar, tabs, and Predict form all build themselves from what the adapter
 reports — no server or frontend changes needed.
+
+## V3 suite modules
+
+- `market_blend.py` — shared market-anchored blending used by adapters.
+- `provenance.py` — data manifests, freshness warnings, manual-odds schema
+  checks (`python3 -m app.provenance --freshness | --check-odds <engine>`).
+- `model_audit.py` — per-engine audit (validation status, params age, freshness,
+  active flags), served at `GET /api/engines/{id}/audit` and shown in the Edge
+  tab's model-audit panel.
+
+Each engine's `predict_schema()` carries a `freshness` list; `edge()` attaches
+`odds_issues` for a malformed manual odds file. See `../V3_NOTES.md`.
