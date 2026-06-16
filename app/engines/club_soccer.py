@@ -38,7 +38,12 @@ class ClubSoccerAdapter(EngineAdapter):
                     {"id": "api", "label": "API-Football odds"},
                     {"id": "the-odds-api", "label": "The Odds API"}],
                 "has_template": True,
+                "options": [{"id": "market_blend",
+                             "label": "Market blend (experimental)",
+                             "default": False}],
                 "filters": self.predict_schema().get("filters", [])}
+
+    KELLY_FRACTION = 0.25
 
     def predict(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._run("predict", params)
@@ -53,6 +58,13 @@ class ClubSoccerAdapter(EngineAdapter):
         result["bankroll"] = round(bankroll, 2)
         result["recorded"] = 0
         rows = result.get("rows") or []
+        if params.get("market_blend"):
+            from .. import market_blend as MB
+            w = MB.apply_blend_to_rows(rows, self.id, bankroll,
+                                       self.KELLY_FRACTION, kelly_key="kelly_stake")
+            result["market_blend"] = {"applied": True, "w": w, "experimental": True}
+            result["note"] = (result.get("note", "")
+                              + f" · market-blended (experimental, w={w:.2f})")
         self._mark_recommended(rows)
         if params.get("record"):
             recs = [r for r in rows if r.get("recommended")]
