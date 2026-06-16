@@ -8,9 +8,13 @@ SIMS="${1:-20000}"
 echo "== 1/4 Refreshing match data =="
 TMP=$(mktemp -d)
 git clone --quiet --depth 1 https://github.com/martj42/international_results "$TMP/intres"
-cp "$TMP/intres/results.csv" data/results.csv
+# Merge (not blind-copy): upstream is authoritative for played scores, but keep
+# local-only fixtures (future NA rows the predictor needs) and any manual scores
+# the feed hasn't published yet. See merge_results.py.
+python3 merge_results.py "$TMP/intres/results.csv" data/results.csv \
+  || { echo "   merge failed — falling back to upstream copy"; cp "$TMP/intres/results.csv" data/results.csv; }
 rm -rf "$TMP"
-echo "   results.csv updated ($(wc -l < data/results.csv) rows)"
+echo "   results.csv now $(wc -l < data/results.csv) rows"
 
 echo "== Settling open bets =="
 python3 bankroll.py --settle

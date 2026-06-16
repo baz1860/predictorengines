@@ -77,7 +77,15 @@ def compute_clv(ledger, hist=None):
 
 
 def snapshot(api_key=None):
-    """Record current odds for open ledger bets. Needs network (The Odds API)."""
+    """Record current odds for open ledger fixtures. Needs network (The Odds API).
+
+    Records the FULL market (every side in SIDE_COL — including the draw and the
+    other un-bet outcomes) for each fixture that has an open bet, not just the
+    side that was bet. The odds for every outcome arrive in the same API call, so
+    capturing them all is free and lets us measure closing-line value on outcomes
+    we chose NOT to bet — e.g. draws — which the old open-bet-only loop could
+    never see. CLV/backtests still settle on whatever side they care about.
+    """
     if not LEDGER.exists():
         print("No ledger yet — nothing to snapshot.")
         return
@@ -99,19 +107,22 @@ def snapshot(api_key=None):
     fetched = {(canon(r.home), canon(r.away)): r for r in odds.itertuples(index=False)}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     new_rows = []
-    for b in open_bets.itertuples(index=False):
-        row = fetched.get((b.home, b.away))
-        col = SIDE_COL.get(b.side)
-        if row is None or col is None:
+    # one row per (fixture, side) for every market side we can price, so the
+    # closing line for the draw (and any other un-bet outcome) is preserved.
+    seen_fixtures = {(b.home, b.away, b.match_date) for b in open_bets.itertuples(index=False)}
+    for home, away, match_date in seen_fixtures:
+        row = fetched.get((home, away))
+        if row is None:
             continue
-        o = getattr(row, col, np.nan)
-        if pd.isna(o) or float(o) <= 1.0:
-            continue
-        new_rows.append({"snapshot_time": now, "match_date": b.match_date,
-                         "home": b.home, "away": b.away, "side": b.side,
-                         "odds": round(float(o), 3)})
+        for side, col in SIDE_COL.items():
+            o = getattr(row, col, np.nan)
+            if pd.isna(o) or float(o) <= 1.0:
+                continue
+            new_rows.append({"snapshot_time": now, "match_date": match_date,
+                             "home": home, "away": away, "side": side,
+                             "odds": round(float(o), 3)})
     if not new_rows:
-        print("No live odds matched the open bets (names/markets); nothing recorded.")
+        print("No live odds matched the open fixtures (names/markets); nothing recorded.")
         return
     hist = _load_history()
     out = (pd.concat([hist, pd.DataFrame(new_rows)], ignore_index=True)
