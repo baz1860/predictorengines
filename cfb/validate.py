@@ -37,6 +37,7 @@ import pandas as pd
 
 import elo as E
 import power as P
+from predictor import load_blend_weight, DEFAULT_W_ELO, _BLEND_WEIGHT_FILE
 from ats_backtest import SPREADS_CSV, settle as ats_settle
 from totals_backtest import TOTALS_CSV, settle as totals_settle
 
@@ -48,8 +49,13 @@ BRIER_TOL = 0.005       # blend moneyline Brier may not regress beyond this
 MAE_TOL = 0.50          # margin/total MAE may not regress beyond this (points)
 
 
-def walk_forward(games: pd.DataFrame, since: int, quiet: bool = False) -> pd.DataFrame:
-    """Per-game blended predictions for seasons >= since, games-indexed."""
+def walk_forward(games: pd.DataFrame, since: int, quiet: bool = False,
+                 w_elo: float | None = None) -> pd.DataFrame:
+    """Per-game blended predictions for seasons >= since, games-indexed.
+
+    `w_elo` is the weight on Elo in the win-prob/margin blend; None loads the
+    stored weight (default 0.5). Raw `p_elo`/`p_pow`/`m_elo`/`m_pow` are always
+    kept so the tuner can rescore any weight without re-running the walk."""
     carry, offs = E.season_priors()
     _, history = E.run_elo(games, record_pregame=True, carry=carry, prior_offsets=offs)
     diffs = np.array([h[2] for h in history])
@@ -85,8 +91,9 @@ def walk_forward(games: pd.DataFrame, since: int, quiet: bool = False) -> pd.Dat
     df = pd.DataFrame(rows, index=idx)
     if df.empty:
         return df
-    df["p_blend"] = 0.5 * (df["p_elo"] + df["p_pow"])
-    df["m_blend"] = 0.5 * (df["m_elo"] + df["m_pow"])
+    w = load_blend_weight() if w_elo is None else float(w_elo)
+    df["p_blend"] = w * df["p_elo"] + (1.0 - w) * df["p_pow"]
+    df["m_blend"] = w * df["m_elo"] + (1.0 - w) * df["m_pow"]
     return df
 
 
@@ -133,6 +140,70 @@ def evaluate(since: int, quiet: bool = False) -> dict:
         "ats_roi": ats_roi, "ats_n": ats_n,
         "totals_roi": tot_roi, "totals_n": tot_n,
     }
+
+
+def choose_weight(df: pd.DataFrame, grid=None) -> dict:
+    """Pick the elo blend weight that minimises moneyline Brier *without* letting
+    margin MAE regress past the current 0.5-blend margin MAE (conservative: a
+    weight change must not trade accuracy on the market CFB actually bets, ATS).
+
+    Pure function of the walk-forward frame — unit-testable and re-runnable for
+    any weight without repeating the walk. Returns the table + chosen weight."""
+    if grid is None:
+        grid = [round(x, 2) for x in np.arange(0.0, 1.001, 0.05)]
+    res = (df["margin"] > 0).astype(float).values
+    pe, pp = df["p_elo"].values, df["p_pow"].values
+    me, mp = df["m_elo"].values, df["m_pow"].values
+    y = df["margin"].values
+    base_mae = float(np.abs(0.5 * (me + mp) - y).mean())   # current 50/50 margin MAE
+    table = []
+    for w in grid:
+        p = np.clip(w * pe + (1.0 - w) * pp, 1e-6, 1 - 1e-6)
+        brier = float(((p - res) ** 2).mean())
+        mae = float(np.abs(w * me + (1.0 - w) * mp - y).mean())
+        table.append({"w_elo": w, "ml_brier": round(brier, 5),
+                      "margin_mae": round(mae, 3),
+                      "ok": mae <= base_mae + 1e-9})
+    feasible = [r for r in table if r["ok"]] or table
+    best = min(feasible, key=lambda r: r["ml_brier"])
+    base = next(r for r in table if abs(r["w_elo"] - 0.5) < 1e-9)
+    return {"table": table, "chosen": best["w_elo"],
+            "baseline_w": 0.5, "baseline_brier": base["ml_brier"],
+            "baseline_margin_mae": base["margin_mae"],
+            "chosen_brier": best["ml_brier"],
+            "chosen_margin_mae": best["margin_mae"]}
+
+
+def tune_blend(since: int, write: bool = False, quiet: bool = True) -> dict:
+    games = E.load_games()
+    df = walk_forward(games, since, quiet=quiet, w_elo=0.5)  # raw cols are weight-free
+    if df.empty:
+        raise SystemExit("No FBS-vs-FBS games in the validation window.")
+    out = choose_weight(df)
+    print(f"CFB blend-weight tuning · {since}-{int(df['season'].max())} · "
+          f"{len(df)} games  (w_elo = weight on Elo)")
+    print(f"\n{'w_elo':>6}{'ml_brier':>11}{'margin_mae':>12}  feasible")
+    for r in out["table"]:
+        star = "  <-- chosen" if abs(r["w_elo"] - out["chosen"]) < 1e-9 else ""
+        print(f"{r['w_elo']:>6.2f}{r['ml_brier']:>11.5f}{r['margin_mae']:>12.3f}"
+              f"  {'y' if r['ok'] else 'n'}{star}")
+    db = out["chosen_brier"] - out["baseline_brier"]
+    print(f"\n  default w=0.50 → Brier {out['baseline_brier']:.5f}, "
+          f"margin MAE {out['baseline_margin_mae']:.3f}")
+    print(f"  chosen  w={out['chosen']:.2f} → Brier {out['chosen_brier']:.5f} "
+          f"({db:+.5f}), margin MAE {out['chosen_margin_mae']:.3f}")
+    if write:
+        os.makedirs(os.path.dirname(_BLEND_WEIGHT_FILE), exist_ok=True)
+        json.dump({"w_elo": out["chosen"], "since": since,
+                   "baseline_brier": out["baseline_brier"],
+                   "chosen_brier": out["chosen_brier"]},
+                  open(_BLEND_WEIGHT_FILE, "w"), indent=2)
+        print(f"\n[blend] wrote {_BLEND_WEIGHT_FILE} (w_elo={out['chosen']:.2f}). "
+              "Re-run `validate.py --gate --update-baseline` to rebaseline.")
+    else:
+        print(f"\n  (dry run — add --write to opt into w_elo={out['chosen']:.2f}; "
+              "default stays 0.50)")
+    return out
 
 
 def _load_baseline() -> dict | None:
@@ -195,7 +266,15 @@ def main() -> None:
     ap.add_argument("--quiet", action="store_true", help="suppress per-week progress")
     ap.add_argument("--update-baseline", action="store_true",
                     help="overwrite the stored baseline with this run")
+    ap.add_argument("--tune-blend", action="store_true",
+                    help="show elo/power blend-weight before/after table (M6)")
+    ap.add_argument("--write", action="store_true",
+                    help="with --tune-blend, opt into the chosen weight")
     args = ap.parse_args()
+
+    if args.tune_blend:
+        tune_blend(args.since, write=args.write, quiet=True)
+        return
 
     metrics = evaluate(args.since, quiet=args.quiet)
     _print_metrics(metrics)
