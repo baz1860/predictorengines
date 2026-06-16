@@ -224,10 +224,75 @@ World Cup.
 
 ---
 
+## 2026-06-16 · M5 — Market blend + CLV for every priced engine
+
+**Goal:** make betting evaluation less fake-edge prone across the suite, and
+track closing line value (CLV) — the most reliable +EV signal — for every engine.
+
+**Files changed**
+
+- `app/market_blend.py` *(new)* — shared, dependency-light (pure-Python `math`)
+  generalisation of the World Cup 1X2 logit blend:
+  - `blend_probs()` / `blend_two()` — logit-space anchor of model probabilities
+    toward the de-vigged market, renormalised; `w` = weight on the model.
+  - `anchor_line()` — linear convex blend for point lines (spread/total).
+  - `devig()`, `weight_for()` (reads `data/market_blend_suite.json`),
+    `is_default_on()`, and `apply_blend_to_rows()` — the adapter-level row
+    applier that re-anchors `p_model`, then recomputes edge / EV / Kelly / stake
+    in place.
+- `app/engines/club_soccer.py`, `cfb.py` — each `edge()` accepts an
+  **experimental, default-OFF** `market_blend` flag and exposes it in
+  `edge_schema().options`. When set, `apply_blend_to_rows()` anchors the rows
+  before `_mark_recommended`, so recommendations reflect the blend. Default runs
+  are byte-for-byte unchanged.
+- `clv_suite.py` *(new)* — suite-level CLV over the shared `data/suite_ledger.csv`:
+  - `--snapshot [--engine X]` records current odds for open bets, matched per
+    engine to its odds file (WC `odds.csv`, club `club_soccer/data/odds.csv`,
+    CFB `cfb/odds.csv`, golf `golf/data/odds.csv`) → `data/clv_history.csv`,
+    keyed by `(engine, event_id, market, side)`.
+  - `--report [--write-closing]` computes the closing-odds proxy (latest snapshot
+    at/before kick-off) per settled bet, prints per-bet CLV%, rolling mean CLV,
+    positive-CLV rate, and a per-engine breakdown; `--write-closing` backfills
+    `ledger.closing_odds` (backup first). Empty history → clear no-data message,
+    never a crash.
+- `test_market_blend.py` *(new)* — 20 checks; `test_clv_suite.py` *(new)* — 10.
+
+**Verified**
+
+- `python3 test_market_blend.py` → 20 pass; `python3 test_clv_suite.py` → 10 pass
+  (no-data report is crash-free; snapshot matches the open bet from the odds
+  file; CLV% = bet/closing − 1 and excludes a mismatched side; `--write-closing`
+  backfills with a backup).
+- End-to-end: CFB `edge(market_blend=True)` shrinks every edge toward the market
+  (e.g. SPREAD 0.194 → 0.101, ML 0.077 → 0.041 at w=0.50) while the default
+  `edge()` is unchanged. Full regression green (all 12 fast suites).
+
+**Rejected / deferred (M5 guardrail)**
+
+- **No default flipped.** Per the M5 acceptance, a generalised blend becomes an
+  engine's *default* only once a held-out metric beats *both* pure model and pure
+  market for that engine. Club Soccer and CFB ship the blend behind an
+  experimental flag with a conservative placeholder `w` (not a fitted value);
+  `DEFAULT_BLEND_ON` is empty. Fitting + validating per-engine `w` (and flipping
+  defaults) is M6 work, where the validation harness and data live. World Cup
+  keeps its own validated 1X2 blend in `edge.py`; golf keeps its runner blend.
+- **Probability-space anchoring for CFB**, not line-space. The plan suggested
+  blending the model *margin/total* toward the market line. Anchoring the
+  cover/over *probability* toward the de-vigged book is equivalent in pulling the
+  model toward the market, uniform with the other engines, and avoids re-plumbing
+  the spread/total math in the flat-module runner. The adapter is the contract
+  boundary (consistent with M1/M2).
+- **Offline-first CLV snapshots.** Snapshots read each engine's manual odds file
+  (the same file the app Edge "API" source refreshes) rather than calling
+  providers directly, so CLV never makes a network call or crashes offline. Live
+  provider fetches remain the existing per-engine fetchers feeding those files.
+
+---
+
 ## Scope note
 
-This pass delivered the M1–M4 risk-reduction core (the plan's recommended
-time-box). M5–M9 (market blend + CLV, gated modelling upgrades, data provenance,
-power-user UX, release docs) remain open. New leverage available for them:
-`app/engines/contracts.py`, `app/security.py` (`safe_get`), `app/portfolio.py`,
-`validate_all.py`, and `preflight.py`.
+The M1–M4 risk-reduction core plus M5 (market blend + CLV) are delivered. M6–M9
+(gated modelling upgrades, data provenance, power-user UX, release docs) remain
+open. Leverage available for them: `app/engines/contracts.py`,
+`app/security.py` (`safe_get`), `app/portfolio.py`, `app/market_blend.py`,
+`clv_suite.py`, `validate_all.py`, and `preflight.py`.

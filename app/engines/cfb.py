@@ -40,7 +40,12 @@ class CFBAdapter(EngineAdapter):
     def edge_schema(self) -> dict[str, Any]:
         return {"models": ["blend", "elo", "power"],
                 "odds_sources": [{"id": "manual", "label": "Manual cfb/odds.csv"}],
+                "options": [{"id": "market_blend",
+                             "label": "Market blend (experimental)",
+                             "default": False}],
                 "has_template": True}
+
+    KELLY_FRACTION = 0.25
 
     def predict(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._run("predict", params)
@@ -56,6 +61,13 @@ class CFBAdapter(EngineAdapter):
         result["bankroll"] = round(bankroll, 2)
         result["recorded"] = 0
         rows = result.get("rows") or []
+        if params.get("market_blend"):
+            from .. import market_blend as MB
+            w = MB.apply_blend_to_rows(rows, self.id, bankroll,
+                                       self.KELLY_FRACTION, kelly_key="kelly_frac")
+            result["market_blend"] = {"applied": True, "w": w, "experimental": True}
+            result["note"] = (result.get("note", "")
+                              + f" · market-blended (experimental, w={w:.2f})")
         self._mark_recommended(rows)
         if params.get("record"):
             recs = [r for r in rows if r.get("recommended")]
