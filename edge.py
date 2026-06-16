@@ -602,7 +602,10 @@ def main():
 
     from bankroll import current_bankroll, current_peak, place_bets
     bankroll = args.bankroll if args.bankroll is not None else current_bankroll()
-    df = pd.DataFrame(rows)
+    edge_cols = ["date", "match", "home", "away", "side", "market", "bet",
+                 "odds", "p_book", "p_model", "edge", "ev_per_unit",
+                 "kelly_stake", "overround", "elo_gap"]
+    df = pd.DataFrame(rows, columns=edge_cols if not rows else None)
     df["stake_gbp"] = (df["kelly_stake"] * bankroll).round(2)
     df.to_csv(REPORT, index=False)
 
