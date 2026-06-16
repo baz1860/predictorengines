@@ -55,8 +55,10 @@ class WorldCupAdapter(EngineAdapter):
 
     def predict_schema(self) -> dict[str, Any]:
         self._ensure_loaded()
+        from .. import provenance
         return {"kind": "match", "names": self._names, "models": ["blend"],
-                "supports_home": True, "team_label": "Team"}
+                "supports_home": True, "team_label": "Team",
+                "freshness": provenance.freshness_warnings(self.id)}
 
     def predict(self, params: dict[str, Any]) -> dict[str, Any]:
         self._ensure_loaded()

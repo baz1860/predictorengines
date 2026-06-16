@@ -42,6 +42,9 @@ python3 validate.py --since 2024-06-01 --sims 8000 --gate --quiet \
 echo ""; echo "── 5/5 Refit calibration ──"
 python3 calibrate.py --fit || echo "  calibration skipped"
 
+# Record data provenance (offline, never blocks) — run from the repo root.
+(cd .. && python3 -m app.provenance --engine golf --write) || echo "  manifest skipped"
+
 echo ""; echo "Done. Sim + edge run on demand from the app (they need live odds),"
 echo "or standalone:  python3 simulate.py --sims 50000 ${COURSE:+--course \"$COURSE\"} $MAJOR_FLAG"
 echo "                python3 edge.py --min-edge 1.0"

@@ -46,6 +46,10 @@ echo "== Validation gate =="
 python3 validate.py --quiet --gate \
   || echo "   ##### VALIDATION GATE FAILED — blend Brier regressed vs baseline; review before betting #####"
 
+echo "== Data manifest (provenance) =="
+# Record source / fetched_at / row counts for key inputs (offline, never blocks).
+python3 -m app.provenance --engine worldcup --write || echo "   manifest skipped"
+
 echo "== Dashboard =="
 python3 report.py || echo "   dashboard skipped"
 
