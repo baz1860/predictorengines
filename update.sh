@@ -53,4 +53,8 @@ python3 -m app.provenance --engine worldcup --write || echo "   manifest skipped
 echo "== Dashboard =="
 python3 report.py || echo "   dashboard skipped"
 
+echo "== Daily suite summary =="
+# Offline read-out: gates, freshness, recommendations, CLV, bankroll.
+python3 daily_summary.py || echo "   summary skipped"
+
 echo "Done: predictions_worldcup_2026.csv, tournament_odds.csv, bet_queue.csv, dashboard.html refreshed."

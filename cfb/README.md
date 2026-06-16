@@ -118,3 +118,16 @@ Seasons 2001–present, FBS games only (FBS vs FCS included, FCS side pooled). N
 - Discrete scoring model for totals/teasers (points come in 3s and 7s — normal approximation misprices key numbers)
 - Extra features: returning production, talent composites, QB changes, rest/travel
 - Calibration check and shrinkage toward market lines
+
+## V3 tooling
+
+- **Walk-forward gate** — `python3 validate.py --gate` (leak-free; metrics in
+  `data/validation_baseline.json`).
+- **Tunable elo/power blend weight** — `python3 validate.py --tune-blend` prints
+  a before/after table (ml_brier / margin_mae per weight). The default is the V2
+  50/50 blend; opt into the validated weight with `--tune-blend --write` (writes
+  `data/blend_weight.json`), then `--gate --update-baseline`. See `V3_NOTES.md`.
+- **Experimental market blend** in the app Edge tab (default OFF) anchors the
+  model toward the de-vigged book; not used for recommendations until validated.
+- **Provenance** — `python3 -m app.provenance --check-odds cfb` validates a
+  manual `odds.csv`; freshness shows in the app's model-audit panel.
