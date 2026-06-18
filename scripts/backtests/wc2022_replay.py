@@ -14,6 +14,9 @@ from fractions import Fraction
 import numpy as np
 import pandas as pd
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))  # repo root, for engines.worldcup / core imports
 from engines.worldcup.predictor import load_matches, compute_elo, fit_goal_model, expected_goals, HOME_ADV, DC_RHO
 from engines.worldcup.dixoncoles import fit_dc, outcome_probs
 from engines.worldcup.edge import devig, kelly, KELLY_FRACTION

@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parents[2]
 ARCHIVE = ROOT / "data" / "prediction_snapshots.csv"
 RESULTS = ROOT / "data" / "results.csv"
 

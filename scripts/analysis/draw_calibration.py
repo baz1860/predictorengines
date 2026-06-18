@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
 CS = HERE / "club_soccer" / "data"
 
 
