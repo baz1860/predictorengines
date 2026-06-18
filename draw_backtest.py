@@ -18,9 +18,9 @@ from fractions import Fraction
 import numpy as np
 import pandas as pd
 
-from predictor import load_matches, compute_elo, fit_goal_model, expected_goals, DC_RHO
-from dixoncoles import fit_dc, outcome_probs
-from edge import devig, kelly, KELLY_FRACTION
+from engines.worldcup.predictor import load_matches, compute_elo, fit_goal_model, expected_goals, DC_RHO
+from engines.worldcup.dixoncoles import fit_dc, outcome_probs
+from engines.worldcup.edge import devig, kelly, KELLY_FRACTION
 
 BET_EDGE_MIN = 0.03   # same 3% threshold the live system documents
 NAMES = {"USA": "United States"}

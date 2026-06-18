@@ -41,8 +41,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import predictor as P  # noqa: E402
-from dixoncoles import outcome_probs  # noqa: E402  (Dixon-Coles 1X2 from lambdas)
+from engines.worldcup import predictor as P  # noqa: E402
+from engines.worldcup.dixoncoles import outcome_probs  # noqa: E402  (Dixon-Coles 1X2 from lambdas)
 from contracts import fixture_key  # noqa: E402  (canonical event_id)
 
 from . import schema  # noqa: E402

@@ -11,9 +11,11 @@ Run: python3 test_m6.py   (no pytest dependency). Covers:
 """
 import numpy as np
 
-import context
-import edge
-from dixoncoles import build_sources
+from engines.worldcup import context
+
+from engines.worldcup import edge
+
+from engines.worldcup.dixoncoles import build_sources
 
 _fails = []
 

@@ -9,9 +9,9 @@ by construction. Scores all 64 matches on the 90/120-minute result
 import numpy as np
 import pandas as pd
 
-from predictor import (load_matches, compute_elo, fit_goal_model,
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, HOME_ADV, DC_RHO)
-from dixoncoles import fit_dc, outcome_probs
+from engines.worldcup.dixoncoles import fit_dc, outcome_probs
 
 START, END = "2022-11-20", "2022-12-19"
 

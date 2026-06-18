@@ -45,7 +45,8 @@ class WorldCupAdapter(EngineAdapter):
     def _ensure_loaded(self) -> None:
         if self._loaded:
             return
-        import predictor as p
+        from engines.worldcup import predictor as p
+
         played, _ = p.load_matches()
         ratings, played = p.compute_elo(played)
         self._ratings = ratings
@@ -62,7 +63,8 @@ class WorldCupAdapter(EngineAdapter):
 
     def predict(self, params: dict[str, Any]) -> dict[str, Any]:
         self._ensure_loaded()
-        import predictor as p
+        from engines.worldcup import predictor as p
+
         team1 = (params.get("team1") or "").strip()
         team2 = (params.get("team2") or "").strip()
         home = bool(params.get("home", False))
@@ -101,8 +103,8 @@ class WorldCupAdapter(EngineAdapter):
                            "reach_SF", "reach_final", "champion"]}
 
     def simulate(self, params: dict[str, Any]) -> dict[str, Any]:
-        from dixoncoles import build_sources
-        from simulate import (MatchModel, load_group_matches, simulate_once,
+        from engines.worldcup.dixoncoles import build_sources
+        from engines.worldcup.simulate import (MatchModel, load_group_matches, simulate_once,
                               GROUPS, TEAM_GROUP)
         model = str(params.get("model", "blend"))
         if model not in MODELS:
@@ -159,9 +161,10 @@ class WorldCupAdapter(EngineAdapter):
                 "api_source_id": "the-odds-api", "has_template": True}
 
     def edge(self, params: dict[str, Any]) -> dict[str, Any]:
-        import edge as E
-        from dixoncoles import build_sources
-        from predictor import load_matches
+        from engines.worldcup import edge as E
+
+        from engines.worldcup.dixoncoles import build_sources
+        from engines.worldcup.predictor import load_matches
         from .. import settings_store, bankroll_store
 
         model = str(params.get("model", "blend"))
@@ -176,7 +179,7 @@ class WorldCupAdapter(EngineAdapter):
         no_portfolio = bool(params.get("no_portfolio", False))
 
         if squad_adj:
-            from squads import adjusted_sources
+            from engines.worldcup.squads import adjusted_sources
             sources, ratings, _adj = adjusted_sources(model)
         else:
             sources, ratings = build_sources(model)
@@ -264,8 +267,9 @@ class WorldCupAdapter(EngineAdapter):
                                      sport=self.sport)
 
     def write_odds_template(self) -> dict[str, Any]:
-        import edge as E
-        from predictor import load_matches
+        from engines.worldcup import edge as E
+
+        from engines.worldcup.predictor import load_matches
         from contracts import enrich_template_result
         _, upcoming = load_matches()
         E.write_template(upcoming)

@@ -15,9 +15,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import edge
+from engines.worldcup import edge
+
 from core import bankroll
-from edge import (portfolio_size, SINGLE_MATCH_CAP, DAILY_EXPOSURE_CAP,
+from engines.worldcup.edge import (portfolio_size, SINGLE_MATCH_CAP, DAILY_EXPOSURE_CAP,
                   CORR_CAP_MULT)
 
 _fails = []

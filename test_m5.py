@@ -12,8 +12,9 @@ Run: python3 test_m5.py   (no pytest dependency). Covers:
 import numpy as np
 import pandas as pd
 
-import squads
-from squads import squad_power, POS_DEF_SHARE, SQUADS_CSV, OUT_CSV
+from engines.worldcup import squads
+
+from engines.worldcup.squads import squad_power, POS_DEF_SHARE, SQUADS_CSV, OUT_CSV
 
 _fails = []
 
@@ -50,7 +51,7 @@ def test_split_invariant_and_direction():
 
 def test_asymmetric_application():
     print("3. adjusted_sources asymmetry")
-    from dixoncoles import build_sources
+    from engines.worldcup.dixoncoles import build_sources
     raw, ratings = build_sources("blend")
     t1, t2 = "Brazil", "Argentina"
     orig = squads.load_adj_split

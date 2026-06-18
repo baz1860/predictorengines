@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from predictor import DC_RHO, HOME_ADV, score_matrix  # noqa: E402
+from engines.worldcup.predictor import DC_RHO, HOME_ADV, score_matrix  # noqa: E402
 
 from . import feature_store as FS  # noqa: E402
 

@@ -12,8 +12,9 @@ import json
 import numpy as np
 
 import validate
-import calibrate
-from calibrate import CALIB_FILE
+from engines.worldcup import calibrate
+
+from engines.worldcup.calibrate import CALIB_FILE
 
 _fails = []
 

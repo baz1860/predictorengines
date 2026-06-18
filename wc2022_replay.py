@@ -14,9 +14,9 @@ from fractions import Fraction
 import numpy as np
 import pandas as pd
 
-from predictor import load_matches, compute_elo, fit_goal_model, expected_goals, HOME_ADV, DC_RHO
-from dixoncoles import fit_dc, outcome_probs
-from edge import devig, kelly, KELLY_FRACTION
+from engines.worldcup.predictor import load_matches, compute_elo, fit_goal_model, expected_goals, HOME_ADV, DC_RHO
+from engines.worldcup.dixoncoles import fit_dc, outcome_probs
+from engines.worldcup.edge import devig, kelly, KELLY_FRACTION
 
 # Minimum 1X2 edge to back an outcome in this historical replay. Defined locally
 # because edge.py's live recorder was refactored to a confidence rule

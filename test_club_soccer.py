@@ -23,7 +23,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import competitions as C
-import edge as E
+import edge as E  # club_soccer/edge via the CLUB sys.path insertion above (not worldcup)
+
 import model as M
 from api_keys import get_key
 from app.engines.club_soccer import ClubSoccerAdapter
