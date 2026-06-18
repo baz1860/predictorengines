@@ -24,12 +24,12 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
-CFB = ROOT / "cfb"
-if str(CFB) not in sys.path:
-    sys.path.insert(0, str(CFB))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-import predictor as PR
-import validate as V
+# cfb is a real package (Phase 4) — import its modules package-qualified.
+from cfb import predictor as PR
+from cfb import validate as V
 
 PASS, FAIL = 0, 0
 

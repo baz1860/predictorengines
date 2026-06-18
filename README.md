@@ -133,9 +133,9 @@ python3 club_soccer/validate.py --gate
 College football:
 
 ```bash
-python3 cfb/predictor.py "Ohio State" "Michigan"
-python3 cfb/predictor.py "Georgia" "Texas" --neutral --model blend
-python3 cfb/validate.py --quiet --gate
+python3 -m cfb.predictor "Ohio State" "Michigan"
+python3 -m cfb.predictor "Georgia" "Texas" --neutral --model blend
+python3 -m cfb.validate --quiet --gate
 ```
 
 Golf:
@@ -212,7 +212,7 @@ python3 clv_suite.py --snapshot      # record current odds for open bets
 python3 clv_suite.py --report        # closing-line value per settled bet
 python3 -m app.provenance --freshness     # per-engine data-staleness warnings
 python3 -m app.provenance --check-odds cfb  # validate a manual odds file
-python3 cfb/validate.py --tune-blend       # CFB elo/power blend-weight table
+python3 -m cfb.validate --tune-blend       # CFB elo/power blend-weight table
 ```
 
 Market blending is generalised in `app/market_blend.py` (the World Cup keeps its
