@@ -17,8 +17,8 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | 3c | Move backtest/analysis scripts | `refactor/phase-3c-tooling` (#16) | ✅ |
 | 3c-2 | Move WC validate + WC scripts | `refactor/phase-3c2-engine-tooling` | 🟡 |
 | 4a | In-process club_soccer engine | `refactor/phase-4-kill-subprocess` (#18) | ✅ |
-| 4b | In-process cfb engine | `refactor/phase-4b-cfb` | 🟡 |
-| 4c | In-process golf engine | — | ⬜ |
+| 4b | In-process cfb engine | `refactor/phase-4b-cfb` (#19) | ✅ |
+| 4c | In-process golf engine | `refactor/phase-4c-golf` | 🟡 |
 | 4d | Delete _subprocess + rework sec tests | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
 
@@ -321,10 +321,20 @@ added `cfb/engine.py` (runner logic, package imports); adapter dispatches via `_
 the README `cfb/predictor.py`/`cfb/validate.py` examples. Verified via `run_checks --gates`
 (cfb gate through `-m cfb.validate`). cfb's `grade_open_bets` is pure pandas — untouched.
 
-**4c — golf.** Same recipe (golf isn't a package yet — add `__init__.py`).
-**4d — teardown.** Once no adapter uses it: delete `_subprocess.py` + the 3 runners,
-drop `safe_runner_env` and rework its `test_security` cases (keep the redaction tests —
-`_inproc` reuses `redact`/`collect_secrets`).
+**4c — golf (done).** Added `golf/__init__.py`; relativized 19 intra-package imports;
+added `golf/engine.py` (runner logic — `model`/`simulate`/`edge`/`portfolio` — package
+imports); adapter dispatches via `_inproc` + `golf.engine.COMMANDS`; deleted
+`golf_runner.py`. Rewired callers to `-m golf.X`: `validate_all.py`, `golf/update.sh`
+(6 invocations + usage echoes), `test_golf_config`, README, and golf script docstrings.
+`grade_open_bets` is pure pandas — untouched. All three runners now gone; `runners/`
+holds only `__pycache__`. Verified via `run_checks --gates` (golf gate through
+`-m golf.validate`).
+
+**4d — teardown (next).** No adapter imports `_subprocess` now. Delete `_subprocess.py`
+and the empty `runners/`, drop `safe_runner_env` from `app/security.py`, and rework the
+`test_security` cases that exercised the subprocess (`test_safe_env`,
+`test_run_engine_*`) — replacing them with `_inproc` equivalents. Keep the redaction
+tests (`_inproc` reuses `redact`/`collect_secrets`).
 
 **Acceptance (per sub-PR):** that sport runs in-process; registry + golden unchanged;
 `run_checks` (and `--gates` for validate-rewires) green; security redaction preserved.

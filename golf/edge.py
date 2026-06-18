@@ -14,7 +14,7 @@ De-vig method: multiplicative (default) or power.
 Output: data/edge_report.csv
 
 Usage:
-  python edge.py [--min-edge 3.0] [--h2h-all] [--h2h "Rory McIlroy" "Scottie Scheffler"]
+  python -m golf.edge [--min-edge 3.0] [--h2h-all] [--h2h "Rory McIlroy" "Scottie Scheffler"]
                  [--kelly 0.25] [--no-bet] [--market win|top5|top10|top20|cut|all]
 """
 
@@ -372,8 +372,8 @@ def evaluate_h2h_no_odds(preds: dict, top_n: int = 20) -> None:
 # the app runner.
 # ═════════════════════════════════════════════════════════════════════════
 
-import market          # noqa: E402
-import calibrate       # noqa: E402
+from . import market  # noqa: E402
+from . import calibrate  # noqa: E402
 
 PLACE_MARKETS = ["win", "top5", "top10", "top20", "cut"]
 PLACE_COL = {"win": "odds_win", "top5": "odds_top5", "top10": "odds_top10",
@@ -569,13 +569,13 @@ def print_edge_report(bets: list[dict]) -> None:
 
 def build_rated_field(course: str = "", major: bool = False):
     """Rated Player objects from the fitted model (legacy players.csv fallback)."""
-    import model as M
-    from model import load_field, load_players
+    from . import model as M
+    from .model import load_field, load_players
     names = [p.name for p in load_field(players=load_players())]
     params = M.load_params()
     if params:
         return M.predict_field(names, params, course=course, is_major=major), True
-    from model import compute_ratings, load_course_history, load_recent_form
+    from .model import compute_ratings, load_course_history, load_recent_form
     field = load_field(players=load_players())
     ch = load_course_history(course) if course else {}
     return compute_ratings(field, course=course, is_major=major,
@@ -602,8 +602,8 @@ def print_priced(rows: list[dict]) -> None:
 # ─────────────────────────────────────────────
 
 def main():
-    import simulate as GSIM
-    import portfolio as GPORT
+    from . import simulate as GSIM
+    from . import portfolio as GPORT
     import numpy as np
 
     ap = argparse.ArgumentParser(description="Golf betting edge calculator (v2)")

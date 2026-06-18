@@ -13,7 +13,7 @@ same skill/form/major-sigma logic as everywhere else; course fit applied if know
 We Monte-Carlo one shared round for the whole field, then read off each trio.
 
 Output: data/threeballs_r1_edges.csv  +  a printed card.
-Usage:  python3 price_threeballs_r1.py [--sims 200000] [--kelly 0.25]
+Usage:  python3 -m golf.price_threeballs_r1 [--sims 200000] [--kelly 0.25]
         [--course "Shinnecock Hills"] [--major] [--min-edge 0.0] [--bankroll 100]
 """
 from __future__ import annotations
@@ -27,9 +27,9 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-import model as M
-import market as MK
-import edge as E
+from . import model as M
+from . import market as MK
+from . import edge as E
 
 DATA = Path(__file__).parent / "data"
 RAW = DATA / "threeballs_r1_raw.txt"

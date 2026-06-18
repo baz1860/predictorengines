@@ -5,7 +5,7 @@ Each engine ships its own walk-forward validation with a stored baseline:
   * World Cup    – python -m engines.worldcup.validate --quiet --gate
   * Club Soccer  – python -m club_soccer.validate --gate
   * CFB          – python -m cfb.validate --quiet --gate   (new in V3 M3)
-  * Golf         – golf/validate.py --quiet --gate --sims <small default>
+  * Golf         – python -m golf.validate --quiet --gate --sims <small default>
 
 Each runs in its own working dir with PYTHONPATH pointed at the engine folder, so
 the flat module names don't collide (same isolation the app runners use). A
@@ -40,8 +40,8 @@ def _engines(sims: int, cfb_since: int) -> list[dict]:
         {"id": "cfb", "cwd": ROOT,
          "cmd": ["-m", "cfb.validate", "--quiet", "--gate", "--since", str(cfb_since)],
          "timeout": 600},
-        {"id": "golf", "cwd": ROOT / "golf",
-         "cmd": ["validate.py", "--quiet", "--gate", "--sims", str(sims)],
+        {"id": "golf", "cwd": ROOT,
+         "cmd": ["-m", "golf.validate", "--quiet", "--gate", "--sims", str(sims)],
          "timeout": 900},
     ]
 
