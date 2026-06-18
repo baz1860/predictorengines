@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Seed the Club Soccer engine from football-data.co.uk — FREE, no API key, no quota.
 
-    python3 club_soccer/seed_footballdata.py --seasons 2022 2023 2024 2025
+    python3 -m club_soccer.seed_footballdata --seasons 2022 2023 2024 2025
 
 football-data.co.uk publishes one CSV per league per season with full-time
 scores, shots, shots on target, and corners — everything the model and its
@@ -33,8 +33,8 @@ for p in (str(ROOT), str(HERE)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import model as M
-from competitions import BY_NAME
+from . import model as M
+from .competitions import BY_NAME
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"

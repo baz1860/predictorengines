@@ -2,7 +2,7 @@
 """Add UEFA club competition data (Champions/Europa/Conference League, incl. the
 Swiss-model league phase) to club_soccer from openfootball — FREE, CC0, no key.
 
-    python3 club_soccer/seed_openfootball.py --seasons 2024 2025 --merge
+    python3 -m club_soccer.seed_openfootball --seasons 2024 2025 --merge
 
 Source: github.com/openfootball/champions-league (public domain football.txt).
 Covers 2011-12 .. current, INCLUDING the 36-team league phase from 2024-25 on.
@@ -32,9 +32,9 @@ for p in (str(ROOT), str(HERE)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import model as M
-from competitions import BY_NAME
-from names import make_canon
+from . import model as M
+from .competitions import BY_NAME
+from .names import make_canon
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
@@ -150,10 +150,11 @@ def main():
         if args.revalidate:
             print("\nRefitting + revalidating...")
             M.save_params(M.fit())
-            # subprocess so club_soccer/validate.py loads (not the root one)
+            # subprocess so the club_soccer validate (not the worldcup one) runs;
+            # invoked as a package module from the repo root since Phase 4.
             import subprocess
-            subprocess.run([sys.executable, str(HERE / "validate.py"), "--update-baseline"],
-                           cwd=str(HERE), check=False)
+            subprocess.run([sys.executable, "-m", "club_soccer.validate", "--update-baseline"],
+                           cwd=str(HERE.parent), check=False)
     else:
         uefa.to_csv(args.out, index=False)
         print(f"\nWrote UEFA-only -> {args.out} (use --merge to add into fixtures.csv)")
