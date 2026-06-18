@@ -18,8 +18,8 @@ import os
 import numpy as np
 import pandas as pd
 
-import elo as E
-import power as P
+from . import elo as E
+from . import power as P
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

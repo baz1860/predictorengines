@@ -35,12 +35,12 @@ import sys
 import numpy as np
 import pandas as pd
 
-import elo as E
-import epa as X
-import power as P
-from predictor import load_blend_weight, DEFAULT_W_ELO, _BLEND_WEIGHT_FILE
-from ats_backtest import SPREADS_CSV, settle as ats_settle
-from totals_backtest import TOTALS_CSV, settle as totals_settle
+from . import elo as E
+from . import epa as X
+from . import power as P
+from .predictor import load_blend_weight, DEFAULT_W_ELO, _BLEND_WEIGHT_FILE
+from .ats_backtest import SPREADS_CSV, settle as ats_settle
+from .totals_backtest import TOTALS_CSV, settle as totals_settle
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASELINE = os.path.join(HERE, "data", "validation_baseline.json")
