@@ -80,7 +80,7 @@ Engine-specific details live in:
 - [club_soccer/README.md](club_soccer/README.md)
 - [cfb/README.md](cfb/README.md)
 - [golf/README.md](golf/README.md)
-- [V3_PLAN.md](V3_PLAN.md) and [V3_NOTES.md](V3_NOTES.md)
+- [docs/archive/V3_PLAN.md](docs/archive/V3_PLAN.md) and [docs/archive/V3_NOTES.md](docs/archive/V3_NOTES.md)
 
 ## Desktop App
 
@@ -238,7 +238,7 @@ Refresh scripts exist per engine (`update.sh`, `golf/update.sh`,
 ## Current Direction
 
 The current product direction is the local web/desktop app, not a native Swift
-rewrite. V3 is complete (see [V3_NOTES.md](V3_NOTES.md)):
+rewrite. V3 is complete (see [docs/archive/V3_NOTES.md](docs/archive/V3_NOTES.md)):
 
 - **M1–M4** — shared engine contracts, request/subprocess hardening, validation
   gates, pooled bankroll/ledger with event-safe settlement.
