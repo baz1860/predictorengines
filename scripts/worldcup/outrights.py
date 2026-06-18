@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
 SIM_CSV = HERE / "tournament_odds.csv"
 ODDS_CSV = HERE / "outright_odds.csv"
 REPORT = HERE / "outright_edge.csv"

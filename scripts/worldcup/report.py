@@ -13,12 +13,14 @@ Reads only local files, so it runs in the daily pipeline offline. Re-run anytime
 """
 import html
 import json
+import sys
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(HERE))  # repo root, for the lazy `from core.clv import …` below
 DATA = HERE / "data"
 OUT = HERE / "dashboard.html"
 TITLE_HISTORY = DATA / "title_history.csv"
