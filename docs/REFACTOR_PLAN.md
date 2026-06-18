@@ -11,10 +11,23 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | 0 | Safety net | `refactor/phase-0-safety-net` (#10) | ✅ |
 | 1 | Cleanup & archive | `refactor/phase-1-cleanup` (#11) | ✅ |
 | 2 | Core extraction | `refactor/phase-2-core-contracts` (#12) | ✅ |
-| 2b | Contracts extraction | `refactor/phase-2b-contracts` | 🟡 |
-| 3 | Package the worldcup engine | — | ⬜ |
+| 2b | Contracts extraction | `refactor/phase-2b-contracts` (#13) | ✅ |
+| 3a | Package worldcup core (+shims) | `refactor/phase-3-worldcup` | 🟡 |
+| 3b | Migrate importers, drop shims | — | ⬜ |
+| 3c | Move WC tooling + backtests | — | ⬜ |
 | 4 | Kill the subprocess hack | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
+
+> **Phase 3 was split into 3a/3b/3c** after investigation showed it's far bigger than a
+> pure move: ~15-20 tightly-coupled engine modules with **import cycles**
+> (`predictor ↔ confederation_adj ↔ dixoncoles`, `edge ↔ market_blend`), all resolving
+> `data/` paths via `__file__`, plus ~25 external importers (the adapter, all of `wc_v4/`,
+> backtests, `test_m2`–`m7`, `core/clv`).
+>
+> **Data decision (chosen): keep the shared root `data/`.** Moved modules anchor on
+> `Path(__file__).resolve().parents[2]` to reach it, so the tripwire-pinned files stay
+> put and `app/`/`core/`/tests are unaffected. (The other engines own private `data/`
+> dirs; worldcup stays asymmetric by design for now.)
 
 > **Phase 2 was split** after investigation. The original Phase 2 bundled three
 > items; two turned out riskier/different than assumed:
@@ -191,11 +204,30 @@ with `app/market_blend.py` into one implementation. This *changes behavior*, so 
 outside the structural phases with a deliberate golden re-baseline and its own
 validation.
 
-### Phase 3 — Package the worldcup engine  ⬜  (highest risk)
-- Move the loose root soccer files into `engines/worldcup/`, matching the other sports.
-- Gate strictly on Phase 0 golden outputs.
+### Phase 3 — Package the worldcup engine  🟡  (highest risk, split 3a/3b/3c)
 
-**Acceptance:** worldcup engine is a package; golden outputs match; registry unchanged.
+**3a — Package the core cluster (this PR).** Create `engines/worldcup/` and move the 9
+mutually-dependent core modules: `predictor`, `dixoncoles`, `confederation_adj`,
+`simulate`, `squads`, `context`, `calibrate`, `market_blend`, `edge`. Because of the
+import cycles they move as one unit. Inside the package, sibling imports became relative
+(`from .predictor import …`); `data/` anchors were repointed to
+`Path(__file__).resolve().parents[2]` (root). **Transparent root shims** were left for
+each module (`import sys; from engines.worldcup import X as _m; sys.modules[__name__]=_m`)
+so the ~25 external importers — adapter, `wc_v4/`, backtests, `test_m2`–`m7`, `core/clv`
+— keep working unchanged. Verified: shim identity is exact (incl. private names), data
+loads from root, all 4 engines register.
+
+**3b — Migrate importers, drop shims.** Rewrite the external importers to
+`from engines.worldcup import …`, resolve the `core/clv → edge` smell, delete the 9 shims.
+Mechanical + grep-verified.
+
+**3c — Move WC tooling + backtests.** Relocate the WC analysis/build scripts (`report`,
+`validate`, `draw_*`, `rho_sweep`, `build_*`, `totals_calibration_check`, `injuries`,
+`outrights`, `preflight`) and the deferred-from-Phase-1 backtest/replay scripts into the
+package / `scripts/backtests/`.
+
+**Acceptance (per sub-PR):** golden outputs byte-identical; registry untouched; tests
+green. `__file__`/`parents[N]` re-checked on every moved file (the Phase 2b lesson).
 
 ### Phase 4 — Kill the subprocess hack  ⬜
 - With everything packaged, rewrite `app/engines/runners/*` as direct imports.
