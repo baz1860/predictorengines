@@ -5,7 +5,7 @@ const ALL_CAPS = [
   { id: "simulate", label: "Simulate" },
   { id: "edge", label: "Edge" },
 ];
-const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "bankroll", "settings", "placeholder"];
+const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "bankroll", "settings", "ops", "placeholder"];
 
 const state = { engines: [], current: null, activeCap: "predict", view: "engine" };
 
@@ -73,6 +73,7 @@ async function init() {
   $("nav-history").onclick = openHistory;
   $("nav-bankroll").onclick = openBankroll;
   $("nav-settings").onclick = openSettings;
+  $("nav-ops").onclick = openOps;
   try {
     const { engines } = await api("/api/engines");
     state.engines = engines;
@@ -96,7 +97,7 @@ function renderSidebar() {
     list.appendChild(btn);
   });
   [["dashboard", "nav-dashboard"], ["fixtures", "nav-fixtures"], ["outrights", "nav-outrights"],
-   ["history", "nav-history"], ["bankroll", "nav-bankroll"], ["settings", "nav-settings"]]
+   ["history", "nav-history"], ["bankroll", "nav-bankroll"], ["settings", "nav-settings"], ["ops", "nav-ops"]]
     .forEach(([v, id]) => $(id).classList.toggle("active", state.view === v));
 }
 
@@ -891,6 +892,72 @@ async function saveSettings() {
   saved.hidden = false;
   setTimeout(() => { saved.hidden = true; }, 1800);
   openSettings();
+}
+
+// ---------- OPS (V6) ----------
+async function openOps() {
+  setSuiteView("ops", "Operations");
+  $("ops-stats").innerHTML = `<div class="stat"><div class="skeleton skeleton-line" style="width:50%"></div><div class="skeleton skeleton-line" style="width:40%;height:22px"></div></div>`.repeat(4);
+  ["ops-daily", "ops-validation", "ops-backup", "ops-freshness", "ops-release"].forEach((id) => {
+    $(id).innerHTML = `<div class="skeleton" style="height:120px"></div>`;
+  });
+  try {
+    renderOps(await api("/api/v6"));
+  } catch (e) {
+    $("ops-daily").innerHTML = `<div class="empty-mini">Could not load operations: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderOps(d) {
+  const h = d.health || {};
+  const sec = h.sections || {};
+  const bk = sec.bankroll || {};
+  const fresh = sec.freshness || { counts: {}, rows: [] };
+  const v5 = sec.v5 || {};
+  const backup = sec.backup || {};
+  $("ops-stats").innerHTML =
+    statTile("System", h.status || "unknown", { sub: h.generated_at || "" }) +
+    statTile("Open risk", gbp(bk.open_stake || 0), { sub: `${((bk.open_risk_ratio || 0) * 100).toFixed(1)}% of bankroll` }) +
+    statTile("Freshness", `${fresh.counts?.stale || 0} stale`, { sub: `${fresh.counts?.missing || 0} missing` }) +
+    statTile("V5 records", String((v5.recommendations && v5.recommendations.n) || 0), { sub: `${v5.feature_snapshots || 0} feature snapshots` });
+
+  $("ops-daily").innerHTML = renderTable([
+    { key: "id", label: "Step", fmt: "text" },
+    { key: "command", label: "Command", fmt: "text" },
+    { key: "description", label: "Purpose", fmt: "text" },
+  ], (d.daily_run && d.daily_run.steps) || []);
+
+  $("ops-validation").innerHTML = renderTable([
+    { key: "engine", label: "Engine", fmt: "text" },
+    { key: "status", label: "Status", fmt: "text" },
+    { key: "seconds", label: "Secs", fmt: "num1" },
+  ], ((sec.validation || {}).rows || []));
+
+  $("ops-backup").innerHTML =
+    `<div class="kv"><div><span>Status</span><b>${esc(backup.status || "unknown")}</b></div>
+      <div><span>Latest</span><b>${esc(backup.latest || "none")}</b></div>
+      <div><span>Count</span><b>${esc(backup.count || 0)}</b></div></div>
+     <div class="row controls"><button id="ops-backup-btn" class="primary">Create backup</button></div>`;
+  $("ops-backup-btn").onclick = async () => {
+    const res = await post("/api/v6/backup", { label: "ui" });
+    toast(`Backup created: ${res.path}`, "pos");
+    openOps();
+  };
+
+  mountTable($("ops-freshness"), [
+    { key: "engine", label: "Engine", fmt: "text" },
+    { key: "key", label: "Input", fmt: "text" },
+    { key: "role", label: "Role", fmt: "text" },
+    { key: "status", label: "Status", fmt: "text" },
+    { key: "age_days", label: "Age d", fmt: "num1" },
+    { key: "message", label: "Message", fmt: "text" },
+  ], fresh.rows || [], { search: true });
+
+  $("ops-release").innerHTML = renderTable([
+    { key: "artifact", label: "Artifact", fmt: "text" },
+    { key: "path", label: "Path", fmt: "text" },
+    { key: "exists", label: "Exists", fmt: "text" },
+  ], (d.release && d.release.artifacts) || []);
 }
 
 // ---------- helpers ----------

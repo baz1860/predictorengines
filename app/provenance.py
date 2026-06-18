@@ -37,7 +37,7 @@ _STALE_DAYS = {"results": 3, "fixtures": 3, "games": 3, "rounds": 3,
 ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
     "worldcup": [
         ("results", "data/results.csv", "results", "martj42/international_results + local"),
-        ("odds", "odds.csv", "odds", "The Odds API / manual"),
+        ("odds", "data/odds_live.csv", "odds", "The Odds API / manual (snapshot written by edge.py)"),
         ("model", "data/dc_params.json", "model", "dixoncoles.py --fit"),
         ("squads", "data/squad_ratings.csv", "model", "squads.py"),
     ],
