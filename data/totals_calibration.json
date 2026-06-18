@@ -1,0 +1,15 @@
+{
+  "lambda_mult": 1.09,
+  "applies_to": [
+    "over25",
+    "under25",
+    "btts_yes",
+    "btts_no"
+  ],
+  "n": 127,
+  "ou_logloss_base": 0.7038,
+  "ou_logloss_tuned": 0.6981,
+  "gate": "leave-one-tournament-out, beats lam=1.0 on every held-out cup",
+  "source": "WC2018+WC2022 realised over/under, leak-free point-in-time",
+  "note": "rho sweep is flat at the 2.5 line; the bias is the overall scoring level. Applied to totals/BTTS only; 1X2 left as-is."
+}
