@@ -33,10 +33,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from predictor import (load_matches, compute_elo, fit_goal_model,  # noqa: E402
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,  # noqa: E402
                        expected_goals, HOME_ADV, DC_RHO)
-from dixoncoles import fit_dc, outcome_probs  # noqa: E402
-from edge import devig  # noqa: E402
+from engines.worldcup.dixoncoles import fit_dc, outcome_probs  # noqa: E402
+from engines.worldcup.edge import devig  # noqa: E402
 
 DATA = ROOT / "data"
 _SIDE_IDX = {"home": 0, "draw": 1, "away": 2}

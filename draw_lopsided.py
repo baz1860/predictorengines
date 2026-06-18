@@ -15,9 +15,9 @@ import sys
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
-from predictor import (load_matches, compute_elo, fit_goal_model,
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, score_matrix, HOME_ADV, DC_RHO)
-from dixoncoles import fit_dc
+from engines.worldcup.dixoncoles import fit_dc
 
 
 def probs_for(lam1, lam2, rho):

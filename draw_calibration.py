@@ -94,9 +94,9 @@ print("3) WC2018 — leak-free international replay calibration")
 print("=" * 70)
 import sys
 sys.path.insert(0, str(HERE))
-from predictor import (load_matches, compute_elo, fit_goal_model,
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, DC_RHO)
-from dixoncoles import fit_dc, outcome_probs
+from engines.worldcup.dixoncoles import fit_dc, outcome_probs
 
 played, _ = load_matches()
 ratings, played = compute_elo(played)

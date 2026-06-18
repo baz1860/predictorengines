@@ -14,10 +14,10 @@ a guard against the method *worsening* calibration, not a precise P&L claim.
 """
 import numpy as np
 
-from predictor import (load_matches, compute_elo, fit_goal_model,
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, DC_RHO)
-from dixoncoles import fit_dc, outcome_probs
-from squads import load_ea, squad_power, POS_DEF_SHARE, norm
+from engines.worldcup.dixoncoles import fit_dc, outcome_probs
+from engines.worldcup.squads import load_ea, squad_power, POS_DEF_SHARE, norm
 import pandas as pd
 
 # (team, player, position, approx 2022 overall) — widely reported WC2022 absences

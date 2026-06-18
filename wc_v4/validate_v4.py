@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import market_blend as MB  # noqa: E402
+from engines.worldcup import market_blend as MB  # noqa: E402
 from . import market_model as MM  # noqa: E402
 from . import tournaments as TS  # noqa: E402
 

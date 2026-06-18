@@ -16,9 +16,9 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
-from predictor import (load_matches, compute_elo, fit_goal_model,
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, HOME_ADV, DC_RHO)
-from dixoncoles import fit_dc
+from engines.worldcup.dixoncoles import fit_dc
 from wc2022_sim_backtest import Model, rank_group   # reuse the exact engine
 
 # Identical bracket layout for every 32-team edition.
