@@ -25,7 +25,7 @@ from pathlib import Path
 
 from api_keys import get_key
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
 OUT = HERE / "data" / "absences_api.csv"
 
 API_KEY = get_key("api-football", env="API_FOOTBALL_KEY")

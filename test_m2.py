@@ -11,7 +11,7 @@ import json
 
 import numpy as np
 
-import validate
+from engines.worldcup import validate
 from engines.worldcup import calibrate
 
 from engines.worldcup.calibrate import CALIB_FILE

@@ -43,7 +43,7 @@ python3 clv.py --snapshot || echo "   CLV snapshot skipped (no network / no open
 
 echo "== Validation gate =="
 # Warn loudly on regression but NEVER block the daily update (|| guard).
-python3 validate.py --quiet --gate \
+python3 -m engines.worldcup.validate --quiet --gate \
   || echo "   ##### VALIDATION GATE FAILED — blend Brier regressed vs baseline; review before betting #####"
 
 echo "== Data manifest (provenance) =="
@@ -51,7 +51,7 @@ echo "== Data manifest (provenance) =="
 python3 -m app.provenance --engine worldcup --write || echo "   manifest skipped"
 
 echo "== Dashboard =="
-python3 report.py || echo "   dashboard skipped"
+python3 scripts/worldcup/report.py || echo "   dashboard skipped"
 
 echo "== Daily suite summary =="
 # Offline read-out: gates, freshness, recommendations, CLV, bankroll.

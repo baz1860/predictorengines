@@ -13,8 +13,9 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | 2 | Core extraction | `refactor/phase-2-core-contracts` (#12) | ✅ |
 | 2b | Contracts extraction | `refactor/phase-2b-contracts` (#13) | ✅ |
 | 3a | Package worldcup core (+shims) | `refactor/phase-3-worldcup` (#14) | ✅ |
-| 3b | Migrate importers, drop shims | `refactor/phase-3b-migrate-importers` | 🟡 |
-| 3c | Move WC tooling + backtests | — | ⬜ |
+| 3b | Migrate importers, drop shims | `refactor/phase-3b-migrate-importers` (#15) | ✅ |
+| 3c | Move backtest/analysis scripts | `refactor/phase-3c-tooling` (#16) | ✅ |
+| 3c-2 | Move WC validate + WC scripts | `refactor/phase-3c2-engine-tooling` | 🟡 |
 | 4 | Kill the subprocess hack | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
 
@@ -241,10 +242,43 @@ to be traced, not assumed.
 order alone — account for the interpreter putting the script's own directory on `sys.path`
 first, and for `not in sys.path` guards. When unsure, run the suite and read the failure.
 
-**3c — Move WC tooling + backtests.** Relocate the WC analysis/build scripts (`report`,
-`validate`, `draw_*`, `rho_sweep`, `build_*`, `totals_calibration_check`, `injuries`,
-`outrights`, `preflight`) and the deferred-from-Phase-1 backtest/replay scripts into the
-package / `scripts/backtests/`.
+**3c — Move standalone scripts (done).** Relocated the 15 standalone WC scripts into
+`scripts/backtests/` (9 backtest/replay scripts — the Phase-1 deferral) and
+`scripts/analysis/` (6 calibration/build scripts: `draw_calibration`, `draw_lopsided`,
+`rho_sweep`, `totals_calibration_check`, `build_annexc`, `build_squads_2026`). Each now
+prepends a repo-root `sys.path` bootstrap (so `from engines.worldcup import …` resolves
+from a subdir) and anchors data on `parents[2]`. Inter-backtest sibling imports
+(`wc2018`/`wc_backtest_history` ← `wc2022_sim_backtest`) still resolve because the
+scripts co-locate (the script's own dir is on `sys.path` at runtime).
+
+Verification: not covered by `run_checks` (these aren't tests), so each moved file was
+import-smoked under faithful runtime (script dir + repo root on path); the analysis
+scripts additionally ran their full computation during the smoke. Golden tripwire +
+`run_checks` unaffected. *Gotcha caught:* the auto-injected bootstrap landed inside a
+`try:` block in `backtest_betting.py` (its engine import is lazy) → `IndentationError`;
+moved the bootstrap to module top.
+
+**3c-2 — Move WC validate into the package; WC scripts to scripts/worldcup/ (done).**
+Investigation refined the taxonomy:
+- **`validate.py` → `engines/worldcup/validate.py`** — the genuine WC validation module
+  (imported by `test_m2`, run as the worldcup gate). Sibling imports → relative
+  (`from .predictor import …`), `HERE` → `parents[2]`. Rewired the three by-path callers:
+  `validate_all.py` (worldcup cmd → `["-m", "engines.worldcup.validate", "--quiet",
+  "--gate"]`), `update.sh` (→ `python3 -m engines.worldcup.validate …`), and `test_m2`
+  (`import validate` → `from engines.worldcup import validate`). Verified the gate runs
+  end-to-end via `run_checks --gates`.
+- **`report.py`, `injuries.py`, `outrights.py` → `scripts/worldcup/`** — standalone WC
+  operational scripts (dashboard, injury fetch, outright odds), not imported anywhere.
+  `HERE` → `parents[2]`; `report` got a repo-root `sys.path` bootstrap for its lazy
+  `core.clv` import; `update.sh`'s `report.py` call repointed. Verified by import-smoke.
+- **`preflight.py` stays at root** — it's **suite-level** ("reports all engines"), not a
+  WC module, and is invoked by-path in `test_security`. Out of scope for the WC package;
+  revisit alongside the other suite orchestrators (`daily_summary`, `refresh_tracker`,
+  `merge_results`, `validate_all`, `run_checks`) in Phase 5 if at all.
+
+This completes Phase 3: the WC engine + its validation live in `engines/worldcup/`; its
+standalone scripts live under `scripts/`; the repo root holds only suite-level
+orchestration, tests, and config.
 
 **Acceptance (per sub-PR):** golden outputs byte-identical; registry untouched; tests
 green. `__file__`/`parents[N]` re-checked on every moved file (the Phase 2b lesson).
