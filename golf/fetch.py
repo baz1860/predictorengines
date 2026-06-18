@@ -7,7 +7,7 @@ Sources (in priority order):
   3. Manual CSV fallback       →  data/field.csv, data/players.csv
 
 Usage:
-  python fetch.py [--espn] [--dg-key KEY] [--odds-key KEY]
+  python -m golf.fetch [--espn] [--dg-key KEY] [--odds-key KEY]
                   [--tournament-id N] [--no-odds]
 """
 
@@ -177,7 +177,7 @@ ODDS_BASE = "https://api.the-odds-api.com/v4"
 #   golf_masters_tournament_winner, golf_us_open_winner,
 #   golf_the_open_championship_winner, golf_pga_championship,
 #   golf_fedex_cup_winner, golf_rbc_canadian_open, etc.
-# Run: python fetch.py --list-sports --odds-key KEY  to see all available keys.
+# Run: python -m golf.fetch --list-sports --odds-key KEY  to see all available keys.
 GOLF_SPORT_DEFAULT = "golf_rbc_canadian_open"
 
 
@@ -374,7 +374,7 @@ def main():
 
     # ── Round-history accumulation (v2 data store) ──
     if args.accumulate or args.seed is not None:
-        from providers import accumulate_rounds, get_provider
+        from .providers import accumulate_rounds, get_provider
         seasons = args.seed if args.seed else None
         provider = get_provider(seasons=seasons, need="history")
         added = accumulate_rounds(provider)

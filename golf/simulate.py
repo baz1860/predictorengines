@@ -11,7 +11,7 @@ Output (data/predictions.csv):
   name, win%, top5%, top10%, top20%, cut%, avg_finish, rating, sigma
 
 Usage:
-  python simulate.py [--course COURSE] [--major] [--sims 50000]
+  python -m golf.simulate [--course COURSE] [--major] [--sims 50000]
                      [--cut-rule 65] [--no-cut] [--top TOP_N]
 """
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from model import (
+from .model import (
     Player,
     compute_ratings,
     load_course_history,
@@ -309,7 +309,7 @@ def main():
 
     # Rate the field: fitted model (model_params.json) if available, else the
     # legacy players.csv composite.
-    import model as M
+    from . import model as M
     params = M.load_params()
     if params:
         print("Ratings: fitted model (model_params.json)")
