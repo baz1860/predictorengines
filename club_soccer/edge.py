@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import model as M
+from . import model as M
 from api_keys import get_key
 
 HERE = Path(__file__).resolve().parent
@@ -107,7 +107,7 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
         except ValueError:
             continue
         if calib_maps is not None:
-            from calibrate import apply as _apply_calib
+            from .calibrate import apply as _apply_calib
             ph, pdr, pa = _apply_calib(pred["probs"]["home"], pred["probs"]["draw"],
                                        pred["probs"]["away"], calib_maps)
             pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"] = ph, pdr, pa
@@ -319,7 +319,7 @@ def main() -> None:
         return
     calib_maps = None
     if args.calibrated:
-        from calibrate import load_maps
+        from .calibrate import load_maps
         calib_maps = load_maps()
         if calib_maps is None:
             sys.exit("--calibrated needs data/calibration.json. "

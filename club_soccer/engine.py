@@ -1,23 +1,18 @@
-#!/usr/bin/env python3
-"""Isolated runner for the Club Soccer engine."""
+"""In-process command API for the Club Soccer engine (refactor Phase 4).
+
+The command logic that used to live in app/engines/runners/club_soccer_runner.py,
+now imported and called directly by the adapter (no subprocess). Functions take a
+params dict and return a JSON-able dict; errors are plain exceptions that the adapter
+dispatches through app.engines._inproc.run_inprocess (allowlist + redaction + finite-JSON).
+"""
 from __future__ import annotations
 
-import json
-import sys
-
-import pandas as pd
-
-import competitions as C
-import edge as E
-import model as M
+from . import competitions as C
+from . import edge as E
+from . import model as M
 
 
-def _params():
-    raw = sys.stdin.read().strip()
-    return json.loads(raw) if raw else {}
-
-
-def cmd_schema(_p=None):
+def cmd_schema(_p: dict | None = None) -> dict:
     df = M.load_fixtures()
     return {"kind": "match", "names": M.team_names(df),
             "models": ["ensemble", "goals", "elo"],
@@ -33,7 +28,7 @@ def cmd_schema(_p=None):
             ]}
 
 
-def cmd_predict(p):
+def cmd_predict(p: dict) -> dict:
     home = (p.get("team1") or "").strip()
     away = (p.get("team2") or "").strip()
     if not home or not away:
@@ -62,7 +57,7 @@ def cmd_predict(p):
                   "rows": pred["scorelines"], "bar": "prob"}}
 
 
-def _columns():
+def _columns() -> list[dict]:
     return [
         {"key": "date", "label": "Date", "fmt": "text"},
         {"key": "competition", "label": "Competition", "fmt": "text"},
@@ -77,7 +72,7 @@ def _columns():
     ]
 
 
-def cmd_edge(p):
+def cmd_edge(p: dict) -> dict:
     bankroll = float(p.get("bankroll", 100.0))
     model_name = p.get("model") or "ensemble"
     odds_source = p.get("odds_source") or "manual"
@@ -107,24 +102,10 @@ def cmd_edge(p):
             "columns": _columns(), "rows": rows}
 
 
-def cmd_edge_template(_p=None):
+def cmd_edge_template(_p: dict | None = None) -> dict:
     E.write_template()
     return {"path": "club_soccer/data/odds.csv"}
 
 
 COMMANDS = {"schema": lambda p: cmd_schema(), "predict": cmd_predict,
             "edge": cmd_edge, "edge_template": cmd_edge_template}
-
-
-def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "schema"
-    try:
-        print(json.dumps(COMMANDS[cmd](_params())))
-    except ValueError as e:
-        print(json.dumps({"error": str(e)})); sys.exit(2)
-    except Exception as e:  # noqa
-        print(json.dumps({"error": f"{type(e).__name__}: {e}"})); sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

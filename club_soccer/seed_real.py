@@ -4,12 +4,12 @@
 Two modes:
 
   # FRESH full reseed (overwrites fixtures.csv with all competitions)
-  python3 club_soccer/seed_real.py --seasons 2024 2025
-  python3 club_soccer/seed_real.py --seasons 2024 2025 --stats --max-stats 600
+  python3 -m club_soccer.seed_real --seasons 2024 2025
+  python3 -m club_soccer.seed_real --seasons 2024 2025 --stats --max-stats 600
 
   # MERGE just cups (or UEFA) ONTO the existing league base, keeping its shots
-  python3 club_soccer/seed_real.py --seasons 2024 2025 --cups --merge
-  python3 club_soccer/seed_real.py --seasons 2024 2025 --competitions "FA Cup" "EFL Cup" --merge
+  python3 -m club_soccer.seed_real --seasons 2024 2025 --cups --merge
+  python3 -m club_soccer.seed_real --seasons 2024 2025 --competitions "FA Cup" "EFL Cup" --merge
 
 `--cups` selects every cup competition, `--uefa` every European one, or name them
 explicitly with `--competitions`. In `--merge` mode the fetched rows are appended
@@ -37,11 +37,11 @@ for p in (str(ROOT), str(HERE)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import fetch as F          # reuse request + row helpers
-import model as M
+from . import fetch as F  # reuse request + row helpers
+from . import model as M
 from api_keys import get_key
-from competitions import COMPETITIONS, BY_API_ID
-from names import make_canon
+from .competitions import COMPETITIONS, BY_API_ID
+from .names import make_canon
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
