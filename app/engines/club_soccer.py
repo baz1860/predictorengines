@@ -7,11 +7,10 @@ from typing import Any
 import pandas as pd
 
 from contracts import EngineAdapter
-from ._subprocess import run_engine
+from ._inproc import run_inprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE_DIR = ROOT / "club_soccer"
-RUNNER = Path(__file__).resolve().parent / "runners" / "club_soccer_runner.py"
 
 
 class ClubSoccerAdapter(EngineAdapter):
@@ -24,7 +23,8 @@ class ClubSoccerAdapter(EngineAdapter):
         self._schema = None
 
     def _run(self, command: str, params: dict | None = None):
-        return run_engine(ENGINE_DIR, RUNNER, command, params, timeout=180)
+        from club_soccer import engine as cs_engine
+        return run_inprocess(cs_engine.COMMANDS, command, params)
 
     def predict_schema(self) -> dict[str, Any]:
         if self._schema is None:
@@ -102,15 +102,7 @@ class ClubSoccerAdapter(EngineAdapter):
         return enrich_template_result(self._run("edge_template"))
 
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:
-        import importlib.util
-        import sys
-        if str(ENGINE_DIR) not in sys.path:
-            sys.path.insert(0, str(ENGINE_DIR))
-        spec = importlib.util.spec_from_file_location("club_soccer_edge", ENGINE_DIR / "edge.py")
-        if spec is None or spec.loader is None:
-            raise RuntimeError("Could not load Club Soccer edge grader")
-        CE = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(CE)
+        from club_soccer import edge as CE
         fixtures = pd.read_csv(ENGINE_DIR / "data" / "fixtures.csv")
         fixtures["home_goals"] = pd.to_numeric(fixtures["home_goals"], errors="coerce")
         fixtures["away_goals"] = pd.to_numeric(fixtures["away_goals"], errors="coerce")

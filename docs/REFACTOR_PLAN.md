@@ -16,8 +16,21 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | 3b | Migrate importers, drop shims | `refactor/phase-3b-migrate-importers` (#15) | ✅ |
 | 3c | Move backtest/analysis scripts | `refactor/phase-3c-tooling` (#16) | ✅ |
 | 3c-2 | Move WC validate + WC scripts | `refactor/phase-3c2-engine-tooling` | 🟡 |
-| 4 | Kill the subprocess hack | — | ⬜ |
+| 4a | In-process club_soccer engine | `refactor/phase-4-kill-subprocess` | 🟡 |
+| 4b | In-process cfb engine | — | ⬜ |
+| 4c | In-process golf engine | — | ⬜ |
+| 4d | Delete _subprocess + rework sec tests | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
+
+> **Phase 4 was split per-sport** after investigation: the subprocess is **not only**
+> a collision workaround — it's a tested **security boundary** (curated env, command
+> allowlist, secret-redacted errors). Decision (with the user): **kill it, preserve
+> redaction** — engines go in-process (consistent with worldcup, which already runs
+> in-process), redaction is replicated at the adapter boundary via the new
+> `app/engines/_inproc.py`; the curated-env isolation is dropped (engines are
+> first-party). Relativizing a sport's imports breaks its subprocess runner, so each
+> sport flips atomically: 4a club_soccer, 4b cfb, 4c golf, 4d deletes `_subprocess.py`
+> + the runners and reworks the now-obsolete `safe_runner_env` security tests.
 
 > **Phase 3 was split into 3a/3b/3c** after investigation showed it's far bigger than a
 > pure move: ~15-20 tightly-coupled engine modules with **import cycles**
@@ -283,11 +296,31 @@ orchestration, tests, and config.
 **Acceptance (per sub-PR):** golden outputs byte-identical; registry untouched; tests
 green. `__file__`/`parents[N]` re-checked on every moved file (the Phase 2b lesson).
 
-### Phase 4 — Kill the subprocess hack  ⬜
-- With everything packaged, rewrite `app/engines/runners/*` as direct imports.
-- Delete `_subprocess.py` and the `PYTHONPATH` plumbing.
+### Phase 4 — Kill the subprocess hack  🟡  (split per-sport)
 
-**Acceptance:** no subprocess engine launches; app faster; tests green.
+Each sport flips to in-process atomically (relativizing its imports breaks its
+subprocess runner, so the two can't coexist). Shared helper added once:
+`app/engines/_inproc.py` — `run_inprocess(commands, command, params)` enforcing the
+allowlist, **redacting secrets from any error**, and asserting finite JSON (the
+subprocess guarantees, minus the dropped curated-env isolation).
+
+**4a — club_soccer (done).** Relativized all 15 intra-package imports; added
+`club_soccer/engine.py` (the runner's command logic, package imports); rewrote the
+adapter to dispatch via `_inproc` + `club_soccer.engine.COMMANDS` and replaced its
+`importlib` grader hack with `from club_soccer import edge`; deleted
+`club_soccer_runner.py`. Rewired CLI callers to `-m club_soccer.X`: `validate_all.py`,
+`club_soccer/update.sh`, seed-script docstrings + `seed_openfootball`'s validate
+subprocess. `test_club_soccer` now imports the package + exercises the in-process path
+(incl. the rejected-command guard). Verified via `run_checks --gates` (club_soccer gate
+runs through the new `-m` entry).
+
+**4b / 4c — cfb, golf.** Same recipe (cfb/golf aren't packages yet — add `__init__.py`).
+**4d — teardown.** Once no adapter uses it: delete `_subprocess.py` + the 3 runners,
+drop `safe_runner_env` and rework its `test_security` cases (keep the redaction tests —
+`_inproc` reuses `redact`/`collect_secrets`).
+
+**Acceptance (per sub-PR):** that sport runs in-process; registry + golden unchanged;
+`run_checks` (and `--gates` for validate-rewires) green; security redaction preserved.
 
 ### Phase 5 — Tests & layer rename  ⬜
 - Consolidate tests into `tests/` mirroring `src/`.

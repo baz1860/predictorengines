@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import model as M
+from . import model as M
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
