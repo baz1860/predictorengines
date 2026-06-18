@@ -73,7 +73,7 @@ def _clv_section() -> list:
     if ledger.empty:
         return []
     try:
-        from clv import compute_clv  # noqa: E402  (project-root module)
+        from core.clv import compute_clv  # noqa: E402  (project-root module)
         settled = ledger[ledger["status"].isin(["won", "lost"])].copy()
         c = compute_clv(settled).dropna()
         if len(c):

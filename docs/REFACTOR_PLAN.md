@@ -9,11 +9,22 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | Phase | Title | PR | Status |
 |-------|-------|----|--------|
 | 0 | Safety net | `refactor/phase-0-safety-net` (#10) | ✅ |
-| 1 | Cleanup & archive | `refactor/phase-1-cleanup` | 🟡 |
-| 2 | Core + contracts extraction | — | ⬜ |
+| 1 | Cleanup & archive | `refactor/phase-1-cleanup` (#11) | ✅ |
+| 2 | Core extraction | `refactor/phase-2-core-contracts` | 🟡 |
+| 2b | Contracts extraction | — | ⬜ |
 | 3 | Package the worldcup engine | — | ⬜ |
 | 4 | Kill the subprocess hack | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
+
+> **Phase 2 was split** after investigation. The original Phase 2 bundled three
+> items; two turned out riskier/different than assumed:
+> - **`market_blend` "de-dup" is not a structural move.** Root `market_blend.py` (WC
+>   1X2 blend) and `app/market_blend.py` (generalized V3 blend) are *different
+>   implementations*. Unifying them changes behavior — handled separately as an
+>   explicit behavior-change task with golden re-baselining, not in a structural phase.
+> - **Contracts extraction is high-blast-radius** (the registry + `contracts.py` are
+>   imported from ~14 sites across tests, `app/`, **and `wc_v4/`+`v5/` reaching up into
+>   `app.engines`**). Pulled out into its own **Phase 2b** so the core move stays small.
 
 ---
 
@@ -124,14 +135,39 @@ security gain.
 
 **Acceptance:** root file count sharply reduced; tests still green; no import changes.
 
-### Phase 2 — Core + contracts extraction  ⬜
-- Extract genuinely shared modules into `core/` (bankroll, market_blend, clv, context,
-  provenance, calibration).
-- Lift `app/engines/base.py` + `contracts.py` into `contracts/` as the canonical
-  interface.
-- De-duplicate copies (e.g. root `market_blend.py` vs `app/market_blend.py`).
+### Phase 2 — Core extraction  🟡
+Create the `core/` package (root-level for now; relocates under `src/predictors/core/`
+in Phase 3) and move the sport-agnostic betting infrastructure into it:
+- `bankroll.py` → `core/bankroll.py` (ledger bankroll management)
+- `clv.py` → `core/clv.py` (closing-line-value)
+- `clv_suite.py` → `core/clv_suite.py` (suite-wide CLV reporting)
 
-**Acceptance:** one source of truth per shared concern; registry unchanged; tests green.
+All 14 import sites migrated to `from core import …` (textual grep confirmed no
+dynamic/importlib usage, so the migration is provably complete — a final straggler grep
+returns empty).
+
+**Excluded (belong to the worldcup engine, → Phase 3), despite being root modules:**
+- `context.py` — imports the WC `predictor`; it's WC-specific, not shared.
+- `calibrate.py` — model calibration; golf already has its own copy.
+
+**Known smell, deferred to Phase 3:** `core/clv.py` lazily does `from edge import …`
+(WC closing-odds fetch). It works because the repo root stays on `sys.path`, but `core/`
+ideally should not depend on a specific engine. When `edge` moves into
+`engines/worldcup/` (Phase 3) this cross-package edge is formalized or inverted.
+
+**Acceptance:** `core/` exists with the 3 modules; zero straggler imports; registry
+untouched; tests green; golden tripwire unchanged.
+
+### Phase 2b — Contracts extraction  ⬜
+Lift `app/engines/base.py` (the registry) + `app/engines/contracts.py` into a top-level
+`contracts/` package so non-app layers (`wc_v4/`, `v5/`) stop importing "up" into
+`app.engines`. ~14 import sites across tests, `app/`, `wc_v4/`, `v5/`. Registry stays the
+single wiring point; behavior unchanged.
+
+**Separate task (not a phase): unify `market_blend`.** Reconcile the root WC 1X2 blend
+with `app/market_blend.py` into one implementation. This *changes behavior*, so it runs
+outside the structural phases with a deliberate golden re-baseline and its own
+validation.
 
 ### Phase 3 — Package the worldcup engine  ⬜  (highest risk)
 - Move the loose root soccer files into `engines/worldcup/`, matching the other sports.

@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 import edge
-import bankroll
+from core import bankroll
 from edge import (portfolio_size, SINGLE_MATCH_CAP, DAILY_EXPOSURE_CAP,
                   CORR_CAP_MULT)
 

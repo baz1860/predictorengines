@@ -24,7 +24,7 @@ led = pd.read_csv(LEDGER)
 
 # Closing line value per bet (M3). Blank when no odds_history.csv snapshots exist.
 try:
-    from clv import compute_clv
+    from core.clv import compute_clv
     led["clv"] = compute_clv(led)
 except Exception:
     led["clv"] = float("nan")
