@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .base import EngineAdapter
+from contracts import EngineAdapter
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -256,7 +256,7 @@ class WorldCupAdapter(EngineAdapter):
             active.append("portfolio caps off")
         if active:
             src_note += " · " + ", ".join(active)
-        from .contracts import normalize_edge_result
+        from contracts import normalize_edge_result
         result = {"model": model, "odds_source": odds_source, "note": src_note,
                   "bankroll": round(bankroll, 2), "recorded": recorded,
                   "columns": columns, "rows": rows[:200]}
@@ -266,7 +266,7 @@ class WorldCupAdapter(EngineAdapter):
     def write_odds_template(self) -> dict[str, Any]:
         import edge as E
         from predictor import load_matches
-        from .contracts import enrich_template_result
+        from contracts import enrich_template_result
         _, upcoming = load_matches()
         E.write_template(upcoming)
         return enrich_template_result({"path": E.ODDS_CSV.name})

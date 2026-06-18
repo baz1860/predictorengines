@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from .base import EngineAdapter
+from contracts import EngineAdapter
 from ._subprocess import run_engine
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,7 +51,7 @@ class ClubSoccerAdapter(EngineAdapter):
 
     def edge(self, params: dict[str, Any]) -> dict[str, Any]:
         from .. import bankroll_store
-        from .contracts import normalize_edge_result
+        from contracts import normalize_edge_result
         model = str(params.get("model") or "ensemble")
         odds_source = str(params.get("odds_source") or "manual")
         bankroll = bankroll_store.current_bankroll()
@@ -98,7 +98,7 @@ class ClubSoccerAdapter(EngineAdapter):
             r["recommended"] = True
 
     def write_odds_template(self) -> dict[str, Any]:
-        from .contracts import enrich_template_result
+        from contracts import enrich_template_result
         return enrich_template_result(self._run("edge_template"))
 
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:

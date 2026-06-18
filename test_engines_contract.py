@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.engines import registry
-from app.engines.contracts import (
+from contracts import (
     ContractError, assert_finite_json, validate_edge_rows,
     validate_prediction, validate_table)
 
