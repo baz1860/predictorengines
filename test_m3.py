@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import clv
+from core import clv
 from market_blend import blend, BLEND_FILE
 
 _fails = []

@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import clv_suite as CLV
+from core import clv_suite as CLV
 import app.bankroll_store as B
 
 PASS, FAIL = 0, 0

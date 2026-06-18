@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 from app import bankroll_store, model_audit
 from app.engines import registry
-import clv_suite
+from core import clv_suite
 
 
 def _recommended_count(engine) -> int | None:

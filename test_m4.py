@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import bankroll
+from core import bankroll
 import simulate
 from simulate import THIRD_SLOTS, allocate_thirds
 

@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 import run_checks
 import daily_summary
-import clv_suite
+from core import clv_suite
 
 PASS, FAIL = 0, 0
 
