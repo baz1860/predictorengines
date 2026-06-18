@@ -188,7 +188,7 @@ def portfolio_size(auto, bankroll, peak, ledger=None, verbose=True):
     # correlation guard: per-team total (new + existing open) <= corr cap
     corr_cap = CORR_CAP_MULT * SINGLE_MATCH_CAP * bankroll
     if ledger is None:
-        from bankroll import _load_ledger
+        from core.bankroll import _load_ledger
         ledger = _load_ledger()
     team_open = {}
     if ledger is not None and not ledger.empty:
@@ -673,7 +673,7 @@ def main():
 
     rows = edge_rows(odds, sources, ratings, neutral_lookup, modifiers)
 
-    from bankroll import current_bankroll, current_peak, place_bets
+    from core.bankroll import current_bankroll, current_peak, place_bets
     bankroll = args.bankroll if args.bankroll is not None else current_bankroll()
     edge_cols = ["date", "match", "home", "away", "side", "market", "bet",
                  "odds", "p_book", "p_model", "edge", "ev_per_unit",
@@ -686,7 +686,7 @@ def main():
     show_cols = [c for c in df.columns if c not in ("home", "away", "side",
                                                      "kelly_stake",
                                                      "ev_per_unit")]
-    from bankroll import _load_ledger
+    from core.bankroll import _load_ledger
     _led = _load_ledger()
     confident = top_confident_picks(df, ledger=_led)
     print(f"\nBankroll £{bankroll:.2f}  —  model's top prediction per market "
