@@ -22,7 +22,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from elo import load_games, FCS
+from .elo import load_games, FCS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CFBD_DIR = os.path.join(HERE, "data", "cfbd")

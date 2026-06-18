@@ -16,9 +16,9 @@ import os
 import numpy as np
 import pandas as pd
 
-import elo as E
-import power as P
-import epa as X
+from . import elo as E
+from . import power as P
+from . import epa as X
 
 # V3 M6: the elo/power blend weight is tunable. `w_elo` is the weight on Elo for
 # the win-prob and margin blend (power always supplies the total). It defaults to

@@ -21,9 +21,9 @@ from datetime import date
 
 import pandas as pd
 
-import elo as E
-import power as P
-from predictor import blend_predict
+from . import elo as E
+from . import power as P
+from .predictor import blend_predict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ODDS_CSV = os.path.join(HERE, "odds.csv")
