@@ -62,7 +62,7 @@ def _event_id(row) -> str:
     eid = str(row.get("event_id", "") or "").strip()
     if eid:
         return eid
-    from app.engines.contracts import fixture_key
+    from contracts import fixture_key
     return fixture_key(row.get("match_date", ""), row.get("home", ""),
                        row.get("away", ""))
 

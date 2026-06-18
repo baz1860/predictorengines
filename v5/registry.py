@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.engines.contracts import fixture_key, market_id
+from contracts import fixture_key, market_id
 
 from . import store
 

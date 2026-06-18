@@ -43,7 +43,7 @@ if str(ROOT) not in sys.path:
 
 import predictor as P  # noqa: E402
 from dixoncoles import outcome_probs  # noqa: E402  (Dixon-Coles 1X2 from lambdas)
-from app.engines.contracts import fixture_key  # noqa: E402  (canonical event_id)
+from contracts import fixture_key  # noqa: E402  (canonical event_id)
 
 from . import schema  # noqa: E402
 

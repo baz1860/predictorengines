@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import model_audit
-from app.engines.contracts import enrich_template_result
+from contracts import enrich_template_result
 
 PASS, FAIL = 0, 0
 

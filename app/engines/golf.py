@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from .base import EngineAdapter
+from contracts import EngineAdapter
 from ._subprocess import run_engine
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -139,7 +139,7 @@ class GolfAdapter(EngineAdapter):
 
     def edge(self, params: dict[str, Any]) -> dict[str, Any]:
         from .. import bankroll_store
-        from .contracts import normalize_edge_result
+        from contracts import normalize_edge_result
         bankroll = bankroll_store.current_bankroll()
         peak = bankroll_store.current_peak()
         result = self._run("edge", {**params, "bankroll": bankroll, "peak": peak})

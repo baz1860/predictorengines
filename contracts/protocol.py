@@ -264,7 +264,8 @@ def enrich_template_result(result: dict) -> dict:
     (V3 M8). The runner returns a repo-relative `path`; the UI wants to show the
     user exactly where the file landed and how many rows it has to fill in."""
     from pathlib import Path
-    repo_root = Path(__file__).resolve().parents[2]
+    # contracts/protocol.py lives one level below the repo root (contracts/…).
+    repo_root = Path(__file__).resolve().parents[1]
     rel = str(result.get("path", "")).strip()
     if not rel:
         return result
