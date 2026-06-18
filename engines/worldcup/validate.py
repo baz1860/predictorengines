@@ -37,11 +37,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
+from .predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, HOME_ADV, DC_RHO)
-from engines.worldcup.dixoncoles import fit_dc, DCModel, outcome_probs
+from .dixoncoles import fit_dc, DCModel, outcome_probs
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
 CACHE = HERE / "data" / "validation_cache"
 BASELINE = HERE / "data" / "validation_baseline.json"
 CALIB_FILE = HERE / "data" / "calibration.json"
