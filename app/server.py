@@ -18,6 +18,15 @@ from pydantic import BaseModel, Field, field_validator
 
 from . import bankroll_store, dashboard_data, model_audit, settings_store
 from .engines import registry
+from v5 import drift as v5_drift
+from v5 import live as v5_live
+from v5 import portfolio as v5_portfolio
+from v5 import registry as v5_registry
+from v5 import report as v5_report
+from v5 import research as v5_research
+from v5 import review as v5_review
+from v5 import scenario as v5_scenario
+from v6 import operations as v6_operations
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -74,6 +83,43 @@ class SettingsPatch(BaseModel):
     odds_api_keys: dict | None = None
     default_kelly: float | None = Field(default=None, ge=0.0, le=1.0)
     default_model: str | None = None
+
+
+class V5Recommendation(BaseModel):
+    row: dict
+
+
+class V5Review(BaseModel):
+    recommendation_id: str
+    state: str
+    tags: list[str] = Field(default_factory=list)
+    note: str = ""
+    adjusted_stake_gbp: float | None = Field(default=None, ge=0.0, le=1_000_000.0)
+
+
+class V5Scenario(BaseModel):
+    home: str
+    away: str
+    asof: str
+    home_elo_delta: float = Field(default=0.0, ge=-400.0, le=400.0)
+    away_elo_delta: float = Field(default=0.0, ge=-400.0, le=400.0)
+    market_move: dict | None = None
+
+
+class V5LiveSoccer(BaseModel):
+    home: str
+    away: str
+    asof: str
+    minute: int = Field(ge=0, le=130)
+    home_score: int = Field(ge=0, le=20)
+    away_score: int = Field(ge=0, le=20)
+    red_cards_home: int = Field(default=0, ge=0, le=5)
+    red_cards_away: int = Field(default=0, ge=0, le=5)
+    state_fetched_at: str | None = None
+
+
+class V6Backup(BaseModel):
+    label: str | None = Field(default=None, max_length=40)
 
 
 def _dispatch(engine_id: str, cap: str, params: dict):
@@ -194,6 +240,84 @@ def get_settings():
 def post_settings(patch: SettingsPatch):
     settings_store.save({k: v for k, v in patch.model_dump().items() if v is not None})
     return settings_store.public_view()
+
+
+@app.get("/api/v5")
+def v5_summary():
+    return v5_report.build()
+
+
+@app.get("/api/v5/registry")
+def v5_registry_summary():
+    return v5_registry.registry_summary()
+
+
+@app.post("/api/v5/recommendation")
+def v5_record_recommendation(req: V5Recommendation):
+    return v5_registry.record_recommendation(req.row)
+
+
+@app.get("/api/v5/drift")
+def v5_drift_report(engine: str | None = None):
+    return v5_drift.recommendation_drift(engine)
+
+
+@app.get("/api/v5/portfolio")
+def v5_portfolio_report(engine: str | None = None):
+    return v5_portfolio.optimize_from_recommendations(engine)
+
+
+@app.post("/api/v5/scenario/worldcup")
+def v5_worldcup_scenario(req: V5Scenario):
+    return v5_scenario.worldcup_line_lab(**req.model_dump())
+
+
+@app.post("/api/v5/live/soccer")
+def v5_live_soccer(req: V5LiveSoccer):
+    return v5_live.soccer_live_1x2(**req.model_dump())
+
+
+@app.post("/api/v5/review")
+def v5_add_review(req: V5Review):
+    try:
+        return v5_review.add_review(**req.model_dump())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/v5/review")
+def v5_review_analytics():
+    return v5_review.analytics()
+
+
+@app.get("/api/v5/research")
+def v5_research_backlog(engine: str | None = None):
+    return v5_research.generate_backlog(engine)
+
+
+@app.get("/api/v6")
+def v6_report():
+    return v6_operations.report()
+
+
+@app.get("/api/v6/health")
+def v6_health():
+    return v6_operations.health()
+
+
+@app.get("/api/v6/daily-run")
+def v6_daily_run():
+    return v6_operations.daily_run_plan()
+
+
+@app.post("/api/v6/backup")
+def v6_backup(req: V6Backup):
+    return v6_operations.create_backup(req.label)
+
+
+@app.get("/api/v6/release")
+def v6_release():
+    return v6_operations.release_status()
 
 
 @app.get("/")

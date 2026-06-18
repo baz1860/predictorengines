@@ -79,6 +79,21 @@ def test_model_math():
     check("totals probabilities sum to one", abs(p["over25"] + p["under25"] - 1.0) < 0.002)
     check("BTTS probabilities sum to one", abs(p["btts_yes"] + p["btts_no"] - 1.0) < 0.002)
     check("score matrix normalizes", abs(float(pred["matrix"].sum()) - 1.0) < 1e-9)
+    parts = M.component_matrices(params, "Arsenal", "Chelsea", "Premier League", False)
+    check("shot-pressure component is available", "xpress" in parts)
+    check("component matrices normalize",
+          all(abs(float(mx.sum()) - 1.0) < 1e-9 for mx in parts.values()))
+    xp = M.predict("Arsenal", "Chelsea", "Premier League", model="xpress", params=params)
+    px = xp["probs"]
+    check("xpress probabilities sum to one",
+          abs(px["home"] + px["draw"] + px["away"] - 1.0) < 0.002)
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "ensemble_weights.json"
+        f.write_text(json.dumps({"weights": {"goals": 2, "elo": 1, "xpress": 1}}))
+        w = M.load_ensemble_weights(f)
+        check("ensemble weights normalize from artifact", abs(sum(w.values()) - 1.0) < 1e-12)
+        check("missing ensemble components default to zero", w["xg"] == 0.0 and w["xgf"] == 0.0)
+        check("xpress artifact weight loaded", abs(w["xpress"] - 0.25) < 1e-12)
     try:
         M.predict("Not A Club", "Chelsea", "Premier League", params=params)
         check("unknown team raises", False)

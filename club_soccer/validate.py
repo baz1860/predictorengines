@@ -18,6 +18,8 @@ BASELINE = DATA / "validation_baseline.json"
 CALIB_FILE = DATA / "calibration.json"
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
 GATE_TOL = 0.01
+ENSEMBLE_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
+ENSEMBLE_REGRESS_TOL = 0.0015
 
 
 def metrics(rows: list[dict]) -> dict:
@@ -36,6 +38,15 @@ def metrics(rows: list[dict]) -> dict:
     n = len(rows)
     return {"n": n, "accuracy": correct / n, "brier": brier / n,
             "log_loss": log_loss / n}
+
+
+def _metrics_arr(P: np.ndarray, A: np.ndarray) -> tuple[float, float, float]:
+    n = len(A)
+    acc = float((P.argmax(1) == A).mean())
+    onehot = np.eye(3)[A]
+    brier = float(((P - onehot) ** 2).sum(1).mean())
+    ll = float((-np.log(np.clip(P[np.arange(n), A], 1e-12, 1.0))).mean())
+    return acc, brier, ll
 
 
 def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict], dict]:
@@ -81,6 +92,161 @@ def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict
     if verbose and skipped:
         print(f"  ({skipped} matches skipped — team unseen in its training window)")
     return rows, metrics(rows)
+
+
+def component_walk_forward(min_train: int = 200, verbose: bool = False) -> pd.DataFrame:
+    """Walk-forward component probabilities for ensemble tuning.
+
+    No model is fit on or after the tested month. The returned frame is pure
+    predictions + labels, so weight searches can be repeated without refitting.
+    """
+    df = M.played(M.load_fixtures()).sort_values("date").reset_index(drop=True)
+    df["_ym"] = df["date"].dt.to_period("M")
+    rows: list[dict] = []
+    skipped = 0
+    months = sorted(df["_ym"].unique())
+    for k, ym in enumerate(months, 1):
+        test = df[df["_ym"] == ym]
+        train = df[df["date"] < test["date"].min()]
+        if len(train) < min_train:
+            continue
+        try:
+            params = M.fit(train)
+        except Exception:
+            continue
+        seen = set(params["teams"])
+        kept = 0
+        for r in test.itertuples(index=False):
+            if r.home not in seen or r.away not in seen:
+                skipped += 1
+                continue
+            try:
+                parts = M.component_matrices(params, r.home, r.away,
+                                             r.competition, bool(r.neutral))
+            except Exception:
+                skipped += 1
+                continue
+            actual = 0 if r.home_goals > r.away_goals else (
+                1 if r.home_goals == r.away_goals else 2)
+            row = {"date": str(r.date.date()), "home": r.home, "away": r.away,
+                   "actual": actual}
+            for name, mat in parts.items():
+                p = M.probs_from_matrix(mat)
+                row[f"{name}_home"] = p["home"]
+                row[f"{name}_draw"] = p["draw"]
+                row[f"{name}_away"] = p["away"]
+            rows.append(row)
+            kept += 1
+        if verbose:
+            print(f"  [{k:>2}/{len(months)}] {ym}  components tested {kept}")
+    if verbose and skipped:
+        print(f"  ({skipped} component rows skipped)")
+    return pd.DataFrame(rows)
+
+
+def _component_array(df: pd.DataFrame, component: str) -> np.ndarray:
+    return df[[f"{component}_home", f"{component}_draw", f"{component}_away"]].to_numpy(float)
+
+
+def ensemble_probs(df: pd.DataFrame, weights: dict[str, float]) -> np.ndarray:
+    w = M._normalise_weights(weights)
+    P = np.zeros((len(df), 3), dtype=float)
+    for comp, wt in w.items():
+        if wt:
+            P += wt * _component_array(df, comp)
+    s = P.sum(axis=1, keepdims=True)
+    s[s <= 0] = 1.0
+    return P / s
+
+
+def score_ensemble(df: pd.DataFrame, weights: dict[str, float]) -> dict:
+    A = df["actual"].to_numpy(int)
+    acc, brier, ll = _metrics_arr(ensemble_probs(df, weights), A)
+    return {"weights": {k: round(v, 3) for k, v in M._normalise_weights(weights).items()},
+            "accuracy": round(acc, 5), "brier": round(brier, 6),
+            "log_loss": round(ll, 6), "n": int(len(df))}
+
+
+def choose_ensemble_weights(df: pd.DataFrame, grid_step: float = 0.05) -> dict:
+    vals = [round(x, 2) for x in np.arange(0.0, 1.0 + 1e-9, grid_step)]
+    best = None
+    for wg in vals:
+        for we in vals:
+            if wg + we > 1.0 + 1e-9:
+                continue
+            for wx in vals:
+                if wg + we + wx > 1.0 + 1e-9:
+                    continue
+                for wxf in vals:
+                    wxp = round(1.0 - wg - we - wx - wxf, 2)
+                    if wxp < -1e-9:
+                        continue
+                    weights = {"goals": wg, "elo": we, "xg": wx,
+                               "xgf": wxf, "xpress": wxp}
+                    row = score_ensemble(df, weights)
+                    if best is None or (row["brier"], row["log_loss"]) < (best["brier"], best["log_loss"]):
+                        best = row
+    return best
+
+
+def tune_ensemble(write: bool = False, verbose: bool = True) -> dict:
+    df = component_walk_forward(verbose=verbose)
+    if df.empty:
+        raise SystemExit("No component walk-forward rows to tune.")
+    current_w = M.load_ensemble_weights()
+    current = score_ensemble(df, current_w)
+    chosen = choose_ensemble_weights(df)
+    split_results = []
+    split_wins = 0
+    max_regress = 0.0
+    for split in ENSEMBLE_SPLITS:
+        tr = df[pd.to_datetime(df["date"]) < pd.Timestamp(split)]
+        te = df[pd.to_datetime(df["date"]) >= pd.Timestamp(split)]
+        if len(tr) < 1000 or len(te) < 100:
+            continue
+        split_choice = choose_ensemble_weights(tr)
+        cur_te = score_ensemble(te, current_w)
+        ch_te = score_ensemble(te, split_choice["weights"])
+        delta = ch_te["brier"] - cur_te["brier"]
+        split_wins += int(delta < 0)
+        max_regress = max(max_regress, delta)
+        split_results.append({"split": split, "train_n": int(len(tr)), "test_n": int(len(te)),
+                              "weights": split_choice["weights"],
+                              "current_brier": cur_te["brier"],
+                              "chosen_brier": ch_te["brier"],
+                              "delta_brier": round(delta, 6),
+                              "current_log_loss": cur_te["log_loss"],
+                              "chosen_log_loss": ch_te["log_loss"]})
+    promotes = (
+        chosen["brier"] < current["brier"]
+        and chosen["log_loss"] <= current["log_loss"]
+        and split_wins >= 2
+        and max_regress <= ENSEMBLE_REGRESS_TOL
+    )
+    out = {"current": current, "chosen": chosen, "splits": split_results,
+           "promote": bool(promotes), "split_wins": split_wins,
+           "max_split_regression": round(max_regress, 6)}
+    print(f"\nClub ensemble tuning · {len(df)} predictions")
+    print(f"  current Brier {current['brier']:.6f} log-loss {current['log_loss']:.6f} weights {current['weights']}")
+    print(f"  chosen  Brier {chosen['brier']:.6f} log-loss {chosen['log_loss']:.6f} weights {chosen['weights']}")
+    for r in split_results:
+        print(f"  split {r['split']} n={r['test_n']}: ΔBrier {r['delta_brier']:+.6f} weights {r['weights']}")
+    print(f"  verdict: {'PROMOTE' if promotes else 'reject'}")
+    if write:
+        if not promotes:
+            print("  not writing ensemble_weights.json because the promotion gate failed")
+        else:
+            payload = {"weights": chosen["weights"], "source": "club_soccer/validate.py --tune-ensemble",
+                       "metrics": {"previous_brier": current["brier"],
+                                   "chosen_brier": chosen["brier"],
+                                   "previous_log_loss": current["log_loss"],
+                                   "chosen_log_loss": chosen["log_loss"]},
+                       "splits": split_results}
+            M.ENSEMBLE_WEIGHTS.write_text(json.dumps(payload, indent=2))
+            BASELINE.write_text(json.dumps({"brier": chosen["brier"], "gate_tol": GATE_TOL}, indent=2))
+            print(f"  wrote {M.ENSEMBLE_WEIGHTS}")
+            print(f"  baseline updated -> {BASELINE}")
+    return out
 
 
 # ── Probability calibration: isotonic regression per outcome ─────────────────
@@ -162,15 +328,6 @@ def apply_maps(P, maps):
     return out / s
 
 
-def _metrics_arr(P, A):
-    n = len(A)
-    acc = float((P.argmax(1) == A).mean())
-    onehot = np.eye(3)[A]
-    brier = float(((P - onehot) ** 2).sum(1).mean())
-    ll = float((-np.log(np.clip(P[np.arange(n), A], 1e-12, 1.0))).mean())
-    return acc, brier, ll
-
-
 def _arrays_from_rows(rows):
     P = np.array([[r["p_home"], r["p_draw"], r["p_away"]] for r in rows], dtype=float)
     A = np.array([int(r["actual"]) for r in rows], dtype=int)
@@ -211,7 +368,14 @@ def main() -> None:
     ap.add_argument("--calibrate", action="store_true",
                     help="fit isotonic 1X2 calibration, report held-out improvement, "
                          "and write data/calibration.json")
+    ap.add_argument("--tune-ensemble", action="store_true",
+                    help="tune goals/elo/xg/xgf/xpress ensemble weights")
+    ap.add_argument("--write", action="store_true",
+                    help="with --tune-ensemble, write promoted weights and baseline")
     args = ap.parse_args()
+    if args.tune_ensemble:
+        tune_ensemble(write=args.write)
+        return
     if args.calibrate:
         cmd_calibrate()
         return

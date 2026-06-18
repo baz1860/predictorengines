@@ -40,6 +40,9 @@ def _get(d, *keys):
     return None
 
 
+PPA_FIELDS = ("overall", "passing", "rushing", "firstDown", "secondDown", "thirdDown")
+
+
 def load_ppa():
     """Per-game team PPA joined to games.csv -> one row per (game, side)."""
     rows = []
@@ -53,13 +56,17 @@ def load_ppa():
             dfn = _get(r, "defense") or {}
             if _get(off, "overall") is None:
                 continue
-            rows.append({
+            row = {
                 "game_id": _get(r, "gameId", "game_id"),
                 "team": _get(r, "team"),
                 "opponent": _get(r, "opponent"),
-                "off_ppa": float(_get(off, "overall")),
-                "def_ppa": float(_get(dfn, "overall") or 0.0),
-            })
+            }
+            for field in PPA_FIELDS:
+                row[f"off_{field}"] = float(_get(off, field) or 0.0)
+                row[f"def_{field}"] = float(_get(dfn, field) or 0.0)
+            row["off_ppa"] = row["off_overall"]
+            row["def_ppa"] = row["def_overall"]
+            rows.append(row)
     ppa = pd.DataFrame(rows).drop_duplicates(subset=["game_id", "team"])
     games = load_games()
     g = games.merge(ppa, on="game_id", how="inner")
@@ -71,8 +78,11 @@ def load_ppa():
     return g, games
 
 
-def fit(asof=None, data=None):
+def fit(asof=None, data=None, field: str = "overall"):
     g, games = data if data is not None else load_ppa()
+    if field not in PPA_FIELDS:
+        raise ValueError(f"unknown PPA field {field!r}; use {', '.join(PPA_FIELDS)}")
+    off_col = f"off_{field}"
     if asof is None:
         asof = g["date"].max() + pd.Timedelta(days=1)
     asof = pd.Timestamp(asof)
@@ -85,7 +95,7 @@ def fit(asof=None, data=None):
     n = len(teams)
     age = (asof - g["date"]).dt.days.values
     w = np.sqrt(0.5 ** (age / HALF_LIFE_DAYS))
-    mu = float(np.average(g["off_ppa"], weights=w ** 2))
+    mu = float(np.average(g[off_col], weights=w ** 2))
 
     k = len(g)
     A = np.zeros((k + 2 * n, 2 * n + 1))
@@ -95,7 +105,7 @@ def fit(asof=None, data=None):
         A[i, ti[r.off_team]] = 1.0          # offense rating
         A[i, n + ti[r.def_team]] = -1.0     # opponent defense rating
         A[i, 2 * n] = 0.0 if r.neutral else (1.0 if r.side_home else -1.0)
-        b[i] = r.off_ppa - mu
+        b[i] = getattr(r, off_col) - mu
     for j in range(2 * n):
         A[k + j, j] = 1.0
     x, *_ = np.linalg.lstsq(A * wfull[:, None], b * wfull, rcond=None)
@@ -124,7 +134,7 @@ def fit(asof=None, data=None):
     sigma_total = float(np.sqrt(np.average((act_t - pred_t) ** 2, weights=ww)))
 
     return {
-        "asof": str(asof.date()), "mu": mu, "hfa": hfa, "c0": c0, "c1": c1,
+        "asof": str(asof.date()), "field": field, "mu": mu, "hfa": hfa, "c0": c0, "c1": c1,
         "sigma": sigma, "sigma_total": sigma_total,
         "teams": {t: {"off": float(off[ti[t]]), "def": float(dfn[ti[t]])} for t in teams},
     }

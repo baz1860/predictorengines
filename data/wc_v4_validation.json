@@ -1,0 +1,174 @@
+{
+  "metrics": {
+    "model": {
+      "n": 127,
+      "logloss": 1.0081,
+      "brier": 0.5963,
+      "accuracy": 0.5591
+    },
+    "market": {
+      "n": 127,
+      "logloss": 0.9783,
+      "brier": 0.5752,
+      "accuracy": 0.5433
+    },
+    "v3_blend": {
+      "n": 127,
+      "logloss": 0.9779,
+      "brier": 0.5753,
+      "accuracy": 0.5433
+    },
+    "v4_segment": {
+      "n": 127,
+      "logloss": 0.9779,
+      "brier": 0.5753,
+      "accuracy": 0.5433
+    }
+  },
+  "verdict": {
+    "v3_blend_logloss": 0.9779,
+    "v4_segment_logloss": 0.9779,
+    "v3_blend_brier": 0.5753,
+    "v4_segment_brier": 0.5753,
+    "market_covered_n": 127,
+    "gate_margin": 0.005,
+    "sample_size_ok": true,
+    "logloss_improves": false,
+    "brier_no_regression": true,
+    "no_leakage_columns": true,
+    "leakage_columns_used": [],
+    "v4_beats_v3": false,
+    "default_after_gate": "v3_blend",
+    "segment_fit": {
+      "n": 127,
+      "global_w": 0.101,
+      "global_logloss": 0.9779,
+      "source_tournaments": [
+        "WC2018",
+        "WC2022"
+      ],
+      "odds_validation": {
+        "WC2018": {
+          "path": "data/wc2018_odds.csv",
+          "exists": true,
+          "valid": true,
+          "rows": 64,
+          "errors": []
+        },
+        "WC2022": {
+          "path": "data/wc2022_odds.csv",
+          "exists": true,
+          "valid": true,
+          "rows": 64,
+          "errors": []
+        }
+      },
+      "min_segment_n": 20,
+      "segments": {
+        "group": {
+          "n": 95,
+          "segment_w": 0.268,
+          "logloss_segment_w_insample": 0.9882,
+          "loo_logloss_segment_w": 1.0002,
+          "loo_logloss_global_w": 0.9893,
+          "beats_global_out_of_sample": false,
+          "adopt_as_default": false,
+          "status": "report_only"
+        },
+        "knockout": {
+          "n": 32,
+          "segment_w": 0.0,
+          "logloss_segment_w_insample": 0.9404,
+          "loo_logloss_segment_w": 0.9404,
+          "loo_logloss_global_w": 0.9443,
+          "beats_global_out_of_sample": false,
+          "adopt_as_default": false,
+          "status": "report_only"
+        }
+      },
+      "default_is_segmented": false,
+      "note": "Segmented blend stays report-only unless a segment has enough samples AND beats the global weight on its own slice."
+    },
+    "clv": {
+      "n": 0,
+      "mean_clv": null
+    },
+    "note": "V4 modelling layers (market segmentation, availability) remain report-only until they clear this gate on held-out local data. Promotion requires n>=100, log-loss improvement, no Brier regression, and no leakage columns in model features."
+  },
+  "model_calibration": {
+    "per_tournament": {
+      "WC2018": {
+        "all": {
+          "n": 64,
+          "logloss": 0.9759,
+          "brier": 0.5812,
+          "accuracy": 0.5781
+        },
+        "group_only": {
+          "n": 48,
+          "logloss": 0.9472,
+          "brier": 0.5608,
+          "accuracy": 0.625
+        },
+        "has_market_odds": true
+      },
+      "WC2022": {
+        "all": {
+          "n": 64,
+          "logloss": 1.0315,
+          "brier": 0.6052,
+          "accuracy": 0.5469
+        },
+        "group_only": {
+          "n": 48,
+          "logloss": 1.0686,
+          "brier": 0.6237,
+          "accuracy": 0.5208
+        },
+        "has_market_odds": true
+      }
+    },
+    "pooled": {
+      "all": {
+        "n": 128,
+        "logloss": 1.0037,
+        "brier": 0.5932,
+        "accuracy": 0.5625
+      },
+      "group_only": {
+        "n": 96,
+        "logloss": 1.0079,
+        "brier": 0.5923,
+        "accuracy": 0.5729
+      }
+    },
+    "note": "Pure fundamental model, leak-free (trained strictly before each kickoff). Schema-valid local odds files also feed the market-blend gate; missing/invalid odds stay model-calibration only."
+  },
+  "coverage": {
+    "blend_gate_tournaments": [
+      "WC2018",
+      "WC2022"
+    ],
+    "model_calibration_tournaments": [
+      "WC2018",
+      "WC2022"
+    ],
+    "odds_validation": {
+      "WC2018": {
+        "path": "data/wc2018_odds.csv",
+        "exists": true,
+        "valid": true,
+        "rows": 64,
+        "errors": []
+      },
+      "WC2022": {
+        "path": "data/wc2022_odds.csv",
+        "exists": true,
+        "valid": true,
+        "rows": 64,
+        "errors": []
+      }
+    },
+    "blend_gate_note": "The market-blend gate uses only schema-valid local historical 1X2 odds. Missing or invalid tournament odds are excluded and reported in coverage.odds_validation."
+  }
+}
