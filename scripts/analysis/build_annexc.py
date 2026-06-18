@@ -23,9 +23,12 @@ import json
 from itertools import combinations
 from pathlib import Path
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))  # repo root, for engines.worldcup / core imports
 from engines.worldcup.simulate import THIRD_SLOTS
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
 RAW = HERE / "data" / "annexc_raw.txt"
 OUT = HERE / "data" / "annexc_thirds.json"
 

@@ -32,11 +32,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))  # repo root, for engines.worldcup / core imports
 from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, score_matrix, DC_RHO)
 from engines.worldcup.dixoncoles import fit_dc
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
 CALIB_FILE = DATA / "totals_calibration.json"
 _NAME_MAP = {"USA": "United States", "Korea Republic": "South Korea"}
