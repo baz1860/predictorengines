@@ -8,8 +8,8 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 
 | Phase | Title | PR | Status |
 |-------|-------|----|--------|
-| 0 | Safety net | `refactor/phase-0-safety-net` | 🟡 |
-| 1 | Cleanup & archive | — | ⬜ |
+| 0 | Safety net | `refactor/phase-0-safety-net` (#10) | ✅ |
+| 1 | Cleanup & archive | `refactor/phase-1-cleanup` | 🟡 |
 | 2 | Core + contracts extraction | — | ⬜ |
 | 3 | Package the worldcup engine | — | ⬜ |
 | 4 | Kill the subprocess hack | — | ⬜ |
@@ -102,12 +102,25 @@ Prerequisite for everything else. No structural change.
 **Acceptance:** baseline recorded; `pyproject.toml` present; golden snapshot captured;
 no behavior change.
 
-### Phase 1 — Cleanup & archive  ⬜
+### Phase 1 — Cleanup & archive  🟡
 Low risk, high signal. Pure file moves/deletes.
-- Delete/gitignore cruft (`.bak`, `_bt_tmp.py`, `.DS_Store`, lock files,
-  `dashboard_preview.html`).
-- Move `V*` docs → `docs/archive/`; backtest/replay scripts → `scripts/backtests/`.
-- Move `api_keys.py` to environment-variable loading; stop committing secrets.
+- Delete cruft: tracked `dashboard_preview.html` (193 KB, orphaned) and root
+  `odds_sample.csv` (unreferenced); plus local ignored junk (`.bak`, `_bt_tmp.py`,
+  `.DS_Store`, lock files).
+- Move the 13 `V*`/`GUI`/`SESSION`/`NOTES` planning docs → `docs/archive/`; fix the
+  README links that pointed at them.
+
+**Deferred to Phase 3:** moving the root backtest/replay scripts to
+`scripts/backtests/`. They do bare `from predictor import ...` / `from edge import ...`
+and import each other (`wc_backtest_history` ← `wc2022_sim_backtest`); relocating them
+now would break those imports, violating Phase 1's "no import changes" rule. They move
+cleanly once the worldcup engine is a package (Phase 3).
+
+**`api_keys.py` — no change needed.** It is a *loader*, not a secret: it reads keys
+from the already-gitignored `data/api_keys.json` with env-var precedence, and is
+imported by 16+ modules. Verified no secret is committed (`data/api_keys.json`
+untracked, no hardcoded keys). Renaming/moving it would break 16 imports for zero
+security gain.
 
 **Acceptance:** root file count sharply reduced; tests still green; no import changes.
 
