@@ -15,7 +15,7 @@ Outputs:
   data/validation_baseline.json     (Brier baseline for --gate)
 
 Usage:
-  python validate.py [--since 2023-06-01] [--sims 20000] [--gate]
+  python -m golf.validate [--since 2023-06-01] [--sims 20000] [--gate]
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import model
-import simulate as gsim
+from . import model
+from . import simulate as gsim
 
 DATA_DIR = Path(__file__).parent / "data"
 PRED_CSV = DATA_DIR / "validation_predictions.csv"

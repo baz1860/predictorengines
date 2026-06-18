@@ -13,11 +13,11 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
-GOLF = ROOT / "golf"
-if str(GOLF) not in sys.path:
-    sys.path.insert(0, str(GOLF))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-import model
+# golf is a real package (Phase 4) — import its modules package-qualified.
+from golf import model
 
 PASS, FAIL = 0, 0
 

@@ -1,9 +1,10 @@
 """Golf engine adapter.
 
-Drives golf/ via an isolated subprocess runner (golf_runner.py). Capabilities
-are Simulate (field projection: win/T5/T10/T20/cut), Edge (outright, place, cut,
-matchup & 3-ball markets, calibrated + market-blended), and Predict (head-to-head
-matchup probabilities). The UI is capability-driven.
+Drives the golf package in-process via golf.engine.COMMANDS (Phase 4 — the golf
+modules are package-qualified, so their flat names no longer collide with the
+worldcup engine). Capabilities are Simulate (field projection: win/T5/T10/T20/cut),
+Edge (outright, place, cut, matchup & 3-ball markets, calibrated + market-blended),
+and Predict (head-to-head matchup probabilities). The UI is capability-driven.
 
 Bets auto-settle against the latest completed event in golf/data/rounds.csv
 (refreshed by `fetch.py --accumulate`): win / top-N / make-cut grade off the
@@ -19,11 +20,10 @@ from typing import Any
 import pandas as pd
 
 from contracts import EngineAdapter
-from ._subprocess import run_engine
+from ._inproc import run_inprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE_DIR = ROOT / "golf"
-RUNNER = Path(__file__).resolve().parent / "runners" / "golf_runner.py"
 ROUNDS_CSV = ENGINE_DIR / "data" / "rounds.csv"
 
 
@@ -103,8 +103,9 @@ class GolfAdapter(EngineAdapter):
     sport = "golf"
     capabilities = {"simulate", "edge", "predict"}
 
-    def _run(self, command, params=None, timeout=180):
-        return run_engine(ENGINE_DIR, RUNNER, command, params, timeout=timeout)
+    def _run(self, command, params=None, timeout=180):  # timeout unused in-process
+        from golf import engine as golf_engine
+        return run_inprocess(golf_engine.COMMANDS, command, params)
 
     def predict_schema(self) -> dict[str, Any]:
         # head-to-head matchup: pick two players from the field

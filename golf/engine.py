@@ -1,40 +1,28 @@
-#!/usr/bin/env python3
-"""Isolated runner for the golf engine (v2).
+"""In-process command API for the golf engine (refactor Phase 4).
 
-Subprocess invoked by app/engines/golf.py with cwd + PYTHONPATH set to golf/, so
-`import model`, `import simulate`, `import edge` resolve to the golf modules
-without colliding with the root engine. JSON params on stdin, JSON on stdout.
+The command logic that used to live in app/engines/runners/golf_runner.py, now imported
+and called directly by the adapter (no subprocess). Functions take a params dict and
+return a JSON-able dict; errors are plain exceptions that the adapter dispatches through
+app.engines._inproc.run_inprocess (allowlist + redaction + finite-JSON).
 
 Commands:
   schema    – field names, markets, sim options
   simulate  – fit-backed field projection (win/T5/T10/T20/cut) → predictions.csv
   predict   – head-to-head matchup probability for two players (joint sim)
-  edge      – calibrated + market-blended edges across all markets, portfolio-
-              staked; matchup/3-ball odds from matchups.csv / threeballs.csv
+  edge      – calibrated + market-blended edges across all markets, portfolio-staked
 """
-import json
-import sys
-from pathlib import Path
-
 import numpy as np
 
-import model
-import simulate as GSIM
-import edge as GE
-import portfolio as GPORT
-
-DATA = Path(__file__).resolve().parent  # unused; golf/ is cwd
-
-
-def _params():
-    raw = sys.stdin.read().strip()
-    return json.loads(raw) if raw else {}
+from . import edge as GE
+from . import model
+from . import portfolio as GPORT
+from . import simulate as GSIM
 
 
 def _field_names() -> list[str]:
     """Field for the current event: field.csv if present, else the latest event
     in rounds.csv (so the app still works before fetch.py --espn is run)."""
-    from model import load_field, load_players
+    from .model import load_field, load_players
     try:
         field = load_field(players=load_players())
         names = [p.name for p in field]
@@ -59,7 +47,7 @@ def _rated_field(course="", major=False):
     if params:
         return model.predict_field(names, params, course=course, is_major=major), True
     # legacy path: players.csv composite ratings
-    from model import compute_ratings, load_field, load_players, \
+    from .model import compute_ratings, load_field, load_players, \
         load_course_history, load_recent_form
     field = load_field(players=load_players())
     ch = load_course_history(course) if course else {}
@@ -67,7 +55,7 @@ def _rated_field(course="", major=False):
                            course_history=ch, recent_form=load_recent_form()), False
 
 
-def cmd_schema():
+def cmd_schema(_p=None):
     names = sorted(_field_names())
     return {"kind": "field", "names": names, "models": [],
             "default_sims": 50000, "sim_options": [10000, 50000, 100000],
@@ -116,8 +104,6 @@ def cmd_simulate(p):
     src = "fitted model" if fitted else "legacy players.csv"
     note = (f"{n:,} sims · {len(rated)} players · {src}"
             + (f" · {course}" if course else ""))
-    # When the field is no larger than the cut rule the cut never binds, so the
-    # make-cut and wider top-N columns collapse to ~100% and are not meaningful.
     if not results.get("__cut_binds__", True):
         note += (f" · ⚠ cut does not bind (field {len(rated)} ≤ cut {cut_rule}): "
                  "make-cut/top-N not meaningful")
@@ -194,8 +180,6 @@ def cmd_edge(p):
             f"priced · {GPORT.summary(staked, bankroll, peak)}"
             f"{' · calibrated' if calibrated else ''}"
             f"{' · market-blend' if blended else ''}")
-    # price_all already suppresses make-cut/top-N when the cut doesn't bind;
-    # tell the user so the missing markets aren't mistaken for a data gap.
     if not results.get("__cut_binds__", True):
         note += (f" · ⚠ cut does not bind (field {len(rated)} ≤ cut rule): "
                  "make-cut suppressed")
@@ -204,17 +188,3 @@ def cmd_edge(p):
 
 COMMANDS = {"schema": lambda p: cmd_schema(), "simulate": cmd_simulate,
             "predict": cmd_predict, "edge": cmd_edge}
-
-
-def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "schema"
-    try:
-        print(json.dumps(COMMANDS[cmd](_params())))
-    except ValueError as e:
-        print(json.dumps({"error": str(e)})); sys.exit(2)
-    except Exception as e:  # noqa
-        print(json.dumps({"error": f"{type(e).__name__}: {e}"})); sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

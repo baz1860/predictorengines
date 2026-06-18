@@ -132,7 +132,7 @@ def load_field(
     path = path or DATA_DIR / "field.csv"
     if not path.exists():
         raise FileNotFoundError(
-            f"No field file at {path}. Run: python fetch.py --espn"
+            f"No field file at {path}. Run: python -m golf.fetch --espn"
         )
 
     players = players or {}
@@ -363,7 +363,7 @@ def load_rounds_df(path: Path | None = None):
     path = path or ROUNDS_CSV
     if not path.exists():
         raise FileNotFoundError(
-            f"No {path}. Seed it first: python fetch.py --seed 2022 2023 2024 2025")
+            f"No {path}. Seed it first: python -m golf.fetch --seed 2022 2023 2024 2025")
     df = pd.read_csv(path)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date", "player", "score_to_par"])

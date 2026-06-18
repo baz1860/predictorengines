@@ -141,9 +141,9 @@ python3 -m cfb.validate --quiet --gate
 Golf:
 
 ```bash
-python3 golf/model.py --fit
-python3 golf/simulate.py --sims 50000
-python3 golf/edge.py --min-edge 1.0
+python3 -m golf.model --fit
+python3 -m golf.simulate --sims 50000
+python3 -m golf.edge --min-edge 1.0
 ```
 
 ## API Keys
