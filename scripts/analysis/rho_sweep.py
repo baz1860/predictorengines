@@ -18,7 +18,7 @@ import pandas as pd
 from pathlib import Path
 import sys
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE))
 from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, score_matrix, HOME_ADV)

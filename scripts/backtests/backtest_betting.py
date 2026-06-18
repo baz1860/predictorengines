@@ -21,7 +21,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))  # repo root, for the lazy `from core import clv` below
 SUITE = ROOT / "data" / "suite_ledger.csv"
 LEDGER = ROOT / "data" / "ledger.csv"
 

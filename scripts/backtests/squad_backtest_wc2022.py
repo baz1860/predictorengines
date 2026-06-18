@@ -14,6 +14,9 @@ a guard against the method *worsening* calibration, not a precise P&L claim.
 """
 import numpy as np
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))  # repo root, for engines.worldcup / core imports
 from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, DC_RHO)
 from engines.worldcup.dixoncoles import fit_dc, outcome_probs

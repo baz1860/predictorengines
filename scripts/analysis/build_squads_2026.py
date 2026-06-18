@@ -8,7 +8,7 @@ GK/DF/MF/FW positions. Run once; re-run squads.py afterwards.
 from pathlib import Path
 import pandas as pd
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[2]
 SQUADS = HERE / "data" / "squads.csv"
 
 # team -> "POS Name;POS Name;..." (26 each), official 2026 squads
