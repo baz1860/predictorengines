@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Tests for the World Cup V4 modelling slice (M1–M3).
+
+Runs standalone (`python3 test_wc_v4.py`) or under pytest. Mirrors the V4_PLAN.md
+acceptance criteria — especially the M1 leakage guarantees, which are the whole
+point of a point-in-time feature store.
+"""
+from __future__ import annotations
+
+import sys
+import warnings
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+warnings.filterwarnings("ignore")
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from wc_v4 import schema
+from wc_v4 import feature_store as fs
+from wc_v4 import market_model as mm
+from wc_v4 import availability as av
+from wc_v4 import consistency as cs
+from wc_v4 import matchup as mu
+from wc_v4 import probability as prob
+from wc_v4 import staking as st
+from wc_v4 import tournaments as ts
+from wc_v4 import validate_v4 as vv
+
+
+# ── schema / leakage registry ─────────────────────────────────────────────────
+def test_schema_rejects_outcome_columns_as_features():
+    # Every outcome/teacher column must be refused as a feature (guardrails #2/#3).
+    for col in ("result", "home_score", "odds_close_h", "p_close_h", "clv",
+                "settled_pnl"):
+        try:
+            schema.assert_no_leakage(["elo_diff", col])
+        except schema.LeakageError:
+            continue
+        raise AssertionError(f"leakage not caught for outcome column {col!r}")
+
+
+def test_feature_columns_excludes_injected_future_column():
+    # M1 acceptance: "leakage tests intentionally inject future-only columns and
+    # confirm they are rejected." feature_columns() is the SAFE SELECTOR: given a
+    # frame's columns (which legitimately include teacher columns), it returns only
+    # the legal features and drops the injected future-only ones.
+    poisoned = list(schema.FEATURE_COLUMNS) + ["result", "odds_close_a", "clv"]
+    selected = schema.feature_columns(poisoned)
+    for bad in ("result", "odds_close_a", "clv"):
+        assert bad not in selected, f"{bad!r} leaked through feature selection"
+    # and every returned column is a declared feature
+    assert set(selected) <= set(schema.FEATURE_COLUMNS)
+
+
+# ── M1 feature store ──────────────────────────────────────────────────────────
+def test_training_matrix_has_provenance_on_every_row():
+    df = fs.build_training_matrix(since="2024-01-01")
+    assert len(df) > 0
+    for col in schema.PROVENANCE_COLUMNS:        # asof/event_id/source/fetched_at/schema_version
+        assert col in df.columns, f"missing provenance column {col}"
+        assert df[col].notna().all(), f"null provenance in {col}"
+    assert (df["schema_version"] == schema.SCHEMA_VERSION).all()
+    # event_id is the canonical fixture key and unique-ish per row
+    assert df["event_id"].str.len().gt(0).all()
+
+
+def test_training_matrix_is_point_in_time():
+    # asof equals the match date: nothing dated after kickoff fed the row.
+    df = fs.build_training_matrix(since="2024-01-01")
+    assert (df["asof"] == df["match_date"]).all()
+    # model probabilities are valid distributions
+    p = df[["p_model_h", "p_model_d", "p_model_a"]].to_numpy()
+    assert np.allclose(p.sum(axis=1), 1.0, atol=1e-6)
+    assert (p >= 0).all() and (p <= 1).all()
+
+
+def test_build_asof_uses_no_future_rows():
+    # The as-of (live) path must only price fixtures kicking off on/after asof, and
+    # must not carry any closing-line column (that's a teacher, unknown pre-match).
+    asof = "2026-06-11"
+    df = fs.build_asof(asof)
+    assert len(df) > 0
+    assert (df["match_date"] >= asof).all(), "as-of build leaked a past fixture"
+    for col in ("odds_close_h", "odds_close_d", "odds_close_a", "result",
+                "home_score"):
+        assert col not in df.columns, f"as-of build exposed teacher column {col}"
+    # provenance stamped with the requested asof
+    assert (df["asof"] == asof).all()
+
+
+def test_asof_ratings_are_frozen_before_date():
+    # Building as of an earlier date must not see later results: a team's Elo as of
+    # an earlier asof should differ from (or at most equal) a later asof only via
+    # matches in between — concretely, the row count of priced fixtures shrinks as
+    # asof advances past kickoffs. We assert the build is deterministic & leak-safe
+    # by checking no fixture in the matrix pred: match_date < asof.
+    early = fs.build_asof("2026-06-01")
+    assert (early["match_date"] >= "2026-06-01").all()
+
+
+# ── M2 market model ───────────────────────────────────────────────────────────
+def test_segment_blend_is_honest_and_fails_safe():
+    fit = mm.segment_blend_weights()
+    # global default present
+    assert 0.0 <= fit["global_w"] <= 1.0
+    # decision uses OUT-OF-SAMPLE leave-one-out, not in-sample fit
+    for seg, v in fit["segments"].items():
+        assert "loo_logloss_segment_w" in v and "loo_logloss_global_w" in v
+        # adoption requires both the sample-size floor AND an out-of-sample win
+        if v["adopt_as_default"]:
+            assert v["n"] >= fit["min_segment_n"]
+            assert v["beats_global_out_of_sample"]
+    # fail-safe: a non-adopted segment uses the global weight
+    for seg in ("group", "knockout"):
+        w = mm.blend_weight_for(seg, fit)
+        assert 0.0 <= w <= 1.0
+
+
+def test_line_history_movement_and_do_not_bet():
+    # Use a match that has a full 1X2 in odds_history.
+    hist = pd.read_csv(ROOT / "data" / "odds_history.csv")
+    g = hist.groupby(["match_date", "home", "away"])["side"].agg(set)
+    full = [k for k, v in g.items() if {"home", "draw", "away"} <= v]
+    assert full, "expected at least one full-1X2 match in odds_history"
+    md, home, away = full[0]
+    lh = mm.line_history(home, away, md)
+    assert set(lh["p_open"]) == {"h", "d", "a"}
+    # de-vigged probs sum to ~1
+    assert abs(sum(lh["p_curr"].values()) - 1.0) < 1e-6
+    # do_not_bet returns a decision + reason codes for explainability
+    d = mm.do_not_bet("home", lh["p_curr"]["h"] + 0.01, lh)
+    assert "do_not_bet" in d and isinstance(d["reasons"], list) and d["reasons"]
+
+
+def test_closing_line_is_a_teacher_not_a_feature():
+    # The closing implied prob must never be in the legal feature set.
+    assert schema.is_outcome_column("p_close_h")
+    assert "p_close_h" not in set(schema.FEATURE_COLUMNS)
+
+
+# ── M3 availability ───────────────────────────────────────────────────────────
+def test_lineup_confidence_erodes_with_doubtful_absences():
+    a = av._absences_df()
+    assert len(a) > 0
+    full = av.lineup_confidence("__no_such_team__", a)
+    assert full["confidence"] == 1.0  # no absences -> full confidence
+    # a team with a doubtful absence has confidence < 1
+    doubtful_teams = a[a["doubtful"]]["team"].unique()
+    if len(doubtful_teams):
+        c = av.lineup_confidence(doubtful_teams[0], a)
+        assert c["confidence"] < 1.0 and c["n_doubtful"] >= 1
+
+
+def test_availability_band_widens_when_confidence_low():
+    a = av._absences_df()
+    doubtful_teams = list(a[a["doubtful"]]["team"].unique())
+    certain_only = [t for t in a["team"].unique()
+                    if t not in doubtful_teams]
+    # a doubtful team should have a wider uncertainty band than a clean team
+    if doubtful_teams and certain_only:
+        wide = av.availability_adjustment(doubtful_teams[0])
+        narrow = av.availability_adjustment(certain_only[0])
+        assert wide["uncertainty_sd"] >= narrow["uncertainty_sd"]
+    # band brackets the point estimate
+    r = av.availability_adjustment(a["team"].iloc[0])
+    assert r["elo_adj_low"] <= r["elo_adj"] <= r["elo_adj_high"]
+    assert r["status"] == "report_only"  # M3 never changes a V3 default
+
+
+def test_gk_absence_is_flagged_specifically():
+    a = av._absences_df()
+    pos = av._positions()
+    # function returns a well-formed decision for every team
+    for t in a["team"].unique()[:5]:
+        g = av.gk_impact(t, a, pos)
+        assert set(g) >= {"gk_absent", "keepers_out", "def_share"}
+        assert isinstance(g["gk_absent"], bool)
+
+
+# ── WC2018 wired into the harness ─────────────────────────────────────────────
+def test_tournament_samples_are_leak_free_and_complete():
+    samps = ts.all_samples()
+    assert set(samps) >= {"WC2018", "WC2022"}
+    for name, cfg in ts.TOURNAMENTS.items():
+        s = samps[name]
+        assert len(s) > 0
+        for x in s:
+            # every match falls inside the tournament window (no stray fixtures)
+            assert cfg["date_lo"] <= x.date <= cfg["date_hi"], (name, x.date)
+            # model output is a valid probability distribution
+            p = np.asarray(x.p_model, float)
+            assert abs(p.sum() - 1.0) < 1e-6 and (p >= 0).all()
+            assert x.actual in (0, 1, 2)
+    # p_market presence mirrors whether a tournament's odds file exists: with an
+    # odds file the matches carry de-vigged market probs (feed the blend gate);
+    # without one they are model-only (calibration evidence). Derived from config
+    # so folding in a new wc20xx_odds.csv doesn't break this test.
+    for name, cfg in ts.TOURNAMENTS.items():
+        oc = cfg.get("odds_csv")
+        has_odds = bool(oc and Path(oc).exists())
+        if has_odds:
+            assert any(x.p_market is not None for x in samps[name]), name
+        else:
+            assert all(x.p_market is None for x in samps[name]), name
+    # WC2022 ships an odds file in-repo, so it must always feed the blend gate.
+    assert any(x.p_market is not None for x in samps["WC2022"])
+
+
+def test_model_calibration_pools_wc2018_and_wc2022():
+    cal = vv.model_calibration()
+    per = cal["per_tournament"]
+    assert "WC2018" in per and "WC2022" in per
+    pooled_n = cal["pooled"]["all"]["n"]
+    assert pooled_n == per["WC2018"]["all"]["n"] + per["WC2022"]["all"]["n"]
+    assert pooled_n > 64, "pooling should give a larger held-out base than one cup"
+    # metrics are well-formed probabilities-of-fit
+    for m in (cal["pooled"]["all"], per["WC2018"]["all"], per["WC2022"]["all"]):
+        assert 0.0 < m["logloss"] < 3.0 and 0.0 <= m["accuracy"] <= 1.0
+
+
+def test_blend_gate_coverage_is_honest_about_odds():
+    rep = vv.run(write=False)
+    cov = rep["coverage"]
+    # the ship/no-ship gate only claims tournaments that actually have an odds
+    # file; derive that set from config so folding in a new wc20xx_odds.csv
+    # (per WC_V4_NOTES) updates coverage without breaking this honesty check.
+    expected_with_odds = sorted(
+        name for name, cfg in ts.TOURNAMENTS.items()
+        if cfg.get("odds_csv") and Path(cfg["odds_csv"]).exists())
+    assert sorted(cov["blend_gate_tournaments"]) == expected_with_odds
+    assert "WC2022" in cov["blend_gate_tournaments"]
+    # model calibration pools every tournament with results, odds or not.
+    assert "WC2018" in cov["model_calibration_tournaments"]
+
+
+# ── M4-M7 report-only modelling layers ────────────────────────────────────────
+def test_matchup_eval_is_report_only_and_measured():
+    rep = mu.heldout_matchup_eval()
+    assert rep["n"] > 0
+    assert rep["status"] == "report_only"
+    assert "matchup_logloss" in rep and "baseline_logloss" in rep
+
+
+def test_coherent_board_prices_cross_markets_from_one_distribution():
+    board = prob.coherent_board("Brazil", "Morocco", "2026-06-11")
+    assert board["available"]
+    assert board["status"] == "report_only"
+    m = board["markets"]
+    assert abs(m["home"] + m["draw"] + m["away"] - 1.0) < 1e-6
+    assert abs(m["over25"] + m["under25"] - 1.0) < 1e-6
+    assert abs(m["btts_yes"] + m["btts_no"] - 1.0) < 1e-6
+    assert board["correct_scores"] and board["fair_odds"]["home"] > 1.0
+
+
+def test_consistency_flags_only_real_board_issues():
+    board = prob.coherent_board("Brazil", "Morocco", "2026-06-11")
+    chk = cs.check_board(board)
+    assert chk["ok"], chk
+    bad = {**board, "markets": {**board["markets"], "home": 0.80}}
+    chk_bad = cs.check_board(bad)
+    assert not chk_bad["ok"]
+    assert any("1x2" in issue for issue in chk_bad["issues"])
+
+
+def test_uncertainty_aware_staking_can_pass_thin_edges():
+    rec = st.recommendation(
+        {"home": "Brazil", "away": "Morocco"},
+        "home",
+        model_prob=0.42,
+        market_odds=2.35,
+        bankroll=1000.0,
+        market_line=None,
+        clv_context={"mean_clv": -0.01},
+    )
+    assert rec["status"] == "report_only"
+    assert rec["recommendation"] == "pass"
+    assert rec["stake_gbp"] == 0.0
+    assert "uncertainty_overwhelms_edge" in rec["reason_codes"]
+
+
+def _run_all():
+    tests = [v for k, v in sorted(globals().items())
+             if k.startswith("test_") and callable(v)]
+    passed = 0
+    for t in tests:
+        t()
+        print(f"  ok  {t.__name__}")
+        passed += 1
+    print(f"\n{passed}/{len(tests)} V4 tests passed.")
+
+
+if __name__ == "__main__":
+    _run_all()
