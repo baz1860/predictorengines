@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import edge
+from engines.worldcup import edge
+
 
 PASS, FAIL = 0, 0
 

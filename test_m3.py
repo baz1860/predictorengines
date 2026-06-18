@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from core import clv
-from market_blend import blend, BLEND_FILE
+from engines.worldcup.market_blend import blend, BLEND_FILE
 
 _fails = []
 

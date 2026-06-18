@@ -19,8 +19,9 @@ import numpy as np
 import pandas as pd
 
 from core import bankroll
-import simulate
-from simulate import THIRD_SLOTS, allocate_thirds
+from engines.worldcup import simulate
+
+from engines.worldcup.simulate import THIRD_SLOTS, allocate_thirds
 
 _fails = []
 

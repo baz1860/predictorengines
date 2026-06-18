@@ -23,7 +23,7 @@ import json
 from itertools import combinations
 from pathlib import Path
 
-from simulate import THIRD_SLOTS
+from engines.worldcup.simulate import THIRD_SLOTS
 
 HERE = Path(__file__).parent
 RAW = HERE / "data" / "annexc_raw.txt"

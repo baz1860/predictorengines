@@ -12,8 +12,8 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | 1 | Cleanup & archive | `refactor/phase-1-cleanup` (#11) | ✅ |
 | 2 | Core extraction | `refactor/phase-2-core-contracts` (#12) | ✅ |
 | 2b | Contracts extraction | `refactor/phase-2b-contracts` (#13) | ✅ |
-| 3a | Package worldcup core (+shims) | `refactor/phase-3-worldcup` | 🟡 |
-| 3b | Migrate importers, drop shims | — | ⬜ |
+| 3a | Package worldcup core (+shims) | `refactor/phase-3-worldcup` (#14) | ✅ |
+| 3b | Migrate importers, drop shims | `refactor/phase-3b-migrate-importers` | 🟡 |
 | 3c | Move WC tooling + backtests | — | ⬜ |
 | 4 | Kill the subprocess hack | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
@@ -217,9 +217,29 @@ so the ~25 external importers — adapter, `wc_v4/`, backtests, `test_m2`–`m7`
 — keep working unchanged. Verified: shim identity is exact (incl. private names), data
 loads from root, all 4 engines register.
 
-**3b — Migrate importers, drop shims.** Rewrite the external importers to
-`from engines.worldcup import …`, resolve the `core/clv → edge` smell, delete the 9 shims.
-Mechanical + grep-verified.
+**3b — Migrate importers, drop shims (done).** Rewrote 31 in-process importers
+(tests, backtests, WC tooling, `core/clv`, the adapter, all of `wc_v4/`) to
+`from engines.worldcup import …` via a line-anchored migration script, then deleted the
+9 root shims. Straggler grep is empty. The `core/clv → edge` coupling is now *explicit*
+(`from engines.worldcup.edge import fetch_api_odds, …`) — note this is the odds-API
+plumbing, not WC model logic; relocating it into `core/` to invert the dependency is a
+worthwhile follow-up, left out of this structural phase.
+
+**Collision trap — two sport-test gotchas:** bare `import edge`/`import predictor` in a
+root-run test can mean a *sport* module via `sys.path` insertion, so import-resolution had
+to be traced, not assumed.
+- `test_cfb_blend.py` inserts `cfb/` at `sys.path[0]` → its `predictor`/`validate` are CFB.
+  **Excluded** up front.
+- `test_club_soccer.py` looked root-first (it inserts `CLUB` then `ROOT`), so it was
+  rewritten — **wrong**. Its `ROOT` re-insert is guarded by `if str(ROOT) not in sys.path`,
+  and `ROOT` (the script's own dir) is *already* on `sys.path` at startup, so the guard
+  skips it and `CLUB` stays first. Its `import edge` is the *club_soccer* edge (whose
+  `devig` returns an `ndarray`; worldcup's returns a tuple). The golden baseline caught it
+  (`AttributeError: 'tuple' object has no attribute 'sum'`); reverted that one line.
+
+**Lesson for 3c / future moves:** never infer import resolution from `sys.path.insert`
+order alone — account for the interpreter putting the script's own directory on `sys.path`
+first, and for `not in sys.path` guards. When unsure, run the suite and read the failure.
 
 **3c — Move WC tooling + backtests.** Relocate the WC analysis/build scripts (`report`,
 `validate`, `draw_*`, `rho_sweep`, `build_*`, `totals_calibration_check`, `injuries`,
