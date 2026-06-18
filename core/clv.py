@@ -94,7 +94,7 @@ def snapshot(api_key=None):
     if open_bets.empty:
         print("No open bets to snapshot.")
         return
-    from edge import fetch_api_odds, ALIASES, DEFAULT_API_KEY
+    from engines.worldcup.edge import fetch_api_odds, ALIASES, DEFAULT_API_KEY
     key = api_key or DEFAULT_API_KEY
     try:
         odds = fetch_api_odds(key)

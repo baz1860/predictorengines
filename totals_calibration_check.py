@@ -32,9 +32,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from predictor import (load_matches, compute_elo, fit_goal_model,
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, score_matrix, DC_RHO)
-from dixoncoles import fit_dc
+from engines.worldcup.dixoncoles import fit_dc
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"

@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from edge import KELLY_FRACTION, kelly
+from engines.worldcup.edge import KELLY_FRACTION, kelly
 
 from . import availability as AV
 from . import market_model as MM

@@ -19,9 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from predictor import (DC_RHO, HOME_ADV, compute_elo, expected_goals,  # noqa: E402
+from engines.worldcup.predictor import (DC_RHO, HOME_ADV, compute_elo, expected_goals,  # noqa: E402
                        fit_goal_model, load_matches, score_matrix)
-from dixoncoles import fit_dc, outcome_probs  # noqa: E402
+from engines.worldcup.dixoncoles import fit_dc, outcome_probs  # noqa: E402
 
 from . import tournaments as TS  # noqa: E402
 

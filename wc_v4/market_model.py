@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import market_blend as MB  # noqa: E402  (blend(), _wc2022_samples(), load_w())
+from engines.worldcup import market_blend as MB  # noqa: E402  (blend(), _wc2022_samples(), load_w())
 try:  # noqa: E402
     from . import tournaments as TS
 except ImportError:  # pragma: no cover - script execution fallback

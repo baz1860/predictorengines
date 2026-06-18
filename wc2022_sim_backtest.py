@@ -21,9 +21,9 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
-from predictor import (load_matches, compute_elo, fit_goal_model,
+from engines.worldcup.predictor import (load_matches, compute_elo, fit_goal_model,
                        expected_goals, score_matrix, HOME_ADV, DC_RHO, MAX_GOALS)
-from dixoncoles import fit_dc
+from engines.worldcup.dixoncoles import fit_dc
 
 CUTOFF = "2022-11-20"
 
