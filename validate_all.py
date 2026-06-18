@@ -2,7 +2,7 @@
 """Run every engine's validation gate and summarize (V3 M3).
 
 Each engine ships its own walk-forward validation with a stored baseline:
-  * World Cup    – validate.py --quiet --gate
+  * World Cup    – python -m engines.worldcup.validate --quiet --gate
   * Club Soccer  – club_soccer/validate.py --gate
   * CFB          – cfb/validate.py --quiet --gate   (new in V3 M3)
   * Golf         – golf/validate.py --quiet --gate --sims <small default>
@@ -34,7 +34,7 @@ SUMMARY = ROOT / "data" / "validation_suite.json"
 def _engines(sims: int, cfb_since: int) -> list[dict]:
     return [
         {"id": "worldcup", "cwd": ROOT,
-         "cmd": ["validate.py", "--quiet", "--gate"], "timeout": 600},
+         "cmd": ["-m", "engines.worldcup.validate", "--quiet", "--gate"], "timeout": 600},
         {"id": "club_soccer", "cwd": ROOT / "club_soccer",
          "cmd": ["validate.py", "--gate"], "timeout": 600},
         {"id": "cfb", "cwd": ROOT / "cfb",
