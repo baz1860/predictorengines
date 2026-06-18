@@ -22,7 +22,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from elo import load_games, FCS
+from .elo import load_games, FCS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PARAMS_JSON = os.path.join(HERE, "data", "power_params.json")

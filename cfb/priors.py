@@ -96,7 +96,7 @@ def offsets(feats, params):
 
 
 def tune(since=2016, until=2024):
-    import elo as E
+    from . import elo as E
 
     games = E.load_games()
     feats = load_features()

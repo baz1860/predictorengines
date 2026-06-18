@@ -1,38 +1,28 @@
-#!/usr/bin/env python3
-"""Isolated runner for the CFB engine.
+"""In-process command API for the CFB engine (refactor Phase 4).
 
-Invoked as a subprocess by app/engines/cfb.py with cwd + PYTHONPATH set to the
-cfb/ folder, so the engine's flat imports (`import elo`, `import power`,
-`from predictor import ...`) resolve to the CFB modules without colliding with
-the root engine's same-named modules. Reads a JSON params object on stdin and
-writes a JSON result on stdout.
-
-Commands: schema | predict | edge | edge_template
+The command logic that used to live in app/engines/runners/cfb_runner.py, now imported
+and called directly by the adapter (no subprocess). Functions take a params dict and
+return a JSON-able dict; errors are plain exceptions that the adapter dispatches through
+app.engines._inproc.run_inprocess (allowlist + redaction + finite-JSON).
 """
-import json
-import sys
+from __future__ import annotations
 
 import pandas as pd
 
-import elo as E
-import power as P
-from predictor import blend_predict
-import edge as CE   # cfb/edge.py
+from . import edge as CE
+from . import elo as E
+from . import power as P
+from .predictor import blend_predict
 
 
-def _params():
-    raw = sys.stdin.read().strip()
-    return json.loads(raw) if raw else {}
-
-
-def cmd_schema():
+def cmd_schema(_p: dict | None = None) -> dict:
     pp = P.load_params()
     return {"kind": "match", "names": sorted(pp["teams"]),
             "models": ["blend", "elo", "power"], "supports_home": False,
             "neutral_toggle": True, "team_label": "Team"}
 
 
-def cmd_predict(p):
+def cmd_predict(p: dict) -> dict:
     t1 = (p.get("team1") or "").strip()
     t2 = (p.get("team2") or "").strip()
     if not t1 or not t2:
@@ -60,7 +50,7 @@ def cmd_predict(p):
         "table": None}
 
 
-def cmd_edge(p):
+def cmd_edge(p: dict) -> dict:
     import os
     if not os.path.exists(CE.ODDS_CSV):
         raise ValueError("No cfb/odds.csv. Use 'Write template' first, then fill in lines & odds.")
@@ -127,7 +117,7 @@ def cmd_edge(p):
             "columns": columns, "rows": rows}
 
 
-def cmd_edge_template(p):
+def cmd_edge_template(_p: dict | None = None) -> dict:
     try:
         CE.write_template()
     except Exception:
@@ -149,18 +139,3 @@ def cmd_edge_template(p):
 
 COMMANDS = {"schema": lambda p: cmd_schema(), "predict": cmd_predict,
             "edge": cmd_edge, "edge_template": cmd_edge_template}
-
-
-def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "schema"
-    try:
-        result = COMMANDS[cmd](_params())
-        print(json.dumps(result))
-    except ValueError as e:
-        print(json.dumps({"error": str(e)})); sys.exit(2)
-    except Exception as e:  # noqa
-        print(json.dumps({"error": f"{type(e).__name__}: {e}"})); sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

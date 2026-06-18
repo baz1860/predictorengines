@@ -1,9 +1,10 @@
 """College Football engine adapter.
 
-Drives cfb/ via an isolated subprocess runner (cfb_runner.py) to avoid module
-name collisions with the root engine. Predict (win/spread/total) and Edge
-(ml/spread/total from a manual odds.csv). Settlement is done in-process with
-plain pandas against cfb/data/games.csv, so no engine import is needed here.
+Drives the cfb package in-process via cfb.engine.COMMANDS (Phase 4 — the cfb
+modules are package-qualified, so their flat names no longer collide with the
+worldcup engine). Predict (win/spread/total) and Edge (ml/spread/total from a
+manual odds.csv). Settlement is done in-process with plain pandas against
+cfb/data/games.csv, so no engine import is needed there.
 """
 from __future__ import annotations
 
@@ -13,11 +14,10 @@ from typing import Any
 import pandas as pd
 
 from contracts import EngineAdapter
-from ._subprocess import run_engine
+from ._inproc import run_inprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE_DIR = ROOT / "cfb"
-RUNNER = Path(__file__).resolve().parent / "runners" / "cfb_runner.py"
 
 
 class CFBAdapter(EngineAdapter):
@@ -30,7 +30,8 @@ class CFBAdapter(EngineAdapter):
         self._schema = None
 
     def _run(self, command, params=None):
-        return run_engine(ENGINE_DIR, RUNNER, command, params)
+        from cfb import engine as cfb_engine
+        return run_inprocess(cfb_engine.COMMANDS, command, params)
 
     def predict_schema(self) -> dict[str, Any]:
         if self._schema is None:

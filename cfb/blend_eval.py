@@ -12,9 +12,9 @@ import argparse
 import numpy as np
 import pandas as pd
 
-import elo as E
-import epa as X
-import power as P
+from . import elo as E
+from . import epa as X
+from . import power as P
 
 
 def collect(since, until):

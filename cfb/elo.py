@@ -102,7 +102,7 @@ def fit_spread_map(games, history, since=2010):
 def season_priors():
     """(carry, prior_offsets) from priors.py if CFBD prior data is present."""
     try:
-        import priors
+        from . import priors
         feats = priors.load_features()
         if not feats:
             return None, {}

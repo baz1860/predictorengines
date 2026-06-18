@@ -16,8 +16,8 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | 3b | Migrate importers, drop shims | `refactor/phase-3b-migrate-importers` (#15) | ✅ |
 | 3c | Move backtest/analysis scripts | `refactor/phase-3c-tooling` (#16) | ✅ |
 | 3c-2 | Move WC validate + WC scripts | `refactor/phase-3c2-engine-tooling` | 🟡 |
-| 4a | In-process club_soccer engine | `refactor/phase-4-kill-subprocess` | 🟡 |
-| 4b | In-process cfb engine | — | ⬜ |
+| 4a | In-process club_soccer engine | `refactor/phase-4-kill-subprocess` (#18) | ✅ |
+| 4b | In-process cfb engine | `refactor/phase-4b-cfb` | 🟡 |
 | 4c | In-process golf engine | — | ⬜ |
 | 4d | Delete _subprocess + rework sec tests | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
@@ -314,7 +314,14 @@ subprocess. `test_club_soccer` now imports the package + exercises the in-proces
 (incl. the rejected-command guard). Verified via `run_checks --gates` (club_soccer gate
 runs through the new `-m` entry).
 
-**4b / 4c — cfb, golf.** Same recipe (cfb/golf aren't packages yet — add `__init__.py`).
+**4b — cfb (done).** Added `cfb/__init__.py`; relativized all 26 intra-package imports;
+added `cfb/engine.py` (runner logic, package imports); adapter dispatches via `_inproc` +
+`cfb.engine.COMMANDS`; deleted `cfb_runner.py`. Rewired callers to `-m cfb.X`:
+`validate_all.py` (cfb gate), `test_cfb_blend` (was inserting `cfb/` on `sys.path`), and
+the README `cfb/predictor.py`/`cfb/validate.py` examples. Verified via `run_checks --gates`
+(cfb gate through `-m cfb.validate`). cfb's `grade_open_bets` is pure pandas — untouched.
+
+**4c — golf.** Same recipe (golf isn't a package yet — add `__init__.py`).
 **4d — teardown.** Once no adapter uses it: delete `_subprocess.py` + the 3 runners,
 drop `safe_runner_env` and rework its `test_security` cases (keep the redaction tests —
 `_inproc` reuses `redact`/`collect_secrets`).
