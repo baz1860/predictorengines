@@ -39,6 +39,12 @@ from dixoncoles import build_sources
 
 HERE = Path(__file__).parent
 ODDS_CSV = HERE / "odds.csv"
+# Snapshot of the odds actually used on the last successful run (live API or
+# filled manual CSV). Written every run so freshness checks can measure when the
+# odds were really refreshed — odds.csv stays the manual-fallback input and is
+# never overwritten (writing to it would make the next run prefer it over a live
+# fetch). See app/provenance.py, which points the worldcup "odds" input here.
+ODDS_LIVE_CSV = HERE / "data" / "odds_live.csv"
 REPORT = HERE / "edge_report.csv"
 KELLY_FRACTION = 0.25   # quarter Kelly: tempers overconfident models
 MIN_EDGE = 0.0          # show everything; flag strong edges in the report
@@ -60,6 +66,7 @@ RECORD_MIN_EDGE = 0.0 # only auto-record per-market picks with edge strictly abo
                       # (model prob > bookmaker implied prob); raise for stronger value only
                       # (ensures we're backing genuine predictions, not noise)
 MAX_ELO_GAP  = 350    # informational only — shown in report, not used as bet filter
+WORLD_CUP_SPORT_KEY = "soccer_fifa_world_cup"
 
 # bookmaker/API name -> dataset name
 ALIASES = {
@@ -98,26 +105,36 @@ def bet_label(side, home, away):
             "btts_yes": "Both teams to score", "btts_no": "BTTS no"}[side]
 
 
-def market_probs(home, away, sources, neutral_lookup, ctx=None):
+def market_probs(home, away, sources, neutral_lookup, ctx=None, totals_lam_mult=1.0):
     """All market probabilities from the blended scoreline matrix.
 
     The scoreline matrix is the single-match (90-minute) goal distribution, so the
     1X2 probabilities here are the correct settlement basis for knockout matches
     too: a bookmaker's 1X2 / O-U / BTTS markets settle on the 90-minute result, so
     the draw is kept as a draw (extra-time / penalties are a separate progression
-    question handled only in simulate.py, never in edge pricing)."""
+    question handled only in simulate.py, never in edge pricing).
+
+    `totals_lam_mult` is the gated scoring-level calibration (see
+    totals_calibration_check.py): the goal model runs ~9% low on total goals at
+    World Cups, so the TOTALS and BTTS distribution is built from lambdas scaled by
+    this factor. 1X2 stays on the unscaled matrix so the shipped, separately-fitted
+    result prices are not disturbed. Default 1.0 is a no-op."""
     h1 = 0.0 if neutral_lookup.get((home, away), True) else 1.0
-    Ms = []
+    Ms, Ms_tot = [], []
     for fn, rho in sources:
         l1, l2 = fn(home, away, h1, 0.0)
         if ctx is not None:
             l1, l2 = l1 * ctx[0], l2 * ctx[1]   # M6 rest/altitude correction
         Ms.append(score_matrix(l1, l2, rho))
+        Ms_tot.append(Ms[-1] if totals_lam_mult == 1.0
+                      else score_matrix(l1 * totals_lam_mult,
+                                        l2 * totals_lam_mult, rho))
     M = np.mean(Ms, axis=0)
+    Mt = M if totals_lam_mult == 1.0 else np.mean(Ms_tot, axis=0)
     n = M.shape[0]
     total = np.add.outer(np.arange(n), np.arange(n))
-    p_under = M[total <= 2].sum()
-    p_btts = M[1:, 1:].sum()
+    p_under = Mt[total <= 2].sum()
+    p_btts = Mt[1:, 1:].sum()
     return {"home": np.tril(M, -1).sum(), "draw": np.trace(M),
             "away": np.triu(M, 1).sum(),
             "over25": 1.0 - p_under, "under25": p_under,
@@ -228,6 +245,20 @@ def write_template(upcoming):
           "Fill in decimal odds (e.g. 2.50), then run: python edge.py")
 
 
+def _select_worldcup_sport_key(sports):
+    """Choose the match-odds sport key, not an unrelated World Cup competition."""
+    keys = [s.get("key", "") for s in sports]
+    if WORLD_CUP_SPORT_KEY in keys:
+        return WORLD_CUP_SPORT_KEY
+    for s in sports:
+        key = s.get("key", "")
+        title = s.get("title", "").lower()
+        if (key.startswith("soccer_") and "world cup" in title
+                and "winner" not in key):
+            return key
+    return None
+
+
 def fetch_api_odds(api_key, exit_on_error=True):
     """Pull h2h odds for the World Cup from the-odds-api.com (v4)."""
     base = "https://api.the-odds-api.com/v4"
@@ -246,9 +277,8 @@ def fetch_api_odds(api_key, exit_on_error=True):
         if not exit_on_error:
             raise ValueError(msg)
         sys.exit(msg)
-    keys = [s["key"] for s in sports
-            if "world cup" in s["title"].lower() and "winner" not in s["key"]]
-    if not keys:
+    sport_key = _select_worldcup_sport_key(sports)
+    if not sport_key:
         msg = "No World Cup match odds found on The Odds API right now."
         if not exit_on_error:
             raise ValueError(msg)
@@ -257,7 +287,7 @@ def fetch_api_odds(api_key, exit_on_error=True):
     # (e.g. btts not on this plan) silently dropping all the others.
     events_by_id = {}
     for mkt in ("h2h", "totals", "btts"):
-        mkt_url = (f"{base}/sports/{keys[0]}/odds/?apiKey={api_key}"
+        mkt_url = (f"{base}/sports/{sport_key}/odds/?apiKey={api_key}"
                    f"&regions=eu&markets={mkt}&oddsFormat=decimal")
         try:
             with urllib.request.urlopen(mkt_url) as r:
@@ -325,7 +355,19 @@ def load_edge_modifiers(calibrated=False, market_blend=False, context_enabled=Fa
     """Load optional probability/lambda modifiers once, for CLI and app parity."""
     mods = {"calib_maps": None, "mkt_blend_w": None,
             "ctx_mod": None, "ctx_coef": None, "ctx_played": None,
-            "ctx_home_alt": None, "ctx_venue": None}
+            "ctx_home_alt": None, "ctx_venue": None, "totals_lam_mult": 1.0}
+    # Totals scoring-level calibration: a gated global lambda multiplier applied
+    # to the totals/BTTS distribution only (1X2 untouched). Written by
+    # totals_calibration_check.py --fit once it clears the leave-one-tournament-out
+    # gate; absent -> 1.0 (no-op). This is a model calibration like calibrate.py,
+    # so it loads whenever present rather than behind a flag.
+    _cf = HERE / "data" / "totals_calibration.json"
+    if _cf.exists():
+        try:
+            mods["totals_lam_mult"] = float(json.loads(_cf.read_text())
+                                            .get("lambda_mult", 1.0))
+        except (ValueError, OSError):
+            mods["totals_lam_mult"] = 1.0
     if calibrated:
         from calibrate import load_maps
         mods["calib_maps"] = load_maps()
@@ -377,7 +419,8 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
                     home, away, fdate, fcity, played=ctx_played,
                     home_alt=ctx_home_alt)
                 ctx = ctx_mod.multipliers(rd, gh, ga, ctx_coef)
-        probs = market_probs(home, away, sources, neutral_lookup, ctx=ctx)
+        probs = market_probs(home, away, sources, neutral_lookup, ctx=ctx,
+                             totals_lam_mult=modifiers.get("totals_lam_mult", 1.0))
         if calib_maps is not None:
             from calibrate import apply as cal_apply
             ch, cd, ca = cal_apply(probs["home"], probs["draw"], probs["away"],
@@ -395,6 +438,28 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
                                         probs["away"]]), imp1x2, mkt_blend_w)
                 probs["home"], probs["draw"], probs["away"] = (
                     float(pb[0]), float(pb[1]), float(pb[2]))
+            # Totals and BTTS get the SAME market discipline as 1X2. These markets
+            # were previously pure model output, so any model bias (e.g. the
+            # scoring-level gap) passed straight into the recommendation with no
+            # market check. We blend each 2-way market toward its de-vigged book
+            # line with the same fitted weight w. Edges are still measured against
+            # the raw de-vigged book, so this only shrinks fake edges -- it does
+            # not invent any. (No historical O/U closing odds exist to fit a
+            # totals-specific w, so w inherits the 1X2 fit as a deliberate prior;
+            # the line is at least as efficient on totals as on 1X2.)
+            from market_blend import blend as mb_blend
+            for (a_side, a_col), (b_side, b_col) in (
+                    (("over25", "odds_over25"), ("under25", "odds_under25")),
+                    (("btts_yes", "odds_btts_yes"), ("btts_no", "odds_btts_no"))):
+                try:
+                    two = [float(getattr(r, a_col)), float(getattr(r, b_col))]
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if all(np.isfinite(o) and o > 1.0 for o in two):
+                    imp2, _ = devig(two)
+                    pbm = mb_blend(np.array([probs[a_side], probs[b_side]]),
+                                   imp2, mkt_blend_w)
+                    probs[a_side], probs[b_side] = float(pbm[0]), float(pbm[1])
         for market, sides in MARKETS.items():
             try:
                 book = [float(getattr(r, col)) for _, col in sides]
@@ -491,10 +556,10 @@ def main():
                          "python3 validate.py --calibrate). Applied before any "
                          "--market-blend.")
     ap.add_argument("--market-blend", action="store_true",
-                    help="anchor the model's 1X2 probs toward the de-vigged market "
-                         "in logit space (weight from data/market_blend.json; fit "
-                         "with: python3 market_blend.py --fit). Edges are still "
-                         "computed against the raw market.")
+                    help="anchor the model's 1X2, Over/Under 2.5 and BTTS probs "
+                         "toward the de-vigged market in logit space (weight from "
+                         "data/market_blend.json; fit with: python3 market_blend.py "
+                         "--fit). Edges are still computed against the raw market.")
     ap.add_argument("--context", action="store_true",
                     help="apply rest/altitude lambda correction to each fixture "
                          "(coefficients from data/context_coef.json; fit with: "
@@ -583,6 +648,14 @@ def main():
         sys.exit("No odds found. Run with --template to create odds.csv, "
                  "or pass --api-key.")
 
+    # Snapshot the odds we actually used so freshness checks reflect the real
+    # refresh time, whatever the source. Never blocks the report if it fails.
+    try:
+        ODDS_LIVE_CSV.parent.mkdir(parents=True, exist_ok=True)
+        odds.to_csv(ODDS_LIVE_CSV, index=False)
+    except Exception as e:
+        print(f"   (could not write {ODDS_LIVE_CSV.name}: {e})")
+
     try:
         modifiers = load_edge_modifiers(args.calibrated, args.market_blend,
                                         args.context)
@@ -639,7 +712,9 @@ def main():
     if args.calibrated:
         flags.append("calibrated")
     if args.market_blend:
-        flags.append(f"market-blend(w={modifiers['mkt_blend_w']:.2f})")
+        flags.append(f"market-blend(w={modifiers['mkt_blend_w']:.2f},1X2+OU+BTTS)")
+    if modifiers.get("totals_lam_mult", 1.0) != 1.0:
+        flags.append(f"totals-calib(lam x{modifiers['totals_lam_mult']:.2f})")
     if args.context:
         flags.append("context")
     if args.squad_adj:

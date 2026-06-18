@@ -45,6 +45,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H.1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 1.4 6a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 6 1.5h.1A1.6 1.6 0 0 0 7.2.4V.3a2 2 0 1 1 4 0" transform="translate(5.5 1.5) scale(.7)"/></svg>
           Settings
         </button>
+        <button class="nav-item" id="nav-ops">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 7h12l-1 4 1 4H4"/><path d="M20 19v-6"/><path d="M20 9V5"/></svg>
+          Ops
+        </button>
       </nav>
     </aside>
 
@@ -232,6 +236,18 @@
           <div class="row controls">
             <button id="settings-save" class="primary">Save settings</button>
             <span id="settings-saved" class="saved-note" hidden>Saved ✓</span>
+          </div>
+        </div>
+
+        <!-- OPS (V6) -->
+        <div id="panel-ops" class="panel full" hidden>
+          <div class="stat-row" id="ops-stats"></div>
+          <div class="dash-grid">
+            <div class="dash-card span-2"><h2>Daily run preview<span class="h-meta">dry-run by default</span></h2><div id="ops-daily"></div></div>
+            <div class="dash-card"><h2>Validation</h2><div id="ops-validation"></div></div>
+            <div class="dash-card"><h2>Backup</h2><div id="ops-backup"></div></div>
+            <div class="dash-card span-2"><h2>Data freshness</h2><div id="ops-freshness"></div></div>
+            <div class="dash-card span-2"><h2>Release readiness</h2><div id="ops-release"></div></div>
           </div>
         </div>
 
