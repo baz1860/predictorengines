@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -27,6 +28,7 @@ from typing import Optional
 DATA_DIR = Path(__file__).parent / "data"
 ROUNDS_CSV = DATA_DIR / "rounds.csv"
 PARAMS_JSON = DATA_DIR / "model_params.json"
+MODEL_CONFIG_JSON = DATA_DIR / "model_config.json"
 
 # Weight parameters for composite rating
 W_BASELINE = 0.55
@@ -319,6 +321,41 @@ FORM_WEIGHT = 0.7               # how much form nudges the rating (validate tune
 COURSE_K = 12.0                 # EB shrink for course fit
 DEFAULT_SKILL_QUANTILE = 0.20   # rating for unknown players (weak-field default)
 
+DEFAULT_MODEL_CONFIG = {
+    "skill_halflife_days": SKILL_HALFLIFE_DAYS,
+    "ridge_skill": RIDGE_SKILL,
+    "sigma_shrink_rounds": SIGMA_SHRINK_ROUNDS,
+    "form_halflife_days": FORM_HALFLIFE_DAYS,
+    "form_weight": FORM_WEIGHT,
+    "course_k": COURSE_K,
+}
+
+
+def load_model_config(path: Path | None = None) -> dict:
+    """Champion fit hyperparameters, falling back to the validated constants."""
+    path = path or MODEL_CONFIG_JSON
+    cfg = dict(DEFAULT_MODEL_CONFIG)
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text())
+            raw = raw.get("config", raw)
+            for k in cfg:
+                if k in raw:
+                    cfg[k] = float(raw[k])
+        except Exception:
+            pass
+    return cfg
+
+
+def save_model_config(config: dict, metrics: dict | None = None,
+                      path: Path | None = None) -> Path:
+    path = path or MODEL_CONFIG_JSON
+    payload = {"config": {k: float(config[k]) for k in DEFAULT_MODEL_CONFIG},
+               "metrics": metrics or {},
+               "source": "golf/validate.py --tune-config"}
+    path.write_text(json.dumps(payload, indent=2))
+    return path
+
 
 def load_rounds_df(path: Path | None = None):
     """Read rounds.csv → DataFrame (raises if absent)."""
@@ -334,7 +371,7 @@ def load_rounds_df(path: Path | None = None):
     return df
 
 
-def fit(rounds_df, asof=None) -> dict:
+def fit(rounds_df, asof=None, config: dict | None = None) -> dict:
     """Fit skill, difficulty, sigma, form and course-fit on rounds before `asof`.
 
     Returns a params dict (see save_params for the JSON shape). Walk-forward safe:
@@ -344,6 +381,14 @@ def fit(rounds_df, asof=None) -> dict:
     import pandas as pd
     from scipy.sparse import csr_matrix
     from scipy.sparse.linalg import lsqr
+
+    cfg = load_model_config() if config is None else {**DEFAULT_MODEL_CONFIG, **config}
+    skill_halflife = float(cfg["skill_halflife_days"])
+    ridge_skill = float(cfg["ridge_skill"])
+    sigma_shrink = float(cfg["sigma_shrink_rounds"])
+    form_halflife = float(cfg["form_halflife_days"])
+    form_weight = float(cfg["form_weight"])
+    course_k = float(cfg["course_k"])
 
     df = rounds_df
     if asof is not None:
@@ -363,7 +408,7 @@ def fit(rounds_df, asof=None) -> dict:
     nd = len(trs)
 
     age = (asof - df["date"]).dt.days.values.astype(float)
-    w = np.sqrt(0.5 ** (age / SKILL_HALFLIFE_DAYS))   # weight on squared resid
+    w = np.sqrt(0.5 ** (age / skill_halflife))   # weight on squared resid
     mu = float(np.average(df["score_to_par"].values, weights=w ** 2))
     y = df["score_to_par"].values - mu
 
@@ -381,7 +426,7 @@ def fit(rounds_df, asof=None) -> dict:
     n_un = np_ + nd
     rr = np.arange(n_un) + m
     rc = np.arange(n_un)
-    rv = np.r_[np.full(np_, math.sqrt(RIDGE_SKILL)),
+    rv = np.r_[np.full(np_, math.sqrt(ridge_skill)),
                np.full(nd, math.sqrt(RIDGE_DIFF))]
     A = csr_matrix((np.r_[vals, rv], (np.r_[rows, rr], np.r_[cols, rc])),
                    shape=(m + n_un, n_un))
@@ -400,8 +445,8 @@ def fit(rounds_df, asof=None) -> dict:
     counts = np.bincount(pidx, minlength=np_).astype(float)
     sse = np.bincount(pidx, weights=resid ** 2, minlength=np_)
     var_p = np.divide(sse, counts, out=np.full(np_, var_field), where=counts > 0)
-    var_shrunk = (counts * var_p + SIGMA_SHRINK_ROUNDS * var_field) / \
-                 (counts + SIGMA_SHRINK_ROUNDS)
+    var_shrunk = (counts * var_p + sigma_shrink * var_field) / \
+                 (counts + sigma_shrink)
     sigma_p = np.sqrt(var_shrunk)
 
     # ── major σ multiplier ──
@@ -415,7 +460,7 @@ def fit(rounds_df, asof=None) -> dict:
     # ── recent form: −EB-shrunk weighted-mean recent residual (positive = hot) ──
     recent_cut = asof - pd.Timedelta(days=FORM_WINDOW_DAYS)
     rmask = df["date"].values >= np.datetime64(recent_cut)
-    fw = np.sqrt(0.5 ** (age / FORM_HALFLIFE_DAYS)) * rmask
+    fw = np.sqrt(0.5 ** (age / form_halflife)) * rmask
     fsum = np.bincount(pidx, weights=-resid * fw, minlength=np_)
     fwsum = np.bincount(pidx, weights=fw, minlength=np_)
     fcnt = np.bincount(pidx, weights=rmask.astype(float), minlength=np_)
@@ -430,7 +475,7 @@ def fit(rounds_df, asof=None) -> dict:
         cp = cp[cp["count"] >= 4]
         if cp.empty:
             continue
-        fit_vals = (-cp["mean"]) * (cp["count"] / (cp["count"] + COURSE_K))
+        fit_vals = (-cp["mean"]) * (cp["count"] / (cp["count"] + course_k))
         courses[str(course)] = {p: round(float(v), 3)
                                 for p, v in fit_vals.items() if abs(v) > 0.05}
 
@@ -441,8 +486,13 @@ def fit(rounds_df, asof=None) -> dict:
         "mu": round(mu, 4),
         "sigma_field": round(sigma_field, 4),
         "major_sigma_mult": major_sigma_mult,
-        "skill_halflife_days": SKILL_HALFLIFE_DAYS,
-        "form_weight": FORM_WEIGHT,
+        "skill_halflife_days": skill_halflife,
+        "ridge_skill": ridge_skill,
+        "sigma_shrink_rounds": sigma_shrink,
+        "form_halflife_days": form_halflife,
+        "form_weight": form_weight,
+        "course_k": course_k,
+        "model_config": {k: float(cfg[k]) for k in DEFAULT_MODEL_CONFIG},
         "default_skill": round(default_skill, 4),
         "fitted_rounds": int(m),
         "players": {
@@ -473,16 +523,72 @@ def load_params(path: Path | None = None) -> dict | None:
         return json.load(f)
 
 
+_TRANSLIT = str.maketrans({
+    "ø": "o", "Ø": "o", "æ": "ae", "Æ": "ae", "ð": "d", "Ð": "d",
+    "þ": "th", "Þ": "th", "ł": "l", "Ł": "l", "ß": "ss",
+})
+
+
+def _fold_name(name: str) -> str:
+    """Accent- and case-insensitive key for matching player names across sources
+    (e.g. 'Ludvig Aberg' from a book vs fitted 'Ludvig Åberg', or 'Hojgaard' vs
+    'Højgaard' — note ø/æ do not decompose under NFKD, so transliterate first)."""
+    s = str(name).translate(_TRANSLIT)
+    nfkd = unicodedata.normalize("NFKD", s)
+    stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return " ".join(stripped.lower().split())
+
+
+# Nickname / first-name aliases that fold-matching cannot resolve. Maps an
+# alternate name (any source) to the canonical fitted name. Folded on both sides.
+NAME_ALIASES = {
+    "Matthew Fitzpatrick": "Matt Fitzpatrick",
+    "Christopher Gotterup": "Chris Gotterup",
+    "Alexander Noren": "Alex Noren",
+    "Joohyung Kim": "Tom Kim",
+    "Jayden Trey Schaper": "Jayden Schaper",
+    "Adrien Dumont": "Adrien Dumont de Chassart",
+    "John Keefer": "Johnny Keefer",
+    "Benjamin James": "Ben James",
+    "Nicolas Echavarria": "Nico Echavarria",
+}
+
+
+def _folded_index(params: dict) -> dict[str, str]:
+    """Folded-name → canonical fitted name, cached on the params dict."""
+    idx = params.get("_folded_index")
+    if idx is None:
+        idx = {_fold_name(n): n for n in params.get("players", {})}
+        params["_folded_index"] = idx
+    return idx
+
+
+def resolve_name(name: str, params: dict) -> str | None:
+    """Canonical fitted name for `name`, tolerant of accents/case. None if unknown."""
+    players = params.get("players", {})
+    if name in players:
+        return name
+    idx = _folded_index(params)
+    hit = idx.get(_fold_name(name))
+    if hit:
+        return hit
+    alias = NAME_ALIASES.get(name)
+    if alias:
+        return idx.get(_fold_name(alias), alias if alias in players else None)
+    return None
+
+
 def rating_for(name: str, params: dict, course: str = "") -> tuple[float, float]:
     """(rating, sigma) for one player from fitted params. Unknown → default."""
-    pl = params.get("players", {}).get(name)
+    canon = resolve_name(name, params)
+    pl = params.get("players", {}).get(canon) if canon else None
     fw = params.get("form_weight", FORM_WEIGHT)
     if pl is None:
         return params.get("default_skill", -0.5), \
                params.get("sigma_field", DEFAULT_SIGMA) * 1.1
     rating = pl["skill"] + fw * pl.get("form", 0.0)
     if course:
-        rating += params.get("courses", {}).get(course, {}).get(name, 0.0)
+        rating += params.get("courses", {}).get(course, {}).get(canon, 0.0)
     return rating, pl.get("sigma", params.get("sigma_field", DEFAULT_SIGMA))
 
 
@@ -498,11 +604,13 @@ def predict_field(field_names, params: dict, course: str = "",
     for item in field_names:
         name = item.name if isinstance(item, Player) else str(item)
         rating, sigma = rating_for(name, params, course)
+        canon = resolve_name(name, params)
+        pl = params.get("players", {}).get(canon, {}) if canon else {}
         p = Player(name=name)
         p.rating = rating
         p.sigma = sigma * maj_mult
-        p.sg_baseline = params.get("players", {}).get(name, {}).get("skill", rating)
-        p.recent_form = params.get("players", {}).get(name, {}).get("form", 0.0)
+        p.sg_baseline = pl.get("skill", rating)
+        p.recent_form = pl.get("form", 0.0)
         out.append(p)
     if out:
         mean_r = sum(p.rating for p in out) / len(out)

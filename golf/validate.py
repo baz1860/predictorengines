@@ -97,7 +97,8 @@ def _actuals(event: pd.DataFrame) -> dict[str, dict]:
 # ─────────────────────────────────────────────
 
 def walk_forward(df: pd.DataFrame, since: str, sims: int,
-                 seed: int = 0, verbose: bool = True) -> pd.DataFrame:
+                 seed: int = 0, verbose: bool = True,
+                 config: dict | None = None) -> pd.DataFrame:
     events = (df[["tournament_id", "date", "course", "is_major"]]
               .drop_duplicates("tournament_id")
               .sort_values("date"))
@@ -117,7 +118,7 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
         if len(field) < 30:
             continue
         try:
-            params = model.fit(df, asof=start)
+            params = model.fit(df, asof=start, config=config)
         except ValueError:
             continue
         rated = model.predict_field(field, params, course=str(ev.course),
@@ -179,6 +180,133 @@ def summarize(pred: pd.DataFrame) -> dict:
     return report
 
 
+def _candidate_configs(base: dict) -> list[dict]:
+    grid = {
+        "form_weight": [0.0, 0.4, 0.7, 1.0],
+        "form_halflife_days": [14, 21, 35],
+        "skill_halflife_days": [270, 365, 540],
+        "course_k": [8, 12, 20],
+        "sigma_shrink_rounds": [15, 25, 40],
+    }
+    out = [dict(base)]
+    for key, vals in grid.items():
+        for val in vals:
+            cfg = dict(base)
+            cfg[key] = float(val)
+            out.append(cfg)
+    seen, uniq = set(), []
+    for cfg in out:
+        sig = tuple((k, float(cfg[k])) for k in sorted(model.DEFAULT_MODEL_CONFIG))
+        if sig not in seen:
+            seen.add(sig)
+            uniq.append(cfg)
+    return uniq
+
+
+def _rep_for_dates(pred: pd.DataFrame, before: str | None = None,
+                   after: str | None = None) -> dict:
+    sub = pred
+    if before is not None:
+        sub = sub[pd.to_datetime(sub["date"]) < pd.Timestamp(before)]
+    if after is not None:
+        sub = sub[pd.to_datetime(sub["date"]) >= pd.Timestamp(after)]
+    if sub.empty:
+        return {}
+    return summarize(sub)
+
+
+def _config_label(cfg: dict) -> str:
+    base = model.DEFAULT_MODEL_CONFIG
+    diffs = [f"{k}={cfg[k]:g}" for k in sorted(cfg) if float(cfg[k]) != float(base[k])]
+    return ", ".join(diffs) if diffs else "current"
+
+
+def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
+                split: str = "2025-01-01") -> dict:
+    df = model.load_rounds_df()
+    base_cfg = model.load_model_config()
+    search_sims = max(300, min(750, sims // 8))
+    candidates = _candidate_configs(base_cfg)
+    screened = []
+    print(f"Golf config tuning · {len(candidates)} candidates · "
+          f"screen {search_sims} sims, confirm {sims} sims")
+    for i, cfg in enumerate(candidates, 1):
+        pred = walk_forward(df, since=since, sims=search_sims, seed=seed,
+                            verbose=False, config=cfg)
+        if pred.empty:
+            continue
+        train_rep = _rep_for_dates(pred, before=split) or summarize(pred)
+        test_rep = _rep_for_dates(pred, after=split) or summarize(pred)
+        row = {"config": cfg, "label": _config_label(cfg),
+               "train_headline": train_rep["headline_brier"],
+               "train_top10": train_rep["top10"]["brier"],
+               "train_top20": train_rep["top20"]["brier"],
+               "train_cut": train_rep["cut"]["brier"],
+               "test_headline": test_rep["headline_brier"],
+               "test_top10": test_rep["top10"]["brier"],
+               "test_top20": test_rep["top20"]["brier"],
+               "test_cut": test_rep["cut"]["brier"]}
+        screened.append(row)
+        print(f"  [{i:>2}/{len(candidates)}] {row['label']:<42s} "
+              f"train {row['train_headline']:.5f} test {row['test_headline']:.5f}")
+    if not screened:
+        raise SystemExit("No golf config candidates produced validation predictions.")
+    current = next((r for r in screened if r["label"] == "current"), screened[0])
+    feasible = [r for r in screened
+                if r["train_top10"] <= current["train_top10"] + 0.002
+                and r["train_top20"] <= current["train_top20"] + 0.002
+                and r["train_cut"] <= current["train_cut"] + 0.002]
+    best_screen = min(feasible or screened, key=lambda r: (r["train_headline"], r["test_headline"]))
+
+    print("\nFinal confirmation:")
+    pred_cur = walk_forward(df, since=since, sims=sims, seed=seed,
+                            verbose=False, config=base_cfg)
+    rep_cur = summarize(pred_cur)
+    val_cur = _rep_for_dates(pred_cur, after=split) or rep_cur
+    pred_best = walk_forward(df, since=since, sims=sims, seed=seed,
+                             verbose=False, config=best_screen["config"])
+    rep_best = summarize(pred_best)
+    val_best = _rep_for_dates(pred_best, after=split) or rep_best
+    deltas = {m: val_best[m]["brier"] - val_cur[m]["brier"]
+              for m in ("top10", "top20", "cut")}
+    promote = (
+        val_best["headline_brier"] <= val_cur["headline_brier"] - 0.001
+        and all(v <= 0.002 for v in deltas.values())
+        and best_screen["label"] != "current"
+    )
+    print(f"  selected on train split: {best_screen['label']}")
+    print(f"  validation current {val_cur['headline_brier']:.5f} config {base_cfg}")
+    print(f"  validation chosen  {val_best['headline_brier']:.5f} config {best_screen['config']}")
+    print("  validation market deltas: "
+          + " ".join(f"{k} {v:+.5f}" for k, v in deltas.items()))
+    print(f"  full-window current {rep_cur['headline_brier']:.5f}")
+    print(f"  full-window chosen  {rep_best['headline_brier']:.5f}")
+    print(f"  verdict: {'PROMOTE' if promote else 'reject'}")
+    out = {"current": rep_cur, "chosen": rep_best,
+           "validation_current": val_cur, "validation_chosen": val_best,
+           "chosen_config": best_screen["config"], "promote": bool(promote),
+           "screened": screened}
+    if write:
+        if not promote:
+            print("  not writing model_config.json because the promotion gate failed")
+        else:
+            model.save_model_config(best_screen["config"], metrics={
+                "previous_validation_headline_brier": val_cur["headline_brier"],
+                "chosen_validation_headline_brier": val_best["headline_brier"],
+                "previous_full_headline_brier": rep_cur["headline_brier"],
+                "chosen_full_headline_brier": rep_best["headline_brier"],
+                "sims": sims,
+                "since": since,
+                "split": split,
+            })
+            BASELINE_JSON.write_text(json.dumps(
+                {"headline_brier": rep_best["headline_brier"], "gate_tol": GATE_TOL,
+                 "asof": pred_best["date"].max()}, indent=1))
+            print(f"  wrote {model.MODEL_CONFIG_JSON}")
+            print(f"  baseline updated -> {BASELINE_JSON}")
+    return out
+
+
 def print_report(rep: dict) -> None:
     print(f"\n{'Market':<8}{'N':>7}{'base':>8}{'Brier':>9}{'vs base':>9}"
           f"{'skill':>8}{'logloss':>9}")
@@ -209,7 +337,15 @@ def main():
     ap.add_argument("--gate", action="store_true",
                     help="Exit non-zero if headline Brier regresses vs baseline")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--tune-config", action="store_true",
+                    help="screen/tune free-data fit hyperparameters")
+    ap.add_argument("--write", action="store_true",
+                    help="with --tune-config, write promoted config and baseline")
     args = ap.parse_args()
+
+    if args.tune_config:
+        tune_config(args.since, sims=args.sims, seed=args.seed, write=args.write)
+        return
 
     df = model.load_rounds_df()
     print(f"Walk-forward from {args.since}  ({args.sims:,} sims/event)…")
