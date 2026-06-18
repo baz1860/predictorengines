@@ -1,0 +1,69 @@
+{
+  "weights": {
+    "goals": 0.15,
+    "elo": 0.45,
+    "xg": 0.0,
+    "xgf": 0.2,
+    "xpress": 0.2
+  },
+  "source": "club_soccer/validate.py --tune-ensemble",
+  "metrics": {
+    "previous_brier": 0.6125,
+    "chosen_brier": 0.612352,
+    "previous_log_loss": 1.021347,
+    "chosen_log_loss": 1.021128
+  },
+  "splits": [
+    {
+      "split": "2025-01-01",
+      "train_n": 10110,
+      "test_n": 6684,
+      "weights": {
+        "goals": 0.2,
+        "elo": 0.4,
+        "xg": 0.0,
+        "xgf": 0.2,
+        "xpress": 0.2
+      },
+      "current_brier": 0.61219,
+      "chosen_brier": 0.612128,
+      "delta_brier": -6.2e-05,
+      "current_log_loss": 1.020966,
+      "chosen_log_loss": 1.020871
+    },
+    {
+      "split": "2025-07-01",
+      "train_n": 12263,
+      "test_n": 4531,
+      "weights": {
+        "goals": 0.15,
+        "elo": 0.45,
+        "xg": 0.0,
+        "xgf": 0.2,
+        "xpress": 0.2
+      },
+      "current_brier": 0.611873,
+      "chosen_brier": 0.611835,
+      "delta_brier": -3.8e-05,
+      "current_log_loss": 1.020679,
+      "chosen_log_loss": 1.020623
+    },
+    {
+      "split": "2025-12-01",
+      "train_n": 13888,
+      "test_n": 2906,
+      "weights": {
+        "goals": 0.15,
+        "elo": 0.4,
+        "xg": 0.0,
+        "xgf": 0.2,
+        "xpress": 0.25
+      },
+      "current_brier": 0.608955,
+      "chosen_brier": 0.608916,
+      "delta_brier": -3.9e-05,
+      "current_log_loss": 1.016658,
+      "chosen_log_loss": 1.016646
+    }
+  ]
+}

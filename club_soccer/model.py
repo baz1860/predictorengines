@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
 PARAMS = DATA / "model_params.json"
+ENSEMBLE_WEIGHTS = DATA / "ensemble_weights.json"
 MAX_GOALS = 10
 BASE_ELO = 1500.0
 HOME_ADV_ELO = 55.0
@@ -29,8 +30,32 @@ DC_RHO = -0.08
 RECENT_K = 6        # matches in the shots-on-target recency window
 # ensemble blend (chosen by held-out walk-forward search, June 2026):
 # goals (actual-goal attack/def), elo, xg (long-run SoT expected goals),
-# xgf (xg + recent SoT form). SoT correlates with goal diff 0.61 vs 0.32 for goals.
-ENSEMBLE_W = {"goals": 0.20, "elo": 0.25, "xg": 0.30, "xgf": 0.25}
+# xgf (xg + recent SoT form). The model-signal sprint retuned this toward Elo:
+# time-split checks showed less overfitting than the heavier SoT/form blend.
+DEFAULT_ENSEMBLE_W = {"goals": 0.20, "elo": 0.40, "xg": 0.20, "xgf": 0.20, "xpress": 0.0}
+ENSEMBLE_W = DEFAULT_ENSEMBLE_W
+ENSEMBLE_COMPONENTS = tuple(DEFAULT_ENSEMBLE_W)
+
+
+def _normalise_weights(weights: dict) -> dict[str, float]:
+    vals = {k: max(0.0, float(weights.get(k, 0.0))) for k in ENSEMBLE_COMPONENTS}
+    s = sum(vals.values())
+    if s <= 0:
+        return dict(DEFAULT_ENSEMBLE_W)
+    return {k: v / s for k, v in vals.items()}
+
+
+def load_ensemble_weights(path: Path = ENSEMBLE_WEIGHTS) -> dict[str, float]:
+    """Champion ensemble weights, falling back to the validated hardcoded blend."""
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text())
+            weights = raw.get("weights", raw)
+            if isinstance(weights, dict):
+                return _normalise_weights(weights)
+        except Exception:
+            pass
+    return dict(DEFAULT_ENSEMBLE_W)
 
 
 def load_fixtures(path: Path = FIXTURES) -> pd.DataFrame:
@@ -116,7 +141,8 @@ def fit(df: pd.DataFrame | None = None) -> dict:
         rows.append((r.away, "for", r.away_goals, wt, comp_str))
         rows.append((r.away, "against", r.home_goals, wt, comp_str))
     stats = {t: {"gf": 0.0, "ga": 0.0, "wf": 0.0, "wa": 0.0,
-                 "xf": 0.0, "xa": 0.0, "wx": 0.0}
+                 "xf": 0.0, "xa": 0.0, "wx": 0.0,
+                 "xpf": 0.0, "xpa": 0.0, "wxp": 0.0}
              for t in teams}
     for t, typ, goals, wt, comp_str in rows:
         key, wk = ("gf", "wf") if typ == "for" else ("ga", "wa")
@@ -144,7 +170,61 @@ def fit(df: pd.DataFrame | None = None) -> dict:
             stats[r.home]["wx"] += wt
             stats[r.away]["wx"] += wt
 
+    # Shot-pressure xG: local free-data challenger using SoT, non-SoT shots and
+    # corners. Coefficients are fit on the training slice only, clipped to
+    # plausible non-negative ranges so corner/volume noise cannot dominate.
+    xp_coef = {"sot": conv if conv > 0 else 0.30, "non_sot": 0.02, "corner": 0.015}
+    has_pressure = all(c in df.columns for c in (
+        "home_shots", "away_shots", "home_sot", "away_sot",
+        "home_corners", "away_corners"))
+    if has_pressure:
+        X_rows, y_rows, w_rows = [], [], []
+        for r, wt in zip(df.itertuples(index=False), w):
+            vals = [getattr(r, c, np.nan) for c in (
+                "home_shots", "away_shots", "home_sot", "away_sot",
+                "home_corners", "away_corners")]
+            if any(pd.isna(v) for v in vals):
+                continue
+            hn = max(float(r.home_shots) - float(r.home_sot), 0.0)
+            an = max(float(r.away_shots) - float(r.away_sot), 0.0)
+            X_rows.append([float(r.home_sot), hn, float(r.home_corners)])
+            y_rows.append(float(r.home_goals)); w_rows.append(float(wt))
+            X_rows.append([float(r.away_sot), an, float(r.away_corners)])
+            y_rows.append(float(r.away_goals)); w_rows.append(float(wt))
+        if len(X_rows) >= 200:
+            X = np.asarray(X_rows, dtype=float)
+            yv = np.asarray(y_rows, dtype=float)
+            sw = np.sqrt(np.asarray(w_rows, dtype=float))
+            try:
+                coef, *_ = np.linalg.lstsq(X * sw[:, None], yv * sw, rcond=None)
+                xp_coef = {
+                    "sot": float(np.clip(coef[0], 0.12, 0.60)),
+                    "non_sot": float(np.clip(coef[1], 0.0, 0.08)),
+                    "corner": float(np.clip(coef[2], 0.0, 0.08)),
+                }
+            except np.linalg.LinAlgError:
+                pass
+        for r, wt in zip(df.itertuples(index=False), w):
+            vals = [getattr(r, c, np.nan) for c in (
+                "home_shots", "away_shots", "home_sot", "away_sot",
+                "home_corners", "away_corners")]
+            if any(pd.isna(v) for v in vals):
+                continue
+            hx = (xp_coef["sot"] * float(r.home_sot)
+                  + xp_coef["non_sot"] * max(float(r.home_shots) - float(r.home_sot), 0.0)
+                  + xp_coef["corner"] * float(r.home_corners))
+            ax = (xp_coef["sot"] * float(r.away_sot)
+                  + xp_coef["non_sot"] * max(float(r.away_shots) - float(r.away_sot), 0.0)
+                  + xp_coef["corner"] * float(r.away_corners))
+            stats[r.home]["xpf"] += hx * wt
+            stats[r.home]["xpa"] += ax * wt
+            stats[r.away]["xpf"] += ax * wt
+            stats[r.away]["xpa"] += hx * wt
+            stats[r.home]["wxp"] += wt
+            stats[r.away]["wxp"] += wt
+
     attack, defence, attack_xg, defence_xg = {}, {}, {}, {}
+    attack_xpress, defence_xpress = {}, {}
     base_xf, base_xa = {}, {}
     for t in teams:
         gf = (stats[t]["gf"] + global_avg * 4) / (stats[t]["wf"] + 4)
@@ -155,6 +235,10 @@ def fit(df: pd.DataFrame | None = None) -> dict:
         xa = (stats[t]["xa"] + global_avg * 4) / (stats[t]["wx"] + 4)
         attack_xg[t] = float(math.log(max(0.25, xf) / global_avg))
         defence_xg[t] = float(math.log(max(0.25, xa) / global_avg))
+        xpf = (stats[t]["xpf"] + global_avg * 4) / (stats[t]["wxp"] + 4)
+        xpa = (stats[t]["xpa"] + global_avg * 4) / (stats[t]["wxp"] + 4)
+        attack_xpress[t] = float(math.log(max(0.25, xpf) / global_avg))
+        defence_xpress[t] = float(math.log(max(0.25, xpa) / global_avg))
         base_xf[t], base_xa[t] = xf, xa
 
     # recency form: last RECENT_K matches' SoT-xG vs the team's season baseline,
@@ -194,7 +278,9 @@ def fit(df: pd.DataFrame | None = None) -> dict:
               "home_goal_adv": float(max(0.02, avg_home - avg_away)),
               "attack": attack, "defence": defence,
               "attack_xg": attack_xg, "defence_xg": defence_xg,
+              "attack_xpress": attack_xpress, "defence_xpress": defence_xpress,
               "fatk": fatk, "fdef": fdef, "conv": float(conv),
+              "xpress_coef": xp_coef,
               "elo": {k: float(v) for k, v in elo.items()},
               "fitted_matches": int(len(df))}
     return params
@@ -256,6 +342,35 @@ def _lambdas_xg(params: dict, home: str, away: str, competition: str | None,
             base * math.exp(aa + dh - home_adv + comp_adj))
 
 
+def _lambdas_xpress(params: dict, home: str, away: str, competition: str | None,
+                    neutral: bool) -> tuple[float, float]:
+    """Shot-pressure lambdas from SoT, non-SoT shots and corners.
+
+    Falls back to the existing SoT-xG maps for cached params that predate the
+    shot-pressure fields.
+    """
+    base = float(params["global_avg"])
+    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2
+    comp_adj = (strength(competition) - 0.75) * 0.12
+    ax = params.get("attack_xpress", params.get("attack_xg", params["attack"]))
+    dx = params.get("defence_xpress", params.get("defence_xg", params["defence"]))
+    ah = ax.get(home, 0.0); da = dx.get(away, 0.0)
+    aa = ax.get(away, 0.0); dh = dx.get(home, 0.0)
+    return (base * math.exp(ah + da + home_adv + comp_adj),
+            base * math.exp(aa + dh - home_adv + comp_adj))
+
+
+def component_matrices(params: dict, home: str, away: str,
+                       competition: str | None, neutral: bool) -> dict[str, np.ndarray]:
+    return {
+        "goals": score_matrix(*_lambdas_goals(params, home, away, competition, neutral)),
+        "elo": score_matrix(*_lambdas_elo(params, home, away, neutral)),
+        "xg": score_matrix(*_lambdas_xg(params, home, away, competition, neutral)),
+        "xgf": score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True)),
+        "xpress": score_matrix(*_lambdas_xpress(params, home, away, competition, neutral)),
+    }
+
+
 def predict(home: str, away: str, competition: str | None = None,
             model: str = "ensemble", neutral: bool = False,
             params: dict | None = None) -> dict:
@@ -268,13 +383,9 @@ def predict(home: str, away: str, competition: str | None = None,
     if home == away:
         raise ValueError("Pick two different teams.")
     if model == "ensemble":
-        parts = {
-            "goals": score_matrix(*_lambdas_goals(params, home, away, competition, neutral)),
-            "elo": score_matrix(*_lambdas_elo(params, home, away, neutral)),
-            "xg": score_matrix(*_lambdas_xg(params, home, away, competition, neutral)),
-            "xgf": score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True)),
-        }
-        M = sum(ENSEMBLE_W[k] * parts[k] for k in ENSEMBLE_W)
+        parts = component_matrices(params, home, away, competition, neutral)
+        weights = load_ensemble_weights()
+        M = sum(weights[k] * parts[k] for k in ENSEMBLE_COMPONENTS)
         M = M / M.sum()
     elif model == "goals":
         M = score_matrix(*_lambdas_goals(params, home, away, competition, neutral))
@@ -282,8 +393,10 @@ def predict(home: str, away: str, competition: str | None = None,
         M = score_matrix(*_lambdas_elo(params, home, away, neutral))
     elif model == "xg":
         M = score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True))
+    elif model == "xpress":
+        M = score_matrix(*_lambdas_xpress(params, home, away, competition, neutral))
     else:
-        raise ValueError("Unknown model: use ensemble, goals, elo, or xg.")
+        raise ValueError("Unknown model: use ensemble, goals, elo, xg, or xpress.")
     probs = probs_from_matrix(M)
     xg_h = float(sum(i * M[i, :].sum() for i in range(M.shape[0])))
     xg_a = float(sum(j * M[:, j].sum() for j in range(M.shape[1])))
@@ -298,7 +411,7 @@ def main() -> None:
     ap.add_argument("home", nargs="?")
     ap.add_argument("away", nargs="?")
     ap.add_argument("--competition", default="")
-    ap.add_argument("--model", choices=["ensemble", "goals", "elo", "xg"], default="ensemble")
+    ap.add_argument("--model", choices=["ensemble", "goals", "elo", "xg", "xpress"], default="ensemble")
     ap.add_argument("--neutral", action="store_true")
     ap.add_argument("--fit", action="store_true")
     args = ap.parse_args()
