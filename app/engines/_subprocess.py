@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 from ..security import collect_secrets, redact, safe_runner_env
-from .contracts import ContractError, assert_finite_json
+from contracts import ContractError, assert_finite_json
 
 # Every command any runner is allowed to receive. Reject anything else before
 # we ever spawn a process.

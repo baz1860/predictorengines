@@ -10,8 +10,8 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 |-------|-------|----|--------|
 | 0 | Safety net | `refactor/phase-0-safety-net` (#10) | ✅ |
 | 1 | Cleanup & archive | `refactor/phase-1-cleanup` (#11) | ✅ |
-| 2 | Core extraction | `refactor/phase-2-core-contracts` | 🟡 |
-| 2b | Contracts extraction | — | ⬜ |
+| 2 | Core extraction | `refactor/phase-2-core-contracts` (#12) | ✅ |
+| 2b | Contracts extraction | `refactor/phase-2b-contracts` | 🟡 |
 | 3 | Package the worldcup engine | — | ⬜ |
 | 4 | Kill the subprocess hack | — | ⬜ |
 | 5 | Tests & layer rename | — | ⬜ |
@@ -158,11 +158,33 @@ ideally should not depend on a specific engine. When `edge` moves into
 **Acceptance:** `core/` exists with the 3 modules; zero straggler imports; registry
 untouched; tests green; golden tripwire unchanged.
 
-### Phase 2b — Contracts extraction  ⬜
-Lift `app/engines/base.py` (the registry) + `app/engines/contracts.py` into a top-level
-`contracts/` package so non-app layers (`wc_v4/`, `v5/`) stop importing "up" into
-`app.engines`. ~14 import sites across tests, `app/`, `wc_v4/`, `v5/`. Registry stays the
-single wiring point; behavior unchanged.
+### Phase 2b — Contracts extraction  🟡
+Lifted `app/engines/base.py` → `contracts/registry.py` (registry + `EngineAdapter`) and
+`app/engines/contracts.py` → `contracts/protocol.py` (fixture/market identity, edge
+normalisation, JSON checks). `contracts/__init__.py` re-exports the public API, so every
+caller now uses `from contracts import …`. Both modules had zero non-stdlib imports —
+genuinely self-contained, so the lift is clean. `app/engines/_subprocess.py` stays put
+(it's the subprocess hack removed in Phase 4).
+
+Sites updated: the protocol-vocabulary imports in `wc_v4/feature_store.py`,
+`v5/registry.py`, `core/clv_suite.py`, `test_model_audit.py`, `test_engines_contract.py`,
+and the relative `.base`/`.contracts` imports inside the four adapters + `_subprocess.py`.
+
+**Gotcha handled — adapter registration is an import side-effect.** Three callers
+(`app/server.py`, `daily_summary.py`, `test_engines_contract.py`) need the *populated*
+registry, which only exists once `app/engines/__init__.py` runs its `register(...)` calls.
+So their `from app.engines import registry` was **kept** (not redirected to `contracts`):
+the registry singleton lives in `contracts`, but importing `app.engines` is what fills it.
+`app/engines/__init__.py` now does `from contracts import registry` then registers the
+four adapters — staying the single wiring point.
+
+**Gotcha caught by the baseline — `__file__`-relative paths.** `enrich_template_result`
+computed `repo_root = Path(__file__).resolve().parents[2]`, valid at the old
+`app/engines/` depth but off-by-one at `contracts/` (one level shallower). The golden
+baseline caught it (`test_model_audit` failed: row count `None`); fixed to `parents[1]`.
+**Action item for Phase 3:** every file moved between directory depths must have its
+`__file__`/`parents[N]` path math re-checked — grep moved files for `__file__` and
+`parents[` before trusting a green import.
 
 **Separate task (not a phase): unify `market_blend`.** Reconcile the root WC 1X2 blend
 with `app/market_blend.py` into one implementation. This *changes behavior*, so it runs
