@@ -16,16 +16,14 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
-CLUB = ROOT / "club_soccer"
-if str(CLUB) not in sys.path:
-    sys.path.insert(0, str(CLUB))
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import competitions as C
-import edge as E  # club_soccer/edge via the CLUB sys.path insertion above (not worldcup)
-
-import model as M
+# club_soccer is a real package (Phase 4) — import its modules package-qualified.
+from club_soccer import competitions as C
+from club_soccer import edge as E
+from club_soccer import engine as ENGINE
+from club_soccer import model as M
 from api_keys import get_key
 from app.engines.club_soccer import ClubSoccerAdapter
 
@@ -130,7 +128,7 @@ def test_edge_and_settlement():
 
 
 def test_runner_and_adapter():
-    print("5. runner and adapter")
+    print("5. in-process engine and adapter")
     adapter = ClubSoccerAdapter()
     schema = adapter.predict_schema()
     edge_schema = adapter.edge_schema()
@@ -144,17 +142,15 @@ def test_runner_and_adapter():
     check("adapter edge returns columns", bool(edge.get("columns")))
     filtered = adapter.edge({"odds_source": "manual", "model": "ensemble", "date_from": "2026-06-21"})
     check("adapter edge honors date_from", all(r["date"] >= "2026-06-21" for r in filtered.get("rows", [])))
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "app" / "engines" / "runners" / "club_soccer_runner.py"), "schema"],
-        input="{}",
-        cwd=str(CLUB),
-        env={**os.environ, "PYTHONPATH": str(CLUB) + os.pathsep + os.environ.get("PYTHONPATH", "")},
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    data = json.loads(proc.stdout.strip().splitlines()[-1])
-    check("runner returns valid JSON", "names" in data and "error" not in data)
+    # In-process engine command path (Phase 4 — replaces the old subprocess runner).
+    from app.engines._inproc import run_inprocess
+    data = run_inprocess(ENGINE.COMMANDS, "schema")
+    check("in-process schema returns names", "names" in data and "error" not in data)
+    try:
+        run_inprocess(ENGINE.COMMANDS, "rm -rf /")
+        check("unknown command rejected", False)
+    except ValueError:
+        check("unknown command rejected", True)
 
 
 if __name__ == "__main__":

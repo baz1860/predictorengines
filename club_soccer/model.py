@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from competitions import strength
+from .competitions import strength
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"

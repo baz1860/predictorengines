@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from api_keys import get_key
-from competitions import COMPETITIONS
+from .competitions import COMPETITIONS
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
