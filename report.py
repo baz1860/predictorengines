@@ -209,7 +209,7 @@ def main():
         if len(ba):
             bankroll_vals = [START_BANKROLL] + ba.tolist()
         try:
-            from clv import compute_clv
+            from core.clv import compute_clv
             c = compute_clv(settled).dropna()
             if len(c):
                 clv_vals = (c.cumsum() / range(1, len(c) + 1)).tolist()  # rolling mean

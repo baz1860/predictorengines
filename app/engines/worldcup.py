@@ -275,7 +275,7 @@ class WorldCupAdapter(EngineAdapter):
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:
         """rows: open ledger rows (a slice with the original index preserved).
         Returns {ledger_index: (won: bool|None, "hs-as")}."""
-        import bankroll as B
+        from core import bankroll as B
         results = pd.read_csv(ROOT / "data" / "results.csv")
         results["home_score"] = pd.to_numeric(results["home_score"], errors="coerce")
         results["away_score"] = pd.to_numeric(results["away_score"], errors="coerce")

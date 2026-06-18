@@ -111,7 +111,7 @@ def main():
 
     # CLV via existing module (needs data/odds_history.csv snapshots)
     try:
-        import clv
+        from core import clv
         hist = clv._load_history()
         if hist is not None and "snapshot_time" in hist:
             # normalise tz-aware timestamps to naive so closing_odds() can compare
