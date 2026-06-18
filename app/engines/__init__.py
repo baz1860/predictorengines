@@ -3,7 +3,7 @@
 To add an engine: import its adapter here and registry.register() it.
 That is the ONLY wiring step — the server and UI discover everything else.
 """
-from .base import registry
+from contracts import registry
 from .worldcup import WorldCupAdapter
 from .cfb import CFBAdapter
 from .golf import GolfAdapter
