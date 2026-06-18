@@ -9,7 +9,7 @@ predictions and applies them as a pure consumer in the edge/sim path.
 Same isotonic machinery and JSON shape as the root calibrate.py / validate.py,
 plus a nesting guard so a calibrated row keeps win ≤ top5 ≤ top10 ≤ top20 ≤ cut.
 
-  python calibrate.py --fit         # refit from data/validation_predictions.csv
+  python -m golf.calibrate --fit         # refit from data/validation_predictions.csv
   from calibrate import apply_row    # consumer
   probs = apply_row({"win":..,"top5":..,"top10":..,"top20":..,"cut":..})
 """
@@ -94,7 +94,7 @@ def fit_from_csv(path: Path | None = None) -> dict:
     path = path or PRED_CSV
     if not path.exists():
         raise FileNotFoundError(
-            f"No {path}. Run: python validate.py  first.")
+            f"No {path}. Run: python -m golf.validate  first.")
     maps = fit_maps(pd.read_csv(path))
     CALIB_FILE.write_text(json.dumps(maps, indent=1))
     return maps
@@ -143,7 +143,7 @@ def _report(pred_df, maps, folds: int = 5, seed: int = 0) -> None:
     rest, and score the held-out fold. This is what the calibration is expected
     to deliver on unseen events.
     """
-    from validate import brier  # reuse metric
+    from .validate import brier  # reuse metric
 
     # group by tournament so a fold never splits one event across train/test
     if "tournament_id" in pred_df.columns:
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     else:
         m = load_maps()
         if not m:
-            print("No calibration yet. Fit it: python calibrate.py --fit")
+            print("No calibration yet. Fit it: python -m golf.calibrate --fit")
         else:
             print(f"Calibration loaded; markets: {list(m)}")
             for mkt in MARKETS:

@@ -324,7 +324,7 @@ class DataGolfProvider:
         return []  # TODO: historical-raw-data/rounds → RoundRecord with SG cats
 
     def field_for(self, event: Optional[str] = None) -> list[FieldEntry]:
-        from fetch import fetch_dg_field
+        from .fetch import fetch_dg_field
         out = []
         for p in fetch_dg_field(self.api_key):
             name = p.get("player_name") or p.get("name", "")
@@ -334,7 +334,7 @@ class DataGolfProvider:
         return out
 
     def pretournament_preds(self, event: Optional[str] = None) -> Optional[dict]:
-        from fetch import fetch_dg_predictions
+        from .fetch import fetch_dg_predictions
         try:
             return {"baseline": fetch_dg_predictions(self.api_key)}
         except Exception:  # noqa: BLE001

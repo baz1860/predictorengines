@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from model import (
+from .model import (
     Player,
     compute_ratings,
     load_course_history,
