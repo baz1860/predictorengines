@@ -19,7 +19,7 @@ Status legend: ⬜ not started · 🟡 in progress · ✅ merged
 | 4a | In-process club_soccer engine | `refactor/phase-4-kill-subprocess` (#18) | ✅ |
 | 4b | In-process cfb engine | `refactor/phase-4b-cfb` (#19) | ✅ |
 | 4c | In-process golf engine | `refactor/phase-4c-golf` | 🟡 |
-| 4d | Delete _subprocess + rework sec tests | — | ⬜ |
+| 4d | Delete _subprocess + rework sec tests | `refactor/phase-4d-teardown` | ✅ |
 | 5 | Tests & layer rename | — | ⬜ |
 
 > **Phase 4 was split per-sport** after investigation: the subprocess is **not only**
@@ -190,12 +190,13 @@ Lifted `app/engines/base.py` → `contracts/registry.py` (registry + `EngineAdap
 `app/engines/contracts.py` → `contracts/protocol.py` (fixture/market identity, edge
 normalisation, JSON checks). `contracts/__init__.py` re-exports the public API, so every
 caller now uses `from contracts import …`. Both modules had zero non-stdlib imports —
-genuinely self-contained, so the lift is clean. `app/engines/_subprocess.py` stays put
-(it's the subprocess hack removed in Phase 4).
+genuinely self-contained, so the lift is clean. At this point
+`app/engines/_subprocess.py` stayed put; Phase 4d removed it once every adapter was
+in-process.
 
 Sites updated: the protocol-vocabulary imports in `wc_v4/feature_store.py`,
 `v5/registry.py`, `core/clv_suite.py`, `test_model_audit.py`, `test_engines_contract.py`,
-and the relative `.base`/`.contracts` imports inside the four adapters + `_subprocess.py`.
+and the relative `.base`/`.contracts` imports inside the four adapters.
 
 **Gotcha handled — adapter registration is an import side-effect.** Three callers
 (`app/server.py`, `daily_summary.py`, `test_engines_contract.py`) need the *populated*
@@ -330,11 +331,11 @@ imports); adapter dispatches via `_inproc` + `golf.engine.COMMANDS`; deleted
 holds only `__pycache__`. Verified via `run_checks --gates` (golf gate through
 `-m golf.validate`).
 
-**4d — teardown (next).** No adapter imports `_subprocess` now. Delete `_subprocess.py`
-and the empty `runners/`, drop `safe_runner_env` from `app/security.py`, and rework the
-`test_security` cases that exercised the subprocess (`test_safe_env`,
-`test_run_engine_*`) — replacing them with `_inproc` equivalents. Keep the redaction
-tests (`_inproc` reuses `redact`/`collect_secrets`).
+**4d — teardown (done).** No adapter imports `_subprocess` now. Deleted
+`_subprocess.py`, confirmed no `runners/` remains, dropped `safe_runner_env` from
+`app/security.py`, and reworked the `test_security` subprocess cases into `_inproc`
+equivalents. Kept redaction coverage for both explicit secrets and env-provided keys
+(`_inproc` reuses `redact`/`collect_secrets`).
 
 **Acceptance (per sub-PR):** that sport runs in-process; registry + golden unchanged;
 `run_checks` (and `--gates` for validate-rewires) green; security redaction preserved.
