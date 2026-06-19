@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Callable
 
 from app.security import collect_secrets, redact
-from contracts import assert_finite_json
+from contracts import ContractError, assert_finite_json
 
 # Same allowlist the subprocess runner enforced.
 ALLOWED_COMMANDS = {"schema", "predict", "simulate", "edge", "edge_template"}
@@ -40,5 +40,9 @@ def run_inprocess(commands: dict[str, Callable[[dict], dict]], command: str,
         raise ValueError(redact(str(e), collect_secrets()))
     except Exception as e:  # noqa: BLE001 — mirror the runner's catch-all
         raise ValueError(redact(f"{type(e).__name__}: {e}", collect_secrets()))
-    assert_finite_json(result)
+    try:
+        assert_finite_json(result)
+    except ContractError as e:
+        raise RuntimeError(
+            f"Engine emitted invalid JSON: {redact(str(e), collect_secrets())}") from None
     return result

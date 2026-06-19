@@ -3,10 +3,9 @@
 
 Covers the V3 M2 acceptance criteria:
   * settings never return raw keys;
-  * a synthetic runner error containing a fake key is redacted;
+  * a synthetic in-process engine error containing a fake key is redacted;
   * unknown engine ids / bad slugs are rejected, never hit the filesystem;
   * oversized params are rejected and numeric params are clamped;
-  * the runner environment is curated (no secret leakage), key env vars kept;
   * api_keys file is written owner-only on POSIX.
 
 Run: python3 test_security.py
@@ -49,66 +48,70 @@ def test_redaction():
     check("redaction keeps readable context", "HTTP 401" in out, out)
 
 
-# ── curated subprocess env ──────────────────────────────────────────────────--
-def test_safe_env():
-    from app.security import safe_runner_env
-    os.environ["TOTALLY_SECRET_THING"] = "supersecret-value-leak"
-    os.environ["THE_ODDS_API_KEY"] = "envkey123456789012345"
+# ── env-provided secret redaction ─────────────────────────────────────────────
+def test_env_secret_redaction():
+    from app.security import redact
+    fake = "envkey123"
+    os.environ["THE_ODDS_API_KEY"] = fake
     try:
-        env = safe_runner_env({"PYTHONPATH": "/x"})
+        out = redact(f"provider rejected key={fake}")
     finally:
-        os.environ.pop("TOTALLY_SECRET_THING", None)
-    check("unrelated secret env dropped", "TOTALLY_SECRET_THING" not in env)
-    check("key env var preserved", env.get("THE_ODDS_API_KEY") == "envkey123456789012345")
-    check("PYTHONPATH injected", env.get("PYTHONPATH") == "/x")
-    check("PATH preserved", "PATH" in env or os.name == "nt")
+        os.environ.pop("THE_ODDS_API_KEY", None)
+    check("env key value redacted", fake not in out, out)
+    check("env redaction keeps readable context", "provider rejected" in out, out)
 
 
-# ── hardened run_engine ───────────────────────────────────────────────────────
-def test_run_engine_rejects_unknown_command():
-    from app.engines._subprocess import run_engine
+# ── hardened in-process engine dispatch ───────────────────────────────────────
+def test_run_inprocess_rejects_unknown_command():
+    from app.engines._inproc import run_inprocess
+    called = False
+
+    def edge(_params):
+        nonlocal called
+        called = True
+        return {}
+
     try:
-        run_engine(ROOT, ROOT / "preflight.py", "rm -rf /", {})
+        run_inprocess({"edge": edge}, "rm -rf /", {})
         check("unknown command rejected", False, "no error raised")
     except ValueError as e:
-        check("unknown command rejected before launch", "Unknown runner command" in str(e))
+        check("unknown command rejected before dispatch",
+              "Unknown engine command" in str(e) and not called,
+              f"{e}; called={called}")
     except Exception as e:  # noqa
-        check("unknown command rejected before launch", False, repr(e))
+        check("unknown command rejected before dispatch", False, repr(e))
 
 
-def test_run_engine_redacts_runner_error():
-    """A runner that emits an error carrying a fake key must surface redacted."""
-    from app.engines._subprocess import run_engine
+def test_run_inprocess_redacts_engine_error():
+    """An engine error carrying a fake key must surface redacted."""
+    from app.engines._inproc import run_inprocess
     fake = "leaked_KEY_" + ("b" * 24)
-    with tempfile.TemporaryDirectory() as d:
-        runner = Path(d) / "bad_runner.py"
-        runner.write_text(
-            "import json,sys\n"
-            f"print(json.dumps({{'error': 'auth failed key={fake}'}}))\n"
-            "sys.exit(2)\n")
-        try:
-            run_engine(Path(d), runner, "edge", {})
-            check("runner error redacted", False, "no error raised")
-        except ValueError as e:
-            check("runner error redacted", fake not in str(e), str(e))
-        except Exception as e:  # noqa
-            check("runner error redacted", False, repr(e))
+
+    def edge(_params):
+        raise RuntimeError(f"auth failed key={fake}")
+
+    try:
+        run_inprocess({"edge": edge}, "edge", {})
+        check("engine error redacted", False, "no error raised")
+    except ValueError as e:
+        check("engine error redacted", fake not in str(e), str(e))
+    except Exception as e:  # noqa
+        check("engine error redacted", False, repr(e))
 
 
-def test_run_engine_rejects_nonfinite():
-    from app.engines._subprocess import run_engine
-    with tempfile.TemporaryDirectory() as d:
-        runner = Path(d) / "inf_runner.py"
-        runner.write_text(
-            "import sys\n"
-            "print('{\"rows\": [{\"x\": Infinity}]}')\n")
-        try:
-            run_engine(Path(d), runner, "edge", {})
-            check("non-finite JSON rejected", False, "no error raised")
-        except RuntimeError as e:
-            check("non-finite JSON rejected", "invalid JSON" in str(e), str(e))
-        except Exception as e:  # noqa
-            check("non-finite JSON rejected", False, repr(e))
+def test_run_inprocess_rejects_nonfinite():
+    from app.engines._inproc import run_inprocess
+
+    def edge(_params):
+        return {"rows": [{"x": float("inf")}]}
+
+    try:
+        run_inprocess({"edge": edge}, "edge", {})
+        check("non-finite JSON rejected", False, "no error raised")
+    except RuntimeError as e:
+        check("non-finite JSON rejected", "invalid JSON" in str(e), str(e))
+    except Exception as e:  # noqa
+        check("non-finite JSON rejected", False, repr(e))
 
 
 # ── API request bounds ────────────────────────────────────────────────────────
@@ -171,10 +174,10 @@ def test_preflight():
 
 
 def main():
-    for fn in [test_redaction, test_safe_env,
-               test_run_engine_rejects_unknown_command,
-               test_run_engine_redacts_runner_error,
-               test_run_engine_rejects_nonfinite,
+    for fn in [test_redaction, test_env_secret_redaction,
+               test_run_inprocess_rejects_unknown_command,
+               test_run_inprocess_redacts_engine_error,
+               test_run_inprocess_rejects_nonfinite,
                test_request_bounds, test_settings_masked,
                test_key_file_perms, test_preflight]:
         print(f"\n{fn.__name__}")
