@@ -1,6 +1,4 @@
-"""V6 product and operations layer."""
+"""Compatibility shim for the renamed :mod:`operations` package."""
 from __future__ import annotations
 
-VERSION = "6.0"
-
-__all__ = ["VERSION"]
+from operations import *  # noqa: F403

@@ -18,15 +18,15 @@ from pydantic import BaseModel, Field, field_validator
 
 from . import bankroll_store, dashboard_data, model_audit, settings_store
 from .engines import registry
-from v5 import drift as v5_drift
-from v5 import live as v5_live
-from v5 import portfolio as v5_portfolio
-from v5 import registry as v5_registry
-from v5 import report as v5_report
-from v5 import research as v5_research
-from v5 import review as v5_review
-from v5 import scenario as v5_scenario
-from v6 import operations as v6_operations
+from governance import drift as governance_drift
+from governance import live as governance_live
+from governance import portfolio as governance_portfolio
+from governance import registry as governance_registry
+from governance import report as governance_report
+from governance import research as governance_research
+from governance import review as governance_review
+from governance import scenario as governance_scenario
+from operations import operations as operations_service
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -244,80 +244,80 @@ def post_settings(patch: SettingsPatch):
 
 @app.get("/api/v5")
 def v5_summary():
-    return v5_report.build()
+    return governance_report.build()
 
 
 @app.get("/api/v5/registry")
 def v5_registry_summary():
-    return v5_registry.registry_summary()
+    return governance_registry.registry_summary()
 
 
 @app.post("/api/v5/recommendation")
 def v5_record_recommendation(req: V5Recommendation):
-    return v5_registry.record_recommendation(req.row)
+    return governance_registry.record_recommendation(req.row)
 
 
 @app.get("/api/v5/drift")
 def v5_drift_report(engine: str | None = None):
-    return v5_drift.recommendation_drift(engine)
+    return governance_drift.recommendation_drift(engine)
 
 
 @app.get("/api/v5/portfolio")
 def v5_portfolio_report(engine: str | None = None):
-    return v5_portfolio.optimize_from_recommendations(engine)
+    return governance_portfolio.optimize_from_recommendations(engine)
 
 
 @app.post("/api/v5/scenario/worldcup")
 def v5_worldcup_scenario(req: V5Scenario):
-    return v5_scenario.worldcup_line_lab(**req.model_dump())
+    return governance_scenario.worldcup_line_lab(**req.model_dump())
 
 
 @app.post("/api/v5/live/soccer")
 def v5_live_soccer(req: V5LiveSoccer):
-    return v5_live.soccer_live_1x2(**req.model_dump())
+    return governance_live.soccer_live_1x2(**req.model_dump())
 
 
 @app.post("/api/v5/review")
 def v5_add_review(req: V5Review):
     try:
-        return v5_review.add_review(**req.model_dump())
+        return governance_review.add_review(**req.model_dump())
     except ValueError as e:
         raise HTTPException(422, str(e))
 
 
 @app.get("/api/v5/review")
 def v5_review_analytics():
-    return v5_review.analytics()
+    return governance_review.analytics()
 
 
 @app.get("/api/v5/research")
 def v5_research_backlog(engine: str | None = None):
-    return v5_research.generate_backlog(engine)
+    return governance_research.generate_backlog(engine)
 
 
 @app.get("/api/v6")
 def v6_report():
-    return v6_operations.report()
+    return operations_service.report()
 
 
 @app.get("/api/v6/health")
 def v6_health():
-    return v6_operations.health()
+    return operations_service.health()
 
 
 @app.get("/api/v6/daily-run")
 def v6_daily_run():
-    return v6_operations.daily_run_plan()
+    return operations_service.daily_run_plan()
 
 
 @app.post("/api/v6/backup")
 def v6_backup(req: V6Backup):
-    return v6_operations.create_backup(req.label)
+    return operations_service.create_backup(req.label)
 
 
 @app.get("/api/v6/release")
 def v6_release():
-    return v6_operations.release_status()
+    return operations_service.release_status()
 
 
 @app.get("/")

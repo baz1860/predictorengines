@@ -340,12 +340,13 @@ equivalents. Kept redaction coverage for both explicit secrets and env-provided 
 **Acceptance (per sub-PR):** that sport runs in-process; registry + golden unchanged;
 `run_checks` (and `--gates` for validate-rewires) green; security redaction preserved.
 
-### Phase 5 — Tests & layer rename  ⬜
-- Consolidate tests into `tests/` mirroring `src/`.
-- Replace `run_checks.py`'s manual `ORDERED` list with pytest markers
+### Phase 5 — Tests & layer rename  ✅
+- Consolidated root `test_*.py` files into `tests/` by area and made pytest discovery
+  authoritative.
+- Replaced `run_checks.py`'s manual `ORDERED` list with pytest markers
   (`-m fast` / `-m gates`).
-- Rename layers to their roles with import shims: `wc_v4`→`research`, `v5`→`governance`,
-  `v6`→`operations`.
+- Renamed layers to their roles with import shims: `wc_v4`→`research`,
+  `v5`→`governance`, `v6`→`operations`.
 
 **Acceptance:** `pytest` discovers everything; markers select fast vs gate suites;
 layer names reflect roles.

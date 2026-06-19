@@ -1,12 +1,8 @@
 # Project scaffolding introduced in refactor Phase 0 (see docs/REFACTOR_PLAN.md).
 #
 # This file currently provides dependency declarations and tool configuration only.
-# A build-system / installable package layout is intentionally deferred to Phases 2-3,
-# where the flat root modules and per-sport packages are restructured under
-# src/predictors/. Until then, the canonical test runner is `python run_checks.py`,
-# which isolates each suite in its own subprocess (necessary today because several
-# engines share generic module names — edge.py, predictor.py, model.py — and collide
-# under flat collection; see PHASE0 baseline notes).
+# The canonical test runner is `python run_checks.py`, which delegates to pytest
+# markers over the consolidated `tests/` tree.
 
 [project]
 name = "predictors"
@@ -33,14 +29,12 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-# NOTE: flat `pytest` collection across the whole repo does NOT work yet — several
-# test modules do bare `from edge import ...` / `from predictor import ...`, which
-# resolve to the wrong sport's module when all tests share one process. Unifying test
-# discovery under pytest is a Phase 5 deliverable (after the package restructure).
-# For now, run the canonical suite with `python run_checks.py`, or invoke pytest on
-# individual, self-contained test files.
 addopts = "-ra"
 testpaths = ["tests"]
+markers = [
+    "fast: offline regression checks",
+    "gates: per-engine validation gates",
+]
 
 [tool.ruff]
 target-version = "py312"

@@ -60,15 +60,19 @@ Python environment has the dependencies installed.
 ```text
 .
 ├── app/                  # Desktop/web app, API, adapters, shared suite logic
-│   ├── engines/          # Engine adapters and isolated subprocess runners
+│   ├── engines/          # Engine adapters and in-process dispatch
 │   └── web/              # Frontend shell, charts, styles
+├── core/                 # Suite CLV, bankroll, and shared operational helpers
+├── contracts/            # Engine adapter registry and payload contracts
+├── engines/worldcup/     # Packaged World Cup engine
 ├── club_soccer/          # Club soccer model, fetchers, calibration, edge
 ├── cfb/                  # College football models, validation, edge, data
 ├── golf/                 # Golf model, providers, simulation, edge, validation
+├── research/             # World Cup research/report substrate (old wc_v4 shim kept)
+├── governance/           # Advisory registry, drift, review, portfolio, scenarios
+├── operations/           # Health, backups, daily-run planning, release status
+├── tests/                # Pytest-discovered fast and gate suites
 ├── data/                 # World Cup data, suite ledger, shared model artifacts
-├── predictor.py          # World Cup match prediction CLI
-├── simulate.py           # World Cup tournament simulation
-├── edge.py               # World Cup odds/edge CLI
 ├── validate_all.py       # Cross-engine validation gate
 ├── preflight.py          # Offline readiness/key/data check
 └── *_PLAN.md / *_NOTES.md
@@ -176,19 +180,20 @@ and will block pushes containing provider-shaped tokens.
 
 ## Validation And Tests
 
-One command runs every fast offline test suite (contract, security, bankroll,
-per-milestone, and the V3 suites) and, with `--gates`, the per-engine validation
-gates:
+One command runs the fast pytest marker suite and, with `--gates`, the per-engine
+validation gate marker suite:
 
 ```bash
-python3 run_checks.py              # all fast suites (~13s)
-python3 run_checks.py --gates      # also run validation gates (~1 min)
+python3 run_checks.py              # pytest -m fast
+python3 run_checks.py --gates      # pytest -m fast, then pytest -m gates
 ```
 
-Individual fast checks and the full cross-engine gate also run standalone:
+Individual checks and markers can also run directly:
 
 ```bash
-python3 test_engines_contract.py
+python3 -m pytest tests/contracts/test_engines_contract.py
+python3 -m pytest -m fast
+python3 -m pytest -m gates
 python3 validate_all.py --gate --sims 4000
 ```
 
