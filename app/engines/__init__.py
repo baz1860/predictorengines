@@ -8,10 +8,12 @@ from .worldcup import WorldCupAdapter
 from .cfb import CFBAdapter
 from .golf import GolfAdapter
 from .club_soccer import ClubSoccerAdapter
+from .tennis import TennisAdapter
 
 registry.register(WorldCupAdapter())
 registry.register(CFBAdapter())
 registry.register(GolfAdapter())
 registry.register(ClubSoccerAdapter())
+registry.register(TennisAdapter())
 
 __all__ = ["registry"]
