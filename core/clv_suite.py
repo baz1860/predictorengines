@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pandas as pd
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]
 DATA = HERE / "data"
 HISTORY = DATA / "clv_history.csv"
 HISTORY_COLS = ["snapshot_time", "engine", "event_id", "market", "side",

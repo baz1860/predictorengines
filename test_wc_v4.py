@@ -7,7 +7,9 @@ point of a point-in-time feature store.
 """
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import warnings
 from pathlib import Path
 
@@ -29,6 +31,10 @@ from wc_v4 import probability as prob
 from wc_v4 import staking as st
 from wc_v4 import tournaments as ts
 from wc_v4 import validate_v4 as vv
+from wc_v4 import live_features as lf
+from scripts.worldcup import live_data as ld
+from scripts.worldcup import whoscored_scrape as ws
+from contracts import fixture_key
 
 
 # ── schema / leakage registry ─────────────────────────────────────────────────
@@ -100,6 +106,231 @@ def test_asof_ratings_are_frozen_before_date():
     # by checking no fixture in the matrix pred: match_date < asof.
     early = fs.build_asof("2026-06-01")
     assert (early["match_date"] >= "2026-06-01").all()
+
+
+def test_live_provider_parsers_normalize_payloads():
+    teams = {"United States", "Australia", "Brazil", "Morocco", "Germany",
+             "Ivory Coast"}
+    fetched = "2026-06-19T10:00:00+00:00"
+    fixtures = ld.parse_fixtures([{
+        "fixture": {"id": 10, "date": "2026-06-19T20:00:00+00:00",
+                    "venue": {"name": "Lumen Field", "city": "Seattle"},
+                    "status": {"long": "Not Started", "short": "NS", "elapsed": None}},
+        "league": {"name": "FIFA World Cup", "round": "Group D - 2"},
+        "teams": {"home": {"id": 1, "name": "USA"},
+                  "away": {"id": 2, "name": "Australia"}},
+    }], fetched, teams)
+    assert fixtures.iloc[0]["home"] == "United States"
+    assert fixtures.iloc[0]["event_id"] == fixture_key(
+        fixtures.iloc[0]["match_date"], "United States", "Australia",
+        "FIFA World Cup")
+
+    availability = ld.parse_availability([
+        {"team": {"id": 1, "name": "Brazil"},
+         "player": {"id": 7, "name": "Neymar", "type": "Injury",
+                    "reason": "fitness test"},
+         "fixture": {"id": 11}},
+        {"team": {"id": 2, "name": "Morocco"},
+         "player": {"id": 8, "name": "Player X", "type": "Suspended",
+                    "reason": "red card ban"},
+         "fixture": {"id": 11}},
+    ], fetched, teams)
+    by_player = {r.player: r for r in availability.itertuples(index=False)}
+    assert by_player["Neymar"].status == "doubtful"
+    assert by_player["Neymar"].affects_availability == False
+    assert by_player["Player X"].status == "suspended"
+    assert by_player["Player X"].certainty == "certain"
+
+    meta = {"event_id": "e1", "provider_fixture_id": 11,
+            "match_date": "2026-06-19"}
+    lineups = ld.parse_lineups([{
+        "team": {"id": 1, "name": "Germany"},
+        "formation": "4-2-3-1",
+        "startXI": [{"player": {"id": 1, "name": "Manuel Neuer",
+                                "number": 1, "pos": "G"}}],
+        "substitutes": [{"player": {"id": 2, "name": "Niclas Fullkrug",
+                                    "number": 9, "pos": "F"}}],
+    }], meta, fetched, fetched, teams)
+    assert set(lineups["role"]) == {"starter", "bench"}
+    assert lineups["formation"].iloc[0] == "4-2-3-1"
+
+    events = [{
+        "id": "odds1", "commence_time": "2026-06-20T00:00:00Z",
+        "home_team": "Germany", "away_team": "Ivory Coast",
+        "bookmakers": [
+            {"key": "book_a", "last_update": fetched, "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Germany", "price": 1.7},
+                    {"name": "Draw", "price": 3.6},
+                    {"name": "Ivory Coast", "price": 5.0}]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "price": 1.9, "point": 2.5},
+                    {"name": "Under", "price": 1.9, "point": 2.5}]},
+                {"key": "btts", "outcomes": [
+                    {"name": "Yes", "price": 1.8},
+                    {"name": "No", "price": 2.0}]},
+            ]},
+            {"key": "book_b", "last_update": fetched, "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": "Germany", "price": 1.8},
+                    {"name": "Draw", "price": 3.5},
+                    {"name": "Ivory Coast", "price": 4.8}]},
+            ]},
+        ],
+    }]
+    snaps = ld.normalize_market_snapshots(events, fetched, teams)
+    wide = ld.summarize_wide_market(snaps)
+    assert len(snaps) == 10
+    assert wide.iloc[0]["bookmaker_count"] == 2
+    assert np.isfinite(wide.iloc[0]["market_dispersion_h"])
+
+
+def test_whoscored_cached_payload_normalizes_to_canonical_tables():
+    teams = {"Germany", "Ivory Coast"}
+    fetched = "2026-06-19T10:00:00+00:00"
+    payload = {
+        "matchId": 12345,
+        "startDate": "2026-06-20T20:00:00+00:00",
+        "competition": {"name": "FIFA World Cup"},
+        "stageName": "Group E - 1",
+        "isLineupConfirmed": True,
+        "home": {
+            "teamId": 1,
+            "name": "Germany",
+            "formation": "4-2-3-1",
+            "players": [
+                {"playerId": 1, "name": "Manuel Neuer", "shirtNo": 1,
+                 "position": "GK", "isFirstEleven": True},
+                {"playerId": 2, "name": "Niclas Fullkrug", "shirtNo": 9,
+                 "position": "FW", "isSubstitute": True},
+            ],
+            "missingPlayers": [
+                {"playerId": 3, "name": "Player Doubt",
+                 "reason": "fitness test"},
+            ],
+        },
+        "away": {
+            "teamId": 2,
+            "name": "Ivory Coast",
+            "formation": "4-3-3",
+            "players": [
+                {"playerId": 4, "name": "Away Keeper", "shirtNo": 1,
+                 "position": "GK", "isFirstEleven": True},
+            ],
+        },
+        "events": [
+            {"teamId": 1, "type": {"displayName": "SavedShot"},
+             "isShot": True, "xG": 0.18},
+            {"teamId": 1, "type": {"displayName": "Goal"},
+             "isShot": True, "isGoal": True, "xG": 0.30},
+            {"teamId": 1, "type": {"displayName": "Pass"},
+             "qualifiers": [{"type": {"displayName": "CornerTaken"}}]},
+            {"teamId": 1, "type": {"displayName": "Foul"}},
+            {"teamId": 2, "type": {"displayName": "MissedShots"},
+             "isShot": True, "xG": 0.04},
+            {"teamId": 2, "type": {"displayName": "Card"},
+             "cardType": {"displayName": "Yellow"}},
+        ],
+    }
+    tables = ws.normalize_payload(payload, fetched, teams)
+    fixtures = tables["fixtures"]
+    assert fixtures.iloc[0]["event_id"] == fixture_key(
+        fixtures.iloc[0]["match_date"], "Germany", "Ivory Coast",
+        "FIFA World Cup")
+    assert fixtures.iloc[0]["source"] == "whoscored_scrape"
+
+    lineups = tables["lineups"]
+    assert set(lineups["role"]) == {"starter", "bench"}
+    assert lineups[lineups["team"] == "Germany"]["lineup_status"].eq(
+        "confirmed").all()
+
+    availability = tables["availability"]
+    assert availability.iloc[0]["player"] == "Player Doubt"
+    assert availability.iloc[0]["status"] == "doubtful"
+
+    stats = tables["match_stats"].set_index("team")
+    assert stats.loc["Germany", "shots"] == 2
+    assert stats.loc["Germany", "shots_on_target"] == 2
+    assert stats.loc["Germany", "corners"] == 1
+    assert stats.loc["Germany", "fouls"] == 1
+    assert abs(stats.loc["Germany", "xg"] - 0.48) < 1e-9
+    assert stats.loc["Ivory Coast", "shots"] == 1
+    assert stats.loc["Ivory Coast", "yellow_cards"] == 1
+
+
+def test_whoscored_extracts_strict_json_from_html():
+    html = '<script>var matchCentreData = {"matchId": 1, "home": {"name": "Germany"}, "away": {"name": "Ivory Coast"}};</script>'
+    data = ws.extract_match_centre_json(html)
+    assert data["matchId"] == 1
+    assert data["home"]["name"] == "Germany"
+
+
+def test_whoscored_accepts_wrapped_json_har_and_directories():
+    payload = {
+        "matchId": 99,
+        "startDate": "2026-06-20T20:00:00+00:00",
+        "home": {"teamId": 1, "name": "Germany"},
+        "away": {"teamId": 2, "name": "Ivory Coast"},
+    }
+    html = f"<script>var matchCentreData = {json.dumps(payload)};</script>"
+    har = {"log": {"entries": [{
+        "response": {"content": {"mimeType": "text/html", "text": html}}
+    }]}}
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        wrapped = tmp / "wrapped.json"
+        wrapped.write_text(json.dumps({"props": {"pageProps": {
+            "matchCentreData": payload}}}))
+        har_path = tmp / "capture.har"
+        har_path.write_text(json.dumps(har))
+        bad = tmp / "bad.json"
+        bad.write_text(json.dumps({"not": "a match payload"}))
+
+        assert ws.load_json(wrapped)["matchId"] == 99
+        assert ws.load_har(har_path)[0]["home"]["name"] == "Germany"
+        loaded = ws.load_dir(tmp)
+        assert len(loaded) == 1
+        assert loaded[0]["matchId"] == 99
+
+
+def test_build_asof_attaches_only_asof_live_lineups():
+    saved = (lf.LINEUPS_CSV, lf.AVAILABILITY_CSV, lf.MARKET_SNAPSHOTS_CSV)
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        lf.LINEUPS_CSV = tmp / "lineups.csv"
+        lf.AVAILABILITY_CSV = tmp / "availability.csv"
+        lf.MARKET_SNAPSHOTS_CSV = tmp / "market.csv"
+        try:
+            eid = fixture_key("2026-06-20", "Germany", "Ivory Coast",
+                              "FIFA World Cup")
+            pd.DataFrame([
+                {"event_id": eid, "provider_fixture_id": 99,
+                 "match_date": "2026-06-20", "team": "Germany",
+                 "player": "Manuel Neuer", "starter": True, "role": "starter",
+                 "position": "G", "formation": "4-2-3-1",
+                 "lineup_status": "confirmed",
+                 "published_at": "2026-06-19T11:30:00+00:00",
+                 "fetched_at": "2026-06-19T11:35:00+00:00"},
+            ]).to_csv(lf.LINEUPS_CSV, index=False)
+            fixtures = pd.DataFrame([{
+                "date": pd.Timestamp("2026-06-20"),
+                "home_team": "Germany",
+                "away_team": "Ivory Coast",
+                "home_score": np.nan,
+                "away_score": np.nan,
+                "tournament": "FIFA World Cup",
+                "city": "Toronto",
+                "country": "Canada",
+                "neutral": True,
+            }])
+            before = fs.build_asof("2026-06-19 11:00:00", fixtures)
+            after = fs.build_asof("2026-06-19 12:00:00", fixtures)
+            assert before["formation_known_h"].isna().all()
+            assert after["formation_known_h"].iloc[0] == 1.0
+            for col in ("result", "odds_close_h", "xg_h"):
+                assert col not in after.columns
+        finally:
+            lf.LINEUPS_CSV, lf.AVAILABILITY_CSV, lf.MARKET_SNAPSHOTS_CSV = saved
 
 
 # ── M2 market model ───────────────────────────────────────────────────────────
@@ -235,6 +466,8 @@ def test_blend_gate_coverage_is_honest_about_odds():
     assert "WC2022" in cov["blend_gate_tournaments"]
     # model calibration pools every tournament with results, odds or not.
     assert "WC2018" in cov["model_calibration_tournaments"]
+    assert rep["enriched_features"]["status"] == "report_only"
+    assert rep["enriched_features"]["default_after_gate"] == "v3_blend"
 
 
 # ── M4-M7 report-only modelling layers ────────────────────────────────────────

@@ -243,9 +243,19 @@
         <div id="panel-ops" class="panel full" hidden>
           <div class="stat-row" id="ops-stats"></div>
           <div class="dash-grid">
-            <div class="dash-card span-2"><h2>Daily run preview<span class="h-meta">dry-run by default</span></h2><div id="ops-daily"></div></div>
+            <div class="dash-card span-2">
+              <h2>Run updates<span class="h-meta" id="ops-run-status">idle</span></h2>
+              <div id="ops-run-modes" class="run-modes"></div>
+              <ol id="ops-run-steps" class="run-steps" hidden></ol>
+              <pre id="ops-run-log" class="run-log" hidden></pre>
+            </div>
+            <div class="dash-card span-2">
+              <h2>Scheduled updates<span class="h-meta">auto-run while the app is open</span></h2>
+              <div id="ops-schedule"></div>
+            </div>
             <div class="dash-card"><h2>Validation</h2><div id="ops-validation"></div></div>
             <div class="dash-card"><h2>Backup</h2><div id="ops-backup"></div></div>
+            <div class="dash-card span-2"><h2>Recent runs</h2><div id="ops-run-history"></div></div>
             <div class="dash-card span-2"><h2>Data freshness</h2><div id="ops-freshness"></div></div>
             <div class="dash-card span-2"><h2>Release readiness</h2><div id="ops-release"></div></div>
           </div>
