@@ -70,14 +70,22 @@ ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
         ("odds", "golf/data/odds.csv", "odds", "DataGolf / manual"),
         ("model", "golf/data/model_params.json", "model", "model.py --fit"),
     ],
+    "tennis": [
+        ("matches", "tennis/data/matches.csv", "results", "fetch.py --seed / --accumulate"),
+        ("draw", "tennis/data/draw.csv", "fixtures", "fetch.py --draw-template / manual"),
+        ("odds", "tennis/data/odds.csv", "odds", "manual"),
+        ("model_atp", "tennis/data/atp_model_params.json", "model", "model.py --fit --tour atp"),
+        ("model_wta", "tennis/data/wta_model_params.json", "model", "model.py --fit --tour wta"),
+    ],
 }
 
 # Where each engine's manifest lives (co-located with its data dir).
 MANIFEST_DIRS = {"worldcup": "data", "club_soccer": "club_soccer/data",
-                 "cfb": "cfb/data", "golf": "golf/data"}
+                 "cfb": "cfb/data", "golf": "golf/data", "tennis": "tennis/data"}
 
 ODDS_FILES = {"worldcup": "odds.csv", "club_soccer": "club_soccer/data/odds.csv",
-              "cfb": "cfb/odds.csv", "golf": "golf/data/odds.csv"}
+              "cfb": "cfb/odds.csv", "golf": "golf/data/odds.csv",
+              "tennis": "tennis/data/odds.csv"}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
