@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Iterable
 
 # Bump when the row shape changes in a way that invalidates cached matrices.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Provenance fields every row carries (M1 acceptance criterion).
 PROVENANCE_COLUMNS = ["asof", "event_id", "source", "fetched_at", "schema_version"]
@@ -44,12 +44,18 @@ FEATURE_COLUMNS = [
     "book_dispersion",
     # availability (M3) — point-in-time from absences known at asof
     "avail_adj_h", "avail_adj_a", "lineup_conf_h", "lineup_conf_a",
+    "confirmed_xi_power_h", "confirmed_xi_power_a",
+    "bench_power_h", "bench_power_a",
+    "formation_known_h", "formation_known_a",
+    "market_dispersion_h", "market_dispersion_d", "market_dispersion_a",
 ]
 
 # OUTCOME / TEACHER columns. Legal as *labels* and as a *teacher* signal during
 # training/validation, but injecting any of these into FEATURE_COLUMNS is leakage.
 OUTCOME_COLUMNS = [
     "home_score", "away_score", "result",         # the result itself
+    "shots_h", "shots_a", "shots_on_target_h", "shots_on_target_a",
+    "corners_h", "corners_a", "cards_h", "cards_a", "xg_h", "xg_a",
     "odds_close_h", "odds_close_d", "odds_close_a",  # the CLOSING line (teacher)
     "p_close_h", "p_close_d", "p_close_a",
     "clv", "settled_pnl",                          # post-event

@@ -6,6 +6,7 @@ Serves the static frontend from app/web.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import json
@@ -27,10 +28,20 @@ from v5 import research as v5_research
 from v5 import review as v5_review
 from v5 import scenario as v5_scenario
 from v6 import operations as v6_operations
+from v6 import runner as v6_runner
+from v6 import scheduler as v6_scheduler
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
-app = FastAPI(title="Sports Predictor")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Start the in-app update scheduler when the server comes up.
+    v6_scheduler.start_scheduler()
+    yield
+
+
+app = FastAPI(title="Sports Predictor", lifespan=lifespan)
 
 # --- API input bounds (V3 M2) ---------------------------------------------------
 # Engine slugs are short identifiers, never paths. Anything outside this shape is
@@ -120,6 +131,28 @@ class V5LiveSoccer(BaseModel):
 
 class V6Backup(BaseModel):
     label: str | None = Field(default=None, max_length=40)
+
+
+class V6Run(BaseModel):
+    mode: str
+
+    @field_validator("mode")
+    @classmethod
+    def _known_mode(cls, v: str) -> str:
+        if v not in v6_runner.MODES:
+            raise ValueError(f"unknown update mode: {v}")
+        return v
+
+
+class V6ScheduleEntry(BaseModel):
+    id: str | None = None
+    mode: str
+    time: str = Field(pattern=r"^\d{2}:\d{2}$")
+    enabled: bool = True
+
+
+class V6Schedule(BaseModel):
+    entries: list[V6ScheduleEntry] = Field(default_factory=list)
 
 
 def _dispatch(engine_id: str, cap: str, params: dict):
@@ -318,6 +351,45 @@ def v6_backup(req: V6Backup):
 @app.get("/api/v6/release")
 def v6_release():
     return v6_operations.release_status()
+
+
+@app.get("/api/v6/run/modes")
+def v6_run_modes():
+    """The update flows the UI can launch (id, label, description)."""
+    return {"modes": v6_runner.modes()}
+
+
+@app.get("/api/v6/run")
+def v6_run_status(since: int = 0):
+    """Current/last update run: status, per-step progress, and any log lines
+    after `since` (use the returned next_offset to poll incrementally)."""
+    return v6_runner.status(since=max(since, 0))
+
+
+@app.post("/api/v6/run")
+def v6_run_start(req: V6Run):
+    """Launch an update flow (one at a time). 409 if a run is in progress."""
+    try:
+        return v6_runner.start(req.mode, trigger="manual")
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/v6/run/history")
+def v6_run_history():
+    return {"runs": v6_runner.history()}
+
+
+@app.get("/api/v6/schedule")
+def v6_get_schedule():
+    return v6_scheduler.get_schedule()
+
+
+@app.post("/api/v6/schedule")
+def v6_save_schedule(req: V6Schedule):
+    return v6_scheduler.save_schedule([e.model_dump() for e in req.entries])
 
 
 @app.get("/")

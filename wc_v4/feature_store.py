@@ -45,7 +45,7 @@ from engines.worldcup import predictor as P  # noqa: E402
 from engines.worldcup.dixoncoles import outcome_probs  # noqa: E402  (Dixon-Coles 1X2 from lambdas)
 from contracts import fixture_key  # noqa: E402  (canonical event_id)
 
-from . import schema  # noqa: E402
+from . import live_features, schema  # noqa: E402
 
 DATA = ROOT / "data"
 RESULTS_CSV = DATA / "results.csv"
@@ -59,7 +59,9 @@ SOURCE_LABEL = "results.csv+odds_history.csv+elo(point-in-time)"
 def _fetched_at() -> str:
     """Most recent mtime across the M1 inputs, as ISO-8601 UTC (provenance)."""
     mtimes = []
-    for p in (RESULTS_CSV, ODDS_HISTORY):
+    live_paths = (live_features.AVAILABILITY_CSV, live_features.LINEUPS_CSV,
+                  live_features.MARKET_SNAPSHOTS_CSV)
+    for p in (RESULTS_CSV, ODDS_HISTORY, *live_paths):
         if p.exists():
             mtimes.append(p.stat().st_mtime)
     ts = max(mtimes) if mtimes else datetime.now(timezone.utc).timestamp()
@@ -378,6 +380,7 @@ def build_asof(asof: str, fixtures: pd.DataFrame | None = None) -> pd.DataFrame:
         rows.append(row)
 
     df = _frame_from_rows(rows, include_outcomes=False)
+    df = live_features.enrich(df, asof)
     return _stamp(df, asof)
 
 
