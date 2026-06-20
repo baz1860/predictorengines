@@ -34,8 +34,10 @@ import numpy as np
 import pandas as pd
 
 from api_keys import get_key
+from contracts import fixture_key
 from .predictor import load_matches, score_matrix
 from .dixoncoles import build_sources
+from .names import canonical_team
 
 HERE = Path(__file__).resolve().parents[2]
 ODDS_CSV = HERE / "odds.csv"
@@ -68,25 +70,14 @@ RECORD_MIN_EDGE = 0.0 # only auto-record per-market picks with edge strictly abo
 MAX_ELO_GAP  = 350    # informational only — shown in report, not used as bet filter
 WORLD_CUP_SPORT_KEY = "soccer_fifa_world_cup"
 
-# bookmaker/API name -> dataset name
-ALIASES = {
-    "USA": "United States", "Korea Republic": "South Korea",
-    "Czechia": "Czech Republic", "Türkiye": "Turkey", "Turkiye": "Turkey",
-    "Bosnia-Herzegovina": "Bosnia and Herzegovina",
-    "Bosnia & Herzegovina": "Bosnia and Herzegovina",
-    "Congo DR": "DR Congo", "Democratic Republic of the Congo": "DR Congo",
-    "Cote d'Ivoire": "Ivory Coast", "Côte d'Ivoire": "Ivory Coast",
-    "Curacao": "Curaçao", "IR Iran": "Iran",
-}
-
-
 def canon(name, ratings, exit_on_error=True):
-    name = name.strip()
-    name = ALIASES.get(name, name)
+    name = canonical_team(str(name).strip())
     if name not in ratings:
         if not exit_on_error:
-            raise ValueError(f"Unknown team {name!r} — add it to ALIASES in edge.py")
-        sys.exit(f"Unknown team {name!r} — add it to ALIASES in edge.py")
+            raise ValueError(
+                f"Unknown team {name!r} — add an alias in engines/worldcup/names.py")
+        sys.exit(
+            f"Unknown team {name!r} — add an alias in engines/worldcup/names.py")
     return name
 
 
@@ -310,37 +301,28 @@ def fetch_api_odds(api_key, exit_on_error=True):
         except Exception:
             pass   # market not supported on this plan — skip silently
     events = list(events_by_id.values())
-    rows = []
-    for ev in events:
-        if not ev.get("bookmakers"):
-            continue
-        h, a = ev["home_team"], ev["away_team"]
-        # median odds across bookmakers for a fair market read
-        per_outcome = {}
-        for bk in ev["bookmakers"]:
-            for mkt in bk["markets"]:
-                for oc in mkt["outcomes"]:
-                    if mkt["key"] == "h2h":
-                        col = {h: "odds_home", "Draw": "odds_draw",
-                               a: "odds_away"}.get(oc["name"])
-                    elif mkt["key"] == "totals" and oc.get("point") == 2.5:
-                        col = {"Over": "odds_over25",
-                               "Under": "odds_under25"}.get(oc["name"])
-                    elif mkt["key"] == "btts":
-                        col = {"Yes": "odds_btts_yes",
-                               "No": "odds_btts_no"}.get(oc["name"])
-                    else:
-                        col = None
-                    if col:
-                        per_outcome.setdefault(col, []).append(oc["price"])
-        med = {k: float(np.median(v)) for k, v in per_outcome.items()}
-        if "odds_home" in med and "odds_draw" in med and "odds_away" in med:
-            local_date = (datetime.fromisoformat(
-                ev["commence_time"].replace("Z", "+00:00"))
-                .astimezone(_TZ_PDT).date().isoformat())
-            rows.append({"date": local_date, "home": h, "away": a,
-                         **{c: med.get(c, np.nan) for c in ODDS_COLS}})
-    return pd.DataFrame(rows)
+    try:
+        from scripts.worldcup.live_data import (
+            MARKET_SNAPSHOTS_CSV,
+            _append_snapshot_csv,
+            normalize_market_snapshots,
+            summarize_wide_market,
+            utc_now,
+        )
+        fetched = utc_now()
+        snapshots = normalize_market_snapshots(events, fetched)
+        _append_snapshot_csv(
+            MARKET_SNAPSHOTS_CSV,
+            snapshots,
+            ["snapshot_time", "event_id", "bookmaker", "market", "side", "line"],
+        )
+        wide = summarize_wide_market(snapshots)
+        return wide.dropna(subset=["odds_home", "odds_draw", "odds_away"])
+    except Exception as e:
+        msg = f"Could not normalize The Odds API World Cup response ({e})."
+        if not exit_on_error:
+            raise ValueError(msg)
+        sys.exit(msg)
 
 
 def load_manual_odds():
@@ -405,10 +387,26 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
     ctx_played = modifiers.get("ctx_played")
     ctx_home_alt = modifiers.get("ctx_home_alt")
     ctx_venue = modifiers.get("ctx_venue") or {}
+    try:
+        from wc_v4 import live_features as lf
+        asof_now = pd.Timestamp.now(tz="UTC")
+        live_avail = lf._availability_features(asof_now)
+        live_lineups = lf._lineup_features(asof_now)
+    except Exception:
+        live_avail, live_lineups = {}, {}
     rows = []
     for r in odds.itertuples(index=False):
         home = canon(r.home, ratings, exit_on_error=not strict_names)
         away = canon(r.away, ratings, exit_on_error=not strict_names)
+        match_date = getattr(r, "date", "")
+        event_id = fixture_key(match_date, home, away, "FIFA World Cup")
+        confs = [live_avail.get(t, {}).get("lineup_conf")
+                 for t in (home, away)]
+        confs = [float(c) for c in confs if c is not None and np.isfinite(c)]
+        availability_confidence = min(confs) if confs else np.nan
+        lineup_status = ("confirmed" if ((event_id, home) in live_lineups
+                                         and (event_id, away) in live_lineups)
+                         else "not_confirmed")
         ctx = None
         if ctx_mod is not None:
             dc = ctx_venue.get((home, away))
@@ -472,7 +470,7 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
                 p_model = probs[side]
                 ev = p_model * o - 1.0
                 rows.append({
-                    "date": getattr(r, "date", ""), "match": f"{home} v {away}",
+                    "date": match_date, "match": f"{home} v {away}",
                     "home": home, "away": away, "side": side, "market": market,
                     "bet": bet_label(side, home, away), "odds": o,
                     "p_book": round(float(p_book), 3),
@@ -482,7 +480,14 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
                     "kelly_stake": round(KELLY_FRACTION * kelly(p_model, o), 4),
                     "overround": round(float(overround), 3),
                     "elo_gap": round(abs(ratings.get(home, 1500)
-                                        - ratings.get(away, 1500)))})
+                                        - ratings.get(away, 1500))),
+                    "bookmaker_count": getattr(r, "bookmaker_count", np.nan),
+                    "market_dispersion_h": getattr(r, "market_dispersion_h", np.nan),
+                    "market_dispersion_d": getattr(r, "market_dispersion_d", np.nan),
+                    "market_dispersion_a": getattr(r, "market_dispersion_a", np.nan),
+                    "lineup_status": lineup_status,
+                    "availability_confidence": availability_confidence,
+                })
     return rows
 
 

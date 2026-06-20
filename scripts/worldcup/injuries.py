@@ -24,6 +24,7 @@ import urllib.request
 from pathlib import Path
 
 from api_keys import get_key
+from engines.worldcup.names import canonical_team
 
 HERE = Path(__file__).resolve().parents[2]
 OUT = HERE / "data" / "absences_api.csv"
@@ -31,17 +32,6 @@ OUT = HERE / "data" / "absences_api.csv"
 API_KEY = get_key("api-football", env="API_FOOTBALL_KEY")
 LEAGUE_WC = 1
 SEASON = 2026
-
-# API-Football team names -> dataset names (extend as mismatches appear)
-TEAM_ALIAS = {
-    "USA": "United States", "South Korea": "South Korea",
-    "Korea Republic": "South Korea", "Iran": "Iran", "IR Iran": "Iran",
-    "Ivory Coast": "Ivory Coast", "Cote d'Ivoire": "Ivory Coast",
-    "Cape Verde Islands": "Cape Verde", "Curacao": "Curaçao",
-    "Congo DR": "DR Congo", "Turkiye": "Turkey", "Czechia": "Czech Republic",
-    "Bosnia & Herzegovina": "Bosnia and Herzegovina",
-}
-
 
 def fetch(api_key):
     url = (f"https://v3.football.api-sports.io/injuries"
@@ -71,8 +61,7 @@ def main():
 
     rows = []
     for item in fetch(args.api_key):
-        team = item["team"]["name"]
-        team = TEAM_ALIAS.get(team, team)
+        team = canonical_team(item["team"]["name"])
         player = item["player"]["name"]
         why = item["player"].get("reason") or item["player"].get("type") or "injury"
         rows.append((team, player, f"api: {why}"))

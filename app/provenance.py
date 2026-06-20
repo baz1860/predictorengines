@@ -26,18 +26,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MANIFEST_NAME = "data_manifest.json"
 
 # Per-role staleness thresholds (days). Advisory — purely for UI warnings.
-_STALE_DAYS = {"results": 3, "fixtures": 3, "games": 3, "rounds": 3,
-               "field": 2, "odds": 1, "model": 30}
+_STALE_DAYS = {
+    "results": 3, "fixtures": 3, "games": 3, "rounds": 3,
+    "field": 2, "odds": 1, "model": 30,
+    "results_live": 3 / 24,
+    "fixtures_live": 3 / 24,
+    "odds_live": 1 / 24,
+    "lineups": 15 / 1440,
+    "availability": 12 / 24,
+    "stats": 3 / 24,
+}
 
 # Each engine's key inputs: (key, repo-relative path, role, source-label).
 ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
     "worldcup": [
-        ("results", "data/results.csv", "results", "martj42/international_results + local"),
-        ("odds", "data/odds_live.csv", "odds", "The Odds API / manual (snapshot written by edge.py)"),
+        ("results", "data/results.csv", "results_live", "martj42/international_results + local"),
+        ("odds", "data/odds_live.csv", "odds_live", "The Odds API / manual (snapshot written by edge.py)"),
+        ("live_fixtures", "data/worldcup/fixtures_live.csv", "fixtures_live", "API-Football fixtures"),
+        ("availability", "data/worldcup/player_availability.csv", "availability", "API-Football injuries/suspensions + manual"),
+        ("lineups", "data/worldcup/lineups.csv", "lineups", "API-Football lineups"),
+        ("match_stats", "data/worldcup/match_stats.csv", "stats", "API-Football match statistics"),
+        ("market_snapshots", "data/worldcup/market_snapshots.csv", "odds_live", "The Odds API normalized market snapshots"),
         ("model", "data/dc_params.json", "model", "dixoncoles.py --fit"),
         ("squads", "data/squad_ratings.csv", "model", "squads.py"),
     ],
@@ -92,6 +105,20 @@ def _row_count(p: Path) -> int | None:
         return None
 
 
+def _fmt_age_days(days: float | None) -> str:
+    if days is None:
+        return "unknown age"
+    if days < 1:
+        return f"{days * 24:.1f}h old"
+    return f"{days:.1f}d old"
+
+
+def _fmt_limit_days(days: float) -> str:
+    if days < 1:
+        return f"{days * 24:.1f}h"
+    return f"{days:.0f}d"
+
+
 # ── manifests ─────────────────────────────────────────────────────────────────
 def build_manifest(engine: str) -> dict:
     inputs = ENGINE_INPUTS.get(engine, [])
@@ -144,8 +171,8 @@ def freshness(engine: str) -> list[dict]:
         age = _age_days(p)
         limit = _STALE_DAYS.get(role, 7)
         status = "stale" if (age is not None and age > limit) else "ok"
-        msg = (f"{key}: {age:.1f}d old (> {limit}d)" if status == "stale"
-               else f"{key}: {age:.1f}d old")
+        msg = (f"{key}: {_fmt_age_days(age)} (> {_fmt_limit_days(limit)})"
+               if status == "stale" else f"{key}: {_fmt_age_days(age)}")
         out.append({"key": key, "role": role, "status": status,
                     "age_days": age, "message": msg})
     return out

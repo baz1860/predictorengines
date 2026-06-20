@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pandas as pd
 
-DATA = Path(__file__).parent / "data"
+DATA = Path(__file__).resolve().parents[1] / "data"
 STATE = DATA / "bankroll.json"
 LEDGER = DATA / "ledger.csv"
 KO_OVERRIDES = DATA / "ko_overrides.csv"   # date,home,away,score90 (90-min score)

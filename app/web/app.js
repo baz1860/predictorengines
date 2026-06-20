@@ -895,17 +895,198 @@ async function saveSettings() {
 }
 
 // ---------- OPS (V6) ----------
+let opsRunTimer = null;
+let opsRunOffset = 0;
+
 async function openOps() {
   setSuiteView("ops", "Operations");
   $("ops-stats").innerHTML = `<div class="stat"><div class="skeleton skeleton-line" style="width:50%"></div><div class="skeleton skeleton-line" style="width:40%;height:22px"></div></div>`.repeat(4);
-  ["ops-daily", "ops-validation", "ops-backup", "ops-freshness", "ops-release"].forEach((id) => {
+  ["ops-validation", "ops-backup", "ops-freshness", "ops-release", "ops-schedule", "ops-run-history"].forEach((id) => {
     $(id).innerHTML = `<div class="skeleton" style="height:120px"></div>`;
   });
   try {
     renderOps(await api("/api/v6"));
   } catch (e) {
-    $("ops-daily").innerHTML = `<div class="empty-mini">Could not load operations: ${esc(e.message)}</div>`;
+    $("ops-validation").innerHTML = `<div class="empty-mini">Could not load operations: ${esc(e.message)}</div>`;
   }
+  // The runner, scheduler and history load independently so a slow update poll
+  // never blocks the health panels.
+  loadRunModes();
+  pollRun(true);
+  loadSchedule();
+  loadRunHistory();
+}
+
+// -- update runner ------------------------------------------------------------
+const RUN_BTN_CLASS = { default: "primary", morning: "ghost", prekickoff: "ghost", postmatch: "ghost" };
+
+async function loadRunModes() {
+  try {
+    const { modes } = await api("/api/v6/run/modes");
+    $("ops-run-modes").innerHTML = modes.map((m) =>
+      `<button class="run-mode-btn ${RUN_BTN_CLASS[m.id] || "ghost"}" data-mode="${esc(m.id)}" title="${esc(m.description)}">
+         <b>${esc(m.label)}</b><span>${esc(m.description)}</span></button>`).join("");
+    $("ops-run-modes").querySelectorAll(".run-mode-btn").forEach((b) => {
+      b.onclick = () => startRun(b.dataset.mode);
+    });
+  } catch (e) {
+    $("ops-run-modes").innerHTML = `<div class="empty-mini">Could not load update modes: ${esc(e.message)}</div>`;
+  }
+}
+
+async function startRun(mode) {
+  try {
+    opsRunOffset = 0;
+    $("ops-run-log").textContent = "";
+    const st = await post("/api/v6/run", { mode });
+    applyRunStatus(st);
+    pollRun();
+  } catch (e) {
+    toast(e.message, "neg");
+  }
+}
+
+function setRunButtonsDisabled(disabled) {
+  $("ops-run-modes").querySelectorAll(".run-mode-btn").forEach((b) => { b.disabled = disabled; });
+}
+
+function applyRunStatus(st) {
+  const badge = $("ops-run-status");
+  const label = st.mode_label || "idle";
+  if (st.running) {
+    badge.textContent = `${label} — running…`;
+    badge.className = "h-meta run-badge running";
+  } else if (st.status === "success") {
+    badge.textContent = `${label} — done`;
+    badge.className = "h-meta run-badge ok";
+  } else if (st.status === "failed") {
+    badge.textContent = `${label} — failed (exit ${st.exit_code})`;
+    badge.className = "h-meta run-badge fail";
+  } else {
+    badge.textContent = "idle";
+    badge.className = "h-meta";
+  }
+  setRunButtonsDisabled(st.running);
+
+  const stepsEl = $("ops-run-steps");
+  if (st.steps && st.steps.length) {
+    stepsEl.hidden = false;
+    stepsEl.innerHTML = st.steps.map((s) =>
+      `<li class="run-step ${esc(s.status)}"><span class="run-step-dot"></span>${esc(s.name)}</li>`).join("");
+  } else {
+    stepsEl.hidden = true;
+  }
+
+  if (st.lines && st.lines.length) {
+    const log = $("ops-run-log");
+    log.hidden = false;
+    log.textContent += (log.textContent ? "\n" : "") + st.lines.join("\n");
+    log.scrollTop = log.scrollHeight;
+  }
+  if (typeof st.next_offset === "number") opsRunOffset = st.next_offset;
+
+  if (st.warnings && st.warnings.length && !st.running) {
+    toast(st.warnings[0], "neg");
+  }
+}
+
+async function pollRun(silent) {
+  if (opsRunTimer) { clearTimeout(opsRunTimer); opsRunTimer = null; }
+  let st;
+  try {
+    st = await api(`/api/v6/run?since=${opsRunOffset}`);
+  } catch (e) {
+    if (!silent) toast(`Run status unavailable: ${e.message}`, "neg");
+    return;
+  }
+  applyRunStatus(st);
+  if (st.running) {
+    // Keep polling only while this Ops panel is the active view.
+    if (!$("panel-ops").hidden) opsRunTimer = setTimeout(() => pollRun(true), 1200);
+  } else if (st.status === "success" || st.status === "failed") {
+    if (!silent) loadRunHistory();
+    // Refresh history + health once a run finishes (first non-running poll).
+    if (opsRunTimer === null && st.ended_at) loadRunHistory();
+  }
+}
+
+async function loadRunHistory() {
+  try {
+    const { runs } = await api("/api/v6/run/history");
+    if (!runs || !runs.length) {
+      $("ops-run-history").innerHTML = `<div class="empty-mini">No runs yet.</div>`;
+      return;
+    }
+    $("ops-run-history").innerHTML = renderTable([
+      { key: "mode_label", label: "Flow", fmt: "text" },
+      { key: "status", label: "Result", fmt: "text" },
+      { key: "started_at", label: "Started", fmt: "text" },
+      { key: "ended_at", label: "Ended", fmt: "text" },
+      { key: "steps", label: "Steps", fmt: "num" },
+    ], runs);
+  } catch (e) {
+    $("ops-run-history").innerHTML = `<div class="empty-mini">Could not load run history: ${esc(e.message)}</div>`;
+  }
+}
+
+// -- scheduler ----------------------------------------------------------------
+let opsSchedule = [];
+let opsScheduleModes = [];
+
+async function loadSchedule() {
+  try {
+    if (!opsScheduleModes.length) {
+      opsScheduleModes = (await api("/api/v6/run/modes")).modes;
+    }
+    const data = await api("/api/v6/schedule");
+    opsSchedule = (data.entries || []).map((e) => ({ ...e }));
+    renderSchedule();
+  } catch (e) {
+    $("ops-schedule").innerHTML = `<div class="empty-mini">Could not load schedule: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderSchedule() {
+  const modeOpts = (sel) => opsScheduleModes.map((m) =>
+    `<option value="${esc(m.id)}"${m.id === sel ? " selected" : ""}>${esc(m.label)}</option>`).join("");
+  const rows = opsSchedule.map((e, i) => `
+    <div class="sched-row" data-i="${i}">
+      <input type="checkbox" class="sched-enabled" ${e.enabled ? "checked" : ""} title="Enabled" />
+      <select class="sched-mode">${modeOpts(e.mode)}</select>
+      <input type="time" class="sched-time" value="${esc(e.time)}" />
+      <span class="sched-fired">${e.last_fired ? "last fired " + esc(e.last_fired) : ""}</span>
+      <button class="icon-btn sched-del" title="Remove">✕</button>
+    </div>`).join("");
+  $("ops-schedule").innerHTML = `
+    <div class="sched-list">${rows || '<div class="empty-mini">No scheduled updates.</div>'}</div>
+    <div class="row controls">
+      <button id="sched-add" class="ghost">Add schedule</button>
+      <span class="spacer"></span>
+      <button id="sched-save" class="primary">Save schedule</button>
+    </div>
+    <p class="muted-note">Runs fire only while Sports Predictor is open, at most once per day each.</p>`;
+
+  $("ops-schedule").querySelectorAll(".sched-row").forEach((row) => {
+    const i = Number(row.dataset.i);
+    row.querySelector(".sched-enabled").onchange = (ev) => { opsSchedule[i].enabled = ev.target.checked; };
+    row.querySelector(".sched-mode").onchange = (ev) => { opsSchedule[i].mode = ev.target.value; };
+    row.querySelector(".sched-time").onchange = (ev) => { opsSchedule[i].time = ev.target.value; };
+    row.querySelector(".sched-del").onclick = () => { opsSchedule.splice(i, 1); renderSchedule(); };
+  });
+  $("sched-add").onclick = () => {
+    opsSchedule.push({ mode: (opsScheduleModes[0] || {}).id || "morning", time: "07:30", enabled: true });
+    renderSchedule();
+  };
+  $("sched-save").onclick = async () => {
+    try {
+      const data = await post("/api/v6/schedule", { entries: opsSchedule });
+      opsSchedule = (data.entries || []).map((e) => ({ ...e }));
+      renderSchedule();
+      toast("Schedule saved", "pos");
+    } catch (e) {
+      toast(e.message, "neg");
+    }
+  };
 }
 
 function renderOps(d) {
@@ -920,12 +1101,6 @@ function renderOps(d) {
     statTile("Open risk", gbp(bk.open_stake || 0), { sub: `${((bk.open_risk_ratio || 0) * 100).toFixed(1)}% of bankroll` }) +
     statTile("Freshness", `${fresh.counts?.stale || 0} stale`, { sub: `${fresh.counts?.missing || 0} missing` }) +
     statTile("V5 records", String((v5.recommendations && v5.recommendations.n) || 0), { sub: `${v5.feature_snapshots || 0} feature snapshots` });
-
-  $("ops-daily").innerHTML = renderTable([
-    { key: "id", label: "Step", fmt: "text" },
-    { key: "command", label: "Command", fmt: "text" },
-    { key: "description", label: "Purpose", fmt: "text" },
-  ], (d.daily_run && d.daily_run.steps) || []);
 
   $("ops-validation").innerHTML = renderTable([
     { key: "engine", label: "Engine", fmt: "text" },

@@ -245,7 +245,10 @@ class WorldCupAdapter(EngineAdapter):
             {"key": "p_book", "label": "Book", "fmt": "pct"},
             {"key": "edge", "label": "Edge", "fmt": "signed_pct"},
             {"key": "ev_per_unit", "label": "EV", "fmt": "num"},
-            {"key": "stake_gbp", "label": "Stake", "fmt": "gbp"}]
+            {"key": "stake_gbp", "label": "Stake", "fmt": "gbp"},
+            {"key": "bookmaker_count", "label": "Books", "fmt": "num"},
+            {"key": "lineup_status", "label": "Lineup", "fmt": "text"},
+            {"key": "availability_confidence", "label": "Avail Conf", "fmt": "pct"}]
         active = []
         if calibrated:
             active.append("calibrated")
