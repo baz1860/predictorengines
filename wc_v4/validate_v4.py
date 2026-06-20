@@ -35,6 +35,7 @@ if str(ROOT) not in sys.path:
 
 from engines.worldcup import market_blend as MB  # noqa: E402
 from . import market_model as MM  # noqa: E402
+from . import schema  # noqa: E402
 from . import tournaments as TS  # noqa: E402
 
 DATA = ROOT / "data"
@@ -97,6 +98,37 @@ def model_calibration(samples_by_tourn: dict[str, list] | None = None) -> dict[s
         "note": ("Pure fundamental model, leak-free (trained strictly before each "
                  "kickoff). Schema-valid local odds files also feed the market-"
                  "blend gate; missing/invalid odds stay model-calibration only."),
+    }
+
+
+def enriched_feature_report() -> dict[str, Any]:
+    """Report whether enriched live-feed features have enough history to gate.
+
+    The new pre-kickoff feeds are report-only. Historical confirmed lineups and
+    API snapshots are not yet present in the training matrix, so the honest gate
+    is coverage-only and fail-closed until those rows exist.
+    """
+    try:
+        from . import feature_store as FS
+        df = FS.build_training_matrix(since="2022-01-01")
+    except Exception as exc:
+        return {"status": "report_only", "default_after_gate": "v3_blend",
+                "error": str(exc)}
+    cols = [c for c in schema.FEATURE_COLUMNS
+            if c.startswith(("avail_adj", "lineup_conf", "confirmed_xi_power",
+                             "bench_power", "formation_known",
+                             "market_dispersion"))]
+    coverage = {c: int(df[c].notna().sum()) for c in cols if c in df.columns}
+    usable = sum(1 for v in coverage.values() if v > 0)
+    return {
+        "status": "report_only",
+        "default_after_gate": "v3_blend",
+        "rows": int(len(df)),
+        "non_null_feature_counts": coverage,
+        "has_historical_enriched_features": bool(usable),
+        "note": ("Enriched pre-kickoff feeds remain report-only. Promote only "
+                 "after historical/as-of coverage exists and beats V3 on the "
+                 "held-out gate with no Brier regression."),
     }
 
 
@@ -195,7 +227,8 @@ def run(write: bool = True) -> dict[str, Any]:
         ),
     }
     report = {"metrics": results, "verdict": verdict,
-              "model_calibration": calib, "coverage": coverage}
+              "model_calibration": calib, "coverage": coverage,
+              "enriched_features": enriched_feature_report()}
     if write:
         REPORT.write_text(json.dumps(report, indent=2))
     return report
@@ -215,6 +248,10 @@ def _print(report: dict) -> None:
           f"brier_ok={v['brier_no_regression']} no_leakage={v['no_leakage_columns']}")
     print(f"  DEFAULT AFTER GATE: {v['default_after_gate']}")
     print(f"  CLV: n={v['clv']['n']} mean={v['clv']['mean_clv']}")
+    ef = report.get("enriched_features", {})
+    print(f"  enriched feeds: {ef.get('status')} "
+          f"default={ef.get('default_after_gate')} "
+          f"historical={ef.get('has_historical_enriched_features')}")
 
     cal = report["model_calibration"]
     print("\nModel calibration — pure fundamental model, leak-free held-out:")

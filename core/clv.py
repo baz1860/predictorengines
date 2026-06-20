@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[1]
 DATA = HERE / "data"
 LEDGER = DATA / "ledger.csv"
 ODDS_HISTORY = DATA / "odds_history.csv"
@@ -94,7 +94,8 @@ def snapshot(api_key=None):
     if open_bets.empty:
         print("No open bets to snapshot.")
         return
-    from engines.worldcup.edge import fetch_api_odds, ALIASES, DEFAULT_API_KEY
+    from engines.worldcup.edge import fetch_api_odds, DEFAULT_API_KEY
+    from engines.worldcup.names import canonical_team
     key = api_key or DEFAULT_API_KEY
     try:
         odds = fetch_api_odds(key)
@@ -103,7 +104,7 @@ def snapshot(api_key=None):
               "Run this on a machine with internet access.")
         return
     # index fetched odds by canonicalised (home, away)
-    canon = lambda n: ALIASES.get(str(n).strip(), str(n).strip())
+    canon = canonical_team
     fetched = {(canon(r.home), canon(r.away)): r for r in odds.itertuples(index=False)}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     new_rows = []
