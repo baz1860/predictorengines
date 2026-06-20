@@ -20,6 +20,14 @@ ALIASES = {
     "football": "api-football",
     "dg": "datagolf",
     "data-golf": "datagolf",
+    # BSD (Bzzoiro Sports Data) — free football API replacement for api-football
+    "bsd": "bsd",
+    "bzzoiro": "bsd",
+    "bzzoiro_sports": "bsd",
+    # football-data.org — free REST API for major European competitions
+    "fdorg": "football-data-org",
+    "football_data_org": "football-data-org",
+    "footballdata": "football-data-org",
 }
 
 
