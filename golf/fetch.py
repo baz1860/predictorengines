@@ -357,6 +357,8 @@ def main():
     ap.add_argument("--espn", action="store_true", help="Fetch current field from ESPN")
     ap.add_argument("--leaderboard", action="store_true", help="Fetch live leaderboard from ESPN")
     ap.add_argument("--dg-key", default=get_key("datagolf", env="DG_API_KEY"), help="DataGolf API key")
+    ap.add_argument("--use-datagolf", action="store_true",
+                    help="compatibility only: use DataGolf field/prediction endpoints when keyed")
     ap.add_argument("--odds-key", default=get_key("the-odds-api", env="THE_ODDS_API_KEY"), help="The Odds API key")
     ap.add_argument("--tournament-id", type=int, default=None, help="DataGolf tournament ID")
     ap.add_argument("--sport", default=GOLF_SPORT_DEFAULT,
@@ -394,8 +396,8 @@ def main():
             print(f"  {s.get('key'):<50} {s.get('title')}")
         sys.exit(0)
 
-    # ── DataGolf (highest quality) ──
-    if args.dg_key:
+    # ── DataGolf compatibility path ──
+    if args.use_datagolf and args.dg_key:
         try:
             dg_field = fetch_dg_field(args.dg_key)
             fetched_field = dg_field
@@ -408,8 +410,8 @@ def main():
         except Exception as exc:
             print(f"DataGolf predictions error: {exc}")
 
-    # ── ESPN fallback ──
-    if args.espn or not args.dg_key:
+    # ── ESPN free-source path ──
+    if args.espn or not fetched_field:
         try:
             espn_field = fetch_espn_field()
             if espn_field:

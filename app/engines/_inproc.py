@@ -21,7 +21,15 @@ from app.security import collect_secrets, redact
 from contracts import ContractError, assert_finite_json
 
 # Same allowlist the subprocess runner enforced.
-ALLOWED_COMMANDS = {"schema", "predict", "simulate", "edge", "edge_template"}
+ALLOWED_COMMANDS = {
+    "schema",
+    "refresh",
+    "predict",
+    "simulate",
+    "edge",
+    "edge_template",
+    "round_3balls",
+}
 
 
 def run_inprocess(commands: dict[str, Callable[[dict], dict]], command: str,

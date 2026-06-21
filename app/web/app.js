@@ -4,8 +4,10 @@ const ALL_CAPS = [
   { id: "predict", label: "Predict" },
   { id: "simulate", label: "Simulate" },
   { id: "edge", label: "Edge" },
+  { id: "refresh", label: "Refresh" },
+  { id: "round_3balls", label: "Round 3-Balls" },
 ];
-const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "bankroll", "settings", "ops", "placeholder"];
+const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "refresh", "round_3balls", "bankroll", "settings", "ops", "placeholder"];
 
 const state = { engines: [], current: null, activeCap: "predict", view: "engine" };
 
@@ -136,6 +138,8 @@ function renderActiveCap() {
   if (cap === "predict") setupPredict();
   else if (cap === "simulate") setupSimulate();
   else if (cap === "edge") setupEdge();
+  else if (cap === "refresh") setupRefresh();
+  else if (cap === "round_3balls") setupRound3Balls();
 }
 
 // ---------- PREDICT ----------
@@ -573,6 +577,107 @@ function applyEdgeFilters() {
   });
   mountTable($("edge-result").querySelector(".table-scroll"), edgeState.columns, rows,
     { search: true, detail: kvDetail, export: `${edgeState.engineId}_edges` });
+}
+
+// ---------- REFRESH ----------
+function setupRefresh() {
+  const eng = currentEngine();
+  const s = eng.schemas.refresh || {};
+  const opts = s.options || [];
+  $("golf-refresh-options").innerHTML = opts.map((o) =>
+    `<label class="checkbox"><input type="checkbox" data-refresh-option="${esc(o.id)}" ${o.default ? "checked" : ""}/><span>${esc(o.label)}</span></label>`
+  ).join("");
+  $("golf-refresh-round").value = s.default_round || 1;
+  $("golf-refresh-btn").onclick = runRefresh;
+  $("golf-refresh-result").hidden = true;
+  $("golf-refresh-error").hidden = true;
+  $("golf-refresh-note").hidden = true;
+}
+
+async function runRefresh() {
+  const eng = currentEngine();
+  const btn = $("golf-refresh-btn"), err = $("golf-refresh-error"), note = $("golf-refresh-note"), result = $("golf-refresh-result");
+  err.hidden = true;
+  const params = {
+    event_id: $("golf-refresh-event").value.trim(),
+    odds_api_sport: $("golf-refresh-odds-sport").value.trim(),
+    manual_raw: $("golf-refresh-manual-raw").value.trim(),
+    round_no: Number($("golf-refresh-round").value || 1),
+  };
+  const season = Number($("golf-refresh-season").value);
+  if (season) params.season = season;
+  document.querySelectorAll("#golf-refresh-options input[data-refresh-option]").forEach((i) => {
+    params[i.dataset.refreshOption] = i.checked;
+  });
+  await withSpin(btn, "Refresh", async () => {
+    try {
+      const r = await post("/api/refresh", { engine: eng.id, params });
+      note.textContent = r.note || "Refresh complete";
+      note.hidden = false;
+      renderRefreshResult(r);
+      result.hidden = false;
+    } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
+  });
+}
+
+function renderRefreshResult(r) {
+  const host = $("golf-refresh-result");
+  const tableHost = host.querySelector(".table-scroll");
+  mountTable(tableHost, r.columns || [
+    { key: "provider", label: "Provider", fmt: "text" },
+    { key: "rows", label: "Rows", fmt: "num" },
+  ], r.rows || [], { export: "golf_refresh" });
+
+  const qa = r.qa || {};
+  const issues = (qa.errors || []).concat(qa.warnings || []);
+  const event = r.event || {};
+  const meta = [];
+  if (event.name) meta.push(`Event: ${event.name}`);
+  if ((r.manifest || {}).manifest_path) meta.push(`Manifest: ${(r.manifest || {}).manifest_path}`);
+  const metaHtml = meta.length ? `<div class="muted-note">${esc(meta.join(" · "))}</div>` : "";
+  const issueHtml = issues.length
+    ? `<div class="muted-note warn">${issues.map((x) => `${esc(x.source)}: ${esc(x.message)}`).join(" · ")}</div>`
+    : `<div class="muted-note">QA checks passed.</div>`;
+  $("golf-refresh-qa").innerHTML = metaHtml + issueHtml;
+}
+
+// ---------- ROUND 3-BALLS ----------
+function setupRound3Balls() {
+  const eng = currentEngine();
+  const s = eng.schemas.round_3balls || {};
+  const counts = s.sim_options || [10000, 50000, 100000];
+  $("r3b-sims").innerHTML = counts.map((c) => `<option value="${esc(c)}">${esc(c.toLocaleString())}</option>`).join("");
+  $("r3b-sims").value = s.default_sims || counts[0];
+  $("r3b-round").value = s.default_round || 1;
+  $("r3b-btn").onclick = runRound3Balls;
+  $("r3b-result").hidden = true;
+  $("r3b-error").hidden = true;
+  $("r3b-note").hidden = true;
+}
+
+async function runRound3Balls() {
+  const eng = currentEngine();
+  const btn = $("r3b-btn"), err = $("r3b-error"), note = $("r3b-note"), result = $("r3b-result");
+  err.hidden = true;
+  const params = {
+    round_no: Number($("r3b-round").value || 1),
+    event_id: $("r3b-event").value.trim(),
+    course: $("r3b-course").value.trim(),
+    sims: Number($("r3b-sims").value || 50000),
+    min_rounds: Number($("r3b-min-rounds").value || 60),
+    kelly: Number($("r3b-kelly").value || 0.25),
+    major: $("r3b-major").checked,
+  };
+  await withSpin(btn, "Price 3-balls", async () => {
+    try {
+      const r = await post("/api/round-3balls", { engine: eng.id, params });
+      note.textContent = `${r.note || "Round 3-balls priced"} · bankroll ${gbp(r.bankroll || 0)}`;
+      note.hidden = false;
+      mountTable(result.querySelector(".table-scroll"), r.columns || [], r.rows || [],
+        { search: true, detail: kvDetail, export: `${eng.id}_round_3balls` });
+      result.hidden = false;
+    } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
+  });
 }
 
 // ---------- DASHBOARD (suite home) ----------

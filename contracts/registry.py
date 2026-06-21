@@ -8,8 +8,10 @@ engines/__init__.py). No UI or server changes required.
 
 Capabilities (a subset of these per engine):
     "predict"   -> predict(params) : match or field prediction
+    "refresh"   -> refresh(params) : local data/provider refresh
     "simulate"  -> simulate(params): Monte Carlo tournament / event   (Phase 2)
     "edge"      -> edge(params)    : edges, EV, Kelly stakes           (Phase 2)
+    "round_3balls" -> round_3balls(params): round-specific golf 3-ball pricing
     "bankroll"  -> handled at suite level, not per-engine              (Phase 2)
 """
 from __future__ import annotations

@@ -29,6 +29,7 @@ DATA_DIR = Path(__file__).parent / "data"
 ROUNDS_CSV = DATA_DIR / "rounds.csv"
 PARAMS_JSON = DATA_DIR / "model_params.json"
 MODEL_CONFIG_JSON = DATA_DIR / "model_config.json"
+PUBLIC_STATS_CSV = DATA_DIR / "pgatour_stats.csv"
 
 # Weight parameters for composite rating
 W_BASELINE = 0.55
@@ -330,6 +331,8 @@ DEFAULT_MODEL_CONFIG = {
     "course_k": COURSE_K,
 }
 
+PUBLIC_STAT_BLEND = 0.15
+
 
 def load_model_config(path: Path | None = None) -> dict:
     """Champion fit hyperparameters, falling back to the validated constants."""
@@ -355,6 +358,48 @@ def save_model_config(config: dict, metrics: dict | None = None,
                "source": "golf/validate.py --tune-config"}
     path.write_text(json.dumps(payload, indent=2))
     return path
+
+
+def load_public_stat_priors(path: Path | None = None) -> dict[str, dict]:
+    """Load current public PGA Tour stat snapshots into player rating priors.
+
+    The provider writes one row per player/stat. SG: Total is the preferred
+    prior; otherwise we synthesize a conservative total from SG tee-to-green and
+    putting, or category components. Values are already strokes gained per round.
+    """
+    path = path or PUBLIC_STATS_CSV
+    if not path.exists():
+        return {}
+    rows: dict[str, dict] = {}
+    with open(path) as f:
+        for r in csv.DictReader(f):
+            name = (r.get("player_name") or "").strip()
+            stat = (r.get("stat_name") or "").strip().lower()
+            try:
+                value = float(r.get("value"))
+            except (TypeError, ValueError):
+                continue
+            if not name:
+                continue
+            rows.setdefault(name, {})[stat] = value
+
+    priors = {}
+    for name, vals in rows.items():
+        sg_total = vals.get("sg_total")
+        if sg_total is None and "sg_t2g" in vals and "sg_putt" in vals:
+            sg_total = vals["sg_t2g"] + vals["sg_putt"]
+        if sg_total is None:
+            parts = [vals.get(k) for k in ("sg_ott", "sg_app", "sg_arg", "sg_putt")]
+            parts = [p for p in parts if p is not None]
+            if parts:
+                sg_total = sum(parts)
+        if sg_total is None:
+            continue
+        priors[name] = {
+            "sg_total": round(float(sg_total), 4),
+            "stats": {k: round(float(v), 4) for k, v in vals.items()},
+        }
+    return priors
 
 
 def load_rounds_df(path: Path | None = None):
@@ -480,6 +525,7 @@ def fit(rounds_df, asof=None, config: dict | None = None) -> dict:
                                 for p, v in fit_vals.items() if abs(v) > 0.05}
 
     default_skill = float(np.quantile(skill, DEFAULT_SKILL_QUANTILE))
+    public_priors = load_public_stat_priors()
 
     return {
         "asof": str(pd.Timestamp(asof).date()),
@@ -494,6 +540,8 @@ def fit(rounds_df, asof=None, config: dict | None = None) -> dict:
         "course_k": course_k,
         "model_config": {k: float(cfg[k]) for k in DEFAULT_MODEL_CONFIG},
         "default_skill": round(default_skill, 4),
+        "public_stat_blend": PUBLIC_STAT_BLEND,
+        "public_stat_priors": public_priors,
         "fitted_rounds": int(m),
         "players": {
             p: {
@@ -559,6 +607,8 @@ def _folded_index(params: dict) -> dict[str, str]:
     idx = params.get("_folded_index")
     if idx is None:
         idx = {_fold_name(n): n for n in params.get("players", {})}
+        for n in params.get("public_stat_priors", {}):
+            idx.setdefault(_fold_name(n), n)
         params["_folded_index"] = idx
     return idx
 
@@ -583,13 +633,37 @@ def rating_for(name: str, params: dict, course: str = "") -> tuple[float, float]
     canon = resolve_name(name, params)
     pl = params.get("players", {}).get(canon) if canon else None
     fw = params.get("form_weight", FORM_WEIGHT)
+    stat_prior = _public_stat_prior(name, params, canon)
     if pl is None:
+        if stat_prior is not None:
+            return stat_prior, params.get("sigma_field", DEFAULT_SIGMA) * 1.05
         return params.get("default_skill", -0.5), \
                params.get("sigma_field", DEFAULT_SIGMA) * 1.1
     rating = pl["skill"] + fw * pl.get("form", 0.0)
+    if stat_prior is not None:
+        blend = float(params.get("public_stat_blend", PUBLIC_STAT_BLEND))
+        rating = (1 - blend) * rating + blend * stat_prior
     if course:
         rating += params.get("courses", {}).get(course, {}).get(canon, 0.0)
     return rating, pl.get("sigma", params.get("sigma_field", DEFAULT_SIGMA))
+
+
+def _public_stat_prior(name: str, params: dict, canon: str | None = None) -> float | None:
+    priors = params.get("public_stat_priors", {}) or {}
+    for key in (canon, name):
+        if key and key in priors:
+            try:
+                return float(priors[key]["sg_total"])
+            except (KeyError, TypeError, ValueError):
+                return None
+    folded = _fold_name(name)
+    for p_name, row in priors.items():
+        if _fold_name(p_name) == folded:
+            try:
+                return float(row["sg_total"])
+            except (KeyError, TypeError, ValueError):
+                return None
+    return None
 
 
 def predict_field(field_names, params: dict, course: str = "",

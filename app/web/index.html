@@ -188,6 +188,90 @@
           </div>
         </div>
 
+        <!-- GOLF REFRESH -->
+        <div id="panel-refresh" class="panel wide" hidden>
+          <div class="form-card">
+            <div class="row">
+              <label class="field">
+                <span class="field-label">Event ID</span>
+                <input id="golf-refresh-event" autocomplete="off" />
+              </label>
+              <label class="field model-field">
+                <span class="field-label">Season</span>
+                <input id="golf-refresh-season" type="number" min="2000" max="2100" />
+              </label>
+              <label class="field model-field">
+                <span class="field-label">Round</span>
+                <input id="golf-refresh-round" type="number" min="1" max="4" value="1" />
+              </label>
+            </div>
+            <div class="row controls">
+              <label class="field">
+                <span class="field-label">Odds API sport</span>
+                <input id="golf-refresh-odds-sport" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field-label">Manual raw path</span>
+                <input id="golf-refresh-manual-raw" autocomplete="off" />
+              </label>
+            </div>
+            <div class="row controls">
+              <div id="golf-refresh-options" class="inline-options"></div>
+              <button id="golf-refresh-btn" class="primary">Refresh</button>
+            </div>
+            <div id="golf-refresh-note" class="muted-note" hidden></div>
+            <div id="golf-refresh-error" class="error" hidden></div>
+          </div>
+          <div id="golf-refresh-result" class="result-card" hidden>
+            <div class="table-scroll"></div>
+            <div id="golf-refresh-qa"></div>
+          </div>
+        </div>
+
+        <!-- ROUND 3-BALLS -->
+        <div id="panel-round_3balls" class="panel wide" hidden>
+          <div class="form-card">
+            <div class="row">
+              <label class="field model-field">
+                <span class="field-label">Round</span>
+                <input id="r3b-round" type="number" min="1" max="4" value="1" />
+              </label>
+              <label class="field model-field">
+                <span class="field-label">Simulations</span>
+                <select id="r3b-sims"></select>
+              </label>
+              <label class="field model-field">
+                <span class="field-label">Min rounds</span>
+                <input id="r3b-min-rounds" type="number" min="1" max="500" value="60" />
+              </label>
+              <label class="field model-field">
+                <span class="field-label">Kelly</span>
+                <input id="r3b-kelly" type="number" min="0" max="1" step="0.05" value="0.25" />
+              </label>
+            </div>
+            <div class="row controls">
+              <label class="field">
+                <span class="field-label">Event ID</span>
+                <input id="r3b-event" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field-label">Course</span>
+                <input id="r3b-course" autocomplete="off" />
+              </label>
+              <label class="checkbox">
+                <input id="r3b-major" type="checkbox" />
+                <span>Major</span>
+              </label>
+              <button id="r3b-btn" class="primary">Price 3-balls</button>
+            </div>
+            <div id="r3b-note" class="muted-note" hidden></div>
+            <div id="r3b-error" class="error" hidden></div>
+          </div>
+          <div id="r3b-result" class="result-card" hidden>
+            <div class="table-scroll"></div>
+          </div>
+        </div>
+
         <!-- BANKROLL (suite) -->
         <div id="panel-bankroll" class="panel wide" hidden>
           <div class="stat-row">

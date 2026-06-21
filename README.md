@@ -141,9 +141,11 @@ python3 -m cfb.validate --quiet --gate
 Golf:
 
 ```bash
+python3 -m golf.refresh --stats --fit
 python3 -m golf.model --fit
 python3 -m golf.simulate --sims 50000
 python3 -m golf.edge --min-edge 1.0
+python3 -m golf.round_pricer --round 1 --min-edge 4
 ```
 
 ## API Keys
@@ -160,8 +162,7 @@ Expected shape:
 ```json
 {
   "the-odds-api": "your_key",
-  "api-football": "your_key",
-  "datagolf": "your_key"
+  "api-football": "your_key"
 }
 ```
 
@@ -169,7 +170,6 @@ Explicit CLI flags and environment variables can also be used:
 
 - `THE_ODDS_API_KEY`
 - `API_FOOTBALL_KEY`
-- `DG_API_KEY`
 
 Do not commit real API keys. GitHub secret scanning is enabled on public repos
 and will block pushes containing provider-shaped tokens.

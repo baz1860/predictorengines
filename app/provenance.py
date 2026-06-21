@@ -65,9 +65,13 @@ ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
         ("model", "cfb/data/power_params.json", "model", "power.py --fit"),
     ],
     "golf": [
-        ("field", "golf/data/field.csv", "field", "fetch.py"),
-        ("rounds", "golf/data/rounds.csv", "rounds", "fetch.py --accumulate"),
-        ("odds", "golf/data/odds.csv", "odds", "DataGolf / manual"),
+        ("field", "golf/data/field.csv", "field", "ESPN/golf.refresh"),
+        ("rounds", "golf/data/rounds.csv", "rounds", "ESPN scoreboard / fetch.py --accumulate"),
+        ("free_db", "golf/data/golf.db", "stats", "SQLite free-source cache"),
+        ("free_manifest", "golf/data/free_source_manifest.json", "stats", "golf.refresh provider QA"),
+        ("pga_stats", "golf/data/pgatour_stats.csv", "stats", "PGA Tour public stats pages"),
+        ("odds", "golf/data/odds.csv", "odds", "manual / The Odds API majors"),
+        ("threeballs", "golf/data/threeballs.csv", "odds", "manual pasted 3-ball boards"),
         ("model", "golf/data/model_params.json", "model", "model.py --fit"),
     ],
     "tennis": [
