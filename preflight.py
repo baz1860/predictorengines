@@ -45,8 +45,12 @@ ENGINE_FILES: dict[str, list[tuple[str, str, bool]]] = {
     "golf": [
         ("rounds", "golf/data/rounds.csv", True),
         ("model params", "golf/data/model_params.json", True),
+        ("free db", "golf/data/golf.db", False),
+        ("free manifest", "golf/data/free_source_manifest.json", False),
+        ("PGA stats", "golf/data/pgatour_stats.csv", False),
         ("field", "golf/data/field.csv", False),
         ("odds", "golf/data/odds.csv", False),
+        ("3-balls", "golf/data/threeballs.csv", False),
     ],
 }
 
@@ -55,7 +59,7 @@ ENGINE_KEYS: dict[str, list[str]] = {
     "worldcup": ["the-odds-api"],
     "club_soccer": ["api-football", "the-odds-api"],
     "cfb": [],
-    "golf": ["datagolf", "the-odds-api"],
+    "golf": ["the-odds-api"],
 }
 
 

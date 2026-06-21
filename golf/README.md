@@ -56,16 +56,25 @@ consumes directly. Win / top-N / make-cut come from the simulated finishes;
 matchups & 3-balls come from the **same** draws, so they are internally
 consistent (missed-cut players ranked behind survivors by 36-hole score).
 
-## Data: free now, DataGolf later
+## Data: free-source stack
 
-`providers.py` hides the source behind `RoundsProvider`. **EspnProvider** seeds
-years of round history from one scoreboard call per season — no key needed.
-A DataGolf key (set in the app or `DG_API_KEY`) makes `get_provider()` return
-**DataGolfProvider** for richer SG categories and history; nothing else changes.
+The default workflow no longer depends on DataGolf. The provider package uses:
+
+- **ESPN/golfastR-style endpoints** for schedule, field, leaderboard, round
+  scores, and embedded hole-by-hole scorecards.
+- **PGA Tour public stats pages** for season strokes-gained and aggregate skill
+  priors.
+- **Open-Meteo** for free course/weather features when coordinates are known.
+- **The Odds API free tier** only where useful, mainly major outrights.
+- **Manual odds boards** for 3-balls, matchups, and books with no free API.
+
+`golf/data/golf.db` is the canonical free-source cache. The old CSV files remain
+the compatibility interface for the existing model and app.
 
 ```bash
 python3 fetch.py --seed 2022 2023 2024 2025 2026   # backfill rounds.csv
 python3 fetch.py --accumulate                       # append new results (daily)
+python3 -m golf.refresh --stats --weather --fit     # weekly free-source refresh
 ```
 
 ## Calibration, market, staking
@@ -85,15 +94,20 @@ python3 fetch.py --accumulate                       # append new results (daily)
 ## Quick start
 
 ```bash
-python3 fetch.py --seed 2022 2023 2024 2025 2026   # one-time history seed
-python3 model.py --fit                              # fit → model_params.json
-python3 validate.py --since 2024-06-01 --sims 8000  # backtest + set baseline
-python3 calibrate.py --fit                          # fit calibration maps
-python3 fetch.py --espn                             # current field → field.csv
-# add data/odds.csv (+ optional matchups.csv / threeballs.csv), then:
-python3 simulate.py --sims 50000
-python3 edge.py --min-edge 1.0
-bash update.sh                                      # daily refresh (all of the above)
+python3 -m golf.fetch --seed 2022 2023 2024 2025 2026
+python3 -m golf.refresh --stats --fit
+python3 -m golf.validate --since 2024-06-01 --sims 8000
+python3 -m golf.calibrate --fit
+python3 -m golf.simulate --sims 50000
+python3 -m golf.edge --min-edge 1.0
+```
+
+Round-specific 3-balls:
+
+```bash
+# paste a bookmaker board into golf/data/threeballs_r1_raw.txt, then:
+python3 -m golf.refresh --round 1
+python3 -m golf.round_pricer --round 1 --min-edge 4
 ```
 
 ## App integration

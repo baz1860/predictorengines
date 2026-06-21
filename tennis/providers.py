@@ -1,15 +1,28 @@
 """tennis/providers.py — data-source abstraction for the tennis engine.
 
 One interface (`MatchProvider`) so the model never knows where its rows came
-from. The free, no-key implementation is `SackmannProvider`, which pulls Jeff
-Sackmann's per-season match archives straight from GitHub and normalises each
-~50-column row to the canonical `matches.csv` schema:
+from. Free, no-key implementations:
+
+  - `TMLProvider` (ATP): Tennismylife/TML-Database on GitHub — per-season CSVs
+    in the same column format as the former Sackmann ATP repo (1968–present).
+    https://github.com/Tennismylife/TML-Database
+
+  - `MatchChartingProvider` (ATP + WTA supplementary): JeffSackmann's
+    tennis_MatchChartingProject — a single flat CSV per tour with hand-charted
+    match metadata (player names, surface, round, date). Set scores and player
+    ranks are not available; Player 1 is treated as the winner (heuristic).
+    https://github.com/JeffSackmann/tennis_MatchChartingProject
+
+  - `CompositeProvider` (default): routes ATP → TMLProvider, WTA →
+    MatchChartingProvider.
+
+  - `SackmannProvider` (legacy): the original Sackmann ATP+WTA repos; kept for
+    reference but both repos returned HTTP 404 as of June 2026.
+
+All normalise to the canonical `matches.csv` schema:
 
     date, tourney_id, tourney_name, tour, surface, round, best_of,
     winner, loser, winner_rank, loser_rank, winner_sets, loser_sets, score
-
-  - ATP: https://github.com/JeffSackmann/tennis_atp  (atp_matches_YYYY.csv)
-  - WTA: https://github.com/JeffSackmann/tennis_wta  (wta_matches_YYYY.csv)
 
 A paid feed (Sportradar, Tennis Abstract API, …) can drop in later behind the
 same interface without touching model/simulate/edge. Raw season CSVs are cached
@@ -244,6 +257,216 @@ class SackmannProvider:
 
 
 # ─────────────────────────────────────────────
+# TML-Database provider (free, no key, ATP only)
+# ─────────────────────────────────────────────
+
+_TML_BASE = "https://raw.githubusercontent.com/Tennismylife/TML-Database/master"
+
+
+class TMLProvider:
+    """ATP match archives from Tennismylife/TML-Database (1968–present).
+
+    Same column layout as the former Sackmann ATP repo so row normalisation is
+    identical. ATP only — no WTA data in this repo.
+    """
+
+    name = "tml"
+
+    def seasons_available(self) -> list[int]:
+        return list(range(1968, _dt.date.today().year + 1))
+
+    def _season_csv(self, year: int) -> Optional[str]:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache = CACHE_DIR / f"tml_atp_{year}.csv"
+        is_complete_past = year < _dt.date.today().year
+        if cache.exists() and is_complete_past:
+            try:
+                return cache.read_text(encoding="utf-8")
+            except OSError:
+                pass
+        url = f"{_TML_BASE}/{year}.csv"
+        text = _http_text(url)
+        if text and "tourney_id" in text[:300]:
+            try:
+                cache.write_text(text, encoding="utf-8")
+            except OSError:
+                pass
+            return text
+        if cache.exists():
+            try:
+                return cache.read_text(encoding="utf-8")
+            except OSError:
+                return None
+        return None
+
+    def matches_for(self, year: int, tour: str) -> list[MatchRecord]:
+        if tour.lower() != "atp":
+            return []
+        text = self._season_csv(year)
+        if not text:
+            return []
+        out: list[MatchRecord] = []
+        reader = csv.DictReader(io.StringIO(text))
+        for row in reader:
+            winner = (row.get("winner_name") or "").strip()
+            loser = (row.get("loser_name") or "").strip()
+            if not winner or not loser:
+                continue
+            score = (row.get("score") or "").strip()
+            ws, ls = parse_set_score(score)
+            try:
+                best_of = int(float(row.get("best_of") or 3))
+            except ValueError:
+                best_of = 3
+            out.append(MatchRecord(
+                date=_iso_date(row.get("tourney_date")),
+                tourney_id=str(row.get("tourney_id") or "").strip(),
+                tourney_name=(row.get("tourney_name") or "").strip(),
+                tour="atp",
+                surface=normalise_surface(row.get("surface")),
+                round=(row.get("round") or "").strip(),
+                best_of=best_of,
+                winner=winner,
+                loser=loser,
+                winner_rank=_int_rank(row.get("winner_rank")),
+                loser_rank=_int_rank(row.get("loser_rank")),
+                winner_sets=ws,
+                loser_sets=ls,
+                score=score,
+            ))
+        return out
+
+
+# ─────────────────────────────────────────────
+# MatchCharting provider (free, no key, ATP + WTA)
+# ─────────────────────────────────────────────
+
+_MCP_BASE = (
+    "https://raw.githubusercontent.com/JeffSackmann/tennis_MatchChartingProject/master"
+)
+_MCP_FILES = {"atp": "charting-m-matches.csv", "wta": "charting-w-matches.csv"}
+
+
+class MatchChartingProvider:
+    """Match metadata from JeffSackmann/tennis_MatchChartingProject (ATP + WTA).
+
+    Coverage is selective (hand-charted matches only), and set scores / player
+    ranks are not present in the matches metadata file. Player 1 is treated as
+    the winner — a heuristic that holds for the majority of charted matches but
+    is not guaranteed. Best used as a supplementary WTA source.
+    """
+
+    name = "match_charting"
+
+    def __init__(self, tours: Iterable[str] = ("wta",)):
+        self.tours = [t.lower() for t in tours if t.lower() in _MCP_FILES]
+
+    def seasons_available(self) -> list[int]:
+        return list(range(2000, _dt.date.today().year + 1))
+
+    def _tour_csv(self, tour: str) -> Optional[str]:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache = CACHE_DIR / f"mcp_{tour}_matches.csv"
+        # Re-fetch once per day — this is a single growing file.
+        stale = True
+        if cache.exists():
+            age = (_dt.date.today() - _dt.date.fromtimestamp(cache.stat().st_mtime)).days
+            stale = age >= 1
+        if cache.exists() and not stale:
+            try:
+                return cache.read_text(encoding="utf-8")
+            except OSError:
+                pass
+        url = f"{_MCP_BASE}/{_MCP_FILES[tour]}"
+        text = _http_text(url)
+        if text and "match_id" in text[:200]:
+            try:
+                cache.write_text(text, encoding="utf-8")
+            except OSError:
+                pass
+            return text
+        if cache.exists():
+            try:
+                return cache.read_text(encoding="utf-8")
+            except OSError:
+                return None
+        return None
+
+    def matches_for(self, year: int, tour: str) -> list[MatchRecord]:
+        tour = tour.lower()
+        if tour not in self.tours:
+            return []
+        text = self._tour_csv(tour)
+        if not text:
+            return []
+        year_prefix = str(year)
+        out: list[MatchRecord] = []
+        reader = csv.DictReader(io.StringIO(text))
+        for row in reader:
+            date_raw = str(row.get("Date") or "").strip()
+            if not date_raw.startswith(year_prefix):
+                continue
+            winner = (row.get("Player 1") or "").strip()
+            loser = (row.get("Player 2") or "").strip()
+            if not winner or not loser:
+                continue
+            tourney = (row.get("Tournament") or "").strip()
+            tourney_id = f"mcp-{date_raw[:6]}-{tourney.replace(' ', '_').lower()}"
+            try:
+                best_of = int(str(row.get("Best of") or "3").strip())
+            except ValueError:
+                best_of = 3
+            out.append(MatchRecord(
+                date=_iso_date(date_raw),
+                tourney_id=tourney_id,
+                tourney_name=tourney,
+                tour=tour,
+                surface=normalise_surface(row.get("Surface")),
+                round=(row.get("Round") or "").strip(),
+                best_of=best_of,
+                winner=winner,
+                loser=loser,
+                winner_rank=9999,
+                loser_rank=9999,
+                winner_sets=0,
+                loser_sets=0,
+                score="",
+            ))
+        return out
+
+
+# ─────────────────────────────────────────────
+# Composite provider (default: TML for ATP, MatchCharting for WTA)
+# ─────────────────────────────────────────────
+
+class CompositeProvider:
+    """Routes ATP → TMLProvider and WTA → MatchChartingProvider.
+
+    Default provider after the original Sackmann repos became unavailable
+    (both returned HTTP 404 as of June 2026).
+    """
+
+    name = "composite"
+
+    def __init__(self) -> None:
+        self._atp = TMLProvider()
+        self._wta = MatchChartingProvider(tours=("wta",))
+
+    def seasons_available(self) -> list[int]:
+        atp = set(self._atp.seasons_available())
+        wta = set(self._wta.seasons_available())
+        return sorted(atp | wta)
+
+    def matches_for(self, year: int, tour: str) -> list[MatchRecord]:
+        t = tour.lower()
+        if t == "atp":
+            return self._atp.matches_for(year, tour)
+        if t == "wta":
+            return self._wta.matches_for(year, tour)
+        return []
+
+
+# ─────────────────────────────────────────────
 # Store I/O
 # ─────────────────────────────────────────────
 
@@ -265,7 +488,7 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
     (writes nothing, returns 0 when the provider yields no rows). When `years`
     is None, refreshes the current and previous season. Returns rows added.
     """
-    provider = provider or SackmannProvider(tours=tours)
+    provider = provider or CompositeProvider()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if years is None:
         yr = _dt.date.today().year

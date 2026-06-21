@@ -7,6 +7,7 @@ app.engines._inproc.run_inprocess (allowlist + redaction + finite-JSON).
 
 Commands:
   schema    – field names, markets, sim options
+  refresh   – free-source provider refresh → SQLite/CSV cache + manifest
   simulate  – fit-backed field projection (win/T5/T10/T20/cut) → predictions.csv
   predict   – head-to-head matchup probability for two players (joint sim)
   edge      – calibrated + market-blended edges across all markets, portfolio-staked
@@ -16,7 +17,10 @@ import numpy as np
 from . import edge as GE
 from . import model
 from . import portfolio as GPORT
+from . import refresh as GREF
+from . import round_pricer as GRP
 from . import simulate as GSIM
+from .providers.odds_manual import ManualOddsProvider
 
 
 def _field_names() -> list[str]:
@@ -62,6 +66,47 @@ def cmd_schema(_p=None):
             "markets": ["win", "top5", "top10", "top20", "cut", "matchup", "3ball"],
             "competitor_label": "Player",
             "fitted": model.load_params() is not None}
+
+
+def cmd_refresh(p):
+    round_no = int(p.get("round", p.get("round_no", 1)) or 1)
+    manifest = GREF.run_refresh(
+        season=int(p["season"]) if p.get("season") else None,
+        event=p.get("event_id", p.get("event", "")) or "",
+        stats=bool(p.get("stats", False)),
+        weather=bool(p.get("weather", False)),
+        odds_api_sport=p.get("odds_api_sport", "") or "",
+        manual_raw=p.get("manual_raw", "") or str(GREF.THREEBALLS_RAW),
+        round_no=round_no,
+        fit=bool(p.get("fit", False)),
+        use_cache=bool(p.get("use_cache", False)),
+    )
+    provider_rows = manifest.get("provider_rows") or {}
+    rows = [{"provider": key, "rows": value} for key, value in provider_rows.items()]
+    qa = manifest.get("qa") or {}
+    event = manifest.get("event") or {}
+    warnings = len(qa.get("warnings") or [])
+    errors = len(qa.get("errors") or [])
+    note = "Free-source refresh"
+    if event:
+        note += f" · {event.get('name', 'current event')}"
+    note += f" · {sum(int(r.get('rows') or 0) for r in rows):,} provider rows"
+    if warnings:
+        note += f" · {warnings} warning(s)"
+    if errors:
+        note += f" · {errors} error(s)"
+    return {
+        "note": note,
+        "columns": [
+            {"key": "provider", "label": "Provider", "fmt": "text"},
+            {"key": "rows", "label": "Rows", "fmt": "num"},
+        ],
+        "rows": rows,
+        "event": event,
+        "provider_rows": provider_rows,
+        "qa": qa,
+        "manifest": manifest,
+    }
 
 
 def _sims_arg(p):
@@ -186,5 +231,39 @@ def cmd_edge(p):
     return {"note": note, "columns": columns, "rows": rows}
 
 
-COMMANDS = {"schema": lambda p: cmd_schema(), "simulate": cmd_simulate,
-            "predict": cmd_predict, "edge": cmd_edge}
+def cmd_round_3balls(p):
+    params = model.load_params()
+    if not params:
+        raise ValueError("No model_params.json - run model.py --fit first.")
+    round_no = int(p.get("round", p.get("round_no", 1)) or 1)
+    event_id = p.get("event_id", "") or ""
+    quotes = ManualOddsProvider().load_threeballs(event_id=event_id, round_no=round_no)
+    if not quotes:
+        raise ValueError("No 3-ball odds found in golf/data/threeballs.csv.")
+    bankroll = float(p.get("bankroll", 100.0))
+    rows = GRP.price_round_3balls(
+        quotes,
+        params,
+        course=p.get("course", "") or "",
+        is_major=bool(p.get("major", False)),
+        sims=_sims_arg(p),
+        bankroll=bankroll,
+        kelly=float(p.get("kelly", 0.25)),
+        min_rounds=int(p.get("min_rounds", 60)),
+    )
+    GRP.write_round_edges(rows)
+    columns = [
+        {"key": "round", "label": "Round", "fmt": "num"},
+        {"key": "player", "label": "Player", "fmt": "text"},
+        {"key": "odds", "label": "Odds", "fmt": "num"},
+        {"key": "p_dead_heat_equiv", "label": "Model", "fmt": "pct"},
+        {"key": "p_market", "label": "Market", "fmt": "pct"},
+        {"key": "ev_pct", "label": "EV%", "fmt": "signed_num"},
+        {"key": "kelly_stake", "label": "Stake", "fmt": "gbp"},
+    ]
+    return {"note": f"Round {round_no} 3-balls · {len(rows)} sides", "columns": columns, "rows": rows}
+
+
+COMMANDS = {"schema": lambda p: cmd_schema(), "refresh": cmd_refresh,
+            "simulate": cmd_simulate, "predict": cmd_predict, "edge": cmd_edge,
+            "round_3balls": cmd_round_3balls}

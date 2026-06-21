@@ -20,47 +20,24 @@ from __future__ import annotations
 
 import argparse
 import csv
-import re
 import sys
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent))
 from . import model as M
 from . import market as MK
 from . import edge as E
+from .providers.odds_manual import parse_skybet_threeball_text
 
 DATA = Path(__file__).parent / "data"
 RAW = DATA / "threeballs_r1_raw.txt"
 OUT = DATA / "threeballs_r1_edges.csv"
 
-HEADER_RE = re.compile(r"^3\s*Ball.*-\s*(.+)$", re.I)
-NUM_RE = re.compile(r"^\d+(\.\d+)?$")
-
 
 def parse_raw(path: Path) -> list[dict]:
     """Parse the pasted board into [{group, players:[(name,odds),...]}]."""
-    lines = [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
-    groups, cur, pending = [], None, []
-    for ln in lines:
-        h = HEADER_RE.match(ln)
-        if h:
-            if cur is not None:
-                groups.append(cur)
-            cur = {"group": h.group(1).strip(), "players": []}
-            pending = []
-            continue
-        if cur is None:
-            continue
-        if NUM_RE.match(ln):                       # an odds line → pairs with last name
-            if pending:
-                cur["players"].append((pending.pop(0), float(ln)))
-        else:                                      # a name line
-            pending.append(ln)
-    if cur is not None:
-        groups.append(cur)
-    return [g for g in groups if len(g["players"]) == 3]
+    return parse_skybet_threeball_text(path.read_text(errors="replace"))
 
 
 def main() -> None:

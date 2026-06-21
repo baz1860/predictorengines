@@ -2,9 +2,11 @@
 
 Drives the golf package in-process via golf.engine.COMMANDS (Phase 4 — the golf
 modules are package-qualified, so their flat names no longer collide with the
-worldcup engine). Capabilities are Simulate (field projection: win/T5/T10/T20/cut),
-Edge (outright, place, cut, matchup & 3-ball markets, calibrated + market-blended),
-and Predict (head-to-head matchup probabilities). The UI is capability-driven.
+worldcup engine). Capabilities are Refresh (free-source provider cache), Simulate
+(field projection: win/T5/T10/T20/cut), Edge (outright, place, cut, matchup &
+3-ball markets, calibrated + market-blended), Round 3-Balls (single-round group
+pricing), and Predict (head-to-head matchup probabilities). The UI is
+capability-driven.
 
 Bets auto-settle against the latest completed event in golf/data/rounds.csv
 (refreshed by `fetch.py --accumulate`): win / top-N / make-cut grade off the
@@ -101,7 +103,7 @@ class GolfAdapter(EngineAdapter):
     id = "golf"
     name = "Golf (PGA Tour)"
     sport = "golf"
-    capabilities = {"simulate", "edge", "predict"}
+    capabilities = {"refresh", "simulate", "edge", "round_3balls", "predict"}
 
     def _run(self, command, params=None, timeout=180):  # timeout unused in-process
         from golf import engine as golf_engine
@@ -121,6 +123,18 @@ class GolfAdapter(EngineAdapter):
                 "sim_options": s.get("sim_options", [10000, 50000, 100000]),
                 "field_based": True}
 
+    def refresh_schema(self) -> dict[str, Any]:
+        return {
+            "models": [],
+            "default_round": 1,
+            "options": [
+                {"id": "stats", "label": "PGA stats", "default": False},
+                {"id": "weather", "label": "Weather", "default": False},
+                {"id": "fit", "label": "Fit model", "default": False},
+                {"id": "use_cache", "label": "Use cache", "default": True},
+            ],
+        }
+
     def edge_schema(self) -> dict[str, Any]:
         return {"models": [],
                 "odds_sources": [{"id": "manual",
@@ -128,6 +142,15 @@ class GolfAdapter(EngineAdapter):
                 "needs_sim_first": False,
                 "options": [{"id": "calibrated", "label": "Calibrated", "default": True},
                             {"id": "market_blend", "label": "Market blend", "default": True}]}
+
+    def round_3balls_schema(self) -> dict[str, Any]:
+        return {
+            "models": [],
+            "default_sims": 50000,
+            "sim_options": [10000, 50000, 100000, 200000],
+            "default_round": 1,
+            "options": [{"id": "major", "label": "Major", "default": False}],
+        }
 
     def predict(self, params: dict[str, Any]) -> dict[str, Any]:
         # base interface passes the two picks as home/away or player_a/player_b
@@ -137,6 +160,9 @@ class GolfAdapter(EngineAdapter):
 
     def simulate(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._run("simulate", params)
+
+    def refresh(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._run("refresh", params)
 
     def edge(self, params: dict[str, Any]) -> dict[str, Any]:
         from .. import bankroll_store
@@ -166,6 +192,13 @@ class GolfAdapter(EngineAdapter):
                 result["recorded"] = len(placed)
         return normalize_edge_result(result, source="manual", model="",
                                      sport=self.sport)
+
+    def round_3balls(self, params: dict[str, Any]) -> dict[str, Any]:
+        from .. import bankroll_store
+        bankroll = bankroll_store.current_bankroll()
+        result = self._run("round_3balls", {**params, "bankroll": bankroll})
+        result["bankroll"] = round(bankroll, 2)
+        return result
 
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:
         """Settle open golf bets EVENT-SAFELY. Each bet is graded only against the

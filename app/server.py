@@ -58,6 +58,10 @@ _PARAM_CLAMPS: dict[str, tuple[float, float]] = {
     "kelly": (0.0, 1.0),
     "min_edge": (0.0, 1.0),
     "cut_rule": (1, 200),
+    "round": (1, 4),
+    "round_no": (1, 4),
+    "season": (2000, 2100),
+    "min_rounds": (1, 500),
 }
 
 
@@ -229,9 +233,19 @@ def simulate(req: EngineRequest):
     return _dispatch(req.engine, "simulate", req.params)
 
 
+@app.post("/api/refresh")
+def refresh(req: EngineRequest):
+    return _dispatch(req.engine, "refresh", req.params)
+
+
 @app.post("/api/edge")
 def edge(req: EngineRequest):
     return _dispatch(req.engine, "edge", req.params)
+
+
+@app.post("/api/round-3balls")
+def round_3balls(req: EngineRequest):
+    return _dispatch(req.engine, "round_3balls", req.params)
 
 
 @app.post("/api/edge/template")

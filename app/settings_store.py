@@ -15,9 +15,8 @@ SETTINGS = ROOT / "data" / "app_settings.json"
 
 # Odds sources the UI offers a key field for.
 ODDS_SOURCES = [
-    {"id": "the-odds-api", "label": "The Odds API (the-odds-api.com)"},
+    {"id": "the-odds-api", "label": "The Odds API (major golf outrights / odds)"},
     {"id": "api-football", "label": "API-Football (injuries.py)"},
-    {"id": "datagolf", "label": "DataGolf (golf/fetch.py)"},
 ]
 
 DEFAULTS = {

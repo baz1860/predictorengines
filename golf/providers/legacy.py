@@ -1,15 +1,14 @@
 """
-golf/providers.py  –  Data-source abstraction for the golf engine (v2).
+golf/providers/legacy.py  –  original round-history provider implementation.
 
 One interface (`RoundsProvider`) so the model never knows where its data came
 from.  Two implementations:
 
   • EspnProvider     – free.  One scoreboard call per season returns every PGA
                        event with full round-by-round linescores embedded.
-  • DataGolfProvider – paid drop-in upgrade (true strokes-gained + categories +
-                       course history).  Field/odds work today; round history is
-                       a thin TODO so `get_provider()` keeps using ESPN for the
-                       historical spine until it is filled in.
+  • DataGolfProvider – retained only for backward compatibility. The production
+                       free-source stack should prefer the ESPN/PGA Tour/Open-
+                       Meteo providers in this package.
 
 `get_provider()` returns DataGolf when a key is configured *and* it supports the
 requested capability, otherwise ESPN — so adding a key later enriches the model
@@ -31,11 +30,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Protocol, runtime_checkable
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 CACHE_DIR = DATA_DIR / "api_cache"
 ROUNDS_CSV = DATA_DIR / "rounds.csv"
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 # Append (don't insert at 0): root only provides api_keys; inserting it ahead of
 # golf/ would shadow golf-local modules (edge, model, …) with the root engine's.
 if str(ROOT) not in sys.path:
@@ -324,7 +323,7 @@ class DataGolfProvider:
         return []  # TODO: historical-raw-data/rounds → RoundRecord with SG cats
 
     def field_for(self, event: Optional[str] = None) -> list[FieldEntry]:
-        from .fetch import fetch_dg_field
+        from ..fetch import fetch_dg_field
         out = []
         for p in fetch_dg_field(self.api_key):
             name = p.get("player_name") or p.get("name", "")
@@ -334,7 +333,7 @@ class DataGolfProvider:
         return out
 
     def pretournament_preds(self, event: Optional[str] = None) -> Optional[dict]:
-        from .fetch import fetch_dg_predictions
+        from ..fetch import fetch_dg_predictions
         try:
             return {"baseline": fetch_dg_predictions(self.api_key)}
         except Exception:  # noqa: BLE001
