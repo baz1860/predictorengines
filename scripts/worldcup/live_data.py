@@ -126,6 +126,47 @@ def _is_worldcup_event(event: dict) -> bool:
     return any(hint in name for hint in _WC_LEAGUE_HINTS)
 
 
+def _name_from_obj(value: object) -> str:
+    if isinstance(value, dict):
+        return str(value.get("name") or value.get("short_name")
+                   or value.get("title") or "").strip()
+    return str(value or "").strip()
+
+
+def _event_team(event: dict, side: str) -> str:
+    return _name_from_obj(
+        event.get(f"{side}_team") or event.get(f"{side}_team_obj") or ""
+    )
+
+
+def _event_team_id(event: dict, side: str) -> object:
+    obj = event.get(f"{side}_team_obj") or {}
+    if isinstance(obj, dict):
+        return obj.get("id")
+    return event.get(f"{side}_team_id")
+
+
+def _event_round(event: dict) -> str:
+    return str(event.get("round_name") or event.get("round")
+               or event.get("stage") or event.get("group_name") or "").strip()
+
+
+def _canonical_comp(event: dict) -> str:
+    """Canonical competition string used by fixture_key joins."""
+    if _is_worldcup_event(event):
+        return "FIFA World Cup"
+    return bsd_league_name(event) or "FIFA World Cup"
+
+
+def _lineup_confirmed(event: dict) -> bool:
+    for key in ("lineups_confirmed", "lineup_confirmed", "is_lineup_confirmed",
+                "isLineupConfirmed"):
+        if key in event:
+            return bool(event.get(key))
+    status = str(event.get("status") or "").lower().replace("_", "")
+    return status in {"inprogress", "live", "finished", "ft", "aet", "pen"}
+
+
 def _try_team(name: object, known: set[str], context: str) -> str | None:
     """Return canonical team name, or None if unresolvable (logs a warning)."""
     try:
@@ -150,23 +191,30 @@ def parse_fixtures_bsd(events: list[dict],
     for ev in events:
         if not _is_worldcup_event(ev):
             continue
-        home_raw = ev.get("home_team") or ""
-        away_raw = ev.get("away_team") or ""
+        home_raw = _event_team(ev, "home")
+        away_raw = _event_team(ev, "away")
         home = _try_team(home_raw, known, "fixture")
         away = _try_team(away_raw, known, "fixture")
         if not home or not away:
             continue
         kickoff = event_date_utc(ev)
         match_date = _local_match_date(kickoff)
-        comp = bsd_league_name(ev) or "FIFA World Cup"
-        rnd = ev.get("round") or ev.get("stage") or ""
+        comp = _canonical_comp(ev)
+        rnd = _event_round(ev)
         status_raw = str(ev.get("status") or "").lower()
         # Map BSD status strings to short codes similar to old api-football codes
         status_map = {
+            "notstarted": ("Not Started", "NS"),
+            "not_started": ("Not Started", "NS"),
+            "scheduled": ("Not Started", "NS"),
             "upcoming": ("Not Started", "NS"),
+            "inprogress": ("In Progress", "1H"),
+            "in_progress": ("In Progress", "1H"),
             "live": ("In Progress", "1H"),
             "finished": ("Match Finished", "FT"),
+            "ft": ("Match Finished", "FT"),
             "cancelled": ("Cancelled", "CANC"),
+            "canceled": ("Cancelled", "CANC"),
             "postponed": ("Postponed", "PST"),
         }
         status_long, status_short = status_map.get(
@@ -187,14 +235,15 @@ def parse_fixtures_bsd(events: list[dict],
             "away": away,
             "competition": comp,
             "round": rnd,
-            "group": _group_from_round(rnd),
+            "group": (_group_from_round(rnd)
+                      or _group_from_round(ev.get("group_name") or "")),
             "status_long": status_long,
             "status_short": status_short,
             "elapsed": ev.get("elapsed") or ev.get("minute"),
             "venue_name": venue_name,
             "venue_city": venue_city,
-            "provider_home_id": ev.get("home_team_id"),
-            "provider_away_id": ev.get("away_team_id"),
+            "provider_home_id": _event_team_id(ev, "home"),
+            "provider_away_id": _event_team_id(ev, "away"),
             "source": "bsd",
             "fetched_at": fetched,
         })
@@ -211,6 +260,138 @@ def _group_from_round(round_name: str) -> str:
         if p.lower() == "group" and i + 1 < len(parts):
             return parts[i + 1].strip().upper()
     return ""
+
+
+# ---------------------------------------------------------------------------
+# Legacy API-Football parser compatibility
+# ---------------------------------------------------------------------------
+
+def parse_fixtures(payload: list[dict],
+                   fetched_at: str | None = None,
+                   teams: set[str] | None = None) -> pd.DataFrame:
+    """Normalize legacy API-Football fixture payloads.
+
+    BSD is the active provider, but keeping these parsers lets old cached
+    payloads and regression tests continue to exercise the canonical schema.
+    """
+    fetched = fetched_at or utc_now()
+    known = teams if teams is not None else known_teams()
+    rows = []
+    for item in payload or []:
+        fixture = item.get("fixture") or {}
+        league = item.get("league") or {}
+        teams_obj = item.get("teams") or {}
+        home_obj = teams_obj.get("home") or {}
+        away_obj = teams_obj.get("away") or {}
+        home = _try_team(home_obj.get("name"), known, "fixture")
+        away = _try_team(away_obj.get("name"), known, "fixture")
+        if not home or not away:
+            continue
+        kickoff = str(fixture.get("date") or "")
+        match_date = _local_match_date(kickoff)
+        comp_raw = str(league.get("name") or "")
+        comp = "FIFA World Cup" if "world cup" in comp_raw.lower() else comp_raw
+        rnd = league.get("round") or ""
+        venue = fixture.get("venue") or {}
+        status = fixture.get("status") or {}
+        rows.append({
+            "event_id": _event_id(match_date, home, away, comp),
+            "provider_fixture_id": fixture.get("id"),
+            "match_date": match_date,
+            "kickoff_utc": kickoff,
+            "home": home,
+            "away": away,
+            "competition": comp,
+            "round": rnd,
+            "group": _group_from_round(rnd),
+            "status_long": status.get("long", ""),
+            "status_short": status.get("short", ""),
+            "elapsed": status.get("elapsed"),
+            "venue_name": venue.get("name", ""),
+            "venue_city": venue.get("city", ""),
+            "provider_home_id": home_obj.get("id"),
+            "provider_away_id": away_obj.get("id"),
+            "source": "api-football_legacy",
+            "fetched_at": fetched,
+        })
+    return pd.DataFrame(rows)
+
+
+def parse_availability(payload: list[dict],
+                       fetched_at: str | None = None,
+                       teams: set[str] | None = None) -> pd.DataFrame:
+    fetched = fetched_at or utc_now()
+    known = teams if teams is not None else known_teams()
+    rows = []
+    for item in payload or []:
+        team_obj = item.get("team") or {}
+        player_obj = item.get("player") or {}
+        fixture = item.get("fixture") or {}
+        team = _try_team(team_obj.get("name"), known, "availability")
+        if not team:
+            continue
+        reason = player_obj.get("reason") or ""
+        kind = player_obj.get("type") or player_obj.get("status") or ""
+        status, certainty, affects = classify_availability(reason, kind)
+        rows.append({
+            "team": team,
+            "player": player_obj.get("name"),
+            "status": status,
+            "reason": reason,
+            "certainty": certainty,
+            "affects_availability": bool(affects),
+            "source": "api-football_legacy",
+            "fetched_at": fetched,
+            "provider_fixture_id": fixture.get("id"),
+            "provider_team_id": team_obj.get("id"),
+            "provider_player_id": player_obj.get("id"),
+        })
+    return pd.DataFrame(rows)
+
+
+def parse_lineups(payload: list[dict], fixture_meta: dict | None = None,
+                  fetched_at: str | None = None,
+                  published_at: str | None = None,
+                  teams: set[str] | None = None) -> pd.DataFrame:
+    fetched = fetched_at or utc_now()
+    published = published_at or fetched
+    known = teams if teams is not None else known_teams()
+    meta = fixture_meta or {}
+    rows = []
+    for item in payload or []:
+        team_obj = item.get("team") or {}
+        team = _try_team(team_obj.get("name"), known, "lineup")
+        if not team:
+            continue
+        formation = item.get("formation") or ""
+        starters = item.get("startXI") or item.get("starters") or []
+        bench = item.get("substitutes") or item.get("bench") or []
+        for role, players in (("starter", starters), ("bench", bench)):
+            for raw in players:
+                player = raw.get("player") if isinstance(raw, dict) else raw
+                if isinstance(player, str):
+                    player = {"name": player}
+                if not isinstance(player, dict):
+                    continue
+                rows.append({
+                    "event_id": meta.get("event_id", ""),
+                    "provider_fixture_id": meta.get("provider_fixture_id"),
+                    "match_date": meta.get("match_date", ""),
+                    "team": team,
+                    "player": player.get("name"),
+                    "provider_team_id": team_obj.get("id"),
+                    "provider_player_id": player.get("id"),
+                    "starter": role == "starter",
+                    "role": role,
+                    "position": player.get("pos") or player.get("position"),
+                    "shirt_number": player.get("number") or player.get("shirt_number"),
+                    "formation": formation,
+                    "lineup_status": "confirmed",
+                    "published_at": published,
+                    "source": "api-football_legacy",
+                    "fetched_at": fetched,
+                })
+    return pd.DataFrame(rows)
 
 
 _DOUBTFUL = ("doubt", "questionable", "fitness", "late test", "knock",
@@ -250,11 +431,13 @@ def parse_availability_bsd(events: list[dict],
         unavail = bsd_unavailable(ev)
         fixture_id = ev.get("id")
         for side in ("home", "away"):
-            team_raw = ev.get(f"{side}_team") or ""
+            team_raw = _event_team(ev, side)
             team = _try_team(team_raw, known, "availability")
             if not team:
                 continue
             for player in unavail.get(side) or []:
+                if isinstance(player, str):
+                    player = {"name": player}
                 reason = (player.get("reason") or player.get("description")
                           or player.get("type") or "")
                 kind = player.get("type") or player.get("status") or ""
@@ -285,15 +468,17 @@ def parse_lineups_bsd(event: dict, fixture_meta: dict | None = None,
     known = teams if teams is not None else known_teams()
     meta = fixture_meta or {}
     raw_lineups = bsd_lineups(event)
+    lineup_status = "confirmed" if _lineup_confirmed(event) else "projected"
     rows = []
     for side in ("home", "away"):
-        team_raw = event.get(f"{side}_team") or ""
+        team_raw = _event_team(event, side)
         team = _try_team(team_raw, known, "lineup")
         if not team:
             continue
         side_data = raw_lineups.get(side) or {}
         formation = side_data.get("formation") or ""
-        starters = side_data.get("starters") or side_data.get("starting_xi") or []
+        starters = (side_data.get("starters") or side_data.get("starting_xi")
+                    or side_data.get("startXI") or side_data.get("players") or [])
         bench = side_data.get("bench") or side_data.get("substitutes") or []
         for role, players in (("starter", starters), ("bench", bench)):
             for player in players:
@@ -305,14 +490,17 @@ def parse_lineups_bsd(event: dict, fixture_meta: dict | None = None,
                     "match_date": meta.get("match_date", ""),
                     "team": team,
                     "player": player.get("name"),
-                    "provider_team_id": player.get("team_id"),
-                    "provider_player_id": player.get("id") or player.get("player_id"),
+                    "provider_team_id": player.get("team_id") or _event_team_id(event, side),
+                    "provider_player_id": (player.get("id") or player.get("player_id")
+                                           or player.get("api_id")),
                     "starter": role == "starter",
                     "role": role,
-                    "position": player.get("pos") or player.get("position"),
-                    "shirt_number": player.get("number") or player.get("shirt_number"),
+                    "position": (player.get("specific_position")
+                                 or player.get("pos") or player.get("position")),
+                    "shirt_number": (player.get("number") or player.get("shirt_number")
+                                     or player.get("jersey_number")),
                     "formation": formation,
-                    "lineup_status": "confirmed",
+                    "lineup_status": lineup_status,
                     "published_at": published,
                     "source": "bsd",
                     "fetched_at": fetched,
@@ -346,6 +534,14 @@ _BSD_DIRECT_STAT_FIELDS = {
     "fouls": "fouls",
 }
 
+_BSD_TOP_LEVEL_STAT_FIELDS = {
+    "shots": "shots", "shots_on_target": "shots_on_target",
+    "sot": "shots_on_target", "corners": "corners",
+    "possession": "possession", "xg": "xg", "xg_live": "xg",
+    "actual_xg": "xg", "yellow_cards": "yellow_cards",
+    "red_cards": "red_cards", "fouls": "fouls",
+}
+
 
 def _num(v: object) -> float | int | None:
     if v is None:
@@ -370,7 +566,7 @@ def parse_match_stats_bsd(event: dict, fixture_meta: dict | None = None,
     raw = bsd_stats(event)
     rows = []
     for side in ("home", "away"):
-        team_raw = event.get(f"{side}_team") or ""
+        team_raw = _event_team(event, side)
         team = _try_team(team_raw, known, "stats")
         if not team:
             continue
@@ -395,10 +591,13 @@ def parse_match_stats_bsd(event: dict, fixture_meta: dict | None = None,
                 if field in side_stats:
                     row[col] = _num(side_stats[field])
         # Also check top-level event fields like home_shots, away_xg
-        for field, col in _BSD_DIRECT_STAT_FIELDS.items():
-            full_key = f"{side}_{field}"
-            if full_key in event and col not in row:
-                row[col] = _num(event[full_key])
+        for field, col in _BSD_TOP_LEVEL_STAT_FIELDS.items():
+            keys = [f"{side}_{field}"]
+            if field == "actual_xg":
+                keys.append(f"actual_{side}_xg")
+            for full_key in keys:
+                if full_key in event and col not in row:
+                    row[col] = _num(event[full_key])
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -406,6 +605,27 @@ def parse_match_stats_bsd(event: dict, fixture_meta: dict | None = None,
 # ---------------------------------------------------------------------------
 # Main BSD fetch orchestrator
 # ---------------------------------------------------------------------------
+
+def _bsd_statuses_for_mode(mode: str) -> list[str]:
+    if mode == "morning":
+        return ["notstarted", "inprogress"]
+    if mode == "prekickoff":
+        return ["notstarted", "inprogress"]
+    if mode == "postmatch":
+        return ["finished", "inprogress", "notstarted"]
+    return ["notstarted", "inprogress", "finished"]
+
+
+def _fetch_bsd_events(api_key: str, mode: str) -> list[dict]:
+    events: list[dict] = []
+    for status in _bsd_statuses_for_mode(mode):
+        events += get_all_events(api_key, status=status)
+    # Some BSD deployments ignore or rename status filters. A no-filter fetch is
+    # still safe because downstream parsing keeps only World Cup events.
+    if not events:
+        events = get_all_events(api_key)
+    return events
+
 
 def fetch_bsd(mode: str, api_key: str) -> None:
     """Fetch World Cup data from BSD for the given *mode*.
@@ -420,12 +640,8 @@ def fetch_bsd(mode: str, api_key: str) -> None:
         return
     fetched = utc_now()
     try:
-        # Fetch all upcoming + live + recently finished WC events in one sweep
-        events = get_all_events(api_key, status="upcoming")
-        if mode in ("postmatch", "all"):
-            events += get_all_events(api_key, status="finished")
-        if mode in ("all",):
-            events += get_all_events(api_key, status="live")
+        # Fetch current BSD statuses and filter to World Cup rows locally.
+        events = _fetch_bsd_events(api_key, mode)
 
         # Deduplicate
         seen: set = set()
@@ -442,7 +658,7 @@ def fetch_bsd(mode: str, api_key: str) -> None:
         _save_raw("bsd", "events", wc_events, fetched)
 
         # ── fixtures ────────────────────────────────────────────────────────
-        if mode in ("morning", "postmatch", "all"):
+        if mode in ("morning", "prekickoff", "postmatch", "all"):
             df = parse_fixtures_bsd(wc_events, fetched)
             if not df.empty:
                 _upsert_csv(FIXTURES_CSV, df, ["provider_fixture_id"])

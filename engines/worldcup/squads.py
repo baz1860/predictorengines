@@ -38,6 +38,7 @@ HERE = Path(__file__).resolve().parents[2]
 EA_CSV = HERE / "data" / "ea_players.csv"
 SQUADS_CSV = HERE / "data" / "squads.csv"
 ABSENCES_CSV = HERE / "data" / "absences.csv"
+LIVE_AVAILABILITY_CSV = HERE / "data" / "worldcup" / "player_availability.csv"
 OUT_CSV = HERE / "data" / "squad_ratings.csv"
 
 TOP_N = 18          # squad power uses the best TOP_N players
@@ -118,16 +119,69 @@ def squad_power(overalls, top_n=TOP_N):
 
 
 def load_absences():
-    """Manual absences (data/absences.csv) + API pulls (data/absences_api.csv)."""
+    """Manual absences plus canonical live provider availability pulls."""
     frames = []
     for path in (ABSENCES_CSV, ABSENCES_CSV.with_name("absences_api.csv")):
         if path.exists():
             frames.append(pd.read_csv(path, comment="#"))
+    live = _live_availability_absences()
+    if not live.empty:
+        frames.append(live)
     if not frames:
         return pd.DataFrame(columns=["team", "player", "note"])
     return (pd.concat(frames, ignore_index=True)
             .dropna(subset=["player"])
             .drop_duplicates(subset=["team", "player"]))
+
+
+def _truthy(value):
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "t"}
+
+
+def _live_availability_absences():
+    """Convert data/worldcup/player_availability.csv into squad absence rows.
+
+    The live table is fixture/provider-shaped. Squad adjustments consume a
+    simpler team/player/note table, so only rows explicitly marked as affecting
+    availability are promoted into the modelling input.
+    """
+    if not LIVE_AVAILABILITY_CSV.exists():
+        return pd.DataFrame(columns=["team", "player", "note"])
+    try:
+        df = pd.read_csv(LIVE_AVAILABILITY_CSV)
+    except Exception:
+        return pd.DataFrame(columns=["team", "player", "note"])
+    if df.empty or not {"team", "player"} <= set(df.columns):
+        return pd.DataFrame(columns=["team", "player", "note"])
+    df = df.dropna(subset=["team", "player"]).copy()
+    if "affects_availability" in df.columns:
+        df = df[df["affects_availability"].map(_truthy)].copy()
+    elif "status" in df.columns:
+        status = df["status"].fillna("").astype(str).str.lower()
+        df = df[status.isin(["out", "suspended", "withdrawn"])].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["team", "player", "note"])
+    if "fetched_at" in df.columns:
+        ts = pd.to_datetime(df["fetched_at"], utc=True, errors="coerce")
+        df = (df.assign(_fetched_at_sort=ts)
+                .sort_values("_fetched_at_sort")
+                .drop(columns=["_fetched_at_sort"]))
+    df = df.drop_duplicates(subset=["team", "player"], keep="last")
+
+    def note(r):
+        parts = ["bsd"]
+        for col in ("status", "certainty", "reason"):
+            val = getattr(r, col, "")
+            if str(val or "").strip():
+                parts.append(str(val).strip())
+        return ": ".join([parts[0], "; ".join(parts[1:])]) if len(parts) > 1 else "bsd"
+
+    out = pd.DataFrame({
+        "team": df["team"].astype(str),
+        "player": df["player"].astype(str),
+    })
+    out["note"] = [note(r) for r in df.itertuples(index=False)]
+    return out
 
 
 def current_elo():
