@@ -345,6 +345,69 @@
           </div>
         </div>
 
+        <!-- DRAW EDITOR (tennis) -->
+        <div id="panel-draw" class="panel wide" hidden>
+          <div class="form-card">
+            <div class="row controls" style="margin-bottom:12px">
+              <label class="field model-field"><span class="field-label">Tour</span>
+                <select id="draw-fetch-tour">
+                  <option value="atp">ATP (men)</option>
+                  <option value="wta">WTA (women)</option>
+                </select>
+              </label>
+              <label class="field"><span class="field-label">Tournament (optional filter)</span>
+                <input id="draw-fetch-filter" placeholder="e.g. Eastbourne — leave blank for first event" autocomplete="off" />
+              </label>
+              <button id="draw-fetch-btn" class="primary">Fetch from web</button>
+            </div>
+            <div id="draw-fetch-note" class="muted-note" hidden></div>
+            <div id="draw-fetch-error" class="error" hidden></div>
+          </div>
+          <div class="form-card" style="margin-top:0">
+            <div class="card-title" style="margin-bottom:8px">Tournament details</div>
+            <div class="row">
+              <label class="field model-field"><span class="field-label">Tour</span>
+                <select id="draw-tour">
+                  <option value="atp">ATP (men)</option>
+                  <option value="wta">WTA (women)</option>
+                </select>
+              </label>
+              <label class="field"><span class="field-label">Tournament name</span>
+                <input id="draw-tourney" placeholder="e.g. Eastbourne" autocomplete="off" />
+              </label>
+              <label class="field model-field"><span class="field-label">Surface</span>
+                <select id="draw-surface">
+                  <option value="grass">Grass</option>
+                  <option value="hard">Hard</option>
+                  <option value="clay">Clay</option>
+                  <option value="carpet">Carpet</option>
+                </select>
+              </label>
+              <label class="field model-field"><span class="field-label">Best of</span>
+                <select id="draw-best-of">
+                  <option value="3">3</option>
+                  <option value="5">5</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="result-card">
+            <div class="table-toolbar">
+              <div class="card-title" style="margin:0">Matches</div>
+              <span class="spacer"></span>
+              <button id="draw-add-btn" class="ghost">+ Add match</button>
+            </div>
+            <div id="draw-matches-host"></div>
+            <datalist id="draw-player-names"></datalist>
+          </div>
+          <div class="row controls" style="padding: 0 0 16px 0">
+            <div id="draw-note" class="muted-note" hidden></div>
+            <div id="draw-error" class="error" hidden></div>
+            <span class="spacer"></span>
+            <button id="draw-save-btn" class="primary">Save draw &amp; odds</button>
+          </div>
+        </div>
+
         <!-- placeholder -->
         <div id="panel-placeholder" class="panel" hidden>
           <div class="placeholder"><div class="placeholder-title" id="placeholder-title"></div><p>Coming in a later phase.</p></div>

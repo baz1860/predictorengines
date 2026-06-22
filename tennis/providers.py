@@ -33,6 +33,7 @@ from __future__ import annotations
 import csv
 import datetime as _dt
 import io
+import json
 import sys
 import time
 import urllib.request
@@ -531,6 +532,178 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
     if verbose:
         print(f"  +{len(new_rows)} matches → {MATCHES_CSV} ({len(all_rows)} total)")
     return len(new_rows)
+
+
+# ─────────────────────────────────────────────
+# ESPN Draw Provider (live upcoming fixtures, free, no key)
+# ─────────────────────────────────────────────
+
+# Known surface map: tourney name fragment (lower) → surface
+_KNOWN_SURFACES: dict[str, str] = {
+    "wimbledon": "grass",
+    "eastbourne": "grass",
+    "birmingham": "grass",
+    "nottingham": "grass",
+    "halle": "grass",
+    "queens": "grass",
+    "s-hertogenbosch": "grass",
+    "rosmalen": "grass",
+    "mallorca": "grass",
+    "berlin": "grass",
+    "bad homburg": "grass",
+    "roland garros": "clay",
+    "french open": "clay",
+    "madrid": "clay",
+    "rome": "clay",
+    "barcelona": "clay",
+    "monte carlo": "clay",
+    "monte-carlo": "clay",
+    "hamburg": "clay",
+    "geneva": "clay",
+    "lyon": "clay",
+    "australian open": "hard",
+    "us open": "hard",
+    "indian wells": "hard",
+    "miami": "hard",
+    "montreal": "hard",
+    "toronto": "hard",
+    "cincinnati": "hard",
+    "beijing": "hard",
+    "shanghai": "hard",
+    "paris": "hard",
+    "vienna": "hard",
+    "basel": "hard",
+    "dubai": "hard",
+    "doha": "hard",
+    "rotterdam": "hard",
+    "marseille": "hard",
+}
+
+# Round display name → short code used in draw.csv
+_ROUND_MAP: dict[str, str] = {
+    "Qualifying 1st Round": "Q1",
+    "Qualifying 2nd Round": "Q2",
+    "Qualifying Final": "QF-Q",
+    "Round 1": "R1",
+    "Round 2": "R2",
+    "Round of 128": "R128",
+    "Round of 64": "R64",
+    "Round of 32": "R32",
+    "Round of 16": "R16",
+    "Quarterfinal": "QF",
+    "Semifinal": "SF",
+    "Final": "F",
+}
+
+_ESPN_ATP_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard"
+_ESPN_WTA_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard"
+
+
+@dataclass
+class DrawMatch:
+    round: str
+    player_a: str
+    player_b: str
+    state: str          # "pre" | "in" | "post"
+
+
+@dataclass
+class TournamentDraw:
+    tourney_name: str
+    tour: str
+    surface: str
+    best_of: int
+    matches: list[DrawMatch]
+
+
+def _infer_surface(tourney_name: str) -> str:
+    name_lower = tourney_name.lower()
+    for fragment, surface in _KNOWN_SURFACES.items():
+        if fragment in name_lower:
+            return surface
+    return "hard"
+
+
+def _espn_draw(tour: str) -> list[TournamentDraw]:
+    """Fetch current-week draws from ESPN's unofficial ATP/WTA scoreboard API.
+
+    Returns a list of TournamentDraw — one per active tournament on tour.
+    Offline-safe: returns [] on any network failure.
+    """
+    url = _ESPN_ATP_URL if tour.lower() == "atp" else _ESPN_WTA_URL
+    text = _http_text(url, retries=2, timeout=15)
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+
+    results: list[TournamentDraw] = []
+    for event in data.get("events", []):
+        tourney_name = event.get("name") or event.get("shortName") or ""
+        surface = _infer_surface(tourney_name)
+
+        groupings = event.get("groupings", [])
+        # Use first grouping (Men's Singles / Women's Singles)
+        if not groupings:
+            continue
+        competitions = groupings[0].get("competitions", [])
+
+        # best_of: ATP Grand Slams are best-of-5; everything else (incl. WTA Slams) is best-of-3.
+        # ESPN's format.regulation.periods is not reliable for this — use the major flag only.
+        major = event.get("major", False)
+        best_of = 5 if (tour.lower() == "atp" and major) else 3
+
+        matches: list[DrawMatch] = []
+        for comp in competitions:
+            state = comp.get("status", {}).get("type", {}).get("state", "")
+            # Only include upcoming (pre) and in-progress (in) matches
+            if state not in ("pre", "in"):
+                continue
+            competitors = comp.get("competitors", [])
+            names = [c.get("athlete", {}).get("fullName", "").strip()
+                     for c in sorted(competitors, key=lambda c: c.get("order", 99))]
+            # Filter out TBD slots
+            names = [n for n in names if n and n.upper() not in ("TBD", "")]
+            if len(names) < 2:
+                continue
+            round_raw = comp.get("round", {}).get("displayName", "")
+            round_code = _ROUND_MAP.get(round_raw, round_raw)
+            matches.append(DrawMatch(
+                round=round_code,
+                player_a=names[0],
+                player_b=names[1],
+                state=state,
+            ))
+
+        if matches:
+            results.append(TournamentDraw(
+                tourney_name=tourney_name,
+                tour=tour.lower(),
+                surface=surface,
+                best_of=best_of,
+                matches=matches,
+            ))
+
+    return results
+
+
+def fetch_draw(tour: str = "atp", tourney_filter: str = "") -> Optional[TournamentDraw]:
+    """Return the best matching TournamentDraw for the given tour and optional
+    tournament name filter. Picks the first match when no filter is given.
+
+    Returns None on failure or when no suitable tournament is found.
+    """
+    draws = _espn_draw(tour)
+    if not draws:
+        return None
+    if tourney_filter:
+        f = tourney_filter.lower()
+        for d in draws:
+            if f in d.tourney_name.lower():
+                return d
+    return draws[0]
 
 
 if __name__ == "__main__":

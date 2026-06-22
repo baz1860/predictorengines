@@ -151,6 +151,7 @@ def run_refresh(
         if raw_quotes:
             quotes.extend(raw_quotes)
             write_threeballs_csv(raw_quotes)
+    quotes = _dedupe_quotes(quotes)
     if quotes:
         checks.extend(manual.qa_checks(quotes))
         with store.connect() as con:
@@ -240,6 +241,26 @@ def _infer_major_sport(event_name: str) -> str:
 
 def _course_key(name: str) -> str:
     return " ".join(str(name or "").lower().split())
+
+
+def _dedupe_quotes(quotes: list) -> list:
+    out = []
+    seen = set()
+    for q in quotes:
+        d = q.as_dict() if hasattr(q, "as_dict") else dict(q)
+        key = (
+            d.get("event_id", ""),
+            d.get("market", ""),
+            d.get("round_no", ""),
+            d.get("group_id", ""),
+            d.get("player_name", ""),
+            d.get("decimal_odds", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(q)
+    return out
 
 
 if __name__ == "__main__":

@@ -70,7 +70,11 @@ def enrich(df: pd.DataFrame, asof: Any) -> pd.DataFrame:
                 out.at[i, f"confirmed_xi_power_{side}"] = lu.get("confirmed_xi_power")
                 out.at[i, f"bench_power_{side}"] = lu.get("bench_power")
                 out.at[i, f"formation_known_{side}"] = lu.get("formation_known")
-                out.at[i, f"lineup_conf_{side}"] = 1.0
+                status = lu.get("lineup_status")
+                if status == "confirmed":
+                    out.at[i, f"lineup_conf_{side}"] = 1.0
+                elif pd.isna(out.at[i, f"lineup_conf_{side}"]):
+                    out.at[i, f"lineup_conf_{side}"] = 0.65
         md = market.get(eid, {})
         for col in ("market_dispersion_h", "market_dispersion_d",
                     "market_dispersion_a"):
@@ -136,10 +140,16 @@ def _lineup_features(asof: Any) -> dict[tuple[str, str], dict[str, float]]:
                 ea = pd.DataFrame()
         starters = grp[grp["starter"].astype(str).str.lower().isin(["true", "1"])]
         bench = grp[grp["role"].astype(str).str.lower() == "bench"]
+        statuses = set()
+        if "lineup_status" in grp.columns:
+            statuses = set(grp["lineup_status"].dropna().astype(str).str.lower())
+        lineup_status = "confirmed" if "confirmed" in statuses else (
+            "projected" if statuses else "")
         out[(str(eid), str(team))] = {
             "confirmed_xi_power": _mean_overall(str(team), starters["player"], ea),
             "bench_power": _mean_overall(str(team), bench["player"], ea),
             "formation_known": float(grp["formation"].fillna("").astype(str).str.len().gt(0).any()),
+            "lineup_status": lineup_status,
         }
     return out
 

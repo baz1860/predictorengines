@@ -100,6 +100,7 @@ python3 -m golf.validate --since 2024-06-01 --sims 8000
 python3 -m golf.calibrate --fit
 python3 -m golf.simulate --sims 50000
 python3 -m golf.edge --min-edge 1.0
+python3 -m golf.weekly_report --archive
 ```
 
 Round-specific 3-balls:
@@ -109,6 +110,22 @@ Round-specific 3-balls:
 python3 -m golf.refresh --round 1
 python3 -m golf.round_pricer --round 1 --min-edge 4
 ```
+
+Weekly narrative report:
+
+```bash
+# Use existing model/simulation/edge files:
+python3 -m golf.weekly_report --archive
+
+# Or run the weekly workflow first, then write the report:
+python3 -m golf.weekly_report --refresh --stats --fit --simulate --edge --round-3balls --major --archive
+```
+
+Outputs:
+
+- `golf/data/weekly_report.md` — latest narrative report.
+- `golf/reports/YYYY-MM-DD_<event>_weekly_report.md` — archive copy when
+  `--archive` is used.
 
 ## App integration
 
