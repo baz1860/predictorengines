@@ -52,6 +52,15 @@ def _bankroll_section() -> dict:
     roi = (t["net_pnl"] / staked) if staked else 0.0
     hit = (t["won"] / settled_n) if settled_n else 0.0
 
+    # Most recent settled-bet date — lets the UI surface how fresh the numbers are.
+    last_settled = None
+    if not ledger.empty:
+        closed_dates = ledger.loc[
+            ledger["status"].isin(["won", "lost", "push"]), "match_date"
+        ].dropna()
+        if not closed_dates.empty:
+            last_settled = str(closed_dates.max())
+
     return {
         "bankroll": summ["bankroll"],
         "peak": summ["peak"],
@@ -65,6 +74,7 @@ def _bankroll_section() -> dict:
         "hit_rate": round(hit, 4),
         "curve": curve,
         "by_sport": summ.get("by_sport", []),
+        "last_settled": last_settled,
     }
 
 

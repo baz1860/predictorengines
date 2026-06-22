@@ -33,35 +33,56 @@ class TennisAdapter(EngineAdapter):
     id = "tennis"
     name = "Tennis (ATP + WTA)"
     sport = "tennis"
-    capabilities = {"predict", "simulate", "edge"}
+    capabilities = {"predict", "simulate", "edge", "draw"}
 
     def _run(self, command, params=None):
         from tennis import engine as tennis_engine
         return run_inprocess(tennis_engine.COMMANDS, command, params)
 
     # ── schemas ──
+    @staticmethod
+    def _tour_ids(tours_raw: list) -> list[str]:
+        """Extract plain string IDs from a tours list that may contain {id, label}
+        dicts (as returned by tennis/engine.py TOURS). The UI fillSelect and model
+        select elements expect strings; objects render as '[object Object]'."""
+        out = []
+        for t in tours_raw:
+            if isinstance(t, dict):
+                out.append(str(t.get("id") or t.get("label") or t).upper())
+            else:
+                out.append(str(t).upper())
+        return out or ["ATP", "WTA"]
+
     def predict_schema(self) -> dict[str, Any]:
         from .. import provenance
         s = self._run("schema")
         return {"kind": "match", "names": s.get("names", []),
-                "models": s.get("tours", []),
+                "models": self._tour_ids(s.get("tours", [])),
                 "label_a": "Player A", "label_b": "Player B",
                 "surfaces": s.get("surfaces", []),
                 "freshness": provenance.freshness_warnings(self.id)}
 
     def simulate_schema(self) -> dict[str, Any]:
         s = self._run("schema")
-        return {"models": s.get("tours", []),
+        return {"models": self._tour_ids(s.get("tours", [])),
                 "default_sims": s.get("default_sims", 50000),
                 "sim_options": s.get("sim_options", [10000, 50000, 100000]),
                 "field_based": True}
 
     def edge_schema(self) -> dict[str, Any]:
-        return {"models": [{"id": "atp", "label": "ATP"}, {"id": "wta", "label": "WTA"}],
+        return {"models": ["ATP", "WTA"],
                 "odds_sources": [{"id": "manual",
                                   "label": "Manual tennis/data/odds.csv "
                                            "(tour, surface, best_of, player_a, player_b, odds_a, odds_b)"}],
                 "needs_sim_first": False, "options": []}
+
+    def draw_schema(self) -> dict[str, Any]:
+        s = self._run("schema")
+        return {
+            "tours": s.get("tours", []),
+            "surfaces": s.get("surfaces", []),
+            "names": s.get("names", []),
+        }
 
     # ── capabilities ──
     def predict(self, params: dict[str, Any]) -> dict[str, Any]:
