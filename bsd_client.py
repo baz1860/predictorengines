@@ -64,7 +64,7 @@ def get_events_page(api_key: str, **params) -> dict:
     """Return one page of events.
 
     Useful params (all optional):
-      status   — "upcoming" | "live" | "finished"
+      status   — "notstarted" | "inprogress" | "finished"
       date     — "YYYY-MM-DD"  (filter by match date)
       league   — BSD league id (int/str) if known
       limit    — items per page (default 200, max 200)
@@ -121,7 +121,12 @@ def league_name(event: dict) -> str:
 
 def event_date_utc(event: dict) -> str:
     """ISO-8601 UTC kickoff string, or empty string."""
-    return str(event.get("date") or event.get("kickoff") or "").strip()
+    return str(
+        event.get("event_date")
+        or event.get("date")
+        or event.get("kickoff")
+        or ""
+    ).strip()
 
 
 def unavailable_players(event: dict) -> dict[str, list[dict]]:
@@ -157,7 +162,8 @@ def match_statistics(event: dict) -> dict[str, dict]:
 
     Returns empty dicts if stats are not yet available (pre-match).
     """
-    raw = event.get("statistics") or event.get("stats") or {}
+    raw = (event.get("statistics") or event.get("stats")
+           or event.get("live_stats") or event.get("sr_stats") or {})
     if not isinstance(raw, dict):
         return {"home": {}, "away": {}}
     return {

@@ -59,11 +59,11 @@ def _get(url: str, params: dict | None = None, retries: int = 3) -> dict:
 
 def fetch_espn_field() -> list[dict]:
     """
-    Pull current PGA Tour event field from ESPN leaderboard API.
+    Pull current PGA Tour event field from ESPN scoreboard API.
     Returns list of dicts with keys: name, world_rank, status.
     """
     print("Fetching ESPN field...")
-    data = _get(ESPN_LEADERBOARD)
+    data = _get(ESPN_SCOREBOARD)
 
     players = []
     events = data.get("events", [])
@@ -99,7 +99,7 @@ def fetch_espn_leaderboard() -> list[dict]:
     Returns list of dicts: name, position, score, thru, today.
     """
     print("Fetching ESPN leaderboard...")
-    data = _get(ESPN_LEADERBOARD)
+    data = _get(ESPN_SCOREBOARD)
 
     rows = []
     for event in data.get("events", []):

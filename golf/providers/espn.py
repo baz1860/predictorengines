@@ -22,6 +22,8 @@ from .. import provider_qa as qa
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 CACHE_DIR = DATA_DIR / "api_cache" / "espn"
 ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
+# ESPN's older /leaderboard endpoint has returned 404 in current checks. The
+# site scoreboard endpoint carries the same event/competitor/linescore payload.
 ESPN_LEADERBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard"
 
 
@@ -87,7 +89,8 @@ class EspnGolfProvider:
     def current_event_payload(self, event_id: str | None = None,
                               use_cache: bool = False) -> dict:
         params = {"event": event_id} if event_id else {}
-        return self._json("leaderboard", ESPN_LEADERBOARD, params, use_cache)
+        label = "scoreboard_current" if not event_id else "scoreboard_event"
+        return self._json(label, ESPN_SCOREBOARD, params, use_cache)
 
     def current_event(self, event_id: str | None = None,
                       use_cache: bool = False) -> EspnEvent | None:
@@ -110,7 +113,7 @@ class EspnGolfProvider:
                     flag = athlete.get("flag") or {}
                     out.append(EspnFieldEntry(
                         name=name,
-                        source_player_id=str(athlete.get("id") or ""),
+                        source_player_id=str(athlete.get("id") or c.get("id") or ""),
                         status=status,
                         country=str(flag.get("alt") or ""),
                         world_rank=_safe_int(c.get("rank")),
@@ -129,7 +132,7 @@ class EspnGolfProvider:
                     lines = c.get("linescores") or []
                     rows.append({
                         "event_id": eid,
-                        "player_id": str(athlete.get("id") or ""),
+                        "player_id": str(athlete.get("id") or c.get("id") or ""),
                         "name": athlete.get("displayName") or "",
                         "position": c.get("order") or "",
                         "score": c.get("score") or c.get("displayValue") or "",
@@ -148,7 +151,7 @@ class EspnGolfProvider:
                 for c in comp.get("competitors", []) or []:
                     athlete = c.get("athlete") or {}
                     name = (athlete.get("displayName") or "").strip()
-                    pid = str(athlete.get("id") or "")
+                    pid = str(athlete.get("id") or c.get("id") or "")
                     if not name:
                         continue
                     for round_line in c.get("linescores", []) or []:

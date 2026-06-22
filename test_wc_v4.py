@@ -185,6 +185,51 @@ def test_live_provider_parsers_normalize_payloads():
     assert np.isfinite(wide.iloc[0]["market_dispersion_h"])
 
 
+def test_bsd_provider_parsers_match_current_schema():
+    teams = {"Argentina", "Austria"}
+    fetched = "2026-06-22T10:00:00+00:00"
+    event = {
+        "id": 8327,
+        "event_date": "2026-06-22T21:00:00+04:00",
+        "league": {"name": "World Cup 2026"},
+        "home_team_obj": {"id": 489, "name": "Argentina"},
+        "away_team": "Austria",
+        "away_team_obj": {"id": 483, "name": "Austria"},
+        "status": "notstarted",
+        "group_name": "Group J",
+        "venue": {"name": "AT&T Stadium", "city": "Arlington"},
+        "lineups": {
+            "home": {
+                "formation": "4-4-2",
+                "players": [{"name": "E. Martinez", "player_id": 1,
+                             "specific_position": "GK", "jersey_number": "23"}],
+                "substitutes": [{"name": "J. Musso", "player_id": 2,
+                                 "specific_position": "GK"}],
+            },
+            "away": {"formation": "4-2-3-1", "players": [], "substitutes": []},
+        },
+        "actual_home_xg": 1.25,
+        "actual_away_xg": 0.72,
+    }
+    fixtures = ld.parse_fixtures_bsd([event], fetched, teams)
+    assert fixtures.iloc[0]["event_id"] == fixture_key(
+        fixtures.iloc[0]["match_date"], "Argentina", "Austria",
+        "FIFA World Cup")
+    assert fixtures.iloc[0]["competition"] == "FIFA World Cup"
+    assert fixtures.iloc[0]["group"] == "J"
+    assert fixtures.iloc[0]["status_short"] == "NS"
+
+    meta = fixtures.iloc[0].to_dict()
+    lineups = ld.parse_lineups_bsd(event, meta, fetched, teams=teams)
+    assert set(lineups["role"]) == {"starter", "bench"}
+    assert lineups["lineup_status"].eq("projected").all()
+    assert lineups.iloc[0]["position"] == "GK"
+
+    stats = ld.parse_match_stats_bsd(event, meta, fetched, teams).set_index("team")
+    assert stats.loc["Argentina", "xg"] == 1.25
+    assert stats.loc["Austria", "xg"] == 0.72
+
+
 def test_whoscored_cached_payload_normalizes_to_canonical_tables():
     teams = {"Germany", "Ivory Coast"}
     fetched = "2026-06-19T10:00:00+00:00"

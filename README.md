@@ -162,14 +162,14 @@ Expected shape:
 ```json
 {
   "the-odds-api": "your_key",
-  "api-football": "your_key"
+  "bsd": "your_bzzoiro_sports_data_key"
 }
 ```
 
 Explicit CLI flags and environment variables can also be used:
 
 - `THE_ODDS_API_KEY`
-- `API_FOOTBALL_KEY`
+- `BSD_API_KEY`
 
 Do not commit real API keys. GitHub secret scanning is enabled on public repos
 and will block pushes containing provider-shaped tokens.

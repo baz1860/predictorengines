@@ -1,0 +1,271 @@
+{
+  "generated_at": "2026-06-21T21:55:23",
+  "event": {
+    "event_id": "401811952",
+    "name": "U.S. Open",
+    "start_date": "2026-06-18",
+    "end_date": "2026-06-21",
+    "course_name": "U.S. Open",
+    "status": "STATUS_IN_PROGRESS",
+    "tour": "pga",
+    "source": "espn",
+    "source_event_id": "401811952"
+  },
+  "database": "/Users/lucky/AI Models/Soccer Prediction/golf/data/golf.db",
+  "field_csv": "/Users/lucky/AI Models/Soccer Prediction/golf/data/field.csv",
+  "stats_csv": "/Users/lucky/AI Models/Soccer Prediction/golf/data/pgatour_stats.csv",
+  "provider_rows": {
+    "rounds_csv": 81997,
+    "espn_field": 156,
+    "pgatour_stats": 3302,
+    "manual_odds": 108,
+    "model_fit_rounds": 81997
+  },
+  "weather": {},
+  "qa": {
+    "ok": true,
+    "errors": [],
+    "warnings": [],
+    "checks": [
+      {
+        "source": "espn.field",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 156
+      },
+      {
+        "source": "espn.field",
+        "ok": true,
+        "severity": "info",
+        "message": "156 row(s)",
+        "rows": 156
+      },
+      {
+        "source": "pgatour_stats.sg_total",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_total",
+        "ok": true,
+        "severity": "info",
+        "message": "175 row(s)",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_t2g",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_t2g",
+        "ok": true,
+        "severity": "info",
+        "message": "175 row(s)",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_ott",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_ott",
+        "ok": true,
+        "severity": "info",
+        "message": "175 row(s)",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_app",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_app",
+        "ok": true,
+        "severity": "info",
+        "message": "175 row(s)",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_arg",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_arg",
+        "ok": true,
+        "severity": "info",
+        "message": "175 row(s)",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_putt",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.sg_putt",
+        "ok": true,
+        "severity": "info",
+        "message": "175 row(s)",
+        "rows": 175
+      },
+      {
+        "source": "pgatour_stats.scoring_average",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.scoring_average",
+        "ok": true,
+        "severity": "info",
+        "message": "177 row(s)",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.birdie_average",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.birdie_average",
+        "ok": true,
+        "severity": "info",
+        "message": "177 row(s)",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.bogey_avoidance",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.bogey_avoidance",
+        "ok": true,
+        "severity": "info",
+        "message": "177 row(s)",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.driving_distance",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.driving_distance",
+        "ok": true,
+        "severity": "info",
+        "message": "177 row(s)",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.driving_accuracy",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.driving_accuracy",
+        "ok": true,
+        "severity": "info",
+        "message": "177 row(s)",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.gir",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.gir",
+        "ok": true,
+        "severity": "info",
+        "message": "177 row(s)",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.scrambling",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.scrambling",
+        "ok": true,
+        "severity": "info",
+        "message": "177 row(s)",
+        "rows": 177
+      },
+      {
+        "source": "pgatour_stats.owgr",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 1013
+      },
+      {
+        "source": "pgatour_stats.owgr",
+        "ok": true,
+        "severity": "info",
+        "message": "1013 row(s)",
+        "rows": 1013
+      },
+      {
+        "source": "manual_odds",
+        "ok": true,
+        "severity": "info",
+        "message": "schema ok",
+        "rows": 108
+      },
+      {
+        "source": "manual_odds",
+        "ok": true,
+        "severity": "info",
+        "message": "108 row(s)",
+        "rows": 108
+      },
+      {
+        "source": "the_odds_api",
+        "ok": true,
+        "severity": "info",
+        "message": "major outright sport key available: golf_us_open_winner; pass --odds-api-sport to fetch",
+        "rows": 0
+      }
+    ]
+  },
+  "source_priority": [
+    "local verified cache",
+    "ESPN/golfastR-style event data",
+    "PGA Tour public stats pages",
+    "Open-Meteo weather",
+    "The Odds API major outrights",
+    "manual odds boards"
+  ]
+}

@@ -9,6 +9,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import csv
+import io
 import json
 import re
 
@@ -157,6 +159,22 @@ class V6ScheduleEntry(BaseModel):
 
 class V6Schedule(BaseModel):
     entries: list[V6ScheduleEntry] = Field(default_factory=list)
+
+
+class TennisMatch(BaseModel):
+    round: str = ""
+    player_a: str
+    player_b: str
+    odds_a: float | None = Field(default=None, ge=1.0, le=1000.0)
+    odds_b: float | None = Field(default=None, ge=1.0, le=1000.0)
+
+
+class TennisDrawPayload(BaseModel):
+    tour: str = Field(default="atp", pattern=r"^(atp|wta)$")
+    tourney_name: str = Field(default="", max_length=80)
+    surface: str = Field(default="grass", pattern=r"^(hard|clay|grass|carpet)$")
+    best_of: int = Field(default=3, ge=1, le=5)
+    matches: list[TennisMatch] = Field(default_factory=list)
 
 
 def _dispatch(engine_id: str, cap: str, params: dict):
@@ -404,6 +422,172 @@ def v6_get_schedule():
 @app.post("/api/v6/schedule")
 def v6_save_schedule(req: V6Schedule):
     return v6_scheduler.save_schedule([e.model_dump() for e in req.entries])
+
+
+@app.get("/api/tennis/tournaments")
+def tennis_tournaments(tour: str = "atp"):
+    """List active tournaments available from ESPN for the given tour."""
+    from tennis.providers import _espn_draw
+    if tour.lower() not in ("atp", "wta"):
+        raise HTTPException(400, "tour must be atp or wta")
+    draws = _espn_draw(tour)
+    return {"tournaments": [
+        {"name": d.tourney_name, "surface": d.surface, "best_of": d.best_of,
+         "upcoming": sum(1 for m in d.matches if m.state in ("pre", "in"))}
+        for d in draws
+    ]}
+
+
+@app.post("/api/tennis/draw/fetch")
+def tennis_draw_fetch(body: dict = None):
+    """Fetch the draw for a tournament from ESPN and write draw.csv.
+    Body params: tour (atp/wta), tourney_filter (optional name substring).
+    """
+    body = body or {}
+    tour = str(body.get("tour") or "atp").lower()
+    tourney_filter = str(body.get("tourney_filter") or "")
+    if tour not in ("atp", "wta"):
+        raise HTTPException(400, "tour must be atp or wta")
+
+    from tennis.providers import fetch_draw, DATA_DIR as TENNIS_DATA
+
+    draw = fetch_draw(tour=tour, tourney_filter=tourney_filter)
+    if draw is None:
+        raise HTTPException(503, "Could not fetch draw from ESPN — check network connection")
+
+    draw_csv = TENNIS_DATA / "draw.csv"
+    odds_csv = TENNIS_DATA / "odds.csv"
+
+    # Write draw.csv (all upcoming + live matches)
+    draw_buf = io.StringIO()
+    w = csv.writer(draw_buf)
+    w.writerow(["tour", "tourney_name", "surface", "best_of", "round", "player_a", "player_b"])
+    for m in draw.matches:
+        w.writerow([draw.tour, draw.tourney_name, draw.surface,
+                    draw.best_of, m.round, m.player_a, m.player_b])
+    draw_csv.write_text(draw_buf.getvalue())
+
+    # Preserve existing odds for any players already in odds.csv
+    existing_odds: dict[tuple, dict] = {}
+    if odds_csv.exists():
+        with open(odds_csv, newline="") as f:
+            for row in csv.DictReader(f):
+                pa, pb = row.get("player_a","").strip(), row.get("player_b","").strip()
+                if pa and pb:
+                    existing_odds[(pa, pb)] = row
+
+    # Write updated odds.csv (keep existing, add blank rows for new matches)
+    odds_buf = io.StringIO()
+    w2 = csv.writer(odds_buf)
+    w2.writerow(["tour", "surface", "best_of", "player_a", "player_b", "odds_a", "odds_b"])
+    for m in draw.matches:
+        key = (m.player_a, m.player_b)
+        if key in existing_odds:
+            r = existing_odds[key]
+            w2.writerow([draw.tour, draw.surface, draw.best_of,
+                         m.player_a, m.player_b,
+                         r.get("odds_a",""), r.get("odds_b","")])
+    odds_csv.write_text(odds_buf.getvalue())
+
+    return {
+        "tourney_name": draw.tourney_name,
+        "tour": draw.tour,
+        "surface": draw.surface,
+        "best_of": draw.best_of,
+        "matches": [
+            {"round": m.round, "player_a": m.player_a, "player_b": m.player_b,
+             "odds_a": None, "odds_b": None, "state": m.state}
+            for m in draw.matches
+        ],
+    }
+
+
+@app.get("/api/tennis/draw")
+def tennis_draw_get():
+    """Return the current tennis draw + odds as a combined JSON payload."""
+    from tennis.providers import DATA_DIR as TENNIS_DATA
+    draw_csv = TENNIS_DATA / "draw.csv"
+    odds_csv = TENNIS_DATA / "odds.csv"
+
+    # Read tournament-level fields from draw.csv
+    tour, tourney_name, surface, best_of = "atp", "", "grass", 3
+    draw_rows: dict[tuple, dict] = {}
+    if draw_csv.exists():
+        with open(draw_csv, newline="") as f:
+            for row in csv.DictReader(f):
+                pa, pb = (row.get("player_a") or "").strip(), (row.get("player_b") or "").strip()
+                if not pa or not pb:
+                    continue
+                tour = (row.get("tour") or tour).lower()
+                tourney_name = row.get("tourney_name") or tourney_name
+                surface = (row.get("surface") or surface).lower()
+                try:
+                    best_of = int(float(row.get("best_of") or best_of))
+                except (ValueError, TypeError):
+                    pass
+                key = (pa, pb)
+                draw_rows[key] = {"round": row.get("round") or "", "player_a": pa, "player_b": pb,
+                                  "odds_a": None, "odds_b": None}
+
+    # Merge odds
+    if odds_csv.exists():
+        with open(odds_csv, newline="") as f:
+            for row in csv.DictReader(f):
+                pa, pb = (row.get("player_a") or "").strip(), (row.get("player_b") or "").strip()
+                if not pa or not pb:
+                    continue
+                key = (pa, pb)
+                if key not in draw_rows:
+                    draw_rows[key] = {"round": "", "player_a": pa, "player_b": pb,
+                                      "odds_a": None, "odds_b": None}
+                try:
+                    draw_rows[key]["odds_a"] = float(row["odds_a"]) if row.get("odds_a") else None
+                    draw_rows[key]["odds_b"] = float(row["odds_b"]) if row.get("odds_b") else None
+                except (ValueError, KeyError):
+                    pass
+
+    return {
+        "tour": tour, "tourney_name": tourney_name,
+        "surface": surface, "best_of": best_of,
+        "matches": list(draw_rows.values()),
+    }
+
+
+@app.post("/api/tennis/draw")
+def tennis_draw_post(payload: TennisDrawPayload):
+    """Write draw.csv and odds.csv from the UI draw editor."""
+    from tennis.providers import DATA_DIR as TENNIS_DATA
+
+    draw_csv = TENNIS_DATA / "draw.csv"
+    odds_csv = TENNIS_DATA / "odds.csv"
+
+    # Write draw.csv
+    draw_buf = io.StringIO()
+    w = csv.writer(draw_buf)
+    w.writerow(["tour", "tourney_name", "surface", "best_of", "round", "player_a", "player_b"])
+    for m in payload.matches:
+        pa, pb = m.player_a.strip(), m.player_b.strip()
+        if pa and pb:
+            w.writerow([payload.tour, payload.tourney_name, payload.surface,
+                        payload.best_of, m.round, pa, pb])
+    draw_csv.write_text(draw_buf.getvalue())
+
+    # Write odds.csv (only rows where at least one odds value provided)
+    odds_buf = io.StringIO()
+    w2 = csv.writer(odds_buf)
+    w2.writerow(["tour", "surface", "best_of", "player_a", "player_b", "odds_a", "odds_b"])
+    for m in payload.matches:
+        pa, pb = m.player_a.strip(), m.player_b.strip()
+        if pa and pb and (m.odds_a is not None or m.odds_b is not None):
+            w2.writerow([payload.tour, payload.surface, payload.best_of,
+                         pa, pb,
+                         round(m.odds_a, 3) if m.odds_a is not None else "",
+                         round(m.odds_b, 3) if m.odds_b is not None else ""])
+    odds_csv.write_text(odds_buf.getvalue())
+
+    return {"saved": True, "matches": len(payload.matches),
+            "odds_rows": sum(1 for m in payload.matches
+                             if m.odds_a is not None or m.odds_b is not None)}
 
 
 @app.get("/")
