@@ -4,8 +4,3101 @@
  "sigma_field": 2.8469,
  "major_sigma_mult": 1.044,
  "skill_halflife_days": 365.0,
+ "ridge_skill": 8.0,
+ "sigma_shrink_rounds": 25.0,
+ "form_halflife_days": 21.0,
  "form_weight": 0.7,
+ "course_k": 12.0,
+ "model_config": {
+  "skill_halflife_days": 365.0,
+  "ridge_skill": 8.0,
+  "sigma_shrink_rounds": 25.0,
+  "form_halflife_days": 21.0,
+  "form_weight": 0.7,
+  "course_k": 12.0
+ },
  "default_skill": -0.3532,
+ "public_stat_blend": 0.15,
+ "public_stat_priors": {
+  "Scottie Scheffler": {
+   "sg_total": 8.0,
+   "stats": {
+    "sg_total": 8.0,
+    "sg_t2g": 8.0,
+    "sg_ott": 8.0,
+    "sg_app": 8.0,
+    "sg_arg": 8.0,
+    "sg_putt": 8.0,
+    "scoring_average": 8.0,
+    "birdie_average": 8.0,
+    "bogey_avoidance": 8.0,
+    "driving_distance": 8.0,
+    "driving_accuracy": 8.0,
+    "gir": 8.0,
+    "scrambling": 8.0,
+    "owgr": 8.0
+   }
+  },
+  "Wyndham Clark": {
+   "sg_total": 0.916,
+   "stats": {
+    "sg_total": 0.916,
+    "sg_t2g": 0.797,
+    "sg_ott": -0.069,
+    "sg_app": 0.545,
+    "sg_arg": 0.321,
+    "sg_putt": 0.12,
+    "scoring_average": 70.381,
+    "birdie_average": 4.54,
+    "bogey_avoidance": 4.0,
+    "driving_distance": 309.1,
+    "driving_accuracy": 7.0,
+    "gir": 0.0,
+    "scrambling": 15.0,
+    "owgr": 3.0
+   }
+  },
+  "Ludvig \u00c5berg": {
+   "sg_total": 1.486,
+   "stats": {
+    "sg_total": 1.486,
+    "sg_t2g": 1.225,
+    "sg_ott": 0.513,
+    "sg_app": 0.577,
+    "sg_arg": 0.134,
+    "sg_putt": 0.261,
+    "scoring_average": 70.092,
+    "birdie_average": 4.58,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 316.4,
+    "driving_accuracy": 0.0,
+    "gir": 2.0,
+    "scrambling": 3.0,
+    "owgr": 1.0
+   }
+  },
+  "Sam Burns": {
+   "sg_total": 0.832,
+   "stats": {
+    "sg_total": 0.832,
+    "sg_t2g": 0.185,
+    "sg_ott": 0.173,
+    "sg_app": 0.114,
+    "sg_arg": -0.102,
+    "sg_putt": 0.647,
+    "scoring_average": 70.266,
+    "birdie_average": 4.28,
+    "bogey_avoidance": 4.0,
+    "driving_distance": 314.0,
+    "driving_accuracy": 2.0,
+    "gir": 13.0,
+    "scrambling": 1.0,
+    "owgr": 1.0
+   }
+  },
+  "Matt Fitzpatrick": {
+   "sg_total": 1.472,
+   "stats": {
+    "sg_total": 1.472,
+    "sg_t2g": 1.571,
+    "sg_ott": 0.319,
+    "sg_app": 0.753,
+    "sg_arg": 0.499,
+    "sg_putt": -0.099,
+    "scoring_average": 69.863,
+    "birdie_average": 4.17,
+    "bogey_avoidance": 4.0,
+    "driving_distance": 305.6,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 0.0,
+    "owgr": 0.0
+   }
+  },
+  "Jake Knapp": {
+   "sg_total": 1.456,
+   "stats": {
+    "sg_total": 1.456,
+    "sg_t2g": 0.712,
+    "sg_ott": 0.207,
+    "sg_app": 0.448,
+    "sg_arg": 0.057,
+    "sg_putt": 0.744,
+    "scoring_average": 69.571,
+    "birdie_average": 4.26,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 319.8,
+    "driving_accuracy": 2.0,
+    "gir": 5.0,
+    "scrambling": 1.0,
+    "owgr": 1.0
+   }
+  },
+  "Si Woo Kim": {
+   "sg_total": 1.403,
+   "stats": {
+    "sg_total": 1.403,
+    "sg_t2g": 1.501,
+    "sg_ott": 0.522,
+    "sg_app": 0.69,
+    "sg_arg": 0.288,
+    "sg_putt": -0.098,
+    "scoring_average": 70.063,
+    "birdie_average": 4.58,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 300.0,
+    "driving_accuracy": 0.0,
+    "gir": 2.0,
+    "scrambling": 3.0,
+    "owgr": 0.0
+   }
+  },
+  "Cameron Young": {
+   "sg_total": 1.377,
+   "stats": {
+    "sg_total": 1.377,
+    "sg_t2g": 1.257,
+    "sg_ott": 0.576,
+    "sg_app": 0.445,
+    "sg_arg": 0.235,
+    "sg_putt": 0.12,
+    "scoring_average": 69.979,
+    "birdie_average": 4.31,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 312.8,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 0.0,
+    "owgr": 0.0
+   }
+  },
+  "Tommy Fleetwood": {
+   "sg_total": 13.0,
+   "stats": {
+    "sg_total": 13.0,
+    "sg_t2g": 13.0,
+    "sg_ott": 13.0,
+    "sg_app": 13.0,
+    "sg_arg": 13.0,
+    "sg_putt": 13.0,
+    "scoring_average": 13.0,
+    "birdie_average": 13.0,
+    "bogey_avoidance": 13.0,
+    "driving_distance": 13.0,
+    "driving_accuracy": 13.0,
+    "gir": 13.0,
+    "scrambling": 13.0,
+    "owgr": 13.0
+   }
+  },
+  "Xander Schauffele": {
+   "sg_total": 1.138,
+   "stats": {
+    "sg_total": 1.138,
+    "sg_t2g": 0.917,
+    "sg_ott": 0.524,
+    "sg_app": 0.389,
+    "sg_arg": 0.005,
+    "sg_putt": 0.22,
+    "scoring_average": 70.142,
+    "birdie_average": 3.93,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 314.8,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 1.0,
+    "owgr": 0.0
+   }
+  },
+  "Chris Gotterup": {
+   "sg_total": 1.137,
+   "stats": {
+    "sg_total": 1.137,
+    "sg_t2g": 0.827,
+    "sg_ott": 0.497,
+    "sg_app": 0.283,
+    "sg_arg": 0.048,
+    "sg_putt": 0.31,
+    "scoring_average": 70.166,
+    "birdie_average": 4.07,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 322.6,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 4.0,
+    "owgr": 0.0
+   }
+  },
+  "Min Woo Lee": {
+   "sg_total": 1.13,
+   "stats": {
+    "sg_total": 1.13,
+    "sg_t2g": 0.986,
+    "sg_ott": 0.563,
+    "sg_app": 0.105,
+    "sg_arg": 0.318,
+    "sg_putt": 0.144,
+    "scoring_average": 70.366,
+    "birdie_average": 4.27,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 319.7,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 4.0,
+    "owgr": 1.0
+   }
+  },
+  "Collin Morikawa": {
+   "sg_total": 14.0,
+   "stats": {
+    "sg_total": 14.0,
+    "sg_t2g": 14.0,
+    "sg_ott": 14.0,
+    "sg_app": 14.0,
+    "sg_arg": 14.0,
+    "sg_putt": 14.0,
+    "scoring_average": 14.0,
+    "birdie_average": 14.0,
+    "bogey_avoidance": 14.0,
+    "driving_distance": 14.0,
+    "driving_accuracy": 14.0,
+    "gir": 14.0,
+    "scrambling": 14.0,
+    "owgr": 14.0
+   }
+  },
+  "Russell Henley": {
+   "sg_total": 1.05,
+   "stats": {
+    "sg_total": 1.05,
+    "sg_t2g": 0.706,
+    "sg_ott": 0.27,
+    "sg_app": 0.275,
+    "sg_arg": 0.161,
+    "sg_putt": 0.344,
+    "scoring_average": 70.172,
+    "birdie_average": 4.02,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 293.4,
+    "driving_accuracy": 0.0,
+    "gir": 4.0,
+    "scrambling": 0.0,
+    "owgr": 0.0
+   }
+  },
+  "Jacob Bridgeman": {
+   "sg_total": 1.026,
+   "stats": {
+    "sg_total": 1.026,
+    "sg_t2g": 0.297,
+    "sg_ott": 0.085,
+    "sg_app": 0.331,
+    "sg_arg": -0.119,
+    "sg_putt": 0.729,
+    "scoring_average": 70.349,
+    "birdie_average": 4.48,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 306.1,
+    "driving_accuracy": 4.0,
+    "gir": 2.0,
+    "scrambling": 4.0,
+    "owgr": 2.0
+   }
+  },
+  "Patrick Cantlay": {
+   "sg_total": 1.021,
+   "stats": {
+    "sg_total": 1.021,
+    "sg_t2g": 1.071,
+    "sg_ott": 0.394,
+    "sg_app": 0.365,
+    "sg_arg": 0.312,
+    "sg_putt": -0.049,
+    "scoring_average": 70.346,
+    "birdie_average": 3.93,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 302.7,
+    "driving_accuracy": 1.0,
+    "gir": 0.0,
+    "scrambling": 8.0,
+    "owgr": 2.0
+   }
+  },
+  "Nicolai H\u00f8jgaard": {
+   "sg_total": 1.013,
+   "stats": {
+    "sg_total": 1.013,
+    "sg_t2g": 0.862,
+    "sg_ott": 0.285,
+    "sg_app": 0.454,
+    "sg_arg": 0.122,
+    "sg_putt": 0.151,
+    "scoring_average": 70.246,
+    "birdie_average": 3.72,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 322.3,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 12.0,
+    "owgr": 1.0
+   }
+  },
+  "Adam Scott": {
+   "sg_total": 0.99,
+   "stats": {
+    "sg_total": 0.99,
+    "sg_t2g": 1.066,
+    "sg_ott": 0.308,
+    "sg_app": 0.779,
+    "sg_arg": -0.021,
+    "sg_putt": -0.076,
+    "scoring_average": 70.389,
+    "birdie_average": 3.98,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 313.1,
+    "driving_accuracy": 3.0,
+    "gir": 1.0,
+    "scrambling": 3.0,
+    "owgr": 1.0
+   }
+  },
+  "Brooks Koepka": {
+   "sg_total": 0.964,
+   "stats": {
+    "sg_total": 0.964,
+    "sg_t2g": 1.079,
+    "sg_ott": 0.244,
+    "sg_app": 0.713,
+    "sg_arg": 0.122,
+    "sg_putt": -0.116,
+    "scoring_average": 70.011,
+    "birdie_average": 4.13,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 313.2,
+    "driving_accuracy": 9.0,
+    "gir": 1.0,
+    "scrambling": 16.0,
+    "owgr": 1.0
+   }
+  },
+  "Maverick McNealy": {
+   "sg_total": 0.935,
+   "stats": {
+    "sg_total": 0.935,
+    "sg_t2g": 0.403,
+    "sg_ott": 0.124,
+    "sg_app": -0.062,
+    "sg_arg": 0.341,
+    "sg_putt": 0.531,
+    "scoring_average": 70.404,
+    "birdie_average": 4.26,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 309.9,
+    "driving_accuracy": 2.0,
+    "gir": 2.0,
+    "scrambling": 6.0,
+    "owgr": 2.0
+   }
+  },
+  "Akshay Bhatia": {
+   "sg_total": 0.913,
+   "stats": {
+    "sg_total": 0.913,
+    "sg_t2g": 0.274,
+    "sg_ott": -0.27,
+    "sg_app": 0.278,
+    "sg_arg": 0.265,
+    "sg_putt": 0.639,
+    "scoring_average": 70.675,
+    "birdie_average": 4.38,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 301.7,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 5.0,
+    "owgr": 1.0
+   }
+  },
+  "Alex Smalley": {
+   "sg_total": 0.904,
+   "stats": {
+    "sg_total": 0.904,
+    "sg_t2g": 0.569,
+    "sg_ott": 0.077,
+    "sg_app": 0.443,
+    "sg_arg": 0.049,
+    "sg_putt": 0.335,
+    "scoring_average": 70.34,
+    "birdie_average": 4.04,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 307.0,
+    "driving_accuracy": 2.0,
+    "gir": 0.0,
+    "scrambling": 6.0,
+    "owgr": 2.0
+   }
+  },
+  "Ryan Gerard": {
+   "sg_total": 0.835,
+   "stats": {
+    "sg_total": 0.835,
+    "sg_t2g": 0.468,
+    "sg_ott": 0.111,
+    "sg_app": 0.673,
+    "sg_arg": -0.316,
+    "sg_putt": 0.367,
+    "scoring_average": 70.353,
+    "birdie_average": 4.33,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 303.7,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 1.0,
+    "owgr": 0.0
+   }
+  },
+  "Shane Lowry": {
+   "sg_total": 0.81,
+   "stats": {
+    "sg_total": 0.81,
+    "sg_t2g": 0.522,
+    "sg_ott": 0.197,
+    "sg_app": 0.371,
+    "sg_arg": -0.046,
+    "sg_putt": 0.287,
+    "scoring_average": 70.372,
+    "birdie_average": 3.82,
+    "bogey_avoidance": 10.0,
+    "driving_distance": 300.9,
+    "driving_accuracy": 16.0,
+    "gir": 8.0,
+    "scrambling": 21.0,
+    "owgr": 1.0
+   }
+  },
+  "Kurt Kitayama": {
+   "sg_total": 0.783,
+   "stats": {
+    "sg_total": 0.783,
+    "sg_t2g": 0.807,
+    "sg_ott": 0.301,
+    "sg_app": 0.634,
+    "sg_arg": -0.128,
+    "sg_putt": -0.024,
+    "scoring_average": 70.608,
+    "birdie_average": 3.94,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 314.9,
+    "driving_accuracy": 0.0,
+    "gir": 2.0,
+    "scrambling": 3.0,
+    "owgr": 0.0
+   }
+  },
+  "Robert MacIntyre": {
+   "sg_total": 0.783,
+   "stats": {
+    "sg_total": 0.783,
+    "sg_t2g": 0.266,
+    "sg_ott": 0.555,
+    "sg_app": -0.332,
+    "sg_arg": 0.043,
+    "sg_putt": 0.517,
+    "scoring_average": 70.446,
+    "birdie_average": 4.28,
+    "bogey_avoidance": 9.0,
+    "driving_distance": 305.0,
+    "driving_accuracy": 11.0,
+    "gir": 1.0,
+    "scrambling": 27.0,
+    "owgr": 0.0
+   }
+  },
+  "Eric Cole": {
+   "sg_total": 0.771,
+   "stats": {
+    "sg_total": 0.771,
+    "sg_t2g": 0.111,
+    "sg_ott": -0.613,
+    "sg_app": 0.253,
+    "sg_arg": 0.471,
+    "sg_putt": 0.66,
+    "scoring_average": 70.34,
+    "birdie_average": 4.38,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 298.9,
+    "driving_accuracy": 1.0,
+    "gir": 6.0,
+    "scrambling": 2.0,
+    "owgr": 1.0
+   }
+  },
+  "Harris English": {
+   "sg_total": 0.763,
+   "stats": {
+    "sg_total": 0.763,
+    "sg_t2g": 0.116,
+    "sg_ott": 0.333,
+    "sg_app": -0.206,
+    "sg_arg": -0.011,
+    "sg_putt": 0.647,
+    "scoring_average": 70.601,
+    "birdie_average": 4.39,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 304.6,
+    "driving_accuracy": 1.0,
+    "gir": 3.0,
+    "scrambling": 2.0,
+    "owgr": 0.0
+   }
+  },
+  "J.J. Spaun": {
+   "sg_total": 0.756,
+   "stats": {
+    "sg_total": 0.756,
+    "sg_t2g": 1.267,
+    "sg_ott": 0.302,
+    "sg_app": 0.762,
+    "sg_arg": 0.203,
+    "sg_putt": -0.511,
+    "scoring_average": 70.644,
+    "birdie_average": 3.92,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 301.9,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 6.0,
+    "owgr": 0.0
+   }
+  },
+  "Sudarshan Yellamaraju": {
+   "sg_total": 0.753,
+   "stats": {
+    "sg_total": 0.753,
+    "sg_t2g": 0.564,
+    "sg_ott": 0.421,
+    "sg_app": 0.257,
+    "sg_arg": -0.114,
+    "sg_putt": 0.189,
+    "scoring_average": 70.485,
+    "birdie_average": 4.32,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 313.9,
+    "driving_accuracy": 0.0,
+    "gir": 6.0,
+    "scrambling": 3.0,
+    "owgr": 14.0
+   }
+  },
+  "Doug Ghim": {
+   "sg_total": 0.724,
+   "stats": {
+    "sg_total": 0.724,
+    "sg_t2g": 0.891,
+    "sg_ott": 0.626,
+    "sg_app": -0.019,
+    "sg_arg": 0.284,
+    "sg_putt": -0.167,
+    "scoring_average": 70.446,
+    "birdie_average": 3.93,
+    "bogey_avoidance": 9.0,
+    "driving_distance": 303.6,
+    "driving_accuracy": 10.0,
+    "gir": 4.0,
+    "scrambling": 6.0,
+    "owgr": 6.0
+   }
+  },
+  "Gary Woodland": {
+   "sg_total": 1.0,
+   "stats": {
+    "sg_total": 1.0,
+    "sg_t2g": 1.0,
+    "sg_ott": 1.0,
+    "sg_app": 1.0,
+    "sg_arg": 1.0,
+    "sg_putt": 1.0,
+    "scoring_average": 1.0,
+    "birdie_average": 1.0,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 1.0,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 1.0,
+    "owgr": 1.0
+   }
+  },
+  "Christiaan Bezuidenhout": {
+   "sg_total": 0.671,
+   "stats": {
+    "sg_total": 0.671,
+    "sg_t2g": 0.26,
+    "sg_ott": -0.333,
+    "sg_app": 0.287,
+    "sg_arg": 0.305,
+    "sg_putt": 0.412,
+    "scoring_average": 70.399,
+    "birdie_average": 3.72,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 290.3,
+    "driving_accuracy": 10.0,
+    "gir": 17.0,
+    "scrambling": 2.0,
+    "owgr": 2.0
+   }
+  },
+  "Beau Hossler": {
+   "sg_total": 0.623,
+   "stats": {
+    "sg_total": 0.623,
+    "sg_t2g": -0.009,
+    "sg_ott": -0.012,
+    "sg_app": -0.194,
+    "sg_arg": 0.197,
+    "sg_putt": 0.632,
+    "scoring_average": 70.647,
+    "birdie_average": 3.84,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 300.3,
+    "driving_accuracy": 4.0,
+    "gir": 12.0,
+    "scrambling": 1.0,
+    "owgr": 4.0
+   }
+  },
+  "Alex Noren": {
+   "sg_total": 0.604,
+   "stats": {
+    "sg_total": 0.604,
+    "sg_t2g": 0.127,
+    "sg_ott": -0.103,
+    "sg_app": 0.104,
+    "sg_arg": 0.126,
+    "sg_putt": 0.477,
+    "scoring_average": 71.017,
+    "birdie_average": 3.96,
+    "bogey_avoidance": 14.0,
+    "driving_distance": 292.3,
+    "driving_accuracy": 2.0,
+    "gir": 15.0,
+    "scrambling": 10.0,
+    "owgr": 0.0
+   }
+  },
+  "Aaron Rai": {
+   "sg_total": 17.0,
+   "stats": {
+    "sg_total": 17.0,
+    "sg_t2g": 17.0,
+    "sg_ott": 17.0,
+    "sg_app": 17.0,
+    "sg_arg": 17.0,
+    "sg_putt": 17.0,
+    "scoring_average": 17.0,
+    "birdie_average": 17.0,
+    "bogey_avoidance": 17.0,
+    "driving_distance": 17.0,
+    "driving_accuracy": 17.0,
+    "gir": 17.0,
+    "scrambling": 17.0,
+    "owgr": 17.0
+   }
+  },
+  "Justin Thomas": {
+   "sg_total": 0.589,
+   "stats": {
+    "sg_total": 0.589,
+    "sg_t2g": 0.647,
+    "sg_ott": 0.139,
+    "sg_app": 0.059,
+    "sg_arg": 0.448,
+    "sg_putt": -0.058,
+    "scoring_average": 70.73,
+    "birdie_average": 3.84,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 308.9,
+    "driving_accuracy": 2.0,
+    "gir": 3.0,
+    "scrambling": 3.0,
+    "owgr": 0.0
+   }
+  },
+  "Hideki Matsuyama": {
+   "sg_total": 0.587,
+   "stats": {
+    "sg_total": 0.587,
+    "sg_t2g": 0.474,
+    "sg_ott": -0.287,
+    "sg_app": 0.413,
+    "sg_arg": 0.348,
+    "sg_putt": 0.113,
+    "scoring_average": 70.602,
+    "birdie_average": 4.02,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 303.0,
+    "driving_accuracy": 7.0,
+    "gir": 2.0,
+    "scrambling": 9.0,
+    "owgr": 1.0
+   }
+  },
+  "Keith Mitchell": {
+   "sg_total": 12.0,
+   "stats": {
+    "sg_total": 12.0,
+    "sg_t2g": 12.0,
+    "sg_ott": 12.0,
+    "sg_app": 12.0,
+    "sg_arg": 12.0,
+    "sg_putt": 12.0,
+    "scoring_average": 12.0,
+    "birdie_average": 12.0,
+    "bogey_avoidance": 12.0,
+    "driving_distance": 12.0,
+    "driving_accuracy": 12.0,
+    "gir": 12.0,
+    "scrambling": 12.0,
+    "owgr": 12.0
+   }
+  },
+  "Jordan Spieth": {
+   "sg_total": 0.578,
+   "stats": {
+    "sg_total": 0.578,
+    "sg_t2g": 0.296,
+    "sg_ott": 0.152,
+    "sg_app": 0.064,
+    "sg_arg": 0.08,
+    "sg_putt": 0.282,
+    "scoring_average": 70.656,
+    "birdie_average": 3.96,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 310.0,
+    "driving_accuracy": 2.0,
+    "gir": 6.0,
+    "scrambling": 4.0,
+    "owgr": 0.0
+   }
+  },
+  "Sam Ryder": {
+   "sg_total": 0.561,
+   "stats": {
+    "sg_total": 0.561,
+    "sg_t2g": 0.116,
+    "sg_ott": -0.229,
+    "sg_app": 0.602,
+    "sg_arg": -0.257,
+    "sg_putt": 0.445,
+    "scoring_average": 70.82,
+    "birdie_average": 3.97,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 299.4,
+    "driving_accuracy": 5.0,
+    "gir": 4.0,
+    "scrambling": 3.0,
+    "owgr": 3.0
+   }
+  },
+  "Ryan Fox": {
+   "sg_total": 0.552,
+   "stats": {
+    "sg_total": 0.552,
+    "sg_t2g": 0.459,
+    "sg_ott": 0.314,
+    "sg_app": 0.118,
+    "sg_arg": 0.027,
+    "sg_putt": 0.093,
+    "scoring_average": 70.689,
+    "birdie_average": 3.93,
+    "bogey_avoidance": 12.0,
+    "driving_distance": 312.7,
+    "driving_accuracy": 3.0,
+    "gir": 9.0,
+    "scrambling": 9.0,
+    "owgr": 5.0
+   }
+  },
+  "Viktor Hovland": {
+   "sg_total": 0.543,
+   "stats": {
+    "sg_total": 0.543,
+    "sg_t2g": 0.497,
+    "sg_ott": -0.092,
+    "sg_app": 0.451,
+    "sg_arg": 0.138,
+    "sg_putt": 0.046,
+    "scoring_average": 70.683,
+    "birdie_average": 4.07,
+    "bogey_avoidance": 26.0,
+    "driving_distance": 301.6,
+    "driving_accuracy": 2.0,
+    "gir": 17.0,
+    "scrambling": 5.0,
+    "owgr": 5.0
+   }
+  },
+  "Brandt Snedeker": {
+   "sg_total": 0.537,
+   "stats": {
+    "sg_total": 0.537,
+    "sg_t2g": 0.185,
+    "sg_ott": -0.655,
+    "sg_app": 0.381,
+    "sg_arg": 0.459,
+    "sg_putt": 0.352,
+    "scoring_average": 70.857,
+    "birdie_average": 3.52,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 281.0,
+    "driving_accuracy": 1.0,
+    "gir": 3.0,
+    "scrambling": 2.0,
+    "owgr": 1.0
+   }
+  },
+  "Mac Meissner": {
+   "sg_total": 0.51,
+   "stats": {
+    "sg_total": 0.51,
+    "sg_t2g": 0.399,
+    "sg_ott": -0.116,
+    "sg_app": 0.236,
+    "sg_arg": 0.279,
+    "sg_putt": 0.111,
+    "scoring_average": 70.544,
+    "birdie_average": 3.83,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 305.1,
+    "driving_accuracy": 2.0,
+    "gir": 5.0,
+    "scrambling": 7.0,
+    "owgr": 1.0
+   }
+  },
+  "Ben Griffin": {
+   "sg_total": 0.484,
+   "stats": {
+    "sg_total": 0.484,
+    "sg_t2g": 0.079,
+    "sg_ott": -0.08,
+    "sg_app": -0.284,
+    "sg_arg": 0.442,
+    "sg_putt": 0.405,
+    "scoring_average": 70.579,
+    "birdie_average": 3.79,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 303.0,
+    "driving_accuracy": 2.0,
+    "gir": 1.0,
+    "scrambling": 7.0,
+    "owgr": 0.0
+   }
+  },
+  "Taylor Moore": {
+   "sg_total": 0.472,
+   "stats": {
+    "sg_total": 0.472,
+    "sg_t2g": 0.248,
+    "sg_ott": 0.445,
+    "sg_app": -0.41,
+    "sg_arg": 0.213,
+    "sg_putt": 0.224,
+    "scoring_average": 70.699,
+    "birdie_average": 4.0,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 312.0,
+    "driving_accuracy": 5.0,
+    "gir": 7.0,
+    "scrambling": 4.0,
+    "owgr": 1.0
+   }
+  },
+  "Bud Cauley": {
+   "sg_total": 0.467,
+   "stats": {
+    "sg_total": 0.467,
+    "sg_t2g": 0.656,
+    "sg_ott": 0.099,
+    "sg_app": 0.327,
+    "sg_arg": 0.231,
+    "sg_putt": -0.189,
+    "scoring_average": 70.78,
+    "birdie_average": 3.65,
+    "bogey_avoidance": 16.0,
+    "driving_distance": 303.7,
+    "driving_accuracy": 3.0,
+    "gir": 9.0,
+    "scrambling": 14.0,
+    "owgr": 28.0
+   }
+  },
+  "A.J. Ewart": {
+   "sg_total": 0.451,
+   "stats": {
+    "sg_total": 0.451,
+    "sg_t2g": -0.181,
+    "sg_ott": -0.192,
+    "sg_app": -0.051,
+    "sg_arg": 0.062,
+    "sg_putt": 0.632,
+    "scoring_average": 70.557,
+    "birdie_average": 3.94,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 302.3,
+    "driving_accuracy": 6.0,
+    "gir": 0.0,
+    "scrambling": 1.0,
+    "owgr": 9.0
+   }
+  },
+  "Rickie Fowler": {
+   "sg_total": 0.449,
+   "stats": {
+    "sg_total": 0.449,
+    "sg_t2g": 0.114,
+    "sg_ott": 0.186,
+    "sg_app": 0.086,
+    "sg_arg": -0.159,
+    "sg_putt": 0.336,
+    "scoring_average": 70.801,
+    "birdie_average": 4.0,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 304.2,
+    "driving_accuracy": 2.0,
+    "gir": 6.0,
+    "scrambling": 2.0,
+    "owgr": 0.0
+   }
+  },
+  "Sahith Theegala": {
+   "sg_total": 0.436,
+   "stats": {
+    "sg_total": 0.436,
+    "sg_t2g": 0.33,
+    "sg_ott": -0.152,
+    "sg_app": 0.113,
+    "sg_arg": 0.37,
+    "sg_putt": 0.106,
+    "scoring_average": 70.57,
+    "birdie_average": 3.79,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 307.9,
+    "driving_accuracy": 5.0,
+    "gir": 2.0,
+    "scrambling": 2.0,
+    "owgr": 0.0
+   }
+  },
+  "Ryo Hisatsune": {
+   "sg_total": 0.421,
+   "stats": {
+    "sg_total": 0.421,
+    "sg_t2g": 0.555,
+    "sg_ott": 0.401,
+    "sg_app": 0.234,
+    "sg_arg": -0.081,
+    "sg_putt": -0.133,
+    "scoring_average": 70.887,
+    "birdie_average": 3.97,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 304.4,
+    "driving_accuracy": 0.0,
+    "gir": 1.0,
+    "scrambling": 3.0,
+    "owgr": 1.0
+   }
+  },
+  "Sepp Straka": {
+   "sg_total": 0.42,
+   "stats": {
+    "sg_total": 0.42,
+    "sg_t2g": 0.514,
+    "sg_ott": 0.009,
+    "sg_app": 0.571,
+    "sg_arg": -0.066,
+    "sg_putt": -0.094,
+    "scoring_average": 71.44,
+    "birdie_average": 3.85,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 302.9,
+    "driving_accuracy": 1.0,
+    "gir": 6.0,
+    "scrambling": 3.0,
+    "owgr": 0.0
+   }
+  },
+  "Andrew Putnam": {
+   "sg_total": 0.406,
+   "stats": {
+    "sg_total": 0.406,
+    "sg_t2g": 0.214,
+    "sg_ott": -0.503,
+    "sg_app": 0.174,
+    "sg_arg": 0.543,
+    "sg_putt": 0.192,
+    "scoring_average": 70.591,
+    "birdie_average": 3.7,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 283.3,
+    "driving_accuracy": 1.0,
+    "gir": 5.0,
+    "scrambling": 1.0,
+    "owgr": 1.0
+   }
+  },
+  "Rasmus H\u00f8jgaard": {
+   "sg_total": 0.394,
+   "stats": {
+    "sg_total": 0.394,
+    "sg_t2g": 0.205,
+    "sg_ott": 0.278,
+    "sg_app": 0.035,
+    "sg_arg": -0.109,
+    "sg_putt": 0.19,
+    "scoring_average": 71.106,
+    "birdie_average": 3.72,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 321.4,
+    "driving_accuracy": 2.0,
+    "gir": 0.0,
+    "scrambling": 2.0,
+    "owgr": 1.0
+   }
+  },
+  "Nick Taylor": {
+   "sg_total": 0.386,
+   "stats": {
+    "sg_total": 0.386,
+    "sg_t2g": 0.37,
+    "sg_ott": -0.189,
+    "sg_app": 0.209,
+    "sg_arg": 0.349,
+    "sg_putt": 0.016,
+    "scoring_average": 70.891,
+    "birdie_average": 3.71,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 297.6,
+    "driving_accuracy": 1.0,
+    "gir": 6.0,
+    "scrambling": 12.0,
+    "owgr": 1.0
+   }
+  },
+  "Zach Bauchou": {
+   "sg_total": 0.376,
+   "stats": {
+    "sg_total": 0.376,
+    "sg_t2g": 0.358,
+    "sg_ott": -0.114,
+    "sg_app": 0.334,
+    "sg_arg": 0.138,
+    "sg_putt": 0.017,
+    "scoring_average": 70.622,
+    "birdie_average": 3.9,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 301.7,
+    "driving_accuracy": 1.0,
+    "gir": 3.0,
+    "scrambling": 9.0,
+    "owgr": 2.0
+   }
+  },
+  "Kristoffer Reitan": {
+   "sg_total": 0.374,
+   "stats": {
+    "sg_total": 0.374,
+    "sg_t2g": 0.5,
+    "sg_ott": 0.51,
+    "sg_app": 0.01,
+    "sg_arg": -0.019,
+    "sg_putt": -0.126,
+    "scoring_average": 70.856,
+    "birdie_average": 3.82,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 313.0,
+    "driving_accuracy": 6.0,
+    "gir": 21.0,
+    "scrambling": 5.0,
+    "owgr": 2.0
+   }
+  },
+  "Justin Rose": {
+   "sg_total": 2.0,
+   "stats": {
+    "sg_total": 2.0,
+    "sg_t2g": 2.0,
+    "sg_ott": 2.0,
+    "sg_app": 2.0,
+    "sg_arg": 2.0,
+    "sg_putt": 2.0,
+    "scoring_average": 2.0,
+    "birdie_average": 2.0,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 2.0,
+    "driving_accuracy": 2.0,
+    "gir": 2.0,
+    "scrambling": 2.0,
+    "owgr": 2.0
+   }
+  },
+  "Harry Hall": {
+   "sg_total": 0.355,
+   "stats": {
+    "sg_total": 0.355,
+    "sg_t2g": 0.087,
+    "sg_ott": -0.32,
+    "sg_app": 0.004,
+    "sg_arg": 0.403,
+    "sg_putt": 0.268,
+    "scoring_average": 70.782,
+    "birdie_average": 4.15,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 302.4,
+    "driving_accuracy": 3.0,
+    "gir": 0.0,
+    "scrambling": 7.0,
+    "owgr": 0.0
+   }
+  },
+  "Matt Wallace": {
+   "sg_total": 0.341,
+   "stats": {
+    "sg_total": 0.341,
+    "sg_t2g": 0.371,
+    "sg_ott": 0.063,
+    "sg_app": 0.151,
+    "sg_arg": 0.156,
+    "sg_putt": -0.03,
+    "scoring_average": 70.961,
+    "birdie_average": 3.56,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 304.7,
+    "driving_accuracy": 0.0,
+    "gir": 3.0,
+    "scrambling": 6.0,
+    "owgr": 3.0
+   }
+  },
+  "Tom Kim": {
+   "sg_total": 9.0,
+   "stats": {
+    "sg_total": 9.0,
+    "sg_t2g": 9.0,
+    "sg_ott": 9.0,
+    "sg_app": 9.0,
+    "sg_arg": 9.0,
+    "sg_putt": 9.0,
+    "scoring_average": 9.0,
+    "birdie_average": 9.0,
+    "bogey_avoidance": 9.0,
+    "driving_distance": 9.0,
+    "driving_accuracy": 9.0,
+    "gir": 9.0,
+    "scrambling": 9.0,
+    "owgr": 9.0
+   }
+  },
+  "Pierceson Coody": {
+   "sg_total": 0.312,
+   "stats": {
+    "sg_total": 0.312,
+    "sg_t2g": 0.044,
+    "sg_ott": 0.459,
+    "sg_app": 0.049,
+    "sg_arg": -0.464,
+    "sg_putt": 0.268,
+    "scoring_average": 70.769,
+    "birdie_average": 4.26,
+    "bogey_avoidance": 4.0,
+    "driving_distance": 315.7,
+    "driving_accuracy": 4.0,
+    "gir": 3.0,
+    "scrambling": 3.0,
+    "owgr": 1.0
+   }
+  },
+  "Adrien Dumont de Chassart": {
+   "sg_total": 0.275,
+   "stats": {
+    "sg_total": 0.275,
+    "sg_t2g": 0.255,
+    "sg_ott": -0.175,
+    "sg_app": -0.116,
+    "sg_arg": 0.546,
+    "sg_putt": 0.02,
+    "scoring_average": 70.691,
+    "birdie_average": 3.74,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 311.0,
+    "driving_accuracy": 1.0,
+    "gir": 3.0,
+    "scrambling": 0.0,
+    "owgr": 2.0
+   }
+  },
+  "Daniel Berger": {
+   "sg_total": 0.25,
+   "stats": {
+    "sg_total": 0.25,
+    "sg_t2g": 0.277,
+    "sg_ott": 0.024,
+    "sg_app": 0.592,
+    "sg_arg": -0.34,
+    "sg_putt": -0.027,
+    "scoring_average": 71.163,
+    "birdie_average": 3.9,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 307.1,
+    "driving_accuracy": 0.0,
+    "gir": 0.0,
+    "scrambling": 6.0,
+    "owgr": 0.0
+   }
+  },
+  "Zecheng Dou": {
+   "sg_total": 0.248,
+   "stats": {
+    "sg_total": 0.248,
+    "sg_t2g": 0.333,
+    "sg_ott": -0.289,
+    "sg_app": 0.351,
+    "sg_arg": 0.271,
+    "sg_putt": -0.085,
+    "scoring_average": 71.01,
+    "birdie_average": 3.91,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 309.5,
+    "driving_accuracy": 3.0,
+    "gir": 8.0,
+    "scrambling": 12.0,
+    "owgr": 2.0
+   }
+  },
+  "Rasmus Neergaard-Petersen": {
+   "sg_total": 0.211,
+   "stats": {
+    "sg_total": 0.211,
+    "sg_t2g": 0.037,
+    "sg_ott": 0.406,
+    "sg_app": -0.039,
+    "sg_arg": -0.33,
+    "sg_putt": 0.175,
+    "scoring_average": 70.93,
+    "birdie_average": 3.55,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 306.3,
+    "driving_accuracy": 3.0,
+    "gir": 14.0,
+    "scrambling": 9.0,
+    "owgr": 0.0
+   }
+  },
+  "Jordan Smith": {
+   "sg_total": 0.187,
+   "stats": {
+    "sg_total": 0.187,
+    "sg_t2g": 0.627,
+    "sg_ott": 0.457,
+    "sg_app": 0.322,
+    "sg_arg": -0.152,
+    "sg_putt": -0.441,
+    "scoring_average": 70.77,
+    "birdie_average": 3.8,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 311.2,
+    "driving_accuracy": 0.0,
+    "gir": 1.0,
+    "scrambling": 8.0,
+    "owgr": 1.0
+   }
+  },
+  "Max McGreevy": {
+   "sg_total": 0.163,
+   "stats": {
+    "sg_total": 0.163,
+    "sg_t2g": 0.738,
+    "sg_ott": 0.234,
+    "sg_app": 0.425,
+    "sg_arg": 0.078,
+    "sg_putt": -0.574,
+    "scoring_average": 70.817,
+    "birdie_average": 3.44,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 297.5,
+    "driving_accuracy": 2.0,
+    "gir": 6.0,
+    "scrambling": 1.0,
+    "owgr": 1.0
+   }
+  },
+  "Sungjae Im": {
+   "sg_total": 0.162,
+   "stats": {
+    "sg_total": 0.162,
+    "sg_t2g": -0.057,
+    "sg_ott": 0.108,
+    "sg_app": -0.549,
+    "sg_arg": 0.385,
+    "sg_putt": 0.218,
+    "scoring_average": 71.074,
+    "birdie_average": 3.5,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 303.7,
+    "driving_accuracy": 0.0,
+    "gir": 0.0,
+    "scrambling": 6.0,
+    "owgr": 2.0
+   }
+  },
+  "Matthieu Pavon": {
+   "sg_total": 0.16,
+   "stats": {
+    "sg_total": 0.16,
+    "sg_t2g": -0.194,
+    "sg_ott": 0.102,
+    "sg_app": -0.328,
+    "sg_arg": 0.032,
+    "sg_putt": 0.354,
+    "scoring_average": 70.761,
+    "birdie_average": 3.76,
+    "bogey_avoidance": 14.0,
+    "driving_distance": 305.3,
+    "driving_accuracy": 15.0,
+    "gir": 15.0,
+    "scrambling": 5.0,
+    "owgr": 21.0
+   }
+  },
+  "Seamus Power": {
+   "sg_total": 0.146,
+   "stats": {
+    "sg_total": 0.146,
+    "sg_t2g": -0.202,
+    "sg_ott": -0.128,
+    "sg_app": -0.281,
+    "sg_arg": 0.207,
+    "sg_putt": 0.349,
+    "scoring_average": 70.895,
+    "birdie_average": 3.82,
+    "bogey_avoidance": 7.0,
+    "driving_distance": 299.5,
+    "driving_accuracy": 0.0,
+    "gir": 13.0,
+    "scrambling": 7.0,
+    "owgr": 5.0
+   }
+  },
+  "Davis Thompson": {
+   "sg_total": 0.14,
+   "stats": {
+    "sg_total": 0.14,
+    "sg_t2g": 0.53,
+    "sg_ott": 0.119,
+    "sg_app": 0.296,
+    "sg_arg": 0.115,
+    "sg_putt": -0.389,
+    "scoring_average": 70.807,
+    "birdie_average": 3.62,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 306.3,
+    "driving_accuracy": 3.0,
+    "gir": 12.0,
+    "scrambling": 7.0,
+    "owgr": 4.0
+   }
+  },
+  "Haotong Li": {
+   "sg_total": 0.14,
+   "stats": {
+    "sg_total": 0.14,
+    "sg_t2g": 0.408,
+    "sg_ott": 0.398,
+    "sg_app": 0.357,
+    "sg_arg": -0.348,
+    "sg_putt": -0.268,
+    "scoring_average": 70.9,
+    "birdie_average": 3.86,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 310.1,
+    "driving_accuracy": 6.0,
+    "gir": 2.0,
+    "scrambling": 17.0,
+    "owgr": 0.0
+   }
+  },
+  "J.T. Poston": {
+   "sg_total": 16.0,
+   "stats": {
+    "sg_total": 16.0,
+    "sg_t2g": 16.0,
+    "sg_ott": 16.0,
+    "sg_app": 16.0,
+    "sg_arg": 16.0,
+    "sg_putt": 16.0,
+    "scoring_average": 16.0,
+    "birdie_average": 16.0,
+    "bogey_avoidance": 16.0,
+    "driving_distance": 16.0,
+    "driving_accuracy": 16.0,
+    "gir": 16.0,
+    "scrambling": 16.0,
+    "owgr": 16.0
+   }
+  },
+  "Keegan Bradley": {
+   "sg_total": 0.136,
+   "stats": {
+    "sg_total": 0.136,
+    "sg_t2g": 0.138,
+    "sg_ott": 0.016,
+    "sg_app": -0.136,
+    "sg_arg": 0.257,
+    "sg_putt": -0.002,
+    "scoring_average": 71.141,
+    "birdie_average": 3.79,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 308.6,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 6.0,
+    "owgr": 1.0
+   }
+  },
+  "Jackson Suber": {
+   "sg_total": 0.115,
+   "stats": {
+    "sg_total": 0.115,
+    "sg_t2g": 0.512,
+    "sg_ott": 0.039,
+    "sg_app": 0.549,
+    "sg_arg": -0.075,
+    "sg_putt": -0.397,
+    "scoring_average": 71.02,
+    "birdie_average": 4.03,
+    "bogey_avoidance": 26.0,
+    "driving_distance": 303.2,
+    "driving_accuracy": 16.0,
+    "gir": 10.0,
+    "scrambling": 15.0,
+    "owgr": 39.0
+   }
+  },
+  "Michael Kim": {
+   "sg_total": 0.072,
+   "stats": {
+    "sg_total": 0.072,
+    "sg_t2g": -0.381,
+    "sg_ott": -0.425,
+    "sg_app": -0.069,
+    "sg_arg": 0.113,
+    "sg_putt": 0.454,
+    "scoring_average": 71.261,
+    "birdie_average": 3.86,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 301.7,
+    "driving_accuracy": 1.0,
+    "gir": 3.0,
+    "scrambling": 0.0,
+    "owgr": 2.0
+   }
+  },
+  "S.H. Kim": {
+   "sg_total": 0.072,
+   "stats": {
+    "sg_total": 0.072,
+    "sg_t2g": -0.277,
+    "sg_ott": 0.138,
+    "sg_app": -0.524,
+    "sg_arg": 0.109,
+    "sg_putt": 0.349,
+    "scoring_average": 71.047,
+    "birdie_average": 3.76,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 301.6,
+    "driving_accuracy": 2.0,
+    "gir": 2.0,
+    "scrambling": 0.0,
+    "owgr": 2.0
+   }
+  },
+  "Aldrich Potgieter": {
+   "sg_total": 0.068,
+   "stats": {
+    "sg_total": 0.068,
+    "sg_t2g": 0.182,
+    "sg_ott": 0.61,
+    "sg_app": -0.113,
+    "sg_arg": -0.315,
+    "sg_putt": -0.114,
+    "scoring_average": 71.476,
+    "birdie_average": 3.89,
+    "bogey_avoidance": 7.0,
+    "driving_distance": 328.8,
+    "driving_accuracy": 1.0,
+    "gir": 6.0,
+    "scrambling": 3.0,
+    "owgr": 7.0
+   }
+  },
+  "Jason Day": {
+   "sg_total": 0.058,
+   "stats": {
+    "sg_total": 0.058,
+    "sg_t2g": -0.155,
+    "sg_ott": -0.077,
+    "sg_app": -0.598,
+    "sg_arg": 0.52,
+    "sg_putt": 0.213,
+    "scoring_average": 71.209,
+    "birdie_average": 3.72,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 303.2,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 6.0,
+    "owgr": 2.0
+   }
+  },
+  "Michael Thorbjornsen": {
+   "sg_total": 0.046,
+   "stats": {
+    "sg_total": 0.046,
+    "sg_t2g": 0.384,
+    "sg_ott": 0.235,
+    "sg_app": -0.036,
+    "sg_arg": 0.184,
+    "sg_putt": -0.338,
+    "scoring_average": 71.046,
+    "birdie_average": 3.67,
+    "bogey_avoidance": 8.0,
+    "driving_distance": 313.9,
+    "driving_accuracy": 4.0,
+    "gir": 4.0,
+    "scrambling": 5.0,
+    "owgr": 2.0
+   }
+  },
+  "Jimmy Stanger": {
+   "sg_total": 0.043,
+   "stats": {
+    "sg_total": 0.043,
+    "sg_t2g": -0.489,
+    "sg_ott": 0.567,
+    "sg_app": -1.124,
+    "sg_arg": 0.069,
+    "sg_putt": 0.533,
+    "scoring_average": 70.988,
+    "birdie_average": 4.12,
+    "bogey_avoidance": 27.0,
+    "driving_distance": 311.8,
+    "driving_accuracy": 1.0,
+    "gir": 16.0,
+    "scrambling": 11.0,
+    "owgr": 368.0
+   }
+  },
+  "Johnny Keefer": {
+   "sg_total": 0.027,
+   "stats": {
+    "sg_total": 0.027,
+    "sg_t2g": 0.557,
+    "sg_ott": 0.613,
+    "sg_app": 0.339,
+    "sg_arg": -0.395,
+    "sg_putt": -0.53,
+    "scoring_average": 70.958,
+    "birdie_average": 3.94,
+    "bogey_avoidance": 7.0,
+    "driving_distance": 318.3,
+    "driving_accuracy": 2.0,
+    "gir": 1.0,
+    "scrambling": 3.0,
+    "owgr": 2.0
+   }
+  },
+  "Jesper Svensson": {
+   "sg_total": 0.021,
+   "stats": {
+    "sg_total": 0.021,
+    "sg_t2g": 0.174,
+    "sg_ott": 0.597,
+    "sg_app": -0.486,
+    "sg_arg": 0.063,
+    "sg_putt": -0.153,
+    "scoring_average": 71.046,
+    "birdie_average": 4.21,
+    "bogey_avoidance": 1.51,
+    "driving_distance": 319.3,
+    "driving_accuracy": 58.75,
+    "gir": 64.75,
+    "scrambling": 63.04,
+    "owgr": 37.0
+   }
+  },
+  "Steven Fisk": {
+   "sg_total": 0.021,
+   "stats": {
+    "sg_total": 0.021,
+    "sg_t2g": -0.298,
+    "sg_ott": -0.003,
+    "sg_app": -0.241,
+    "sg_arg": -0.055,
+    "sg_putt": 0.319,
+    "scoring_average": 71.027,
+    "birdie_average": 3.88,
+    "bogey_avoidance": 7.0,
+    "driving_distance": 309.8,
+    "driving_accuracy": 3.0,
+    "gir": 12.0,
+    "scrambling": 17.0,
+    "owgr": 0.0
+   }
+  },
+  "Tony Finau": {
+   "sg_total": 0.019,
+   "stats": {
+    "sg_total": 0.019,
+    "sg_t2g": 0.063,
+    "sg_ott": -0.153,
+    "sg_app": -0.111,
+    "sg_arg": 0.328,
+    "sg_putt": -0.043,
+    "scoring_average": 71.149,
+    "birdie_average": 4.11,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 309.1,
+    "driving_accuracy": 2.0,
+    "gir": 3.0,
+    "scrambling": 1.0,
+    "owgr": 2.0
+   }
+  },
+  "Kevin Roy": {
+   "sg_total": 0.013,
+   "stats": {
+    "sg_total": 0.013,
+    "sg_t2g": -0.222,
+    "sg_ott": -0.076,
+    "sg_app": -0.416,
+    "sg_arg": 0.27,
+    "sg_putt": 0.235,
+    "scoring_average": 70.926,
+    "birdie_average": 3.79,
+    "bogey_avoidance": 8.0,
+    "driving_distance": 305.1,
+    "driving_accuracy": 11.0,
+    "gir": 0.0,
+    "scrambling": 6.0,
+    "owgr": 2.0
+   }
+  },
+  "Austin Smotherman": {
+   "sg_total": 0.01,
+   "stats": {
+    "sg_total": 0.01,
+    "sg_t2g": 0.345,
+    "sg_ott": 0.332,
+    "sg_app": 0.544,
+    "sg_arg": -0.531,
+    "sg_putt": -0.335,
+    "scoring_average": 71.145,
+    "birdie_average": 3.98,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 302.5,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 1.0,
+    "owgr": 2.0
+   }
+  },
+  "Mackenzie Hughes": {
+   "sg_total": -0.003,
+   "stats": {
+    "sg_total": -0.003,
+    "sg_t2g": -0.227,
+    "sg_ott": -0.37,
+    "sg_app": -0.244,
+    "sg_arg": 0.387,
+    "sg_putt": 0.224,
+    "scoring_average": 71.265,
+    "birdie_average": 3.26,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 306.6,
+    "driving_accuracy": 2.0,
+    "gir": 5.0,
+    "scrambling": 0.0,
+    "owgr": 7.0
+   }
+  },
+  "Sam Stevens": {
+   "sg_total": 11.0,
+   "stats": {
+    "sg_total": 11.0,
+    "sg_t2g": 11.0,
+    "sg_ott": 11.0,
+    "sg_app": 11.0,
+    "sg_arg": 11.0,
+    "sg_putt": 11.0,
+    "scoring_average": 11.0,
+    "birdie_average": 11.0,
+    "bogey_avoidance": 11.0,
+    "driving_distance": 11.0,
+    "driving_accuracy": 11.0,
+    "gir": 11.0,
+    "scrambling": 11.0,
+    "owgr": 11.0
+   }
+  },
+  "Chad Ramey": {
+   "sg_total": -0.009,
+   "stats": {
+    "sg_total": -0.009,
+    "sg_t2g": -0.481,
+    "sg_ott": -0.037,
+    "sg_app": -0.341,
+    "sg_arg": -0.102,
+    "sg_putt": 0.472,
+    "scoring_average": 71.085,
+    "birdie_average": 3.83,
+    "bogey_avoidance": 10.0,
+    "driving_distance": 302.8,
+    "driving_accuracy": 3.0,
+    "gir": 10.0,
+    "scrambling": 13.0,
+    "owgr": 1.0
+   }
+  },
+  "Patrick Rodgers": {
+   "sg_total": -0.009,
+   "stats": {
+    "sg_total": -0.009,
+    "sg_t2g": -0.311,
+    "sg_ott": -0.153,
+    "sg_app": -0.169,
+    "sg_arg": 0.011,
+    "sg_putt": 0.301,
+    "scoring_average": 71.268,
+    "birdie_average": 3.83,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 308.2,
+    "driving_accuracy": 3.0,
+    "gir": 4.0,
+    "scrambling": 3.0,
+    "owgr": 0.0
+   }
+  },
+  "Ricky Castillo": {
+   "sg_total": -0.02,
+   "stats": {
+    "sg_total": -0.02,
+    "sg_t2g": -0.035,
+    "sg_ott": 0.056,
+    "sg_app": -0.203,
+    "sg_arg": 0.112,
+    "sg_putt": 0.016,
+    "scoring_average": 70.744,
+    "birdie_average": 3.81,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 307.7,
+    "driving_accuracy": 11.0,
+    "gir": 7.0,
+    "scrambling": 2.0,
+    "owgr": 4.0
+   }
+  },
+  "Stephan Jaeger": {
+   "sg_total": -0.03,
+   "stats": {
+    "sg_total": -0.03,
+    "sg_t2g": -0.16,
+    "sg_ott": -0.148,
+    "sg_app": -0.343,
+    "sg_arg": 0.331,
+    "sg_putt": 0.13,
+    "scoring_average": 71.095,
+    "birdie_average": 4.0,
+    "bogey_avoidance": 12.0,
+    "driving_distance": 313.3,
+    "driving_accuracy": 1.0,
+    "gir": 18.0,
+    "scrambling": 2.0,
+    "owgr": 2.0
+   }
+  },
+  "John Parry": {
+   "sg_total": 16.0,
+   "stats": {
+    "sg_total": 16.0,
+    "sg_t2g": 16.0,
+    "sg_ott": 16.0,
+    "sg_app": 16.0,
+    "sg_arg": 16.0,
+    "sg_putt": 16.0,
+    "scoring_average": 16.0,
+    "birdie_average": 16.0,
+    "bogey_avoidance": 16.0,
+    "driving_distance": 16.0,
+    "driving_accuracy": 16.0,
+    "gir": 16.0,
+    "scrambling": 16.0,
+    "owgr": 16.0
+   }
+  },
+  "Matt McCarty": {
+   "sg_total": -0.04,
+   "stats": {
+    "sg_total": -0.04,
+    "sg_t2g": -0.216,
+    "sg_ott": -0.065,
+    "sg_app": 0.062,
+    "sg_arg": -0.213,
+    "sg_putt": 0.175,
+    "scoring_average": 71.213,
+    "birdie_average": 4.03,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 298.2,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 8.0,
+    "owgr": 1.0
+   }
+  },
+  "Lee Hodges": {
+   "sg_total": -0.045,
+   "stats": {
+    "sg_total": -0.045,
+    "sg_t2g": -0.041,
+    "sg_ott": 0.154,
+    "sg_app": 0.146,
+    "sg_arg": -0.341,
+    "sg_putt": -0.004,
+    "scoring_average": 70.993,
+    "birdie_average": 3.79,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 298.4,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 19.0,
+    "owgr": 8.0
+   }
+  },
+  "Patrick Fishburn": {
+   "sg_total": -0.05,
+   "stats": {
+    "sg_total": -0.05,
+    "sg_t2g": -0.235,
+    "sg_ott": 0.053,
+    "sg_app": -0.155,
+    "sg_arg": -0.133,
+    "sg_putt": 0.186,
+    "scoring_average": 71.397,
+    "birdie_average": 3.43,
+    "bogey_avoidance": 21.0,
+    "driving_distance": 306.1,
+    "driving_accuracy": 4.0,
+    "gir": 10.0,
+    "scrambling": 18.0,
+    "owgr": 6.0
+   }
+  },
+  "Matt Kuchar": {
+   "sg_total": -0.055,
+   "stats": {
+    "sg_total": -0.055,
+    "sg_t2g": -0.708,
+    "sg_ott": -0.521,
+    "sg_app": -0.347,
+    "sg_arg": 0.159,
+    "sg_putt": 0.653,
+    "scoring_average": 71.216,
+    "birdie_average": 3.53,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 284.9,
+    "driving_accuracy": 2.0,
+    "gir": 0.0,
+    "scrambling": 0.0,
+    "owgr": 3.0
+   }
+  },
+  "Lanto Griffin": {
+   "sg_total": -0.074,
+   "stats": {
+    "sg_total": -0.074,
+    "sg_t2g": -0.151,
+    "sg_ott": -0.093,
+    "sg_app": -0.231,
+    "sg_arg": 0.172,
+    "sg_putt": 0.077,
+    "scoring_average": 71.208,
+    "birdie_average": 3.81,
+    "bogey_avoidance": 1.33,
+    "driving_distance": 298.5,
+    "driving_accuracy": 58.47,
+    "gir": 67.08,
+    "scrambling": 56.88,
+    "owgr": 2.0
+   }
+  },
+  "Denny McCarthy": {
+   "sg_total": -0.111,
+   "stats": {
+    "sg_total": -0.111,
+    "sg_t2g": -0.473,
+    "sg_ott": -0.474,
+    "sg_app": -0.025,
+    "sg_arg": 0.027,
+    "sg_putt": 0.362,
+    "scoring_average": 71.289,
+    "birdie_average": 3.52,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 295.9,
+    "driving_accuracy": 1.0,
+    "gir": 7.0,
+    "scrambling": 16.0,
+    "owgr": 0.0
+   }
+  },
+  "Chris Kirk": {
+   "sg_total": -0.115,
+   "stats": {
+    "sg_total": -0.115,
+    "sg_t2g": 0.382,
+    "sg_ott": 0.046,
+    "sg_app": 0.249,
+    "sg_arg": 0.087,
+    "sg_putt": -0.497,
+    "scoring_average": 71.3,
+    "birdie_average": 3.66,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 304.9,
+    "driving_accuracy": 9.0,
+    "gir": 2.0,
+    "scrambling": 4.0,
+    "owgr": 2.0
+   }
+  },
+  "Austin Eckroat": {
+   "sg_total": -0.117,
+   "stats": {
+    "sg_total": -0.117,
+    "sg_t2g": -0.092,
+    "sg_ott": -0.164,
+    "sg_app": 0.31,
+    "sg_arg": -0.238,
+    "sg_putt": -0.024,
+    "scoring_average": 70.97,
+    "birdie_average": 4.16,
+    "bogey_avoidance": 11.0,
+    "driving_distance": 299.4,
+    "driving_accuracy": 9.0,
+    "gir": 9.0,
+    "scrambling": 5.0,
+    "owgr": 2.0
+   }
+  },
+  "Andrew Novak": {
+   "sg_total": -0.12,
+   "stats": {
+    "sg_total": -0.12,
+    "sg_t2g": 0.347,
+    "sg_ott": -0.014,
+    "sg_app": 0.209,
+    "sg_arg": 0.151,
+    "sg_putt": -0.467,
+    "scoring_average": 71.491,
+    "birdie_average": 3.73,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 303.2,
+    "driving_accuracy": 2.0,
+    "gir": 4.0,
+    "scrambling": 6.0,
+    "owgr": 3.0
+   }
+  },
+  "Taylor Pendrith": {
+   "sg_total": -0.12,
+   "stats": {
+    "sg_total": -0.12,
+    "sg_t2g": 0.23,
+    "sg_ott": 0.373,
+    "sg_app": -0.076,
+    "sg_arg": -0.067,
+    "sg_putt": -0.349,
+    "scoring_average": 71.351,
+    "birdie_average": 3.89,
+    "bogey_avoidance": 11.0,
+    "driving_distance": 313.6,
+    "driving_accuracy": 1.0,
+    "gir": 8.0,
+    "scrambling": 9.0,
+    "owgr": 2.0
+   }
+  },
+  "Takumi Kanaya": {
+   "sg_total": -0.132,
+   "stats": {
+    "sg_total": -0.132,
+    "sg_t2g": -0.579,
+    "sg_ott": -0.024,
+    "sg_app": -0.744,
+    "sg_arg": 0.189,
+    "sg_putt": 0.447,
+    "scoring_average": 71.214,
+    "birdie_average": 3.24,
+    "bogey_avoidance": 13.0,
+    "driving_distance": 294.3,
+    "driving_accuracy": 7.0,
+    "gir": 5.0,
+    "scrambling": 6.0,
+    "owgr": 3.0
+   }
+  },
+  "Max Homa": {
+   "sg_total": -0.133,
+   "stats": {
+    "sg_total": -0.133,
+    "sg_t2g": -0.346,
+    "sg_ott": 0.073,
+    "sg_app": -0.268,
+    "sg_arg": -0.152,
+    "sg_putt": 0.214,
+    "scoring_average": 71.123,
+    "birdie_average": 3.52,
+    "bogey_avoidance": 14.0,
+    "driving_distance": 310.2,
+    "driving_accuracy": 3.0,
+    "gir": 0.0,
+    "scrambling": 12.0,
+    "owgr": 4.0
+   }
+  },
+  "Rico Hoey": {
+   "sg_total": -0.139,
+   "stats": {
+    "sg_total": -0.139,
+    "sg_t2g": 0.124,
+    "sg_ott": 0.404,
+    "sg_app": -0.048,
+    "sg_arg": -0.232,
+    "sg_putt": -0.263,
+    "scoring_average": 71.126,
+    "birdie_average": 3.62,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 309.0,
+    "driving_accuracy": 2.0,
+    "gir": 11.0,
+    "scrambling": 3.0,
+    "owgr": 1.0
+   }
+  },
+  "Max Greyserman": {
+   "sg_total": -0.148,
+   "stats": {
+    "sg_total": -0.148,
+    "sg_t2g": -0.222,
+    "sg_ott": -0.204,
+    "sg_app": -0.017,
+    "sg_arg": -0.001,
+    "sg_putt": 0.074,
+    "scoring_average": 71.403,
+    "birdie_average": 3.93,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 311.7,
+    "driving_accuracy": 3.0,
+    "gir": 10.0,
+    "scrambling": 6.0,
+    "owgr": 1.0
+   }
+  },
+  "William Mouw": {
+   "sg_total": -0.163,
+   "stats": {
+    "sg_total": -0.163,
+    "sg_t2g": 0.058,
+    "sg_ott": 0.198,
+    "sg_app": 0.125,
+    "sg_arg": -0.265,
+    "sg_putt": -0.221,
+    "scoring_average": 70.97,
+    "birdie_average": 3.59,
+    "bogey_avoidance": 19.0,
+    "driving_distance": 309.5,
+    "driving_accuracy": 12.0,
+    "gir": 13.0,
+    "scrambling": 14.0,
+    "owgr": 7.0
+   }
+  },
+  "Michael Brennan": {
+   "sg_total": -0.208,
+   "stats": {
+    "sg_total": -0.208,
+    "sg_t2g": 0.11,
+    "sg_ott": 0.749,
+    "sg_app": -0.098,
+    "sg_arg": -0.542,
+    "sg_putt": -0.318,
+    "scoring_average": 70.986,
+    "birdie_average": 3.96,
+    "bogey_avoidance": 10.0,
+    "driving_distance": 324.4,
+    "driving_accuracy": 8.0,
+    "gir": 2.0,
+    "scrambling": 3.0,
+    "owgr": 5.0
+   }
+  },
+  "Brian Harman": {
+   "sg_total": -0.219,
+   "stats": {
+    "sg_total": -0.219,
+    "sg_t2g": -0.133,
+    "sg_ott": -0.253,
+    "sg_app": 0.066,
+    "sg_arg": 0.054,
+    "sg_putt": -0.086,
+    "scoring_average": 71.45,
+    "birdie_average": 3.6,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 295.9,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 3.0,
+    "owgr": 0.0
+   }
+  },
+  "Corey Conners": {
+   "sg_total": -0.22,
+   "stats": {
+    "sg_total": -0.22,
+    "sg_t2g": 0.138,
+    "sg_ott": 0.047,
+    "sg_app": 0.289,
+    "sg_arg": -0.199,
+    "sg_putt": -0.358,
+    "scoring_average": 71.545,
+    "birdie_average": 3.5,
+    "bogey_avoidance": 7.0,
+    "driving_distance": 302.0,
+    "driving_accuracy": 0.0,
+    "gir": 4.0,
+    "scrambling": 5.0,
+    "owgr": 2.0
+   }
+  },
+  "Kevin Yu": {
+   "sg_total": -0.24,
+   "stats": {
+    "sg_total": -0.24,
+    "sg_t2g": 0.246,
+    "sg_ott": 0.241,
+    "sg_app": -0.005,
+    "sg_arg": 0.01,
+    "sg_putt": -0.486,
+    "scoring_average": 71.364,
+    "birdie_average": 4.05,
+    "bogey_avoidance": 12.0,
+    "driving_distance": 308.3,
+    "driving_accuracy": 6.0,
+    "gir": 25.0,
+    "scrambling": 7.0,
+    "owgr": 7.0
+   }
+  },
+  "Kevin Streelman": {
+   "sg_total": -0.278,
+   "stats": {
+    "sg_total": -0.278,
+    "sg_t2g": -0.314,
+    "sg_ott": -0.246,
+    "sg_app": -0.082,
+    "sg_arg": 0.014,
+    "sg_putt": 0.036,
+    "scoring_average": 71.455,
+    "birdie_average": 3.52,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 293.2,
+    "driving_accuracy": 0.0,
+    "gir": 7.0,
+    "scrambling": 8.0,
+    "owgr": 7.0
+   }
+  },
+  "David Lipsky": {
+   "sg_total": -0.311,
+   "stats": {
+    "sg_total": -0.311,
+    "sg_t2g": -0.285,
+    "sg_ott": -0.501,
+    "sg_app": 0.01,
+    "sg_arg": 0.205,
+    "sg_putt": -0.026,
+    "scoring_average": 71.354,
+    "birdie_average": 3.97,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 293.7,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 2.0,
+    "owgr": 3.0
+   }
+  },
+  "Karl Vilips": {
+   "sg_total": -0.318,
+   "stats": {
+    "sg_total": -0.318,
+    "sg_t2g": -0.818,
+    "sg_ott": -0.534,
+    "sg_app": -0.097,
+    "sg_arg": -0.187,
+    "sg_putt": 0.5,
+    "scoring_average": 71.266,
+    "birdie_average": 3.79,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 303.9,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 14.0,
+    "owgr": 8.0
+   }
+  },
+  "Dan Brown": {
+   "sg_total": -0.319,
+   "stats": {
+    "sg_total": -0.319,
+    "sg_t2g": -0.148,
+    "sg_ott": 0.032,
+    "sg_app": 0.273,
+    "sg_arg": -0.453,
+    "sg_putt": -0.171,
+    "scoring_average": 71.246,
+    "birdie_average": 3.65,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 299.3,
+    "driving_accuracy": 9.0,
+    "gir": 3.0,
+    "scrambling": 19.0,
+    "owgr": 4.0
+   }
+  },
+  "Sami Valimaki": {
+   "sg_total": -0.32,
+   "stats": {
+    "sg_total": -0.32,
+    "sg_t2g": -0.494,
+    "sg_ott": -0.34,
+    "sg_app": 0.048,
+    "sg_arg": -0.203,
+    "sg_putt": 0.174,
+    "scoring_average": 71.903,
+    "birdie_average": 3.62,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 296.8,
+    "driving_accuracy": 1.0,
+    "gir": 3.0,
+    "scrambling": 2.0,
+    "owgr": 1.0
+   }
+  },
+  "Erik van Rooyen": {
+   "sg_total": -0.321,
+   "stats": {
+    "sg_total": -0.321,
+    "sg_t2g": -0.794,
+    "sg_ott": -0.106,
+    "sg_app": -0.552,
+    "sg_arg": -0.135,
+    "sg_putt": 0.473,
+    "scoring_average": 71.428,
+    "birdie_average": 4.02,
+    "bogey_avoidance": 18.0,
+    "driving_distance": 306.0,
+    "driving_accuracy": 3.0,
+    "gir": 3.0,
+    "scrambling": 3.0,
+    "owgr": 2.0
+   }
+  },
+  "Adrien Saddier": {
+   "sg_total": -0.339,
+   "stats": {
+    "sg_total": -0.339,
+    "sg_t2g": -0.323,
+    "sg_ott": 0.126,
+    "sg_app": -0.289,
+    "sg_arg": -0.159,
+    "sg_putt": -0.016,
+    "scoring_average": 71.486,
+    "birdie_average": 3.47,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 303.3,
+    "driving_accuracy": 0.0,
+    "gir": 9.0,
+    "scrambling": 3.0,
+    "owgr": 2.0
+   }
+  },
+  "Brice Garnett": {
+   "sg_total": -0.35,
+   "stats": {
+    "sg_total": -0.35,
+    "sg_t2g": -0.449,
+    "sg_ott": -0.275,
+    "sg_app": -0.101,
+    "sg_arg": -0.073,
+    "sg_putt": 0.1,
+    "scoring_average": 71.34,
+    "birdie_average": 3.51,
+    "bogey_avoidance": 19.0,
+    "driving_distance": 291.7,
+    "driving_accuracy": 3.0,
+    "gir": 18.0,
+    "scrambling": 2.0,
+    "owgr": 132.0
+   }
+  },
+  "Adam Svensson": {
+   "sg_total": -0.41,
+   "stats": {
+    "sg_total": -0.41,
+    "sg_t2g": 0.131,
+    "sg_ott": -0.24,
+    "sg_app": 0.154,
+    "sg_arg": 0.217,
+    "sg_putt": -0.541,
+    "scoring_average": 71.214,
+    "birdie_average": 3.62,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 292.7,
+    "driving_accuracy": 8.0,
+    "gir": 7.0,
+    "scrambling": 8.0,
+    "owgr": 3.0
+   }
+  },
+  "Billy Horschel": {
+   "sg_total": -0.428,
+   "stats": {
+    "sg_total": -0.428,
+    "sg_t2g": -0.455,
+    "sg_ott": -0.336,
+    "sg_app": 0.142,
+    "sg_arg": -0.262,
+    "sg_putt": 0.027,
+    "scoring_average": 71.578,
+    "birdie_average": 3.73,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 300.5,
+    "driving_accuracy": 4.0,
+    "gir": 9.0,
+    "scrambling": 4.0,
+    "owgr": 11.0
+   }
+  },
+  "Matti Schmid": {
+   "sg_total": -0.435,
+   "stats": {
+    "sg_total": -0.435,
+    "sg_t2g": -0.497,
+    "sg_ott": 0.061,
+    "sg_app": -0.498,
+    "sg_arg": -0.061,
+    "sg_putt": 0.062,
+    "scoring_average": 71.491,
+    "birdie_average": 3.69,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 308.4,
+    "driving_accuracy": 0.0,
+    "gir": 1.0,
+    "scrambling": 14.0,
+    "owgr": 1.0
+   }
+  },
+  "Dylan Wu": {
+   "sg_total": -0.531,
+   "stats": {
+    "sg_total": -0.531,
+    "sg_t2g": -0.18,
+    "sg_ott": -0.28,
+    "sg_app": 0.258,
+    "sg_arg": -0.157,
+    "sg_putt": -0.351,
+    "scoring_average": 71.339,
+    "birdie_average": 3.78,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 298.3,
+    "driving_accuracy": 6.0,
+    "gir": 4.0,
+    "scrambling": 19.0,
+    "owgr": 9.0
+   }
+  },
+  "Hank Lebioda": {
+   "sg_total": -0.534,
+   "stats": {
+    "sg_total": -0.534,
+    "sg_t2g": -0.152,
+    "sg_ott": -0.188,
+    "sg_app": 0.086,
+    "sg_arg": -0.05,
+    "sg_putt": -0.382,
+    "scoring_average": 71.682,
+    "birdie_average": 3.05,
+    "bogey_avoidance": 9.0,
+    "driving_distance": 296.9,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 2.0,
+    "owgr": 6.0
+   }
+  },
+  "Marco Penge": {
+   "sg_total": -0.544,
+   "stats": {
+    "sg_total": -0.544,
+    "sg_t2g": -0.186,
+    "sg_ott": 0.507,
+    "sg_app": -0.344,
+    "sg_arg": -0.349,
+    "sg_putt": -0.358,
+    "scoring_average": 72.028,
+    "birdie_average": 3.5,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 320.8,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 4.0,
+    "owgr": 1.0
+   }
+  },
+  "Kensei Hirata": {
+   "sg_total": -0.557,
+   "stats": {
+    "sg_total": -0.557,
+    "sg_t2g": -0.425,
+    "sg_ott": 0.02,
+    "sg_app": -0.486,
+    "sg_arg": 0.042,
+    "sg_putt": -0.132,
+    "scoring_average": 71.638,
+    "birdie_average": 3.1,
+    "bogey_avoidance": 17.0,
+    "driving_distance": 295.0,
+    "driving_accuracy": 0.0,
+    "gir": 1.0,
+    "scrambling": 8.0,
+    "owgr": 12.0
+   }
+  },
+  "Mark Hubbard": {
+   "sg_total": -0.56,
+   "stats": {
+    "sg_total": -0.56,
+    "sg_t2g": 0.019,
+    "sg_ott": -0.257,
+    "sg_app": 0.312,
+    "sg_arg": -0.036,
+    "sg_putt": -0.578,
+    "scoring_average": 71.566,
+    "birdie_average": 3.47,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 296.4,
+    "driving_accuracy": 4.0,
+    "gir": 3.0,
+    "scrambling": 0.0,
+    "owgr": 2.0
+   }
+  },
+  "Nico Echavarria": {
+   "sg_total": -0.56,
+   "stats": {
+    "sg_total": -0.56,
+    "sg_t2g": -0.59,
+    "sg_ott": -0.253,
+    "sg_app": -0.025,
+    "sg_arg": -0.313,
+    "sg_putt": 0.03,
+    "scoring_average": 71.901,
+    "birdie_average": 3.69,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 293.5,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 0.0,
+    "owgr": 3.0
+   }
+  },
+  "Joel Dahmen": {
+   "sg_total": -0.581,
+   "stats": {
+    "sg_total": -0.581,
+    "sg_t2g": 0.02,
+    "sg_ott": 0.138,
+    "sg_app": 0.317,
+    "sg_arg": -0.436,
+    "sg_putt": -0.601,
+    "scoring_average": 71.579,
+    "birdie_average": 3.29,
+    "bogey_avoidance": 7.0,
+    "driving_distance": 293.6,
+    "driving_accuracy": 1.0,
+    "gir": 3.0,
+    "scrambling": 0.0,
+    "owgr": 4.0
+   }
+  },
+  "Vince Whaley": {
+   "sg_total": -0.59,
+   "stats": {
+    "sg_total": -0.59,
+    "sg_t2g": -1.37,
+    "sg_ott": -0.469,
+    "sg_app": -0.686,
+    "sg_arg": -0.215,
+    "sg_putt": 0.78,
+    "scoring_average": 71.47,
+    "birdie_average": 3.51,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 301.0,
+    "driving_accuracy": 3.0,
+    "gir": 3.0,
+    "scrambling": 5.0,
+    "owgr": 2.0
+   }
+  },
+  "Emiliano Grillo": {
+   "sg_total": -0.614,
+   "stats": {
+    "sg_total": -0.614,
+    "sg_t2g": -0.087,
+    "sg_ott": 0.055,
+    "sg_app": 0.002,
+    "sg_arg": -0.144,
+    "sg_putt": -0.527,
+    "scoring_average": 71.495,
+    "birdie_average": 3.79,
+    "bogey_avoidance": 6.0,
+    "driving_distance": 297.2,
+    "driving_accuracy": 4.0,
+    "gir": 10.0,
+    "scrambling": 1.0,
+    "owgr": 4.0
+   }
+  },
+  "Chandler Phillips": {
+   "sg_total": -0.625,
+   "stats": {
+    "sg_total": -0.625,
+    "sg_t2g": -1.0,
+    "sg_ott": -0.167,
+    "sg_app": -0.859,
+    "sg_arg": 0.025,
+    "sg_putt": 0.376,
+    "scoring_average": 71.584,
+    "birdie_average": 3.83,
+    "bogey_avoidance": 8.0,
+    "driving_distance": 297.6,
+    "driving_accuracy": 15.0,
+    "gir": 2.0,
+    "scrambling": 5.0,
+    "owgr": 6.0
+   }
+  },
+  "Neal Shipley": {
+   "sg_total": -0.688,
+   "stats": {
+    "sg_total": -0.688,
+    "sg_t2g": -0.243,
+    "sg_ott": 0.763,
+    "sg_app": -0.409,
+    "sg_arg": -0.597,
+    "sg_putt": -0.445,
+    "scoring_average": 71.764,
+    "birdie_average": 3.46,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 307.1,
+    "driving_accuracy": 0.0,
+    "gir": 8.0,
+    "scrambling": 9.0,
+    "owgr": 0.0
+   }
+  },
+  "Danny Walker": {
+   "sg_total": -0.731,
+   "stats": {
+    "sg_total": -0.731,
+    "sg_t2g": -0.265,
+    "sg_ott": -0.434,
+    "sg_app": -0.057,
+    "sg_arg": 0.225,
+    "sg_putt": -0.466,
+    "scoring_average": 71.81,
+    "birdie_average": 3.84,
+    "bogey_avoidance": 8.0,
+    "driving_distance": 305.4,
+    "driving_accuracy": 2.0,
+    "gir": 2.0,
+    "scrambling": 9.0,
+    "owgr": 5.0
+   }
+  },
+  "Pontus Nyholm": {
+   "sg_total": -0.769,
+   "stats": {
+    "sg_total": -0.769,
+    "sg_t2g": -0.736,
+    "sg_ott": -0.449,
+    "sg_app": -0.391,
+    "sg_arg": 0.104,
+    "sg_putt": -0.033,
+    "scoring_average": 71.793,
+    "birdie_average": 3.54,
+    "bogey_avoidance": 9.0,
+    "driving_distance": 315.8,
+    "driving_accuracy": 0.0,
+    "gir": 3.0,
+    "scrambling": 16.0,
+    "owgr": 5.0
+   }
+  },
+  "Tom Hoge": {
+   "sg_total": -0.879,
+   "stats": {
+    "sg_total": -0.879,
+    "sg_t2g": -0.64,
+    "sg_ott": -0.48,
+    "sg_app": 0.153,
+    "sg_arg": -0.313,
+    "sg_putt": -0.239,
+    "scoring_average": 71.84,
+    "birdie_average": 3.92,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 297.3,
+    "driving_accuracy": 5.0,
+    "gir": 0.0,
+    "scrambling": 5.0,
+    "owgr": 1.0
+   }
+  },
+  "John VanDerLaan": {
+   "sg_total": -0.907,
+   "stats": {
+    "sg_total": -0.907,
+    "sg_t2g": -0.811,
+    "sg_ott": -0.173,
+    "sg_app": -0.526,
+    "sg_arg": -0.112,
+    "sg_putt": -0.096,
+    "scoring_average": 71.71,
+    "birdie_average": 3.44,
+    "bogey_avoidance": 17.0,
+    "driving_distance": 304.5,
+    "driving_accuracy": 11.0,
+    "gir": 15.0,
+    "scrambling": 8.0,
+    "owgr": 4.0
+   }
+  },
+  "Chandler Blanchet": {
+   "sg_total": -0.91,
+   "stats": {
+    "sg_total": -0.91,
+    "sg_t2g": -0.48,
+    "sg_ott": 0.057,
+    "sg_app": 0.039,
+    "sg_arg": -0.575,
+    "sg_putt": -0.43,
+    "scoring_average": 71.578,
+    "birdie_average": 3.35,
+    "bogey_avoidance": 5.0,
+    "driving_distance": 298.7,
+    "driving_accuracy": 1.0,
+    "gir": 6.0,
+    "scrambling": 15.0,
+    "owgr": 1.0
+   }
+  },
+  "Peter Malnati": {
+   "sg_total": -0.911,
+   "stats": {
+    "sg_total": -0.911,
+    "sg_t2g": -1.42,
+    "sg_ott": -0.882,
+    "sg_app": -0.759,
+    "sg_arg": 0.221,
+    "sg_putt": 0.509,
+    "scoring_average": 71.817,
+    "birdie_average": 3.69,
+    "bogey_avoidance": 9.0,
+    "driving_distance": 293.9,
+    "driving_accuracy": 3.0,
+    "gir": 1.0,
+    "scrambling": 19.0,
+    "owgr": 9.0
+   }
+  },
+  "Luke Clanton": {
+   "sg_total": -0.924,
+   "stats": {
+    "sg_total": -0.924,
+    "sg_t2g": -0.48,
+    "sg_ott": -0.51,
+    "sg_app": 0.349,
+    "sg_arg": -0.319,
+    "sg_putt": -0.444,
+    "scoring_average": 71.599,
+    "birdie_average": 3.38,
+    "bogey_avoidance": 8.0,
+    "driving_distance": 301.1,
+    "driving_accuracy": 4.0,
+    "gir": 2.0,
+    "scrambling": 3.0,
+    "owgr": 2.0
+   }
+  },
+  "Nick Dunlap": {
+   "sg_total": -0.942,
+   "stats": {
+    "sg_total": -0.942,
+    "sg_t2g": -0.734,
+    "sg_ott": -1.095,
+    "sg_app": 0.281,
+    "sg_arg": 0.08,
+    "sg_putt": -0.208,
+    "scoring_average": 71.93,
+    "birdie_average": 3.32,
+    "bogey_avoidance": 4.0,
+    "driving_distance": 294.0,
+    "driving_accuracy": 2.0,
+    "gir": 2.0,
+    "scrambling": 0.0,
+    "owgr": 17.0
+   }
+  },
+  "Garrick Higgo": {
+   "sg_total": -0.997,
+   "stats": {
+    "sg_total": -0.997,
+    "sg_t2g": -0.739,
+    "sg_ott": 0.027,
+    "sg_app": -0.598,
+    "sg_arg": -0.168,
+    "sg_putt": -0.258,
+    "scoring_average": 71.926,
+    "birdie_average": 3.05,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 303.8,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 11.0,
+    "owgr": 6.0
+   }
+  },
+  "Lucas Glover": {
+   "sg_total": -1.027,
+   "stats": {
+    "sg_total": -1.027,
+    "sg_t2g": -0.319,
+    "sg_ott": -0.135,
+    "sg_app": -0.031,
+    "sg_arg": -0.153,
+    "sg_putt": -0.708,
+    "scoring_average": 72.246,
+    "birdie_average": 3.02,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 290.4,
+    "driving_accuracy": 1.0,
+    "gir": 4.0,
+    "scrambling": 4.0,
+    "owgr": 1.0
+   }
+  },
+  "Jeffrey Kang": {
+   "sg_total": -1.074,
+   "stats": {
+    "sg_total": -1.074,
+    "sg_t2g": -0.721,
+    "sg_ott": -0.698,
+    "sg_app": -0.083,
+    "sg_arg": 0.06,
+    "sg_putt": -0.353,
+    "scoring_average": 72.17,
+    "birdie_average": 3.3,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 298.1,
+    "driving_accuracy": 1.0,
+    "gir": 0.0,
+    "scrambling": 2.0,
+    "owgr": 3.0
+   }
+  },
+  "Davis Chatfield": {
+   "sg_total": -1.09,
+   "stats": {
+    "sg_total": -1.09,
+    "sg_t2g": -0.762,
+    "sg_ott": -0.296,
+    "sg_app": -0.489,
+    "sg_arg": 0.023,
+    "sg_putt": -0.328,
+    "scoring_average": 71.97,
+    "birdie_average": 3.09,
+    "bogey_avoidance": 4.0,
+    "driving_distance": 285.5,
+    "driving_accuracy": 2.0,
+    "gir": 0.0,
+    "scrambling": 16.0,
+    "owgr": 12.0
+   }
+  },
+  "Jhonattan Vegas": {
+   "sg_total": -1.096,
+   "stats": {
+    "sg_total": -1.096,
+    "sg_t2g": -0.647,
+    "sg_ott": 0.033,
+    "sg_app": -0.407,
+    "sg_arg": -0.274,
+    "sg_putt": -0.448,
+    "scoring_average": 72.542,
+    "birdie_average": 3.32,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 307.9,
+    "driving_accuracy": 1.0,
+    "gir": 7.0,
+    "scrambling": 4.0,
+    "owgr": 6.0
+   }
+  },
+  "Justin Lower": {
+   "sg_total": -1.221,
+   "stats": {
+    "sg_total": -1.221,
+    "sg_t2g": -0.895,
+    "sg_ott": -0.111,
+    "sg_app": -0.685,
+    "sg_arg": -0.099,
+    "sg_putt": -0.326,
+    "scoring_average": 72.257,
+    "birdie_average": 3.41,
+    "bogey_avoidance": 13.0,
+    "driving_distance": 290.9,
+    "driving_accuracy": 0.0,
+    "gir": 2.0,
+    "scrambling": 2.0,
+    "owgr": 7.0
+   }
+  },
+  "Joe Highsmith": {
+   "sg_total": -1.311,
+   "stats": {
+    "sg_total": -1.311,
+    "sg_t2g": -0.891,
+    "sg_ott": -0.461,
+    "sg_app": -0.226,
+    "sg_arg": -0.204,
+    "sg_putt": -0.421,
+    "scoring_average": 72.393,
+    "birdie_average": 3.53,
+    "bogey_avoidance": 3.0,
+    "driving_distance": 305.6,
+    "driving_accuracy": 8.0,
+    "gir": 2.0,
+    "scrambling": 1.0,
+    "owgr": 0.0
+   }
+  },
+  "Davis Riley": {
+   "sg_total": -1.368,
+   "stats": {
+    "sg_total": -1.368,
+    "sg_t2g": -1.763,
+    "sg_ott": -1.045,
+    "sg_app": -0.577,
+    "sg_arg": -0.142,
+    "sg_putt": 0.395,
+    "scoring_average": 72.225,
+    "birdie_average": 3.86,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 305.2,
+    "driving_accuracy": 2.0,
+    "gir": 0.0,
+    "scrambling": 3.0,
+    "owgr": 2.0
+   }
+  },
+  "Patton Kizzire": {
+   "sg_total": -1.37,
+   "stats": {
+    "sg_total": -1.37,
+    "sg_t2g": -0.901,
+    "sg_ott": -1.112,
+    "sg_app": -0.104,
+    "sg_arg": 0.315,
+    "sg_putt": -0.47,
+    "scoring_average": 72.29,
+    "birdie_average": 3.16,
+    "bogey_avoidance": 4.0,
+    "driving_distance": 297.4,
+    "driving_accuracy": 0.0,
+    "gir": 0.0,
+    "scrambling": 13.0,
+    "owgr": 21.0
+   }
+  },
+  "Adam Schenk": {
+   "sg_total": -1.493,
+   "stats": {
+    "sg_total": -1.493,
+    "sg_t2g": -0.944,
+    "sg_ott": -0.357,
+    "sg_app": -0.464,
+    "sg_arg": -0.124,
+    "sg_putt": -0.549,
+    "scoring_average": 72.787,
+    "birdie_average": 3.33,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 299.9,
+    "driving_accuracy": 4.0,
+    "gir": 5.0,
+    "scrambling": 2.0,
+    "owgr": 2.0
+   }
+  },
+  "Christo Lamprecht": {
+   "sg_total": -1.497,
+   "stats": {
+    "sg_total": -1.497,
+    "sg_t2g": -1.153,
+    "sg_ott": -0.068,
+    "sg_app": -1.306,
+    "sg_arg": 0.221,
+    "sg_putt": -0.344,
+    "scoring_average": 72.62,
+    "birdie_average": 3.36,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 316.2,
+    "driving_accuracy": 1.0,
+    "gir": 2.0,
+    "scrambling": 8.0,
+    "owgr": 5.0
+   }
+  },
+  "Marcelo Rozo": {
+   "sg_total": -1.537,
+   "stats": {
+    "sg_total": -1.537,
+    "sg_t2g": -0.086,
+    "sg_ott": -0.116,
+    "sg_app": 0.283,
+    "sg_arg": -0.253,
+    "sg_putt": -1.451,
+    "scoring_average": 72.533,
+    "birdie_average": 3.48,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 291.8,
+    "driving_accuracy": 3.0,
+    "gir": 28.0,
+    "scrambling": 4.0,
+    "owgr": 16.0
+   }
+  },
+  "Alejandro Tosti": {
+   "sg_total": -1.685,
+   "stats": {
+    "sg_total": -1.685,
+    "sg_t2g": -0.719,
+    "sg_ott": 0.307,
+    "sg_app": -0.914,
+    "sg_arg": -0.112,
+    "sg_putt": -0.966,
+    "scoring_average": 72.753,
+    "birdie_average": 3.45,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 311.3,
+    "driving_accuracy": 6.0,
+    "gir": 5.0,
+    "scrambling": 2.0,
+    "owgr": 13.0
+   }
+  },
+  "Brian Campbell": {
+   "sg_total": -1.82,
+   "stats": {
+    "sg_total": -1.82,
+    "sg_t2g": -1.669,
+    "sg_ott": -0.817,
+    "sg_app": -0.559,
+    "sg_arg": -0.292,
+    "sg_putt": -0.151,
+    "scoring_average": 72.78,
+    "birdie_average": 3.02,
+    "bogey_avoidance": 0.0,
+    "driving_distance": 283.4,
+    "driving_accuracy": 5.0,
+    "gir": 0.0,
+    "scrambling": 8.0,
+    "owgr": 2.0
+   }
+  },
+  "Cam Davis": {
+   "sg_total": -2.198,
+   "stats": {
+    "sg_total": -2.198,
+    "sg_t2g": -1.868,
+    "sg_ott": -0.713,
+    "sg_app": -1.0,
+    "sg_arg": -0.155,
+    "sg_putt": -0.33,
+    "scoring_average": 73.438,
+    "birdie_average": 3.03,
+    "bogey_avoidance": 2.0,
+    "driving_distance": 305.4,
+    "driving_accuracy": 2.0,
+    "gir": 1.0,
+    "scrambling": 5.0,
+    "owgr": 10.0
+   }
+  },
+  "Joaquin Niemann": {
+   "sg_total": 1.0,
+   "stats": {
+    "sg_total": 1.0,
+    "sg_t2g": 1.0,
+    "sg_ott": 1.0,
+    "sg_app": 1.0,
+    "sg_arg": 1.0,
+    "sg_putt": 1.0,
+    "scoring_average": 1.0,
+    "birdie_average": 1.0,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 1.0,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 1.0,
+    "owgr": 1.0
+   }
+  },
+  "Tyrrell Hatton": {
+   "sg_total": 1.0,
+   "stats": {
+    "sg_total": 1.0,
+    "sg_t2g": 1.0,
+    "sg_ott": 1.0,
+    "sg_app": 1.0,
+    "sg_arg": 1.0,
+    "sg_putt": 1.0,
+    "scoring_average": 1.0,
+    "birdie_average": 1.0,
+    "bogey_avoidance": 1.0,
+    "driving_distance": 1.0,
+    "driving_accuracy": 1.0,
+    "gir": 1.0,
+    "scrambling": 1.0,
+    "owgr": 1.0
+   }
+  }
+ },
  "fitted_rounds": 81997,
  "players": {
   "A.J. Ewart": {

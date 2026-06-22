@@ -406,9 +406,16 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
                  for t in (home, away)]
         confs = [float(c) for c in confs if c is not None and np.isfinite(c)]
         availability_confidence = min(confs) if confs else np.nan
-        lineup_status = ("confirmed" if ((event_id, home) in live_lineups
-                                         and (event_id, away) in live_lineups)
-                         else "not_confirmed")
+        home_lineup = live_lineups.get((event_id, home), {})
+        away_lineup = live_lineups.get((event_id, away), {})
+        status_pair = [home_lineup.get("lineup_status"),
+                       away_lineup.get("lineup_status")]
+        if status_pair == ["confirmed", "confirmed"]:
+            lineup_status = "confirmed"
+        elif home_lineup or away_lineup:
+            lineup_status = "projected"
+        else:
+            lineup_status = "not_confirmed"
         ctx = None
         if ctx_mod is not None:
             dc = ctx_venue.get((home, away))
