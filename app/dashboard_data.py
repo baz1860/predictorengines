@@ -83,12 +83,11 @@ def _clv_section() -> list:
     if ledger.empty:
         return []
     try:
-        from core.clv import compute_clv  # noqa: E402  (project-root module)
-        settled = ledger[ledger["status"].isin(["won", "lost"])].copy()
-        c = compute_clv(settled).dropna()
-        if len(c):
-            roll = (c.cumsum() / range(1, len(c) + 1))
-            return [{"i": i, "v": round(float(v) * 100, 3)} for i, v in enumerate(roll.tolist())]
+        # clv_suite reads data/clv_history.csv (offline snapshots, all engines).
+        # Snapshots are taken automatically at pre-kickoff and post-match by the
+        # pipeline — see update.sh and core/clv_suite.py for details.
+        from core.clv_suite import compute_rolling_clv  # noqa: E402
+        return compute_rolling_clv(ledger)
     except Exception:
         pass
     return []

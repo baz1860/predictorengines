@@ -47,6 +47,7 @@ WC_ODDS = HERE / "odds.csv"
 CLUB_ODDS = HERE / "club_soccer" / "data" / "odds.csv"
 CFB_ODDS = HERE / "cfb" / "odds.csv"
 GOLF_ODDS = HERE / "golf" / "data" / "odds.csv"
+TENNIS_ODDS = HERE / "tennis" / "data" / "odds.csv"
 
 # Wide-format side -> column maps.
 _WC_SIDE_COL = {"home": "odds_home", "draw": "odds_draw", "away": "odds_away",
@@ -144,6 +145,37 @@ def _provider_long(path: Path):
     return lookup
 
 
+def _provider_tennis(path: Path):
+    """Tennis odds lookup: odds.csv columns are player_a, player_b, odds_a, odds_b.
+    A bet row has home=player, away=opponent, side='win'. We find the matching row
+    regardless of which direction the players appear in odds.csv."""
+    if not path.exists():
+        return None
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return None
+    if df.empty or "odds_a" not in df.columns:
+        return None
+
+    def lookup(row) -> float | None:
+        home = str(row.get("home", "")).strip()
+        away = str(row.get("away", "")).strip()
+        if not home or not away:
+            return None
+        # Match found when players appear in either order in odds.csv.
+        m_ab = df[(df["player_a"].astype(str).str.strip() == home)
+                  & (df["player_b"].astype(str).str.strip() == away)]
+        if not m_ab.empty:
+            return _f(m_ab.iloc[0].get("odds_a"))   # home player = player_a
+        m_ba = df[(df["player_a"].astype(str).str.strip() == away)
+                  & (df["player_b"].astype(str).str.strip() == home)]
+        if not m_ba.empty:
+            return _f(m_ba.iloc[0].get("odds_b"))   # home player = player_b
+        return None
+    return lookup
+
+
 def _providers():
     """{engine: lookup(row)->odds|None}. Missing files simply yield no matches."""
     return {
@@ -151,6 +183,7 @@ def _providers():
         "club_soccer": _provider_long(CLUB_ODDS),
         "cfb": _provider_long(CFB_ODDS),
         "golf": _provider_wide(GOLF_ODDS, _GOLF_SIDE_COL, by_player=True),
+        "tennis": _provider_tennis(TENNIS_ODDS),
     }
 
 
@@ -300,6 +333,26 @@ def _backfill_closing(ledger: pd.DataFrame, have: pd.DataFrame) -> None:
     led.to_csv(bankroll_store.LEDGER, index=False)
     print(f"\nBackfilled closing_odds for {len(have)} settled bet(s) "
           f"-> {bankroll_store.LEDGER.name} (backup: .csv.bak.clv).")
+
+
+def compute_rolling_clv(ledger: pd.DataFrame) -> list[dict]:
+    """Return [{i, v}] rolling-mean CLV% series for dashboard rendering.
+
+    Reads the current clv_history.csv; returns [] when no snapshots exist yet.
+    Used by app/dashboard_data.py — no arguments beyond the ledger DataFrame
+    (which the caller already holds) so the dashboard never imports bankroll_store
+    through this path."""
+    hist = _load_history()
+    if hist is None:
+        return []
+    table = _clv_table(ledger, hist)
+    if table.empty or "clv" not in table.columns:
+        return []
+    c = table["clv"].dropna()
+    if c.empty:
+        return []
+    roll = c.cumsum() / range(1, len(c) + 1)
+    return [{"i": i, "v": round(float(v) * 100, 3)} for i, v in enumerate(roll.tolist())]
 
 
 def main():

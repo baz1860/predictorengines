@@ -80,6 +80,10 @@ if [[ "$MODE" == "prekickoff" ]]; then
   echo "== Refreshing squad availability ratings =="
   python3 -m engines.worldcup.squads | tail -1 || echo "   squad ratings skipped"
   run_edge
+  echo "== CLV snapshot (capture closing odds before kickoff) =="
+  # Reads each engine's local odds file — no network required.
+  # Must run AFTER run_edge so the latest odds are on disk before snapshotting.
+  python3 -m core.clv_suite --snapshot || echo "   CLV snapshot skipped (no open bets / odds not refreshed)"
   write_manifest
   echo "Done: pre-kickoff World Cup refresh complete."
   exit 0
@@ -90,8 +94,8 @@ if [[ "$MODE" == "postmatch" ]]; then
   refresh_live postmatch
   echo "== Settling open bets =="
   python3 -m core.bankroll --settle
-  echo "== CLV snapshot (closing-line value for open bets) =="
-  python3 -m core.clv --snapshot || echo "   CLV snapshot skipped (no network / no open bets)"
+  echo "== CLV report (compare settled odds vs closing snapshots) =="
+  python3 -m core.clv_suite --report || echo "   CLV report skipped (no snapshots yet)"
   echo "== Validation gate =="
   python3 -m engines.worldcup.validate --quiet --gate \
     || echo "   ##### VALIDATION GATE FAILED — blend Brier regressed vs baseline; review before betting #####"
@@ -119,8 +123,8 @@ echo "== Refreshing Betting Tracker.xlsx =="
 python3 refresh_tracker.py || true
 
 echo "== CLV snapshot (closing-line value for open bets) =="
-# Needs The Odds API; degrades gracefully offline. Never blocks the update.
-python3 -m core.clv --snapshot || echo "   CLV snapshot skipped (no network / no open bets)"
+# Reads local odds files — no network required. Never blocks the update.
+python3 -m core.clv_suite --snapshot || echo "   CLV snapshot skipped (no open bets / odds not refreshed)"
 
 echo "== Validation gate =="
 # Warn loudly on regression but NEVER block the daily update (|| guard).
