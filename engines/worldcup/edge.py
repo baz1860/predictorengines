@@ -337,7 +337,8 @@ def load_edge_modifiers(calibrated=False, market_blend=False, context_enabled=Fa
     """Load optional probability/lambda modifiers once, for CLI and app parity."""
     mods = {"calib_maps": None, "mkt_blend_w": None,
             "ctx_mod": None, "ctx_coef": None, "ctx_played": None,
-            "ctx_home_alt": None, "ctx_venue": None, "totals_lam_mult": 1.0}
+            "ctx_home_alt": None, "ctx_venue": None, "totals_lam_mult": 1.0,
+            "stakes_map": None}
     # Totals scoring-level calibration: a gated global lambda multiplier applied
     # to the totals/BTTS distribution only (1X2 untouched). Written by
     # totals_calibration_check.py --fit once it clears the leave-one-tournament-out
@@ -383,6 +384,7 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
     calib_maps = modifiers.get("calib_maps")
     mkt_blend_w = modifiers.get("mkt_blend_w")
     ctx_mod = modifiers.get("ctx_mod")
+    stakes_map = modifiers.get("stakes_map")
     ctx_coef = modifiers.get("ctx_coef")
     ctx_played = modifiers.get("ctx_played")
     ctx_home_alt = modifiers.get("ctx_home_alt")
@@ -417,6 +419,17 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
                     home, away, fdate, fcity, played=ctx_played,
                     home_alt=ctx_home_alt)
                 ctx = ctx_mod.multipliers(rd, gh, ga, ctx_coef)
+        # Qualification-stakes lambda correction (--stakes).
+        # Boosts expected goals for teams with high advancement swing;
+        # trims them for dead-rubber sides. Applied on top of any ctx multiplier.
+        if stakes_map is not None:
+            from .group_stakes import stakes_multipliers
+            sw_h, sw_a = stakes_map.get((home, away), (0.5, 0.5))
+            sm_h, sm_a = stakes_multipliers(sw_h, sw_a)
+            ctx = (ctx[0] * sm_h, ctx[1] * sm_a) if ctx else (sm_h, sm_a)
+        else:
+            sw_h, sw_a = np.nan, np.nan
+
         probs = market_probs(home, away, sources, neutral_lookup, ctx=ctx,
                              totals_lam_mult=modifiers.get("totals_lam_mult", 1.0))
         if calib_maps is not None:
@@ -487,6 +500,8 @@ def edge_rows(odds, sources, ratings, neutral_lookup, modifiers=None,
                     "market_dispersion_a": getattr(r, "market_dispersion_a", np.nan),
                     "lineup_status": lineup_status,
                     "availability_confidence": availability_confidence,
+                    "stakes_swing_home": round(float(sw_h), 3) if np.isfinite(sw_h) else np.nan,
+                    "stakes_swing_away": round(float(sw_a), 3) if np.isfinite(sw_a) else np.nan,
                 })
     return rows
 
@@ -569,6 +584,11 @@ def main():
                     help="apply rest/altitude lambda correction to each fixture "
                          "(coefficients from data/context_coef.json; fit with: "
                          "python3 context.py --fit)")
+    ap.add_argument("--stakes", action="store_true",
+                    help="adjust lambdas for group-stage qualification pressure: "
+                         "must-win teams get boosted expected goals, dead-rubber "
+                         "sides get trimmed (5,000 group-stage sims; see "
+                         "engines/worldcup/group_stakes.py)")
     args = ap.parse_args()
 
     _, upcoming = load_matches()
@@ -667,6 +687,19 @@ def main():
     except ValueError as e:
         sys.exit(str(e))
 
+    if args.stakes:
+        from .group_stakes import compute_stakes_map, STAKES_COEF
+        from .simulate import MatchModel, load_group_matches as _lgm
+        _gm = _lgm()
+        _model_s = MatchModel(sources)
+        _rng_s = np.random.default_rng(99)
+        print("Computing qualification stakes (5,000 group-stage sims)...", flush=True)
+        modifiers["stakes_map"] = compute_stakes_map(_model_s, _gm, _rng_s, n_sims=5000)
+        _n_live = sum(1 for v in modifiers["stakes_map"].values() if max(v) > 0.10)
+        print(f"  {len(modifiers['stakes_map'])} upcoming group matches; "
+              f"{_n_live} with meaningful swing >10%. "
+              f"Coefficient: {STAKES_COEF} (±{100*(np.exp(STAKES_COEF*0.5)-1):.1f}% lambda at max swing).")
+
     if args.calibrated:
         print("Calibration active (isotonic per-outcome on model 1X2).")
     if args.market_blend:
@@ -694,15 +727,18 @@ def main():
     from core.bankroll import _load_ledger
     _led = _load_ledger()
     confident = top_confident_picks(df, ledger=_led)
+    horizon = pd.Timestamp.now() + pd.Timedelta(hours=24)
+    confident_soon = (confident[pd.to_datetime(confident["date"]) <= horizon]
+                      .sort_values("date"))
     print(f"\nBankroll £{bankroll:.2f}  —  model's top prediction per market "
-          f"per match (confidence ≥ {BET_CONF_MIN:.0%}, sorted by confidence):\n")
-    if not confident.empty:
-        print(confident[show_cols + ["ledger"]].to_string(index=False))
+          f"per match (confidence ≥ {BET_CONF_MIN:.0%}, next 24h, sorted by date):\n")
+    if not confident_soon.empty:
+        print(confident_soon[show_cols + ["ledger"]].to_string(index=False))
         print(f"\n  'ledger' column: AUTO-LEDGER = will be recorded; "
               f"'no edge' = model doesn't beat the price, shown but not bet; "
               f"others not bet for the reason given.")
     else:
-        print(f"  No matches where the model's top pick reaches "
+        print(f"  No matches in the next 36h where the model's top pick reaches "
               f"{BET_CONF_MIN:.0%} confidence.")
 
     # ── Morning bet queue (M8): bettable candidates, sized, for review ────────
@@ -722,6 +758,9 @@ def main():
         flags.append(f"totals-calib(lam x{modifiers['totals_lam_mult']:.2f})")
     if args.context:
         flags.append("context")
+    if args.stakes:
+        from .group_stakes import STAKES_COEF as _SC
+        flags.append(f"stakes(coef={_SC})")
     if args.squad_adj:
         flags.append("squad-adj")
     if getattr(args, "conf_adj", False):
