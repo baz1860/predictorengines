@@ -4,10 +4,11 @@ const ALL_CAPS = [
   { id: "predict", label: "Predict" },
   { id: "simulate", label: "Simulate" },
   { id: "edge", label: "Edge" },
+  { id: "draw", label: "Draw" },
   { id: "refresh", label: "Refresh" },
   { id: "round_3balls", label: "Round 3-Balls" },
 ];
-const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "refresh", "round_3balls", "bankroll", "settings", "ops", "placeholder"];
+const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "draw", "refresh", "round_3balls", "bankroll", "settings", "ops", "placeholder"];
 
 const state = { engines: [], current: null, activeCap: "predict", view: "engine" };
 
@@ -138,6 +139,7 @@ function renderActiveCap() {
   if (cap === "predict") setupPredict();
   else if (cap === "simulate") setupSimulate();
   else if (cap === "edge") setupEdge();
+  else if (cap === "draw") setupDraw();
   else if (cap === "refresh") setupRefresh();
   else if (cap === "round_3balls") setupRound3Balls();
 }
@@ -714,9 +716,10 @@ function renderDashboard(d) {
   const curveVals = bk.curve.map((p) => p.v);
   const pnlCls = bk.net_pnl > 0 ? "pos" : bk.net_pnl < 0 ? "neg" : "";
   const pnlStr = (bk.net_pnl >= 0 ? "+" : "") + gbp(bk.net_pnl);
+  const freshnessNote = bk.last_settled ? `data as of ${bk.last_settled}` : "";
   $("dash-stats").innerHTML =
     statTile("Bankroll", gbp(bk.bankroll), { sub: `peak ${gbp(bk.peak)}`, spark: Charts.sparkline(curveVals, { color: Charts.cssVar("--pos") }) }) +
-    statTile("Net P&L", pnlStr, { cls: pnlCls, sub: `${bk.settled_count} settled` }) +
+    statTile("Net P&L", pnlStr, { cls: pnlCls, sub: `${bk.settled_count} settled${freshnessNote ? " · " + freshnessNote : ""}` }) +
     statTile("Open at risk", gbp(bk.open_stake), { sub: `${bk.open_count} open bet${bk.open_count === 1 ? "" : "s"}` }) +
     statTile("Record / ROI", `${bk.won}/${bk.settled_count}`, { sub: `hit ${pct(bk.hit_rate)} · ROI ${(bk.roi >= 0 ? "+" : "") + pct(bk.roi)}` });
 
@@ -733,7 +736,14 @@ function renderDashboard(d) {
   else $("ch-clv").innerHTML = `<div class="empty-mini">No closing-odds snapshots yet (clv.py --snapshot before kickoffs).</div>`;
 
   // Calibration
-  grid.insertAdjacentHTML("beforeend", dashCard("Calibration", "isotonic vs diagonal", `<div id="ch-cal" class="chart-wrap"></div>`));
+  grid.insertAdjacentHTML("beforeend", dashCard("Calibration", "isotonic vs diagonal",
+    `<div id="ch-cal" class="chart-wrap"></div>
+     <p class="muted-note" style="margin-top:6px">
+       Diagonal = perfect calibration (predicted prob = observed freq).
+       Coloured curves are isotonic regression fits — closer to diagonal means
+       better-calibrated model probabilities. Re-run <code>validate.py --calibrate</code>
+       to refresh after retraining.
+     </p>`));
   Charts.calibration($("ch-cal"), d.calibration);
 
   // Fixtures (wide)
@@ -1278,6 +1288,159 @@ function readFilters(id, prefix, params) {
 async function withSpin(btn, label, fn) {
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   try { await fn(); } finally { btn.disabled = false; btn.textContent = label; }
+}
+
+// ---------- DRAW EDITOR ----------
+const drawState = { matches: [] };
+
+function drawRowHTML(m, i) {
+  return `<div class="draw-row" data-idx="${i}">
+    <input class="draw-round" placeholder="Round (e.g. R32)" value="${esc(m.round || "")}" list="draw-round-suggestions" />
+    <input class="draw-pa" placeholder="Player A" value="${esc(m.player_a || "")}" list="draw-player-names" autocomplete="off" />
+    <span class="draw-vs">vs</span>
+    <input class="draw-pb" placeholder="Player B" value="${esc(m.player_b || "")}" list="draw-player-names" autocomplete="off" />
+    <input class="draw-odds draw-odds-a" type="number" min="1" max="1000" step="0.01" placeholder="Odds A" value="${m.odds_a != null ? m.odds_a : ""}" />
+    <input class="draw-odds draw-odds-b" type="number" min="1" max="1000" step="0.01" placeholder="Odds B" value="${m.odds_b != null ? m.odds_b : ""}" />
+    <button class="draw-remove ghost" data-idx="${i}" title="Remove">✕</button>
+  </div>`;
+}
+
+function renderDrawRows() {
+  const host = $("draw-matches-host");
+  if (!host) return;
+  if (!drawState.matches.length) {
+    host.innerHTML = `<p class="muted-note" style="padding:12px 0">No matches yet — click "+ Add match" to start.</p>`;
+    return;
+  }
+  host.innerHTML = `
+    <div class="draw-row draw-row-header">
+      <span>Round</span><span>Player A</span><span></span><span>Player B</span>
+      <span>Odds A</span><span>Odds B</span><span></span>
+    </div>
+    ${drawState.matches.map((m, i) => drawRowHTML(m, i)).join("")}`;
+
+  // sync state on input change
+  host.querySelectorAll(".draw-row[data-idx]").forEach((row) => {
+    const i = parseInt(row.dataset.idx);
+    row.querySelector(".draw-round").oninput = (e) => { drawState.matches[i].round = e.target.value; };
+    row.querySelector(".draw-pa").oninput = (e) => { drawState.matches[i].player_a = e.target.value; };
+    row.querySelector(".draw-pb").oninput = (e) => { drawState.matches[i].player_b = e.target.value; };
+    row.querySelector(".draw-odds-a").oninput = (e) => {
+      const v = parseFloat(e.target.value); drawState.matches[i].odds_a = isNaN(v) ? null : v;
+    };
+    row.querySelector(".draw-odds-b").oninput = (e) => {
+      const v = parseFloat(e.target.value); drawState.matches[i].odds_b = isNaN(v) ? null : v;
+    };
+    row.querySelector(".draw-remove").onclick = () => {
+      drawState.matches.splice(i, 1);
+      renderDrawRows();
+    };
+  });
+}
+
+function _applyDrawData(d) {
+  const tourSel = $("draw-tour");
+  if (tourSel) tourSel.value = d.tour || "atp";
+  const tourneyIn = $("draw-tourney");
+  if (tourneyIn) tourneyIn.value = d.tourney_name || "";
+  const surfSel = $("draw-surface");
+  if (surfSel) surfSel.value = d.surface || "grass";
+  const boSel = $("draw-best-of");
+  if (boSel) boSel.value = String(d.best_of || 3);
+  drawState.matches = (d.matches || []).map((m) => ({
+    round: m.round || "",
+    player_a: m.player_a || "",
+    player_b: m.player_b || "",
+    odds_a: m.odds_a ?? null,
+    odds_b: m.odds_b ?? null,
+  }));
+  renderDrawRows();
+}
+
+async function setupDraw() {
+  const eng = currentEngine();
+  const schema = (eng.schemas && eng.schemas.draw) || {};
+  const names = schema.names || [];
+
+  // Populate player name datalist
+  const dl = $("draw-player-names");
+  if (dl) dl.innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
+
+  // Add round suggestions datalist (inject once)
+  if (!document.getElementById("draw-round-suggestions")) {
+    const rs = document.createElement("datalist");
+    rs.id = "draw-round-suggestions";
+    ["R1","R2","R32","R16","QF","SF","F","Q1","Q2"].forEach((r) => {
+      const o = document.createElement("option"); o.value = r; rs.appendChild(o);
+    });
+    document.body.appendChild(rs);
+  }
+
+  const note = $("draw-note"), err = $("draw-error");
+  const fetchNote = $("draw-fetch-note"), fetchErr = $("draw-fetch-error");
+  note.hidden = true; err.hidden = true;
+  fetchNote.hidden = true; fetchErr.hidden = true;
+
+  // Load current draw from server
+  try {
+    const d = await api("/api/tennis/draw");
+    _applyDrawData(d);
+  } catch (e) {
+    err.textContent = "Could not load draw: " + e.message;
+    err.hidden = false;
+  }
+
+  // Fetch from web button
+  $("draw-fetch-btn").onclick = () => {
+    const btn = $("draw-fetch-btn");
+    fetchNote.hidden = true; fetchErr.hidden = true;
+    withSpin(btn, "Fetch from web", async () => {
+      try {
+        const tour = $("draw-fetch-tour").value;
+        const filter = $("draw-fetch-filter").value.trim();
+        const r = await post("/api/tennis/draw/fetch", { tour, tourney_filter: filter });
+        _applyDrawData(r);
+        const upcoming = r.matches.filter((m) => m.state === "pre").length;
+        const live = r.matches.filter((m) => m.state === "in").length;
+        fetchNote.textContent = `${r.tourney_name} · ${r.surface} · ${r.matches.length} match${r.matches.length !== 1 ? "es" : ""} fetched` +
+          (live ? ` (${live} live)` : "") + ` · ${upcoming} upcoming ✓`;
+        fetchNote.hidden = false;
+        toast("Draw fetched from ESPN", "ok");
+      } catch (e) {
+        fetchErr.textContent = "Fetch failed: " + e.message;
+        fetchErr.hidden = false;
+      }
+    });
+  };
+
+  $("draw-add-btn").onclick = () => {
+    drawState.matches.push({ round: "", player_a: "", player_b: "", odds_a: null, odds_b: null });
+    renderDrawRows();
+  };
+
+  $("draw-save-btn").onclick = () => {
+    const btn = $("draw-save-btn");
+    note.hidden = true; err.hidden = true;
+    withSpin(btn, "Save draw & odds", async () => {
+      const payload = {
+        tour: $("draw-tour").value,
+        tourney_name: $("draw-tourney").value.trim(),
+        surface: $("draw-surface").value,
+        best_of: parseInt($("draw-best-of").value),
+        matches: drawState.matches.filter((m) => m.player_a.trim() && m.player_b.trim()),
+      };
+      try {
+        const r = await post("/api/tennis/draw", payload);
+        note.textContent = `Saved ${r.matches} match${r.matches !== 1 ? "es" : ""}` +
+          (r.odds_rows ? ` · ${r.odds_rows} with odds` : "") + " ✓";
+        note.hidden = false;
+        toast("Draw saved", "ok");
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+      }
+    });
+  };
 }
 
 init();
