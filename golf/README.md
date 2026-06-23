@@ -1,39 +1,104 @@
-# Golf Prediction Engine (v2)
+# Golf Prediction Engine
 
-PGA Tour + majors betting engine. A **fitted** strokes-gained + variance model
-learned from round-by-round history, Monte-Carlo simulated, **calibrated** and
-**market-anchored**, validated by a walk-forward backtest, and settled into the
-shared suite ledger — the same `fetch → fit → predict → edge → validate →
-calibrate` backbone as the `cfb/` and `club_soccer/` engines.
+A PGA Tour + majors betting engine. It does the same four things the World Cup
+engine does, just for a sport with a new tournament every week:
 
-## Architecture
+1. **pulls the season's tournament list** (ESPN schedule),
+2. **gets this week's field**,
+3. **prices it with a fitted model** (strokes-gained + variance, Monte-Carlo
+   simulated, calibrated and market-anchored), and
+4. **prints the best bets for the tournament — round by round.**
+
+## Use it
+
+One command. It refreshes this week's field, runs the model, and writes a
+round-by-round best-bets card:
+
+```bash
+python3 -m golf.season
+```
+
+That writes [`data/card.md`](data/card.md) — the only file you normally read. It
+lists:
+
+- **Tournament card** — outright, top-5/10/20, make-cut and matchup bets the
+  model backs (staked, +EV, calibrated and market-blended). Sides it prices but
+  doesn't back are left off, so the page is signal not noise.
+- **Round N 3-balls** — that round's 3-ball bets.
+- **Field forecast** — top-10 win / top-N / make-cut for context.
+
+Other things you can do:
+
+```bash
+python3 -m golf.season --schedule        # the season's tournament list
+python3 -m golf.season --round 2         # also price round 2's 3-balls
+python3 -m golf.season --no-refresh      # reprice from cached data (no network)
+python3 -m golf.season --stats --fit     # refresh stat pages + refit, then price
+```
+
+### Round-by-round 3-balls
+
+3-ball boards aren't on a free feed, so you paste them in. Drop a bookmaker board
+into `data/threeballs_r{N}_raw.txt`, then:
+
+```bash
+python3 -m golf.season --round 1         # parses the paste and prices that round
+```
+
+Outright / place / matchup prices go in `data/odds.csv` and `data/matchups.csv`.
+
+### First-time setup
+
+Once, to build the data the model learns from:
+
+```bash
+python3 -m golf.fetch --seed 2022 2023 2024 2025 2026   # backfill history
+python3 -m golf.refresh --stats --fit                   # fit the model
+```
+
+After that, `python3 -m golf.season` is all you run week to week.
+
+## In the app
+
+The **Predict / Simulate / Edge** tabs drive the same engine (head-to-head
+matchups, full-field projection, and staked edges into the shared
+`suite_ledger.csv`, which auto-settle against results). `golf.season` is the
+command-line equivalent that hands you the whole week in one page.
+
+---
+
+## Under the hood
+
+`golf.season` is a thin orchestrator. The modelling it drives is unchanged and is
+where the quality lives:
 
 ```
 golf/
-├── providers.py        # Data abstraction: EspnProvider (free) + DataGolfProvider
-│                       #   (drop-in upgrade) behind one RoundsProvider interface
-├── fetch.py            # --accumulate/--seed → rounds.csv; --espn field; odds
-├── model.py            # fit(): time-decayed ridge skill + per-player σ + form +
-│                       #   course fit → model_params.json;  predict_field()
-├── simulate.py         # 4-round Monte Carlo with cut; joint-sim matchups/3-balls
-├── market.py           # power de-vig, log-odds market blend, CLV tracking
-├── calibrate.py        # isotonic per-market maps (fit + apply, nesting guard)
-├── edge.py             # price_all(): calibrated + blended EV across all markets
-├── portfolio.py        # simultaneous-Kelly: per-player + total caps, drawdown brake
-├── validate.py         # walk-forward backtest + regression gate (the yardstick)
-├── update.sh           # daily: accumulate → fit → validate --gate → recalibrate
+├── season.py       # THE front door: schedule → field → model → card
+├── providers/      # ESPN schedule/field/leaderboard, PGA stats, weather, odds
+├── fetch.py        # --seed / --accumulate → rounds.csv (history)
+├── refresh.py      # free-source weekly refresh → field.csv + SQLite cache
+├── model.py        # fit(): time-decayed ridge skill + per-player σ + form +
+│                   #   course fit → model_params.json;  predict_field()
+├── simulate.py     # 4-round Monte Carlo with cut; joint matchups / 3-balls
+├── round_pricer.py # single-round 3-ball pricing (driven by season.py)
+├── market.py       # power de-vig, log-odds market blend, CLV tracking
+├── calibrate.py    # isotonic per-market maps (win ≤ T5 ≤ … ≤ cut guard)
+├── edge.py         # calibrated + blended EV across all markets
+├── portfolio.py    # simultaneous-Kelly: per-player + total caps, drawdown brake
+├── validate.py     # walk-forward backtest + regression gate (the yardstick)
+├── weekly_report.py# longer narrative report (season.py is the lean version)
 └── data/
-    ├── rounds.csv             # SOURCE OF TRUTH: one row per player per round
-    ├── model_params.json      # fitted skill/σ/form/course params
-    ├── validation_predictions.csv, validation_baseline.json
+    ├── rounds.csv          # SOURCE OF TRUTH: one row per player per round
+    ├── model_params.json   # fitted skill/σ/form/course params
+    ├── field.csv           # current field (written by refresh)
+    ├── card.md             # ← the output you read
     ├── calibration.json, market_blend.json, odds_history.csv (CLV)
-    ├── odds.csv               # outright/place/cut board (name, odds_win, …)
-    ├── matchups.csv           # player_a, player_b, odds_a, odds_b
-    ├── threeballs.csv         # player_a/b/c, odds_a/b/c
-    └── predictions.csv, edge_report.csv      # outputs
+    ├── odds.csv, matchups.csv, threeballs.csv   # book prices you provide
+    └── predictions.csv, edge_report.csv, round_3ball_edges.csv  # raw tables
 ```
 
-## Model
+### The model
 
 Each round is decomposed by time-decayed, ridge-shrunk least squares:
 
@@ -42,122 +107,34 @@ score_to_par[player, tournament, round] = mu + difficulty[t,r] − skill[player]
 ε ~ Normal(0, σ[player])
 ```
 
-- **skill** — strokes-gained vs field (higher = better). Ridge shrinks
-  low-sample players to the mean; the per-tournament `difficulty` term
-  field-strength-adjusts so weak fields and majors are comparable.
-- **σ (fitted, per player)** — round-to-round variance from the fit residuals,
-  Empirical-Bayes shrunk toward the field σ (~2.85). Drives longshot/outright
-  value; majors get a fitted σ bump.
-- **form** — short-window (≈6-week) residual nudge; **course fit** — shrunk
-  per-(player, course) residual, applied when the course is known.
+- **skill** — strokes-gained vs field; ridge shrinks low-sample players toward
+  the mean, and a per-tournament `difficulty` term field-strength-adjusts so weak
+  fields and majors are comparable.
+- **σ (fitted, per player)** — round-to-round variance from fit residuals,
+  Empirical-Bayes shrunk toward the field σ (~2.85); drives longshot value.
+- **form** — short-window residual nudge; **course fit** — shrunk
+  per-(player, course) residual when the course is known.
 
-`predict_field()` turns these into per-player `rating` + `σ` that `simulate.py`
-consumes directly. Win / top-N / make-cut come from the simulated finishes;
-matchups & 3-balls come from the **same** draws, so they are internally
-consistent (missed-cut players ranked behind survivors by 36-hole score).
+`predict_field()` turns these into per-player `rating` + `σ`; `simulate.py` draws
+four correlated, fat-tailed rounds (`data/sim_config.json`: `round_corr`,
+`tail_df`) so win / top-N / make-cut and the matchup/3-ball markets all come from
+the **same** draws and stay internally consistent.
 
-### Scoring-shape (`data/sim_config.json`)
+### Calibration, market, staking
 
-The Monte Carlo draws each player's four rounds with two validated shape knobs
-(`load_sim_config()`), instead of independent Gaussian rounds:
+- **calibrate.py** — isotonic maps per market correct the simulator's systematic
+  miscalibration, with a nesting guard (win ≤ T5 ≤ T10 ≤ T20 ≤ cut).
+- **market.py** — power de-vig for outright boards, per-line place margins, a
+  log-odds blend toward the market, and CLV tracking.
+- **portfolio.py** — simultaneous-Kelly with a per-player correlation cap, a
+  total weekly cap, and a drawdown brake.
 
-- **`round_corr` (0.3)** — correlation between a player's *own* rounds: a player
-  who runs hot/cold does so for the week. Each round splits into a per-player
-  tournament effect `u ~ N(0, σ²·round_corr)` (shared across the four rounds) and
-  a per-round term. The marginal per-round variance stays σ² (cut calibration
-  unchanged) while the 72-hole-total variance widens to `4σ²(1 + 3·round_corr)`.
-  A common shock hitting *every* player equally is deliberately not modelled — it
-  cancels out of any rank-based market.
-- **`tail_df` (6.0)** — per-round term drawn from a variance-standardised
-  Student-t, giving the blow-up rounds a Normal misses.
-
-Both default to the file; `round_corr=0.0, tail_df=None` reproduces the legacy
-independent-Normal rounds exactly. Walk-forward (139 events, 2023-06→2026-06,
-4000 sims) headline Brier **0.14726 → 0.14553**, winner log-loss **0.0501 →
-0.0453**, with every place market improved.
-
-## Data: free-source stack
-
-The default workflow no longer depends on DataGolf. The provider package uses:
-
-- **ESPN/golfastR-style endpoints** for schedule, field, leaderboard, round
-  scores, and embedded hole-by-hole scorecards.
-- **PGA Tour public stats pages** for season strokes-gained and aggregate skill
-  priors.
-- **Open-Meteo** for free course/weather features when coordinates are known.
-- **The Odds API free tier** only where useful, mainly major outrights.
-- **Manual odds boards** for 3-balls, matchups, and books with no free API.
-
-`golf/data/golf.db` is the canonical free-source cache. The old CSV files remain
-the compatibility interface for the existing model and app.
+### Validating the model
 
 ```bash
-python3 fetch.py --seed 2022 2023 2024 2025 2026   # backfill rounds.csv
-python3 fetch.py --accumulate                       # append new results (daily)
-python3 -m golf.refresh --stats --weather --fit     # weekly free-source refresh
+python3 -m golf.validate --since 2024-06-01 --sims 8000   # walk-forward + gate
 ```
 
-## Calibration, market, staking
-
-- **Calibration** (`calibrate.py`) — isotonic maps per market fitted on the
-  walk-forward predictions correct the Monte-Carlo's systematic miscalibration
-  (e.g. make-cut pred 0.35 → actual ~0.50), with a nesting guard so
-  win ≤ T5 ≤ T10 ≤ T20 ≤ cut.
-- **Market** (`market.py`) — power de-vig for complete outright boards
-  (favourite-longshot correction), per-line margin for place lines, log-odds
-  blend toward the market (sharp longshots lean to market, cut/matchups to
-  model), and CLV tracking to `odds_history.csv`.
-- **Portfolio** (`portfolio.py`) — simultaneous-Kelly with a per-player
-  correlation cap (nested win/T-N/cut/matchup exposure), a total weekly cap, and
-  a drawdown brake.
-
-## Quick start
-
-```bash
-python3 -m golf.fetch --seed 2022 2023 2024 2025 2026
-python3 -m golf.refresh --stats --fit
-python3 -m golf.validate --since 2024-06-01 --sims 8000
-python3 -m golf.calibrate --fit
-python3 -m golf.simulate --sims 50000
-python3 -m golf.edge --min-edge 1.0
-python3 -m golf.weekly_report --archive
-```
-
-Round-specific 3-balls:
-
-```bash
-# paste a bookmaker board into golf/data/threeballs_r1_raw.txt, then:
-python3 -m golf.refresh --round 1
-python3 -m golf.round_pricer --round 1 --min-edge 4
-```
-
-Weekly narrative report:
-
-```bash
-# Use existing model/simulation/edge files:
-python3 -m golf.weekly_report --archive
-
-# Or run the weekly workflow first, then write the report:
-python3 -m golf.weekly_report --refresh --stats --fit --simulate --edge --round-3balls --major --archive
-```
-
-Outputs:
-
-- `golf/data/weekly_report.md` — latest narrative report.
-- `golf/reports/YYYY-MM-DD_<event>_weekly_report.md` — archive copy when
-  `--archive` is used.
-
-## App integration
-
-`GolfAdapter` (capabilities `simulate` · `edge` · `predict`) drives the engine
-via `golf_runner.py`. The **Predict** tab gives head-to-head matchup
-probabilities; **Edge** prices every market (calibrated + market-blended,
-portfolio-staked) and records the recommended bets into the shared
-`suite_ledger.csv`. Bets **auto-settle**: `grade_open_bets()` grades win / top-N
-/ cut / matchup / 3-ball against the latest completed event in `rounds.csv`.
-
-## Backtest (walk-forward, 2024-06 → 2026-06)
-
-Positive skill on every market vs base rate; make-cut and top-20 ≈ +9–10% Brier
-skill, and the model beats a uniform field at picking winners. See
-`validate.py` output and `validation_predictions.csv`.
+Walk-forward (139 events, 2023-06 → 2026-06) shows positive Brier skill on every
+market; make-cut and top-20 ≈ +9–10%. `validate.py` is the regression gate the
+daily `update.sh` runs before trusting a refit.
