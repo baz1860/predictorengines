@@ -19,10 +19,33 @@ from . import model as M
 from .providers.odds_manual import ManualOddsProvider, OddsQuote
 
 DATA_DIR = Path(__file__).parent / "data"
-OUT_CSV = DATA_DIR / "round_3ball_edges.csv"
+OUT_CSV = DATA_DIR / "round_edges.csv"
+
+# Round-level group markets this pricer understands (twosomes / threesomes).
+ROUND_GROUP_MARKETS = ("2ball", "3ball")
 
 
-def price_round_3balls(
+def _norm_name(name: str) -> str:
+    """Case/spacing-insensitive key for matching board names to the field."""
+    return " ".join(str(name).casefold().split())
+
+
+def field_mismatch(quotes: list[OddsQuote], field_names: list[str]) -> list[str]:
+    """Return 3-ball players that are NOT in the current event field.
+
+    A non-empty result almost always means the 3-ball board is stale — e.g.
+    last week's tournament was re-priced against this week's field. Callers
+    should refuse to price rather than emit a confident card for the wrong
+    event. An empty field_names disables the check (nothing to compare against).
+    """
+    field = {_norm_name(n) for n in field_names if str(n).strip()}
+    if not field:
+        return []
+    board = {q.player_name for q in quotes if q.market in ROUND_GROUP_MARKETS}
+    return sorted(n for n in board if _norm_name(n) not in field)
+
+
+def price_round_groups(
     quotes: list[OddsQuote],
     params: dict,
     course: str = "",
@@ -33,9 +56,11 @@ def price_round_3balls(
     min_rounds: int = 60,
     seed: int = 7,
 ) -> list[dict]:
+    """Price single-round group markets (2-balls and 3-balls). The lowest-score
+    Monte Carlo and dead-heat split are identical for any group size."""
     groups: dict[str, list[OddsQuote]] = {}
     for q in quotes:
-        if q.market == "3ball":
+        if q.market in ROUND_GROUP_MARKETS:
             groups.setdefault(q.group_id, []).append(q)
 
     names = sorted({q.player_name for qs in groups.values() for q in qs})
@@ -61,10 +86,10 @@ def price_round_3balls(
 
     rows = []
     for group_id, qs in groups.items():
-        if len(qs) != 3:
+        if len(qs) not in (2, 3):
             continue
-        trio = [q.player_name for q in qs]
-        idx = [row_of[n] for n in trio]
+        members = [q.player_name for q in qs]
+        idx = [row_of[n] for n in members]
         sub = draws[idx]
         mins = sub.min(axis=0)
         best = sub == mins
@@ -84,6 +109,7 @@ def price_round_3balls(
             thin = int(n_rounds.get(q.player_name, 0)) < min_rounds
             rows.append({
                 "round": q.round_no or "",
+                "market": q.market,
                 "group_id": group_id,
                 "player": q.player_name,
                 "resolved": resolved[q.player_name] or "(public/default skill)",
@@ -105,6 +131,10 @@ def price_round_3balls(
     return rows
 
 
+# Back-compat alias: callers/tests may still import the old name.
+price_round_3balls = price_round_groups
+
+
 def write_round_edges(rows: list[dict], path: Path | None = None) -> Path:
     path = path or OUT_CSV
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,7 +149,7 @@ def write_round_edges(rows: list[dict], path: Path | None = None) -> Path:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Price round-specific 3-ball markets")
+    ap = argparse.ArgumentParser(description="Price round-specific group markets (2-balls / 3-balls)")
     ap.add_argument("--round", type=int, default=1, dest="round_no")
     ap.add_argument("--event-id", default="")
     ap.add_argument("--course", default="")
@@ -138,7 +168,20 @@ def main() -> None:
     quotes = ManualOddsProvider().load_threeballs(event_id=args.event_id, round_no=args.round_no)
     if not quotes:
         raise SystemExit("No 3-ball odds found. Add golf/data/threeballs.csv or run golf.refresh on a raw paste.")
-    rows = price_round_3balls(
+    try:
+        field_names = [p.name for p in M.load_field(players=M.load_players())]
+    except FileNotFoundError:
+        field_names = []
+    missing = field_mismatch(quotes, field_names)
+    if missing:
+        raise SystemExit(
+            f"Round-group board does not match the current field: {len(missing)} "
+            f"player(s) are not in field.csv (stale board from another event?): "
+            + ", ".join(missing)
+            + "\nRe-paste this event's tee groups into golf/data/threeballs_r1_raw.txt "
+              "and rerun golf.refresh."
+        )
+    rows = price_round_groups(
         quotes,
         params,
         course=args.course,
@@ -150,7 +193,7 @@ def main() -> None:
     )
     out = write_round_edges(rows)
     picks = [r for r in rows if r["ev_pct"] >= args.min_edge and r["kelly_stake"] >= 0.5 and not r["thin_sample"]]
-    print(f"Round {args.round_no} 3-ball pricing: {len(rows)} sides, {len(picks)} recommended")
+    print(f"Round {args.round_no} group pricing: {len(rows)} sides, {len(picks)} recommended")
     print(f"{'EV%':>7} {'Odds':>6} {'Model':>7} {'Mkt':>7} {'Stake':>7} Player")
     print("-" * 72)
     for r in rows[:25]:
