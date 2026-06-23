@@ -240,8 +240,20 @@ def cmd_round_3balls(p):
     quotes = ManualOddsProvider().load_threeballs(event_id=event_id, round_no=round_no)
     if not quotes:
         raise ValueError("No 3-ball odds found in golf/data/threeballs.csv.")
+    missing = GRP.field_mismatch(quotes, _field_names())
+    if missing:
+        # Stale board (e.g. last week's tournament). Drop any prior edges file so
+        # callers that re-read it (season.py) don't render the wrong event.
+        GRP.OUT_CSV.unlink(missing_ok=True)
+        raise ValueError(
+            f"Round-group board does not match the current field: {len(missing)} "
+            f"player(s) not in field.csv (stale board from another event?): "
+            + ", ".join(missing[:12]) + ("…" if len(missing) > 12 else "")
+            + ". Re-paste this event's tee groups into "
+              "golf/data/threeballs_r1_raw.txt and rerun refresh."
+        )
     bankroll = float(p.get("bankroll", 100.0))
-    rows = GRP.price_round_3balls(
+    rows = GRP.price_round_groups(
         quotes,
         params,
         course=p.get("course", "") or "",
@@ -261,7 +273,9 @@ def cmd_round_3balls(p):
         {"key": "ev_pct", "label": "EV%", "fmt": "signed_num"},
         {"key": "kelly_stake", "label": "Stake", "fmt": "gbp"},
     ]
-    return {"note": f"Round {round_no} 3-balls · {len(rows)} sides", "columns": columns, "rows": rows}
+    markets = sorted({r.get("market", "3ball") for r in rows})
+    label = "/".join(markets) if markets else "groups"
+    return {"note": f"Round {round_no} {label} · {len(rows)} sides", "columns": columns, "rows": rows}
 
 
 COMMANDS = {"schema": lambda p: cmd_schema(), "refresh": cmd_refresh,

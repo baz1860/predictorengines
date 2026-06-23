@@ -33,7 +33,7 @@ from .providers.espn import EspnGolfProvider
 DATA_DIR = Path(__file__).parent / "data"
 PREDICTIONS_CSV = DATA_DIR / "predictions.csv"
 EDGE_CSV = DATA_DIR / "edge_report.csv"
-ROUND_3BALL_CSV = DATA_DIR / "round_3ball_edges.csv"
+ROUND_3BALL_CSV = DATA_DIR / "round_edges.csv"
 MANIFEST_JSON = DATA_DIR / "free_source_manifest.json"
 CARD_MD = DATA_DIR / "card.md"
 
@@ -113,7 +113,7 @@ def build_card(
     except ValueError as exc:
         notes.append(f"edge skipped: {exc}")
     try:
-        GENG.cmd_round_3balls(dict(base, round_no=round_no))  # → round_3ball_edges.csv
+        GENG.cmd_round_3balls(dict(base, round_no=round_no))  # → round_edges.csv
     except ValueError as exc:
         notes.append(f"round 3-balls skipped: {exc}")
 
@@ -157,7 +157,7 @@ def _render_card(event_name, predictions, edge_rows, threeball_rows, manifest,
         "",
         _tournament_section(edge_rows),
         "",
-        f"## Round {round_no} 3-balls",
+        f"## Round {round_no} {_round_market_label(threeball_rows)}",
         "",
         _threeball_section(threeball_rows, min_edge, round_no),
         "",
@@ -189,12 +189,24 @@ def _tournament_section(edge_rows: list[dict]) -> str:
     return head + "\n" + "\n".join(rows)
 
 
+_MARKET_NAMES = {"2ball": "2-balls", "3ball": "3-balls"}
+
+
+def _round_market_label(rows: list[dict]) -> str:
+    """Card section title reflecting the actual round market (twosomes vs
+    threesomes), falling back to a neutral label when nothing is priced."""
+    markets = sorted({r.get("market") for r in rows if r.get("market")})
+    if not markets:
+        return "round matchups"
+    return " / ".join(_MARKET_NAMES.get(m, m) for m in markets)
+
+
 def _threeball_section(rows: list[dict], min_edge: float, round_no: int) -> str:
     picks = _recommended_3balls(rows, min_edge)
     if not rows:
-        return ("_No 3-ball board loaded for this round. Paste a bookmaker board "
-                "into `golf/data/threeballs_r{n}_raw.txt` and rerun with "
-                "`--round {n}`._".format(n=round_no))
+        return ("_No round-matchup board loaded for this round. Paste a bookmaker "
+                "2-ball/3-ball board into `golf/data/threeballs_r{n}_raw.txt` and "
+                "rerun with `--round {n}`._".format(n=round_no))
     if not picks:
         return "_3-balls priced, but none cleared the edge/stake threshold._"
     head = ("| Round | Player | Odds | Model | Market | EV | Stake |\n"
