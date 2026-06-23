@@ -98,7 +98,12 @@ def _actuals(event: pd.DataFrame) -> dict[str, dict]:
 
 def walk_forward(df: pd.DataFrame, since: str, sims: int,
                  seed: int = 0, verbose: bool = True,
-                 config: dict | None = None) -> pd.DataFrame:
+                 config: dict | None = None,
+                 sim_config: dict | None = None) -> pd.DataFrame:
+    """Walk-forward predictions. `config` tunes the model fit; `sim_config`
+    (optional) overrides the scoring shape passed to the simulator, e.g.
+    {"round_corr":.3,"tail_df":6,"win_round_corr":.1,"win_tail_df":6}."""
+    sc = sim_config or {}
     events = (df[["tournament_id", "date", "course", "is_major"]]
               .drop_duplicates("tournament_id")
               .sort_values("date"))
@@ -123,7 +128,12 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
             continue
         rated = model.predict_field(field, params, course=str(ev.course),
                                     is_major=bool(ev.is_major))
-        res = gsim.simulate_tournament(rated, n_sims=sims, cut_rule=65, rng=rng)
+        res = gsim.simulate_tournament(
+            rated, n_sims=sims, cut_rule=65, rng=rng,
+            round_corr=sc.get("round_corr"),
+            tail_df=sc.get("tail_df", gsim._USE_CONFIG),
+            win_round_corr=sc.get("win_round_corr"),
+            win_tail_df=sc.get("win_tail_df", gsim._USE_CONFIG))
         actual = _actuals(event_rounds)
         for p in rated:
             a = actual.get(p.name)
@@ -307,6 +317,111 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
     return out
 
 
+def sweep_win_corr(since: str, sims: int, seed: int = 0,
+                   split: str = "2025-01-01", candidates: list[float] | None = None,
+                   write: bool = False) -> dict:
+    """Pick the win-market round_corr on walk-forward evidence.
+
+    The place/cut markets are produced by the primary draw and are invariant to
+    win_round_corr, so this only ever helps the win market and cannot regress
+    the others. Each event is fit once; the win market is then priced cheaply
+    (vectorised, no ranking loop) under every candidate regime. Selection is by
+    out-of-sample (post-split) win log-loss; the current place round_corr is the
+    baseline. Writes win_round_corr/win_tail_df into sim_config.json on promote.
+    """
+    place_rc, place_tdf, _, _ = gsim.load_sim_config()
+    cand = sorted(set((candidates or [0.0, 0.05, 0.10, 0.15, 0.20]) + [place_rc]))
+    win_tdf = place_tdf   # sweep the correlation only; keep the validated tails
+    df = model.load_rounds_df()
+    base_cfg = model.load_model_config()
+    events = (df[["tournament_id", "date", "course", "is_major"]]
+              .drop_duplicates("tournament_id").sort_values("date"))
+    since_ts = pd.Timestamp(since)
+    rng = np.random.default_rng(seed)
+    # rows[c] = list of (tid, date, p_win, y_win) for candidate c
+    rows: dict[float, list] = {c: [] for c in cand}
+    n_events = 0
+    print(f"Win-corr sweep · candidates {cand} · {sims:,} sims/event · since {since}")
+    for ev in events.itertuples():
+        start = pd.Timestamp(ev.date)
+        if start < since_ts:
+            continue
+        prior = df[df["date"] < start]
+        if len(prior) < MIN_TRAIN_ROUNDS:
+            continue
+        event_rounds = df[df["tournament_id"] == ev.tournament_id]
+        field = sorted(event_rounds["player"].unique())
+        if len(field) < 30:
+            continue
+        try:
+            params = model.fit(df, asof=start, config=base_cfg)
+        except ValueError:
+            continue
+        rated = model.predict_field(field, params, course=str(ev.course),
+                                    is_major=bool(ev.is_major))
+        actual = _actuals(event_rounds)
+        for c in cand:
+            wp = gsim.win_market_probs(rated, sims, c, win_tdf, rng)
+            for p in rated:
+                a = actual.get(p.name)
+                if a is not None:
+                    rows[c].append((ev.tournament_id, str(start.date()),
+                                    wp[p.name], a["win"]))
+        n_events += 1
+    if not n_events:
+        raise SystemExit("Win-corr sweep: no evaluable events — seed more history.")
+
+    def _score(recs):
+        sub = [r for r in recs if pd.Timestamp(r[1]) >= pd.Timestamp(split)]
+        sub = sub or recs   # fall back to full window if split leaves nothing
+        p = np.array([r[2] for r in sub]); y = np.array([r[3] for r in sub], float)
+        surp, byt = [], {}
+        for tid, _d, pw, yw in sub:
+            byt.setdefault(tid, []).append((pw, yw))
+        for tid, vs in byt.items():
+            wins = [pw for pw, yw in vs if yw == 1]
+            if wins:
+                surp.append(-np.log(np.clip(np.mean(wins), EPS, 1)))
+        return {"win_logloss": logloss(p, y), "win_brier": brier(p, y),
+                "surprise": float(np.mean(surp)) if surp else None, "n": len(sub)}
+
+    scored = {c: _score(rows[c]) for c in cand}
+    base = scored[place_rc]
+    best_c = min(cand, key=lambda c: scored[c]["win_logloss"])
+    best = scored[best_c]
+    promote = (best_c != place_rc
+               and best["win_logloss"] <= base["win_logloss"] - 1e-4)
+
+    print(f"\n{'win_rc':>7}{'win_LL':>10}{'win_Brier':>11}{'surprise':>10}  (out-of-sample, n={base['n']})")
+    for c in cand:
+        s = scored[c]
+        flag = "  ← current" if c == place_rc else ("  ← best" if c == best_c else "")
+        sp = f"{s['surprise']:.3f}" if s["surprise"] is not None else "  n/a"
+        print(f"{c:>7.2f}{s['win_logloss']:>10.5f}{s['win_brier']:>11.5f}{sp:>10}{flag}")
+    print(f"\n  current win_round_corr (=place {place_rc:g}) logloss {base['win_logloss']:.5f}")
+    print(f"  chosen  win_round_corr {best_c:g} logloss {best['win_logloss']:.5f}")
+    print(f"  verdict: {'PROMOTE' if promote else 'reject'}")
+
+    if write and promote:
+        path = gsim.SIM_CONFIG_JSON
+        cfg = json.loads(path.read_text()) if path.exists() else {}
+        cfg["win_round_corr"] = best_c
+        cfg["win_tail_df"] = win_tdf
+        cfg.setdefault("metrics", {})
+        cfg["metrics"]["win_corr_sweep"] = {
+            "candidates": cand, "chosen": best_c, "since": since, "split": split,
+            "sims": sims, "win_logloss_place_regime": round(base["win_logloss"], 5),
+            "win_logloss_chosen": round(best["win_logloss"], 5),
+            "note": ("Separate, lower round_corr for the win market. Place/cut "
+                     "markets keep round_corr and are unaffected."),
+        }
+        path.write_text(json.dumps(cfg, indent=2))
+        print(f"  wrote win_round_corr={best_c:g} → {path}")
+    elif write:
+        print("  not writing sim_config.json (gate failed)")
+    return {"scored": scored, "chosen": best_c, "promote": bool(promote)}
+
+
 def print_report(rep: dict) -> None:
     print(f"\n{'Market':<8}{'N':>7}{'base':>8}{'Brier':>9}{'vs base':>9}"
           f"{'skill':>8}{'logloss':>9}")
@@ -339,12 +454,18 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--tune-config", action="store_true",
                     help="screen/tune free-data fit hyperparameters")
+    ap.add_argument("--sweep-win-corr", action="store_true",
+                    help="pick the win-market round_corr (place markets unaffected)")
     ap.add_argument("--write", action="store_true",
-                    help="with --tune-config, write promoted config and baseline")
+                    help="with --tune-config/--sweep-win-corr, write promoted config")
     args = ap.parse_args()
 
     if args.tune_config:
         tune_config(args.since, sims=args.sims, seed=args.seed, write=args.write)
+        return
+
+    if args.sweep_win_corr:
+        sweep_win_corr(args.since, sims=args.sims, seed=args.seed, write=args.write)
         return
 
     df = model.load_rounds_df()
