@@ -240,7 +240,7 @@ def cmd_round_3balls(p):
     quotes = ManualOddsProvider().load_threeballs(event_id=event_id, round_no=round_no)
     if not quotes:
         raise ValueError("No 3-ball odds found in golf/data/threeballs.csv.")
-    missing = GRP.field_mismatch(quotes, _field_names())
+    missing = GRP.field_mismatch(quotes, _field_names(), params)
     if missing:
         # Stale board (e.g. last week's tournament). Drop any prior edges file so
         # callers that re-read it (season.py) don't render the wrong event.

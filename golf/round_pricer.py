@@ -30,19 +30,43 @@ def _norm_name(name: str) -> str:
     return " ".join(str(name).casefold().split())
 
 
-def field_mismatch(quotes: list[OddsQuote], field_names: list[str]) -> list[str]:
-    """Return 3-ball players that are NOT in the current event field.
+def field_mismatch(quotes: list[OddsQuote], field_names: list[str],
+                   params: dict | None = None) -> list[str]:
+    """Return round-group players that are NOT in the current event field.
 
-    A non-empty result almost always means the 3-ball board is stale — e.g.
-    last week's tournament was re-priced against this week's field. Callers
-    should refuse to price rather than emit a confident card for the wrong
-    event. An empty field_names disables the check (nothing to compare against).
+    A non-empty result almost always means the board is stale — e.g. last
+    week's tournament was re-priced against this week's field. Callers should
+    refuse to price rather than emit a confident card for the wrong event. An
+    empty field_names disables the check (nothing to compare against).
+
+    When `params` is given, board names are resolved through the model's name
+    map (M.resolve_name) before the membership test, so a bookmaker spelling
+    that differs from field.csv (accents, case, a known alias such as
+    "Samuel Stevens" → "Sam Stevens") counts as a match instead of tripping the
+    guard. The same resolver prices the board, so this keeps the two in step.
     """
     field = {_norm_name(n) for n in field_names if str(n).strip()}
     if not field:
         return []
+    if params is not None:
+        # Add the field's own canonical forms so a board name that resolves to
+        # the same player still matches even if field.csv uses a variant.
+        for n in field_names:
+            canon = M.resolve_name(n, params)
+            if canon:
+                field.add(_norm_name(canon))
     board = {q.player_name for q in quotes if q.market in ROUND_GROUP_MARKETS}
-    return sorted(n for n in board if _norm_name(n) not in field)
+
+    def _in_field(name: str) -> bool:
+        if _norm_name(name) in field:
+            return True
+        if params is not None:
+            canon = M.resolve_name(name, params)
+            if canon and _norm_name(canon) in field:
+                return True
+        return False
+
+    return sorted(n for n in board if not _in_field(n))
 
 
 def price_round_groups(
@@ -172,7 +196,7 @@ def main() -> None:
         field_names = [p.name for p in M.load_field(players=M.load_players())]
     except FileNotFoundError:
         field_names = []
-    missing = field_mismatch(quotes, field_names)
+    missing = field_mismatch(quotes, field_names, params)
     if missing:
         raise SystemExit(
             f"Round-group board does not match the current field: {len(missing)} "
