@@ -9,6 +9,25 @@
     "win_logloss_champion": 0.04705,
     "win_surprise_legacy": 4.8099,
     "win_surprise_champion": 4.5748,
-    "note": "Per-player round correlation (hot/cold week) + Student-t(6) round tails. Improves every place market and winner calibration; legacy independent-Normal rounds = round_corr 0.0, tail_df null."
-  }
+    "note": "Per-player round correlation (hot/cold week) + Student-t(6) round tails. Improves every place market and winner calibration; legacy independent-Normal rounds = round_corr 0.0, tail_df null.",
+    "win_corr_sweep": {
+      "candidates": [
+        0.0,
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.3
+      ],
+      "chosen": 0.0,
+      "since": "2024-01-01",
+      "split": "2025-01-01",
+      "sims": 20000,
+      "win_logloss_place_regime": 0.04525,
+      "win_logloss_chosen": 0.045,
+      "note": "Separate, lower round_corr for the win market. Place/cut markets keep round_corr and are unaffected."
+    }
+  },
+  "win_round_corr": 0.0,
+  "win_tail_df": 6.0
 }

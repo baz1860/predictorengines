@@ -141,8 +141,13 @@ score_to_par[player, tournament, round] = mu + difficulty[t,r] − skill[player]
 
 `predict_field()` turns these into per-player `rating` + `σ`; `simulate.py` draws
 four correlated, fat-tailed rounds (`data/sim_config.json`: `round_corr`,
-`tail_df`) so win / top-N / make-cut and the matchup/3-ball markets all come from
-the **same** draws and stay internally consistent.
+`tail_df`) so top-N / make-cut and the matchup/3-ball markets all come from the
+**same** draws and stay internally consistent. The **win** market is priced off a
+*second* draw with its own `win_round_corr` (validated separately via
+`python -m golf.validate --sweep-win-corr`): the place-tuned `round_corr`
+disperses the leaderboard — good for top-N calibration but it washes out
+dominant favourites, so the win market runs a lower correlation. Place/cut
+markets come from the primary draw and are unaffected by `win_round_corr`.
 
 ### Calibration, market, staking
 

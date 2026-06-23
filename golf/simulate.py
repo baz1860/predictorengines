@@ -46,22 +46,90 @@ _DEFAULT_ROUND_CORR = 0.0
 _DEFAULT_TAIL_DF: float | None = None
 
 
-def load_sim_config(path: Path | None = None) -> tuple[float, float | None]:
-    """(round_corr, tail_df) champion scoring-shape params, or legacy defaults."""
+def load_sim_config(path: Path | None = None) -> tuple[float, float | None, float, float | None]:
+    """Champion scoring-shape params: (round_corr, tail_df, win_round_corr, win_tail_df).
+
+    `round_corr`/`tail_df` shape the place/cut markets. `win_round_corr`/
+    `win_tail_df` shape the *win* market via a separate draw (see
+    simulate_tournament); when absent they mirror the place params, so the win
+    market falls back to the single-regime behaviour. A lower win_round_corr
+    counters the leaderboard dispersion that under-prices outright favourites.
+    """
     path = path or SIM_CONFIG_JSON
     rc, tdf = _DEFAULT_ROUND_CORR, _DEFAULT_TAIL_DF
+    win_rc, win_tdf = None, _USE_CONFIG  # sentinel: "mirror place params"
     if path.exists():
         try:
             raw = json.loads(path.read_text())
             rc = float(raw.get("round_corr", rc))
             tv = raw.get("tail_df", tdf)
             tdf = float(tv) if tv is not None else None
+            if "win_round_corr" in raw and raw["win_round_corr"] is not None:
+                win_rc = float(raw["win_round_corr"])
+            if "win_tail_df" in raw:
+                wv = raw["win_tail_df"]
+                win_tdf = float(wv) if wv is not None else None
         except Exception:
             pass
-    return rc, tdf
+    if win_rc is None:
+        win_rc = rc
+    if win_tdf is _USE_CONFIG:
+        win_tdf = tdf
+    return rc, tdf, win_rc, win_tdf
 
 
 _USE_CONFIG = object()   # sentinel: "fall back to load_sim_config()"
+
+
+def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df):
+    """Draw (n_sims, n, 4) round scores under the round-correlation / t-tail
+    scoring model. Pulled out so the win market can be re-drawn under its own
+    regime; the rng draw order matches the historical inline code exactly."""
+    rc = float(min(max(round_corr, 0.0), 0.95))
+    if rc <= 0.0 and tail_df is None:
+        # Legacy path: independent Gaussian rounds (bit-for-bit unchanged).
+        return rng.normal(
+            loc=means[np.newaxis, :, np.newaxis],
+            scale=sigmas[np.newaxis, :, np.newaxis],
+            size=(n_sims, n, 4),
+        )
+    persist_sd = sigmas * math.sqrt(rc)          # per-player week effect
+    trans_sd = sigmas * math.sqrt(1.0 - rc)      # per-round component
+    u = rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
+    if tail_df is not None and float(tail_df) > 2.0:
+        df = float(tail_df)
+        # variance-standardise the t so the marginal per-round spread stays
+        # sigma (Var(t_df) = df/(df-2)); preserves single-round calibration.
+        z = rng.standard_t(df, size=(n_sims, n, 4)) * math.sqrt((df - 2.0) / df)
+    else:
+        z = rng.standard_normal((n_sims, n, 4))
+    return (means[np.newaxis, :, np.newaxis]
+            + u[:, :, np.newaxis]
+            + z * trans_sd[np.newaxis, :, np.newaxis])
+
+
+def _win_frac(rng, means, sigmas, n_sims, n, round_corr, tail_df) -> np.ndarray:
+    """Per-player win probability (fraction of sims with the low 72-hole total)
+    under a given scoring regime. Ties count for each tied player, matching the
+    dense-rank==1 convention of the full simulator. No cut is applied — the
+    winner is always well inside it. Vectorised; skips the ranking loop."""
+    scores = _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df)
+    tot = scores.sum(axis=2)                              # (n_sims, n) 72-hole
+    is_best = tot == tot.min(axis=1, keepdims=True)
+    return is_best.sum(axis=0) / n_sims
+
+
+def win_market_probs(players: list[Player], n_sims: int, round_corr: float,
+                     tail_df: float | None,
+                     rng: np.random.Generator | None = None) -> dict[str, float]:
+    """Standalone win-market probabilities for a rated field under a scoring
+    regime — used by the win-corr sweep in validate.py without paying for the
+    full place/cut ranking loop."""
+    rng = rng or np.random.default_rng()
+    means = np.array([-p.rating for p in players])
+    sigmas = np.array([p.sigma for p in players])
+    frac = _win_frac(rng, means, sigmas, n_sims, len(players), round_corr, tail_df)
+    return {p.name: float(frac[i]) for i, p in enumerate(players)}
 
 
 def simulate_tournament(
@@ -74,6 +142,8 @@ def simulate_tournament(
     threeballs: list[tuple[str, str, str]] | None = None,
     round_corr: float | None = None,
     tail_df=_USE_CONFIG,
+    win_round_corr: float | None = None,
+    win_tail_df=_USE_CONFIG,
 ) -> dict[str, dict]:
     """
     Monte Carlo simulation.
@@ -114,12 +184,19 @@ def simulate_tournament(
     rng = rng or np.random.default_rng()
     # Resolve scoring-shape params: None / sentinel ⇒ validated config default;
     # explicit values (incl. round_corr=0.0, tail_df=None) force that behaviour.
-    if round_corr is None or tail_df is _USE_CONFIG:
-        cfg_rc, cfg_tdf = load_sim_config()
+    if (round_corr is None or tail_df is _USE_CONFIG
+            or win_round_corr is None or win_tail_df is _USE_CONFIG):
+        cfg_rc, cfg_tdf, cfg_win_rc, cfg_win_tdf = load_sim_config()
         if round_corr is None:
             round_corr = cfg_rc
         if tail_df is _USE_CONFIG:
             tail_df = cfg_tdf
+        if win_round_corr is None:
+            win_round_corr = cfg_win_rc
+        if win_tail_df is _USE_CONFIG:
+            win_tail_df = cfg_win_tdf
+    # The win market gets its own draw only when its regime actually differs.
+    win_regime = (win_round_corr != round_corr) or (win_tail_df != tail_df)
     n = len(players)
 
     # Does the 36-hole cut actually bind? If the field is no larger than the cut
@@ -157,30 +234,19 @@ def simulate_tournament(
     fin_count = np.zeros(n, dtype=np.int64)
 
     # Draw all rounds in bulk for speed.  Shape: (n_sims, n_players, 4_rounds).
-    # rc = round_corr clamped to a safe open interval; df = optional t tails.
-    rc = float(min(max(round_corr, 0.0), 0.95))
-    if rc <= 0.0 and tail_df is None:
-        # Legacy path: independent Gaussian rounds (bit-for-bit unchanged).
-        scores_all = rng.normal(
-            loc=means[np.newaxis, :, np.newaxis],
-            scale=sigmas[np.newaxis, :, np.newaxis],
-            size=(n_sims, n, 4),
-        )
-    else:
-        persist_sd = sigmas * math.sqrt(rc)          # per-player week effect
-        trans_sd = sigmas * math.sqrt(1.0 - rc)      # per-round component
-        # per-player tournament effect u, shared across that player's 4 rounds
-        u = rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
-        if tail_df is not None and float(tail_df) > 2.0:
-            df = float(tail_df)
-            # variance-standardise the t so the marginal per-round spread stays
-            # sigma (Var(t_df) = df/(df-2)); preserves single-round calibration.
-            z = rng.standard_t(df, size=(n_sims, n, 4)) * math.sqrt((df - 2.0) / df)
-        else:
-            z = rng.standard_normal((n_sims, n, 4))
-        scores_all = (means[np.newaxis, :, np.newaxis]
-                      + u[:, :, np.newaxis]
-                      + z * trans_sd[np.newaxis, :, np.newaxis])
+    # Place/cut markets use this primary draw (validated round_corr/tail_df).
+    scores_all = _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df)
+
+    # Market-aware win shape: redraw the field under the win regime and price the
+    # win market off *its* leaderboard. Place/cut markets stay on the primary
+    # draw, so they are invariant to win_round_corr. The win regime usually runs
+    # a lower round_corr — less hot/cold-week dispersion — so dominant favourites
+    # are not washed out (the place-tuned rc systematically under-prices them).
+    # Drawn after the primary draw so primary rng consumption is unchanged.
+    win_frac = None
+    if win_regime:
+        win_frac = _win_frac(rng, means, sigmas, n_sims, n,
+                             win_round_corr, win_tail_df)
 
     # R1+R2 totals
     r36 = scores_all[:, :, 0] + scores_all[:, :, 1]  # (n_sims, n)
@@ -257,9 +323,14 @@ def simulate_tournament(
     # Build results dict
     results = {"__cut_binds__": cut_binds}
     for i, name in enumerate(names):
+        top5_frac = top5s[i] / n_sims
+        # Win from the win-regime draw when active; clamp to top5 so the
+        # cross-draw numbers stay coherent (win ⊆ top5).
+        win_val = win_frac[i] if win_frac is not None else wins[i] / n_sims
+        win_val = min(win_val, top5_frac)
         results[name] = {
-            "win":       wins[i]      / n_sims,
-            "top5":      top5s[i]     / n_sims,
+            "win":       win_val,
+            "top5":      top5_frac,
             "top10":     top10s[i]    / n_sims,
             "top20":     top20s[i]    / n_sims,
             "made_cut":  made_cuts[i] / n_sims,
