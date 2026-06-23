@@ -28,6 +28,37 @@ HOME_ADV_ELO = 55.0
 HALF_LIFE_DAYS = 365.0
 DC_RHO = -0.08
 RECENT_K = 6        # matches in the shots-on-target recency window
+# Per-competition home advantage + Dixon-Coles rho, each Empirical-Bayes shrunk
+# toward the global value (home edge and low-score clustering both vary by
+# league). K = equivalent matches of global prior; a league needs ~this many
+# fixtures before its own number dominates.
+HFA_SHRINK_K = 300.0
+RHO_SHRINK_K = 400.0
+
+
+def _fit_comp_rho(home_goals, away_goals, lam_h: float, lam_a: float) -> float:
+    """1-D MLE of the Dixon-Coles low-score rho for one competition, holding the
+    competition's mean goals (lam_h, lam_a) fixed. Only the 0-0/1-0/0-1/1-1 cells
+    carry rho, so this isolates league-specific low-score clustering."""
+    hg = np.asarray(home_goals, dtype=int)
+    ag = np.asarray(away_goals, dtype=int)
+    n00 = int(np.sum((hg == 0) & (ag == 0)))
+    n10 = int(np.sum((hg == 1) & (ag == 0)))
+    n01 = int(np.sum((hg == 0) & (ag == 1)))
+    n11 = int(np.sum((hg == 1) & (ag == 1)))
+    best = (-np.inf, DC_RHO)
+    for rho in np.arange(-0.20, 0.0001, 0.005):
+        t00 = 1.0 - lam_h * lam_a * rho
+        t10 = 1.0 + lam_a * rho
+        t01 = 1.0 + lam_h * rho
+        t11 = 1.0 - rho
+        if min(t00, t10, t01, t11) <= 0:
+            continue
+        ll = (n00 * math.log(t00) + n10 * math.log(t10)
+              + n01 * math.log(t01) + n11 * math.log(t11))
+        if ll > best[0]:
+            best = (ll, float(rho))
+    return best[1]
 # ensemble blend (chosen by held-out walk-forward search, June 2026):
 # goals (actual-goal attack/def), elo, xg (long-run SoT expected goals),
 # xgf (xg + recent SoT form). The model-signal sprint retuned this toward Elo:
@@ -274,8 +305,31 @@ def fit(df: pd.DataFrame | None = None) -> dict:
         elo[h] += delta
         elo[a] -= delta
 
+    # ── per-competition home advantage (multiplier vs global) + rho, shrunk ──
+    global_hfa = float(max(0.02, avg_home - avg_away))
+    comp_adj: dict[str, dict[str, float]] = {}
+    for comp, grp in df.groupby("competition"):
+        n_c = len(grp)
+        if n_c < 30:
+            continue
+        ah_c = float(grp["home_goals"].mean())
+        aa_c = float(grp["away_goals"].mean())
+        hfa_c = ah_c - aa_c
+        # EB-shrink the league HFA toward the global value, then express as a
+        # multiplier so it scales every component's home term consistently.
+        hfa_shr = (n_c * hfa_c + HFA_SHRINK_K * global_hfa) / (n_c + HFA_SHRINK_K)
+        mult = float(np.clip(hfa_shr / global_hfa, 0.3, 2.5))
+        rho_c = _fit_comp_rho(grp["home_goals"], grp["away_goals"],
+                              max(0.2, ah_c), max(0.2, aa_c))
+        rho_shr = float(np.clip((n_c * rho_c + RHO_SHRINK_K * DC_RHO)
+                                / (n_c + RHO_SHRINK_K), -0.20, 0.0))
+        comp_adj[str(comp)] = {"hfa_mult": round(mult, 4), "rho": round(rho_shr, 4),
+                               "n": int(n_c)}
+
     params = {"teams": teams, "global_avg": global_avg,
-              "home_goal_adv": float(max(0.02, avg_home - avg_away)),
+              "home_goal_adv": global_hfa,
+              "global_hfa": global_hfa, "comp_adj": comp_adj,
+              "comp_adj_active": False,
               "attack": attack, "defence": defence,
               "attack_xg": attack_xg, "defence_xg": defence_xg,
               "attack_xpress": attack_xpress, "defence_xpress": defence_xpress,
@@ -299,9 +353,30 @@ def load_params() -> dict:
     return params
 
 
+def _home_mult(params: dict, competition: str | None) -> float:
+    """Per-competition home-advantage multiplier (1.0 = global), shrunk at fit.
+
+    Gated by `comp_adj_active` (default False): walk-forward over ~16.5k
+    predictions showed per-competition HFA + rho is neutral-to-slightly-worse on
+    held-out Brier (0.61207 global vs 0.61216–0.61234), so the validated global
+    constants stay the default. The fitted table is still stored for inspection
+    and auto-activates if a future gate flips the flag."""
+    if not params.get("comp_adj_active", False):
+        return 1.0
+    return float(params.get("comp_adj", {}).get(str(competition), {}).get("hfa_mult", 1.0))
+
+
+def _comp_rho(params: dict, competition: str | None) -> float:
+    """Per-competition Dixon-Coles rho (falls back to global DC_RHO). Gated by
+    `comp_adj_active` — see `_home_mult`."""
+    if not params.get("comp_adj_active", False):
+        return DC_RHO
+    return float(params.get("comp_adj", {}).get(str(competition), {}).get("rho", DC_RHO))
+
+
 def _lambdas_goals(params: dict, home: str, away: str, competition: str | None, neutral: bool) -> tuple[float, float]:
     base = float(params["global_avg"])
-    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2
+    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2 * _home_mult(params, competition)
     comp_adj = (strength(competition) - 0.75) * 0.12
     ah = params["attack"].get(home, 0.0); da = params["defence"].get(away, 0.0)
     aa = params["attack"].get(away, 0.0); dh = params["defence"].get(home, 0.0)
@@ -313,10 +388,12 @@ def _lambdas_goals(params: dict, home: str, away: str, competition: str | None, 
             base * math.exp(aa + dh - home_adv + comp_adj))
 
 
-def _lambdas_elo(params: dict, home: str, away: str, neutral: bool) -> tuple[float, float]:
+def _lambdas_elo(params: dict, home: str, away: str, neutral: bool,
+                 competition: str | None = None) -> tuple[float, float]:
     eh = params["elo"].get(home, BASE_ELO)
     ea = params["elo"].get(away, BASE_ELO)
-    diff = (eh + (0 if neutral else HOME_ADV_ELO) - ea) / 400.0
+    home_elo = 0.0 if neutral else HOME_ADV_ELO * _home_mult(params, competition)
+    diff = (eh + home_elo - ea) / 400.0
     total = 2.55 + 0.20 * abs(diff)
     share = 1.0 / (1.0 + math.exp(-1.2 * diff))
     return max(0.15, total * share), max(0.15, total * (1 - share))
@@ -328,7 +405,7 @@ def _lambdas_xg(params: dict, home: str, away: str, competition: str | None,
     attack/defence nudge. Falls back to the goals attack/defence maps if a
     cached params dict predates the xg fields."""
     base = float(params["global_avg"])
-    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2
+    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2 * _home_mult(params, competition)
     comp_adj = (strength(competition) - 0.75) * 0.12
     ax = params.get("attack_xg", params["attack"])
     dx = params.get("defence_xg", params["defence"])
@@ -350,7 +427,7 @@ def _lambdas_xpress(params: dict, home: str, away: str, competition: str | None,
     shot-pressure fields.
     """
     base = float(params["global_avg"])
-    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2
+    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2 * _home_mult(params, competition)
     comp_adj = (strength(competition) - 0.75) * 0.12
     ax = params.get("attack_xpress", params.get("attack_xg", params["attack"]))
     dx = params.get("defence_xpress", params.get("defence_xg", params["defence"]))
@@ -362,12 +439,13 @@ def _lambdas_xpress(params: dict, home: str, away: str, competition: str | None,
 
 def component_matrices(params: dict, home: str, away: str,
                        competition: str | None, neutral: bool) -> dict[str, np.ndarray]:
+    rho = _comp_rho(params, competition)
     return {
-        "goals": score_matrix(*_lambdas_goals(params, home, away, competition, neutral)),
-        "elo": score_matrix(*_lambdas_elo(params, home, away, neutral)),
-        "xg": score_matrix(*_lambdas_xg(params, home, away, competition, neutral)),
-        "xgf": score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True)),
-        "xpress": score_matrix(*_lambdas_xpress(params, home, away, competition, neutral)),
+        "goals": score_matrix(*_lambdas_goals(params, home, away, competition, neutral), rho),
+        "elo": score_matrix(*_lambdas_elo(params, home, away, neutral, competition), rho),
+        "xg": score_matrix(*_lambdas_xg(params, home, away, competition, neutral), rho),
+        "xgf": score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True), rho),
+        "xpress": score_matrix(*_lambdas_xpress(params, home, away, competition, neutral), rho),
     }
 
 
@@ -382,19 +460,20 @@ def predict(home: str, away: str, competition: str | None = None,
         raise ValueError(f"Unknown team: {away!r}")
     if home == away:
         raise ValueError("Pick two different teams.")
+    rho = _comp_rho(params, competition)
     if model == "ensemble":
         parts = component_matrices(params, home, away, competition, neutral)
         weights = load_ensemble_weights()
         M = sum(weights[k] * parts[k] for k in ENSEMBLE_COMPONENTS)
         M = M / M.sum()
     elif model == "goals":
-        M = score_matrix(*_lambdas_goals(params, home, away, competition, neutral))
+        M = score_matrix(*_lambdas_goals(params, home, away, competition, neutral), rho)
     elif model == "elo":
-        M = score_matrix(*_lambdas_elo(params, home, away, neutral))
+        M = score_matrix(*_lambdas_elo(params, home, away, neutral, competition), rho)
     elif model == "xg":
-        M = score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True))
+        M = score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True), rho)
     elif model == "xpress":
-        M = score_matrix(*_lambdas_xpress(params, home, away, competition, neutral))
+        M = score_matrix(*_lambdas_xpress(params, home, away, competition, neutral), rho)
     else:
         raise ValueError("Unknown model: use ensemble, goals, elo, xg, or xpress.")
     probs = probs_from_matrix(M)
