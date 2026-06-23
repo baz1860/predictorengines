@@ -67,6 +67,35 @@ rates; `point_edge_for_target` inverts it so set/game sub-markets stay
 consistent with the Bradley-Terry match probability. The only stochastic layer
 is the tournament bracket.
 
+### Matchup serve base (games markets)
+
+The Markov inversion needs a *serve level* — the average share of points the
+server wins, which sets the total-games regime (two big servers hold more → more
+games). Previously this was a single constant (`BASE_SERVE = 0.64`) for every
+match. `fit()` now also estimates each player's **serve-points-won** and
+**return-points-won** rates from the Sackmann/TML point columns
+(`w_sv_pts/w_sv_won/...`, EB-shrunk to the surface-specific tour average), and
+`model.serve_base()` combines them into a matchup-specific base
+(`spw_i − (rpw_j − avg_rpw)`, averaged over both servers; e.g. Isner–Opelka on
+hard ≈ 0.72 vs De Minaur–Medvedev ≈ 0.60). The headline match probability stays
+pinned to the Bradley-Terry estimate — the base only reshapes the games markets.
+Walk-forward (ATP, 2025) the matchup base lifts the **games-per-set** correlation
+with actual from **+0.11 to +0.18** with no change to match-winner / set-handicap
+/ first-set (those are mathematically independent of the base). When serve stats
+are missing (e.g. the WTA MatchCharting feed, or a low-sample player) it falls
+back to `BASE_SERVE`, so WTA behaviour is unchanged.
+
+### Total-games level calibration (`games_cal`)
+
+The idealised Markov games model over-predicts the *total* by a stable ~9%
+(server-hold and set-count idealisations). `fit()` estimates a multiplicative
+correction `games_cal = Σactual / Σpredicted` on the training matches (walk-forward
+safe; ATP ≈ 0.90, WTA = 1.0 when no scored point data is available) and
+`match_markets(..., games_cal=...)` applies it. Held-out (train < 2025, test 2025)
+this takes expected-total-games **bias from +2.5 to 0.0 games** and **MAE from
+6.13 to 5.49** (serve base + calibration vs the old fixed base), making the
+over/under market priceable.
+
 ## Validation & calibration
 
 ```bash

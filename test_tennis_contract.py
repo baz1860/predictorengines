@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Contract + behaviour tests for the tennis engine.
 
-Self-contained: builds a small synthetic matches.csv under tennis/data/, fits
-ATP + WTA models, and exercises the full adapter path (schema / predict /
-simulate / edge / settlement) against the shared engine contract. Any files it
-creates are removed afterwards (existing real data is backed up and restored),
-so running this never pollutes the repo.
+Fully isolated: builds a small synthetic dataset in a private temp directory and
+points every tennis module's data path at it for the duration, then fits ATP +
+WTA models and exercises the full adapter path (schema / predict / simulate /
+edge / settlement) against the shared engine contract. The real tennis/data/ is
+never read or written, so even a hard kill mid-run (e.g. `timeout`, SIGKILL, OOM)
+cannot corrupt repo data — earlier this test wrote its synthetic fixture straight
+to tennis/data/matches.csv and relied on an in-memory restore that a signal-kill
+skipped, clobbering the real data.
 
 Also checks the Markov-chain math invariants that don't need fitted data.
 
@@ -15,6 +18,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -27,11 +31,35 @@ import pandas as pd
 from contracts import (assert_finite_json, validate_edge_rows,
                        validate_prediction, validate_table)
 
-DATA = ROOT / "tennis" / "data"
-GENERATED = ["matches.csv", "draw.csv", "odds.csv",
-             "atp_model_params.json", "wta_model_params.json",
-             "validation_predictions.csv", "validation_baseline.json",
-             "calibration.json"]
+REAL_DATA = ROOT / "tennis" / "data"
+# Set to the private temp dir in main(); the fixture writer and all redirected
+# tennis modules use this, so the real tennis/data/ is never touched.
+DATA = REAL_DATA
+
+
+def _redirect_tennis_data(tmp: Path) -> None:
+    """Point every tennis data path (and the adapter's) at `tmp`. All these
+    constants are read at call-time, so reassigning them on the imported modules
+    fully redirects file IO for the rest of the process."""
+    tmp.mkdir(parents=True, exist_ok=True)
+    (tmp / "api_cache").mkdir(exist_ok=True)
+    import tennis.model as M
+    import tennis.providers as PV
+    import tennis.calibrate as C
+    import tennis.validate as V
+    import tennis.engine as E
+    import tennis.market as MK
+    import app.engines.tennis as TA
+    M.DATA_DIR = tmp; M.MATCHES_CSV = tmp / "matches.csv"
+    PV.DATA_DIR = tmp; PV.MATCHES_CSV = tmp / "matches.csv"; PV.CACHE_DIR = tmp / "api_cache"
+    C.DATA_DIR = tmp; C.PRED_CSV = tmp / "validation_predictions.csv"
+    C.CALIB_FILE = tmp / "calibration.json"
+    V.DATA_DIR = tmp; V.PRED_CSV = tmp / "validation_predictions.csv"
+    V.BASELINE_JSON = tmp / "validation_baseline.json"
+    E.DATA_DIR = tmp; E.ODDS_CSV = tmp / "odds.csv"; E.DRAW_CSV = tmp / "draw.csv"
+    MK.DATA_DIR = tmp; MK.BLEND_JSON = tmp / "market_blend.json"
+    MK.ODDS_HISTORY = tmp / "odds_history.csv"
+    TA.MATCHES_CSV = tmp / "matches.csv"
 
 _results: list[tuple[str, str, str]] = []
 
@@ -287,12 +315,15 @@ def _settlement() -> None:
 
 
 def main() -> int:
-    backup = {}
-    for f in GENERATED:
-        p = DATA / f
-        if p.exists():
-            backup[f] = p.read_bytes()
+    global DATA
+    # Fingerprint the real source-of-truth file so we can prove the test never
+    # touched it, regardless of how the run ends.
+    real_matches = REAL_DATA / "matches.csv"
+    real_before = real_matches.read_bytes() if real_matches.exists() else None
 
+    tmp = Path(tempfile.mkdtemp(prefix="tennis_contract_"))
+    DATA = tmp
+    _redirect_tennis_data(tmp)
     try:
         _check("markov_invariants", _markov_invariants)
         _write_fixture()
@@ -309,18 +340,13 @@ def main() -> int:
         _check("validation+calibration", _validation_and_calibration)
         _check("calibrated_predict", _calibrated_predict)
     finally:
-        for f in GENERATED:
-            p = DATA / f
-            if f in backup:
-                p.write_bytes(backup[f])
-            elif p.exists():
-                p.unlink()
-        # drop the data dir if we created it and it is now empty
-        if DATA.exists() and not any(DATA.iterdir()):
-            DATA.rmdir()
-        cache = DATA / "api_cache"
-        if cache.exists() and not any(cache.iterdir()):
-            shutil.rmtree(cache, ignore_errors=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # Hard safety net: the real data must be byte-identical to before the run.
+    real_after = real_matches.read_bytes() if real_matches.exists() else None
+    if real_before != real_after:
+        print("FATAL: test modified the real tennis/data/matches.csv (isolation broken)")
+        return 2
 
     width = max(len(n) for n, *_ in _results)
     print(f"{'CHECK'.ljust(width)}  STATUS  DETAIL")

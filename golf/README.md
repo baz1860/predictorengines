@@ -56,6 +56,26 @@ consumes directly. Win / top-N / make-cut come from the simulated finishes;
 matchups & 3-balls come from the **same** draws, so they are internally
 consistent (missed-cut players ranked behind survivors by 36-hole score).
 
+### Scoring-shape (`data/sim_config.json`)
+
+The Monte Carlo draws each player's four rounds with two validated shape knobs
+(`load_sim_config()`), instead of independent Gaussian rounds:
+
+- **`round_corr` (0.3)** — correlation between a player's *own* rounds: a player
+  who runs hot/cold does so for the week. Each round splits into a per-player
+  tournament effect `u ~ N(0, σ²·round_corr)` (shared across the four rounds) and
+  a per-round term. The marginal per-round variance stays σ² (cut calibration
+  unchanged) while the 72-hole-total variance widens to `4σ²(1 + 3·round_corr)`.
+  A common shock hitting *every* player equally is deliberately not modelled — it
+  cancels out of any rank-based market.
+- **`tail_df` (6.0)** — per-round term drawn from a variance-standardised
+  Student-t, giving the blow-up rounds a Normal misses.
+
+Both default to the file; `round_corr=0.0, tail_df=None` reproduces the legacy
+independent-Normal rounds exactly. Walk-forward (139 events, 2023-06→2026-06,
+4000 sims) headline Brier **0.14726 → 0.14553**, winner log-loss **0.0501 →
+0.0453**, with every place market improved.
+
 ## Data: free-source stack
 
 The default workflow no longer depends on DataGolf. The provider package uses:
