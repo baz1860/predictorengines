@@ -160,11 +160,13 @@ def point_edge_for_target(target_p: float, best_of: int = 3,
 
 
 def match_markets(target_p: float, best_of: int = 3,
-                  base: float = BASE_SERVE) -> dict:
+                  base: float = BASE_SERVE, games_cal: float = 1.0) -> dict:
     """Set/game sub-markets consistent with a headline match prob `target_p`.
 
-    Returns p_match, set win prob, first-set winner, set-handicap (−1.5/+1.5),
-    and an (approximate) expected total games.
+    `base` is the matchup serve level (see model.serve_base); `games_cal` is the
+    fitted multiplicative correction that de-biases the expected total games
+    (params["games_cal"], default 1.0). Returns p_match, set win prob, first-set
+    winner, set-handicap (−1.5/+1.5), and the (calibrated) expected total games.
     """
     ps_a, ps_b = point_edge_for_target(target_p, best_of, base)
     s = set_win_prob(ps_a, ps_b)
@@ -173,7 +175,7 @@ def match_markets(target_p: float, best_of: int = 3,
     # A wins -1.5 sets ⇒ A wins in straight sets (loser takes 0).
     p_a_straight = s ** sets_to_win
     p_b_straight = (1 - s) ** sets_to_win
-    egames = expected_games_per_set(ps_a, ps_b) * _expected_sets(s, best_of)
+    egames = expected_games_per_set(ps_a, ps_b) * _expected_sets(s, best_of) * float(games_cal)
     return {
         "p_match": p_match,
         "p_set": s,

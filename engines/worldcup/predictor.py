@@ -25,10 +25,42 @@ import numpy as np
 import pandas as pd
 
 DATA = Path(__file__).resolve().parents[2] / "data" / "results.csv"
-HOME_ADV = 65.0          # Elo points for non-neutral home side
+DC_PARAMS_FILE = Path(__file__).resolve().parents[2] / "data" / "dc_params.json"
+HOME_ADV = 65.0          # Elo points for non-neutral home side (default / fallback)
+ELO_HOME_ADV = 65.0      # home advantage used inside the Elo rating update (fixed)
 BASE_RATING = 1500.0
 MAX_GOALS = 10           # scoreline grid size
-DC_RHO = -0.10           # Dixon-Coles correlation for low scores
+DC_RHO = -0.10           # Dixon-Coles correlation for low scores (default / fallback)
+
+
+def load_dc_params(path: Path = DC_PARAMS_FILE) -> dict | None:
+    """Fitted {home_adv, rho} from `python predictor.py --fit-dc`, or None.
+
+    Only overrides the hardcoded HOME_ADV / DC_RHO defaults when the file is
+    marked `"active": true` — i.e. the fit beat the incumbent on held-out 3-way
+    log-loss. A rejected calibration is still written (with active=false) as an
+    informative artifact but leaves the validated defaults in place. The Elo
+    rating update always keeps its own fixed ELO_HOME_ADV so ratings are stable.
+    """
+    import json
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text())
+        if not raw.get("active", False):
+            return None
+        return {"home_adv": float(raw["home_adv"]), "rho": float(raw["rho"])}
+    except Exception:
+        return None
+
+
+# Activate fitted prediction-time home advantage + Dixon-Coles rho if available.
+# Importers that do `from .predictor import HOME_ADV, DC_RHO` pick up the fitted
+# values because this runs at predictor import time, before those binds.
+_DC_FIT = load_dc_params()
+if _DC_FIT is not None:
+    HOME_ADV = _DC_FIT["home_adv"]
+    DC_RHO = _DC_FIT["rho"]
 
 K_BY_TOURNAMENT = {
     "FIFA World Cup": 60,
@@ -61,7 +93,7 @@ def compute_elo(played):
         rh = ratings.get(h, BASE_RATING)
         ra = ratings.get(a, BASE_RATING)
         pre_h[i], pre_a[i] = rh, ra
-        adv = 0.0 if neutral else HOME_ADV
+        adv = 0.0 if neutral else ELO_HOME_ADV
         exp_h = 1.0 / (1.0 + 10 ** ((ra - (rh + adv)) / 400.0))
         score_h = 1.0 if hs > as_ else (0.5 if hs == as_ else 0.0)
         k = K_BY_TOURNAMENT.get(tour, DEFAULT_K)
@@ -98,6 +130,103 @@ def fit_goal_model(played):
             break
         beta = beta_new
     return beta  # [alpha, slope]
+
+
+# ── Dixon-Coles home-advantage + rho calibration (data-driven) ───────────────
+_LOGFACT = np.concatenate([[0.0], np.cumsum(np.log(np.arange(1, 40)))])  # log(k!)
+
+
+def _dc_loglik(hs, as_, lh, la, rho):
+    """Total Dixon-Coles log-likelihood of observed scorelines under (lh, la, rho).
+
+    Independent-Poisson term + the DC low-score correction tau on the 0-0/1-0/
+    0-1/1-1 cells (same tau the score matrix applies)."""
+    hk = np.clip(hs, 0, len(_LOGFACT) - 1)
+    ak = np.clip(as_, 0, len(_LOGFACT) - 1)
+    ll = (-lh + hs * np.log(lh) - _LOGFACT[hk]) + (-la + as_ * np.log(la) - _LOGFACT[ak])
+    tau = np.ones_like(lh)
+    m00 = (hs == 0) & (as_ == 0); tau[m00] = 1.0 - lh[m00] * la[m00] * rho
+    m10 = (hs == 1) & (as_ == 0); tau[m10] = 1.0 + la[m10] * rho
+    m01 = (hs == 0) & (as_ == 1); tau[m01] = 1.0 + lh[m01] * rho
+    m11 = (hs == 1) & (as_ == 1); tau[m11] = 1.0 - rho
+    tau = np.clip(tau, 1e-9, None)
+    return float(np.sum(ll + np.log(tau)))
+
+
+def _outcome_metrics(df, beta, ha, rho):
+    """Mean 3-way (H/D/A) log-loss and Brier for (ha, rho) over `df`."""
+    hs = df["home_score"].to_numpy(); as_ = df["away_score"].to_numpy()
+    eh = df["elo_h"].to_numpy(); ea = df["elo_a"].to_numpy()
+    nn = (~df["neutral"].astype(bool)).to_numpy().astype(float)
+    d = (eh + ha * nn - ea) / 400.0
+    lh = np.exp(beta[0] + beta[1] * d); la = np.exp(beta[0] - beta[1] * d)
+    ll = br = 0.0
+    n = len(df)
+    for i in range(n):
+        M = score_matrix(lh[i], la[i], rho)
+        w = np.tril(M, -1).sum(); dr = np.trace(M); l = np.triu(M, 1).sum()
+        y = (1, 0, 0) if hs[i] > as_[i] else ((0, 1, 0) if hs[i] == as_[i] else (0, 0, 1))
+        p = np.clip([w, dr, l], 1e-9, 1.0)
+        ll += -(y[0] * np.log(p[0]) + y[1] * np.log(p[1]) + y[2] * np.log(p[2]))
+        br += (w - y[0]) ** 2 + (dr - y[1]) ** 2 + (l - y[2]) ** 2
+    return ll / n, br / n
+
+
+def fit_dc_params(played, beta, train_to="2022-01-01", eval_from="2023-01-01",
+                  competitive_only=True, margin=0.001):
+    """Choose the prediction-time home advantage (Elo pts) + Dixon-Coles rho that
+    minimise *held-out 3-way outcome log-loss* — the metric the engine is judged
+    on — not the raw goal likelihood (which over-weights home advantage).
+
+    Params are searched on matches before `train_to` and scored on matches on/
+    after `eval_from` (no overlap). The default 65 / -0.10 is the incumbent; the
+    fit is only worth promoting if it beats the incumbent's held-out log-loss by
+    at least `margin`. Returns the comparison plus a `promote` flag — the caller
+    decides whether to write `dc_params.json`."""
+    base = played
+    if competitive_only:
+        base = base[base["tournament"] != "Friendly"]
+    tr = base[base["date"] < train_to]
+    ev = base[base["date"] >= eval_from]
+    if len(tr) < 500 or len(ev) < 200:
+        raise ValueError("not enough competitive matches to fit/eval dc params")
+    # subsample the (smooth) search set for speed; eval is scored in full
+    tr_s = tr.sample(n=4000, random_state=0) if len(tr) > 4000 else tr
+
+    # coarse search on the training split by outcome log-loss, then refine
+    best = (np.inf, 65.0, -0.10)
+    for ha in np.arange(40.0, 116.0, 10.0):
+        for rho in np.arange(-0.16, -0.019, 0.02):
+            ll, _ = _outcome_metrics(tr_s, beta, float(ha), float(rho))
+            if ll < best[0]:
+                best = (ll, float(ha), float(rho))
+    _, ha0, rho0 = best
+    for ha in np.arange(ha0 - 5, ha0 + 5.1, 5.0):
+        for rho in np.arange(rho0 - 0.01, rho0 + 0.011, 0.01):
+            ll, _ = _outcome_metrics(tr_s, beta, float(ha), float(np.clip(rho, -0.2, -0.01)))
+            if ll < best[0]:
+                best = (ll, float(ha), float(np.clip(rho, -0.2, -0.01)))
+    _, ha, rho = best
+
+    def_ll, def_br = _outcome_metrics(ev, beta, 65.0, -0.10)
+    fit_ll, fit_br = _outcome_metrics(ev, beta, ha, rho)
+    promote = bool(fit_ll <= def_ll - margin)
+    return {"home_adv": round(ha, 2), "rho": round(rho, 4),
+            "default_home_adv": 65.0, "default_rho": -0.10,
+            "n_train": int(len(tr)), "n_eval": int(len(ev)),
+            "train_to": train_to, "eval_from": eval_from,
+            "competitive_only": competitive_only, "margin": margin,
+            "heldout_logloss_default": round(def_ll, 5),
+            "heldout_logloss_fitted": round(fit_ll, 5),
+            "heldout_brier_default": round(def_br, 5),
+            "heldout_brier_fitted": round(fit_br, 5),
+            "promote": promote}
+
+
+def save_dc_params(params: dict, path: Path = DC_PARAMS_FILE) -> Path:
+    import json
+    path.write_text(json.dumps(params, indent=2))
+    return path
 
 
 def expected_goals(elo1, elo2, beta, home_adv=0.0):
@@ -221,6 +350,9 @@ def main():
     ap.add_argument("--worldcup", action="store_true", help="predict all unplayed WC fixtures")
     ap.add_argument("--backtest", action="store_true")
     ap.add_argument("--ratings", action="store_true", help="show top 30 Elo ratings")
+    ap.add_argument("--fit-dc", action="store_true",
+                    help="MLE-fit prediction home advantage + Dixon-Coles rho on "
+                         "results.csv and save data/dc_params.json")
     ap.add_argument("--conf-adj", action="store_true",
                     help="apply confederation strength adjustment to Elo ratings "
                          "(fraction loaded from data/conf_adj.json; calibrate with "
@@ -246,6 +378,27 @@ def main():
               ", ".join(f"{c} {v:+.0f}" for c, v in
                         sorted(conf_means.items(),
                                key=lambda kv: -(global_mean - kv[1]))))
+
+    if getattr(args, "fit_dc", False):
+        fitted = fit_dc_params(played, beta)
+        print(f"Dixon-Coles calibration (train<{fitted['train_to']} n={fitted['n_train']:,}, "
+              f"eval>={fitted['eval_from']} n={fitted['n_eval']:,}, "
+              f"competitive_only={fitted['competitive_only']}):")
+        print(f"  fitted   home_adv={fitted['home_adv']:.1f}  rho={fitted['rho']:+.4f}")
+        print(f"  default  home_adv={fitted['default_home_adv']:.0f}  rho={fitted['default_rho']:+.2f}")
+        print(f"  held-out log-loss  default {fitted['heldout_logloss_default']:.5f}  "
+              f"fitted {fitted['heldout_logloss_fitted']:.5f}")
+        print(f"  held-out Brier     default {fitted['heldout_brier_default']:.5f}  "
+              f"fitted {fitted['heldout_brier_fitted']:.5f}")
+        fitted["active"] = fitted["promote"]
+        out = save_dc_params(fitted)
+        if fitted["promote"]:
+            print(f"  PROMOTE: fitted beats default by ≥{fitted['margin']} held-out "
+                  f"log-loss -> active override written to {out}")
+        else:
+            print(f"  reject: fitted does not beat default by ≥{fitted['margin']} "
+                  f"held-out log-loss; defaults kept (artifact written, inactive)")
+        return
 
     if args.ratings:
         top = sorted(ratings.items(), key=lambda kv: -kv[1])[:30]

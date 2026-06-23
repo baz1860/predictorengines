@@ -112,7 +112,9 @@ def cmd_predict(p):
         h2h = hf(a, b, surface)
     pred = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)
     p_a = pred["p_a"]
-    mk = S.match_markets(p_a, best_of=best_of)
+    base = M.serve_base(a, b, surface, params)
+    mk = S.match_markets(p_a, best_of=best_of, base=base or S.BASE_SERVE,
+                         games_cal=float(params.get("games_cal", 1.0)))
 
     calibrated = bool(p.get("calibrated", True))
     maps = C.load_maps() if calibrated else None

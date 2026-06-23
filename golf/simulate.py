@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+import math
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -37,6 +39,30 @@ from .model import (
 DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
+SIM_CONFIG_JSON = DATA_DIR / "sim_config.json"
+# Validated scoring-shape defaults (see sim_config.json / golf README). Fall back
+# to legacy independent-Normal rounds when no config is present.
+_DEFAULT_ROUND_CORR = 0.0
+_DEFAULT_TAIL_DF: float | None = None
+
+
+def load_sim_config(path: Path | None = None) -> tuple[float, float | None]:
+    """(round_corr, tail_df) champion scoring-shape params, or legacy defaults."""
+    path = path or SIM_CONFIG_JSON
+    rc, tdf = _DEFAULT_ROUND_CORR, _DEFAULT_TAIL_DF
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text())
+            rc = float(raw.get("round_corr", rc))
+            tv = raw.get("tail_df", tdf)
+            tdf = float(tv) if tv is not None else None
+        except Exception:
+            pass
+    return rc, tdf
+
+
+_USE_CONFIG = object()   # sentinel: "fall back to load_sim_config()"
+
 
 def simulate_tournament(
     players: list[Player],
@@ -46,6 +72,8 @@ def simulate_tournament(
     rng: np.random.Generator | None = None,
     matchups: list[tuple[str, str]] | None = None,
     threeballs: list[tuple[str, str, str]] | None = None,
+    round_corr: float | None = None,
+    tail_df=_USE_CONFIG,
 ) -> dict[str, dict]:
     """
     Monte Carlo simulation.
@@ -53,6 +81,28 @@ def simulate_tournament(
     Returns dict keyed by player name:
       {win, top5, top10, top20, made_cut, missed_cut, avg_finish, n_sims}
     All probabilities are fractions (0-1).
+
+    Scoring model
+    -------------
+    Each player's round score is drawn around `-rating` with spread `sigma`.
+    Two optional, validated knobs shape the *joint* distribution of a player's
+    four rounds (a common per-round shock that hits every player equally cancels
+    out of any rank-based market, so it is deliberately NOT modelled here):
+
+      * `round_corr` ∈ [0, 1): correlation between a player's own rounds — a
+        player who runs hot/cold does so for the week. We split each round into a
+        per-player tournament effect u ~ N(0, sigma²·round_corr) (drawn once for
+        all four rounds) and a per-round term with variance sigma²·(1−round_corr).
+        The marginal per-round variance stays sigma² (so single-round / cut
+        calibration is unchanged) while the 72-hole-total variance widens to
+        4·sigma²·(1 + 3·round_corr). This disperses the leaderboard so longshots
+        win at a realistic rate instead of favourites converging to the top as
+        independent-round noise averages out. `round_corr = 0.0` reproduces the
+        legacy independent-rounds behaviour exactly.
+      * `tail_df`: if set, the per-round term is drawn from a Student-t with this
+        many degrees of freedom (variance-standardised so the marginal spread is
+        still sigma), giving the right-skew/blow-up rounds a Normal misses. None
+        ⇒ Gaussian rounds (legacy behaviour).
 
     If `matchups` / `threeballs` are given, head-to-head and 3-ball probabilities
     are computed from the SAME simulated finishes (so they are internally
@@ -62,6 +112,14 @@ def simulate_tournament(
     survivors, ordered by their 36-hole score (standard matchup settlement).
     """
     rng = rng or np.random.default_rng()
+    # Resolve scoring-shape params: None / sentinel ⇒ validated config default;
+    # explicit values (incl. round_corr=0.0, tail_df=None) force that behaviour.
+    if round_corr is None or tail_df is _USE_CONFIG:
+        cfg_rc, cfg_tdf = load_sim_config()
+        if round_corr is None:
+            round_corr = cfg_rc
+        if tail_df is _USE_CONFIG:
+            tail_df = cfg_tdf
     n = len(players)
 
     # Does the 36-hole cut actually bind? If the field is no larger than the cut
@@ -98,13 +156,31 @@ def simulate_tournament(
     fin_sum   = np.zeros(n, dtype=np.float64)
     fin_count = np.zeros(n, dtype=np.int64)
 
-    # Draw all rounds in bulk for speed
-    # Shape: (n_sims, n_players, 4_rounds)
-    scores_all = rng.normal(
-        loc=means[np.newaxis, :, np.newaxis],
-        scale=sigmas[np.newaxis, :, np.newaxis],
-        size=(n_sims, n, 4),
-    )
+    # Draw all rounds in bulk for speed.  Shape: (n_sims, n_players, 4_rounds).
+    # rc = round_corr clamped to a safe open interval; df = optional t tails.
+    rc = float(min(max(round_corr, 0.0), 0.95))
+    if rc <= 0.0 and tail_df is None:
+        # Legacy path: independent Gaussian rounds (bit-for-bit unchanged).
+        scores_all = rng.normal(
+            loc=means[np.newaxis, :, np.newaxis],
+            scale=sigmas[np.newaxis, :, np.newaxis],
+            size=(n_sims, n, 4),
+        )
+    else:
+        persist_sd = sigmas * math.sqrt(rc)          # per-player week effect
+        trans_sd = sigmas * math.sqrt(1.0 - rc)      # per-round component
+        # per-player tournament effect u, shared across that player's 4 rounds
+        u = rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
+        if tail_df is not None and float(tail_df) > 2.0:
+            df = float(tail_df)
+            # variance-standardise the t so the marginal per-round spread stays
+            # sigma (Var(t_df) = df/(df-2)); preserves single-round calibration.
+            z = rng.standard_t(df, size=(n_sims, n, 4)) * math.sqrt((df - 2.0) / df)
+        else:
+            z = rng.standard_normal((n_sims, n, 4))
+        scores_all = (means[np.newaxis, :, np.newaxis]
+                      + u[:, :, np.newaxis]
+                      + z * trans_sd[np.newaxis, :, np.newaxis])
 
     # R1+R2 totals
     r36 = scores_all[:, :, 0] + scores_all[:, :, 1]  # (n_sims, n)

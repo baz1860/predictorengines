@@ -11,6 +11,8 @@ Two models, blended 50/50 by default (the blend beats either alone out-of-sample
 
 Win probabilities for spreads/totals come from a normal margin distribution with fitted sigma (~16 pts for margin, similar for totals).
 
+**Totals shrinkage.** Out of sample the additive points model over-disperses the *total* — extreme projected totals regress toward the league mean more than the in-window fit implies. `power.predict` shrinks the total toward the window mean by `TOTAL_SHRINK` (0.80), leaving margin and win probability untouched (`pts1`/`pts2` are recomputed to keep the same margin). Validated by leave-one-season-out over 2019–2025 (≈5,100 FBS games): training folds consistently select k≈0.80 and pooled held-out total MAE improves 13.103 → 13.086; the per-engine gate shows total MAE 13.05 → 12.86 with moneyline Brier and margin MAE unchanged. (Blending the EPA total into the power total was tested over the same window and *rejected* — held-out total MAE preferred 100% power.) Set `total_shrink = 1.0` in the params to disable.
+
 ```bash
 python3 power.py --fit                    # refit, save data/power_params.json
 python3 power.py "Ohio State" "Michigan"  # power-only prediction

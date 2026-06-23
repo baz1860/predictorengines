@@ -105,6 +105,20 @@ def walk_forward(df: pd.DataFrame, tour: str, since: str, retrain_days: int = 28
     params = None
     last_fit = None
     n_refits = 0
+    # The scored markets depend only on (match prob, best_of), so memoise the
+    # Markov board across matches that share a matchup probability (a big speed-up
+    # over thousands of matches with a small player pool). Reset on each refit.
+    _mk_cache: dict[tuple[float, int], dict] = {}
+
+    def _markets(p_a: float, best_of: int) -> dict:
+        # 0.01 granularity on the match prob: set-handicap / first-set are smooth
+        # in p_a, so this is exact to the metric while collapsing thousands of
+        # ~20 ms Markov boards to ~100 distinct evaluations.
+        key = (round(p_a, 2), best_of)
+        mk = _mk_cache.get(key)
+        if mk is None:
+            mk = _mk_cache[key] = S.match_markets(key[0], best_of=best_of)
+        return mk
 
     for r in sub.itertuples():
         date = pd.Timestamp(r.date)
@@ -112,8 +126,10 @@ def walk_forward(df: pd.DataFrame, tour: str, since: str, retrain_days: int = 28
             continue
         if params is None or last_fit is None or (date - last_fit).days >= retrain_days:
             try:
-                params = M.fit(df, tour=tour, asof=date, config=config)
+                params = M.fit(df, tour=tour, asof=date, config=config,
+                               with_games_cal=False)
                 last_fit = date
+                _mk_cache.clear()
                 n_refits += 1
                 if verbose:
                     print(f"  refit {tour} asof {date.date()}  "
@@ -125,7 +141,11 @@ def walk_forward(df: pd.DataFrame, tour: str, since: str, retrain_days: int = 28
         best_of = int(r.best_of) if not pd.isna(r.best_of) else 3
         a, b = sorted([winner, loser], key=M.fold_name)
         p_a = M.predict_match(a, b, surface, params)["p_a"]
-        mk = S.match_markets(p_a, best_of=best_of)
+        # The scored markets here (match-winner / set-handicap / first-set) are
+        # independent of the serve base and games calibration, so the fixed base
+        # is used (and memoised) to keep the walk-forward fast; serve_base/
+        # games_cal are applied in the engine path where the games market lives.
+        mk = _markets(p_a, best_of)
         a_won = int(a == winner)
         loser_sets = int(r.loser_sets) if not pd.isna(r.loser_sets) else -1
 
@@ -275,7 +295,8 @@ def walk_forward_outright(df: pd.DataFrame, tour: str, since: str, sims: int = 1
         if root is None:
             continue
         try:
-            params = M.fit(df, tour=tour, asof=start, config=config)
+            params = M.fit(df, tour=tour, asof=start, config=config,
+                           with_games_cal=False)
         except ValueError:
             continue
         surface = str(ev["surface"].mode().iloc[0]).lower()
