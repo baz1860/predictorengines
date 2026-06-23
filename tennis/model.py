@@ -47,6 +47,148 @@ DEFAULT_CONFIG = {
 MIN_FIT_MATCHES = 20                # hard floor below which a fit is meaningless
 DEFAULT_RANK = 9999
 
+# Empirical-Bayes prior strength (in service points) for per-player serve/return
+# rates, and the minimum points before a player's own rate is trusted at all.
+SERVE_SHRINK_POINTS = 600.0
+SERVE_MIN_POINTS = 250.0
+DEFAULT_SERVE_AVG = 0.635            # tour-average serve-points-won fallback
+GAMES_CAL_SAMPLE = 600              # training matches sampled for the games-level cal
+
+
+def _score_total_games(score: str):
+    """Total games in a completed match from its score string, or None if the
+    match was retired/walkover/empty (excluded from the games-level calibration)."""
+    if score is None:
+        return None
+    s = str(score).strip()
+    if not s or s.lower() == "nan":
+        return None
+    g = 0
+    for tok in s.split():
+        t = tok.upper()
+        if t in ("RET", "RET.", "DEF", "W/O", "WO", "ABN", "ABD", "UNK"):
+            return None
+        core = tok.split("(", 1)[0]
+        if "-" not in core:
+            continue
+        a, _, b = core.partition("-")
+        try:
+            g += int(a) + int(b)
+        except ValueError:
+            return None
+    return g if g > 0 else None
+
+
+def _fit_games_cal(df, params, tour) -> float:
+    """Walk-forward-safe multiplicative correction for expected total games.
+
+    The Markov games model over-predicts the total by a stable ~8% (server-hold
+    and set-count idealisations); without this the over/under market is unusable.
+    We sample completed training matches, compute the model's expected total games
+    (with the matchup serve base when available, else the fixed baseline), and
+    return Σactual / Σpredicted, clipped to a sane band. 1.0 ⇒ no correction."""
+    import numpy as np
+    from . import simulate as S
+
+    d = df.copy()
+    d = d[d["score"].astype(str).str.strip() != ""]
+    if len(d) == 0:
+        return 1.0
+    if len(d) > GAMES_CAL_SAMPLE:
+        d = d.sample(n=GAMES_CAL_SAMPLE, random_state=0)
+    # Expected total games varies smoothly in (match prob, serve base, best_of),
+    # so memoise on rounded buckets — hundreds of matches collapse to a few cells.
+    cache: dict[tuple, float] = {}
+
+    def exp_games(p_a, base, best_of):
+        key = (round(p_a, 2), round(base, 2), best_of)
+        if key not in cache:
+            cache[key] = S.match_markets(key[0], best_of=best_of, base=key[1])["exp_total_games"]
+        return cache[key]
+
+    num = den = 0.0
+    for r in d.itertuples(index=False):
+        tg = _score_total_games(getattr(r, "score", ""))
+        if tg is None:
+            continue
+        a, b = sorted([str(r.winner), str(r.loser)], key=fold_name)
+        surface = str(r.surface).lower()
+        best_of = int(r.best_of) if str(getattr(r, "best_of", "")).strip() not in ("", "nan") else 3
+        base = serve_base(a, b, surface, params)
+        p_a = predict_match(a, b, surface, params)["p_a"]
+        pred = exp_games(p_a, base if base is not None else S.BASE_SERVE, best_of)
+        if pred > 0:
+            num += tg
+            den += pred
+    if den <= 0:
+        return 1.0
+    return float(np.clip(num / den, 0.80, 1.20))
+
+
+def _fit_serve(df, asof_ts, halflife_days: float) -> dict:
+    """Per-player decay-weighted, EB-shrunk serve-points-won and return-points-won
+    rates from the `*_sv_pts/_sv_won` columns. Returns {} when the slice carries
+    no point stats (e.g. a WTA MatchCharting-only feed).
+
+    serve-points-won: fraction of a player's own service points won.
+    return-points-won: fraction of the opponent's service points the player won
+    when returning (= 1 − opponent's serve-points-won that match).
+    """
+    import numpy as np
+    import pandas as pd
+
+    need = ("w_sv_pts", "w_sv_won", "l_sv_pts", "l_sv_won")
+    if not all(c in df.columns for c in need):
+        return {}
+    d = df.copy()
+    for c in need:
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    d = d.dropna(subset=need)
+    d = d[(d["w_sv_pts"] > 0) & (d["l_sv_pts"] > 0)]
+    if len(d) < 50:
+        return {}
+
+    age = (asof_ts - d["date"]).dt.days.to_numpy().astype(float)
+    wt = 0.5 ** (age / float(halflife_days))
+
+    # tour averages (decay-weighted), overall + per surface
+    tot_sv = float(np.sum((d["w_sv_pts"] + d["l_sv_pts"]) * wt))
+    tot_won = float(np.sum((d["w_sv_won"] + d["l_sv_won"]) * wt))
+    avg_spw = tot_won / tot_sv if tot_sv > 0 else DEFAULT_SERVE_AVG
+    by_surface = {}
+    for surf, g in d.assign(_w=wt).groupby("surface"):
+        sv = float(np.sum((g["w_sv_pts"] + g["l_sv_pts"]) * g["_w"]))
+        wn = float(np.sum((g["w_sv_won"] + g["l_sv_won"]) * g["_w"]))
+        if sv > 0:
+            by_surface[str(surf).lower()] = round(wn / sv, 4)
+
+    # per-player accumulators: serve pts/won, return pts/won (return = opp serve)
+    acc: dict[str, list[float]] = {}   # [sv_pts, sv_won, ret_pts, ret_won]
+
+    def add(name, sv_pts, sv_won, ret_pts, ret_won, w):
+        a = acc.setdefault(name, [0.0, 0.0, 0.0, 0.0])
+        a[0] += sv_pts * w; a[1] += sv_won * w
+        a[2] += ret_pts * w; a[3] += ret_won * w
+
+    for r, w in zip(d.itertuples(index=False), wt):
+        # winner serves w_sv_pts; returns against l_sv_pts (wins l_sv_pts - l_sv_won)
+        add(r.winner, r.w_sv_pts, r.w_sv_won, r.l_sv_pts, r.l_sv_pts - r.l_sv_won, w)
+        add(r.loser, r.l_sv_pts, r.l_sv_won, r.w_sv_pts, r.w_sv_pts - r.w_sv_won, w)
+
+    avg_rpw = 1.0 - avg_spw
+    K = SERVE_SHRINK_POINTS
+    serve = {}
+    for name, (svp, svw, rtp, rtw) in acc.items():
+        if svp <= 0 or rtp <= 0:
+            continue
+        spw = (svw + K * avg_spw) / (svp + K)        # EB-shrunk to tour mean
+        rpw = (rtw + K * avg_rpw) / (rtp + K)
+        serve[name] = {"spw": round(float(spw), 4), "rpw": round(float(rpw), 4),
+                       "sv_pts": int(round(svp))}
+    return {"players": serve,
+            "avg_spw": round(float(avg_spw), 4),
+            "by_surface": by_surface}
+
 
 def _params_path(tour: str) -> Path:
     return DATA_DIR / f"{tour.lower()}_model_params.json"
@@ -113,9 +255,14 @@ def load_matches_df(path: Path | None = None):
 # ─────────────────────────────────────────────
 
 def fit(matches_df, tour: str | None = None, asof=None,
-        config: dict | None = None) -> dict:
+        config: dict | None = None, with_games_cal: bool = True) -> dict:
     """Fit skill + surface offsets + form on matches before `asof` (walk-forward
-    safe). Returns a params dict (see `save_params` for the JSON shape)."""
+    safe). Returns a params dict (see `save_params` for the JSON shape).
+
+    `with_games_cal` runs the (relatively expensive) total-games level calibration.
+    Walk-forward validation refits — which only score the match-winner / set
+    markets, all independent of the games calibration — pass False to stay fast;
+    it defaults True for the production fit so the over/under stays calibrated."""
     import numpy as np
     import pandas as pd
     from scipy.sparse import csr_matrix
@@ -232,7 +379,9 @@ def fit(matches_df, tour: str | None = None, asof=None,
     default_skill = float(np.quantile(skills, 0.20)) if P else 0.0
     counts = (np.bincount(widx, minlength=P) + np.bincount(lidx, minlength=P))
 
-    return {
+    serve = _fit_serve(df, asof_ts, float(cfg["skill_halflife_days"]))
+
+    out = {
         "tour": (tour or "all").lower(),
         "asof": str(pd.Timestamp(asof_ts).date()),
         "n_matches": int(m),
@@ -244,9 +393,13 @@ def fit(matches_df, tour: str | None = None, asof=None,
         "skills": {p: round(float(skills[i]), 4) for p, i in pi.items()},
         "surface_offsets": surface_offsets,
         "form": form,
+        "serve": serve,
         "n_played": {p: int(counts[i]) for p, i in pi.items()},
         "meta": {"converged": bool(res.success), "iterations": int(res.nit)},
     }
+    # games-level calibration uses the assembled params (needs serve/skills set)
+    out["games_cal"] = round(_fit_games_cal(df, out, tour), 4) if with_games_cal else 1.0
+    return out
 
 
 def _fit_form(df, skills, surface_offsets, pi, asof_ts, cfg) -> dict[str, float]:
@@ -312,6 +465,36 @@ def _player_logit(name: str, surface: str, params: dict) -> float:
     fw = params.get("form_weight", 0.0)
     form = params.get("form", {}).get(canon, 0.0)
     return skill + off + fw * form
+
+
+def serve_base(player_a: str, player_b: str, surface: str, params: dict) -> float | None:
+    """Matchup-specific average serve-point-win level for the two players on
+    `surface`, from the fitted serve/return rates. Drives the *total-games* regime
+    (two big servers hold more → more games) while the headline match prob stays
+    pinned to the Bradley-Terry estimate. Returns None when serve stats are
+    unavailable for either player (caller falls back to the symmetric baseline).
+
+    Each player's serve points won vs this specific opponent is the standard
+    opponent-adjusted combination
+        p(i serving) = spw_i − (rpw_j − avg_rpw)
+    and the base is the average of the two servers' values.
+    """
+    sv = params.get("serve") or {}
+    players = sv.get("players") or {}
+    ca = resolve_name(player_a, params) or player_a
+    cb = resolve_name(player_b, params) or player_b
+    ra, rb = players.get(ca), players.get(cb)
+    if not ra or not rb:
+        return None
+    if ra.get("sv_pts", 0) < SERVE_MIN_POINTS or rb.get("sv_pts", 0) < SERVE_MIN_POINTS:
+        return None
+    avg_spw = float((sv.get("by_surface") or {}).get(
+        (surface or "hard").lower(), sv.get("avg_spw", DEFAULT_SERVE_AVG)))
+    avg_rpw = 1.0 - avg_spw
+    ps_a = ra["spw"] - (rb["rpw"] - avg_rpw)     # A serving vs B returning
+    ps_b = rb["spw"] - (ra["rpw"] - avg_rpw)     # B serving vs A returning
+    base = 0.5 * (ps_a + ps_b)
+    return float(min(max(base, 0.55), 0.74))
 
 
 def predict_match(player_a: str, player_b: str, surface: str, params: dict,

@@ -28,6 +28,17 @@ Models:
 - `goals` - attack/defence Poisson.
 - `elo` - club Elo translated to expected goals.
 
+### Per-competition home advantage + rho (fitted, default OFF)
+
+`fit()` also estimates a per-competition home-advantage multiplier and Dixon-Coles
+rho (Empirical-Bayes shrunk toward the global value) and stores them under
+`comp_adj`. Applying them is gated by `comp_adj_active` (default `False`): a
+walk-forward over ≈16.5k predictions found per-competition HFA + rho neutral-to-
+slightly-worse on held-out Brier (0.61207 global vs 0.61216–0.61234), so the
+validated global constants (`HOME_ADV_ELO`, `DC_RHO`) remain the default. The
+fitted table is kept for inspection and auto-activates if a future gate sets the
+flag. With the flag off, predictions are identical to the previous global model.
+
 ## Edge
 
 ```bash

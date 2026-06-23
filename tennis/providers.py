@@ -45,11 +45,16 @@ DATA_DIR = Path(__file__).parent / "data"
 CACHE_DIR = DATA_DIR / "api_cache"
 MATCHES_CSV = DATA_DIR / "matches.csv"
 
-# Canonical store columns (one row per completed match).
+# Canonical store columns (one row per completed match). The trailing serve
+# aggregates are per side: total service points and service points won
+# (1st-serve-won + 2nd-serve-won). Blank when the source carries no point stats
+# (e.g. the WTA MatchCharting metadata feed) — model.fit treats blanks as missing
+# and falls back to the symmetric serve baseline for those rows.
 MATCH_COLUMNS = [
     "date", "tourney_id", "tourney_name", "tour", "surface", "round",
     "best_of", "winner", "loser", "winner_rank", "loser_rank",
     "winner_sets", "loser_sets", "score",
+    "w_sv_pts", "w_sv_won", "l_sv_pts", "l_sv_won",
 ]
 
 VALID_SURFACES = ("hard", "clay", "grass", "carpet")
@@ -75,6 +80,11 @@ class MatchRecord:
     winner_sets: int
     loser_sets: int
     score: str
+    # Serve aggregates ("" when the source has no point-by-point stats).
+    w_sv_pts: object = ""    # winner service points
+    w_sv_won: object = ""    # winner service points won (1stWon + 2ndWon)
+    l_sv_pts: object = ""    # loser service points
+    l_sv_won: object = ""    # loser service points won
 
 
 @runtime_checkable
@@ -133,6 +143,25 @@ def _int_rank(raw: Optional[str], default: int = 9999) -> int:
         return int(float(s))
     except ValueError:
         return default
+
+
+def _serve_aggs(row: dict, side: str) -> tuple[object, object]:
+    """(service points, service points won) for `side` ('w'|'l') from a Sackmann/
+    TML row, or ("", "") when any component is missing. Won = 1stWon + 2ndWon."""
+    def num(key: str):
+        v = str(row.get(key) or "").strip()
+        if v == "":
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    svpt = num(f"{side}_svpt")
+    first = num(f"{side}_1stWon")
+    second = num(f"{side}_2ndWon")
+    if svpt is None or first is None or second is None or svpt <= 0:
+        return ("", "")
+    return (int(svpt), int(first + second))
 
 
 def parse_set_score(score: Optional[str]) -> tuple[int, int]:
@@ -253,6 +282,8 @@ class SackmannProvider:
                 winner_sets=ws,
                 loser_sets=ls,
                 score=score,
+                **dict(zip(("w_sv_pts", "w_sv_won"), _serve_aggs(row, "w"))),
+                **dict(zip(("l_sv_pts", "l_sv_won"), _serve_aggs(row, "l"))),
             ))
         return out
 
@@ -334,6 +365,8 @@ class TMLProvider:
                 winner_sets=ws,
                 loser_sets=ls,
                 score=score,
+                **dict(zip(("w_sv_pts", "w_sv_won"), _serve_aggs(row, "w"))),
+                **dict(zip(("l_sv_pts", "l_sv_won"), _serve_aggs(row, "l"))),
             ))
         return out
 
