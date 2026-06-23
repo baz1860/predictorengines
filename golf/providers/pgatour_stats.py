@@ -232,9 +232,23 @@ class _TextParser(HTMLParser):
                 self.tokens.append(clean)
 
 
+# Keys that mark a live-leaderboard / scoreboard entry rather than a stat row.
+# These objects carry a player name + numbers too, so without this guard they
+# get captured as stat values (e.g. "thru"/position leaking into sg_total).
+_SCOREBOARD_KEYS = {
+    "position", "roundscore", "totalscore", "thru", "teetime", "starthole",
+    "leaderboardsortorder", "groupnumber", "scoresort", "currentround",
+}
+
+
+def _is_scoreboard_entry(item: dict) -> bool:
+    return any(str(k).lower() in _SCOREBOARD_KEYS for k in item)
+
+
 def _walk_json(value: Any, out: list[dict]) -> None:
     if isinstance(value, dict):
-        if _extract_name(value) and (_extract_values(value) or _extract_rank(value) is not None):
+        if (_extract_name(value) and not _is_scoreboard_entry(value)
+                and (_extract_values(value) or _extract_rank(value) is not None)):
             out.append(value)
         for child in value.values():
             _walk_json(child, out)
