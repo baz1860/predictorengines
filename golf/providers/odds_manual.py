@@ -40,8 +40,13 @@ class OddsQuote:
         return asdict(self)
 
 
-HEADER_RE = re.compile(r"^3\s*Ball.*-\s*(.+)$", re.I)
+HEADER_RE = re.compile(r"^[23]\s*Ball.*-\s*(.+)$", re.I)
 NUM_RE = re.compile(r"^\d+(\.\d+)?$")
+
+
+def _group_market(n_players: int) -> str:
+    """Round-group market tag by field size: twosomes vs threesomes."""
+    return "2ball" if n_players == 2 else "3ball"
 
 
 class ManualOddsProvider:
@@ -125,15 +130,24 @@ class ManualOddsProvider:
         out = []
         with path.open() as f:
             for i, row in enumerate(csv.DictReader(f), 1):
-                names = [(row.get(f"player_{x}") or "").strip() for x in "abc"]
-                odds = [_safe_float(row.get(f"odds_{x}")) for x in "abc"]
-                if not all(names) or not all(o and o > 1 for o in odds):
+                # Keep only filled, validly-priced slots so a twosome (empty
+                # player_c/odds_c) loads as a 2-ball rather than being dropped.
+                pairs = [
+                    (nm, od)
+                    for x in "abc"
+                    for nm in [(row.get(f"player_{x}") or "").strip()]
+                    for od in [_safe_float(row.get(f"odds_{x}"))]
+                    if nm and od and od > 1
+                ]
+                if len(pairs) not in (2, 3):
                     continue
-                gid = row.get("group_id") or f"3ball-r{round_no}-{i}:" + "|".join(names)
+                names = [nm for nm, _ in pairs]
+                odds = [od for _, od in pairs]
+                gid = row.get("group_id") or f"{_group_market(len(names))}-r{round_no}-{i}:" + "|".join(names)
                 for name, price in zip(names, odds):
                     out.append(OddsQuote(
                         event_id=event_id,
-                        market="3ball",
+                        market=_group_market(len(names)),
                         player_name=name,
                         decimal_odds=float(price),
                         round_no=round_no,
@@ -148,11 +162,12 @@ class ManualOddsProvider:
         groups = parse_skybet_threeball_text(text)
         out = []
         for group in groups:
-            gid = f"3ball-r{round_no}:{group['group']}"
+            market = _group_market(len(group["players"]))
+            gid = f"{market}-r{round_no}:{group['group']}"
             for name, odds in group["players"]:
                 out.append(OddsQuote(
                     event_id=event_id,
-                    market="3ball",
+                    market=market,
                     player_name=name,
                     decimal_odds=odds,
                     round_no=round_no,
@@ -202,7 +217,7 @@ def parse_skybet_threeball_text(text: str) -> list[dict]:
             pending.append(ln)
     if cur is not None:
         groups.append(cur)
-    return [g for g in groups if len(g["players"]) == 3]
+    return [g for g in groups if len(g["players"]) in (2, 3)]
 
 
 def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None) -> Path:
@@ -210,7 +225,7 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None) 
     path.parent.mkdir(parents=True, exist_ok=True)
     by_group: dict[str, list[OddsQuote]] = {}
     for q in quotes:
-        if q.market == "3ball":
+        if q.market in ("2ball", "3ball"):
             by_group.setdefault(q.group_id, []).append(q)
     with path.open("w", newline="") as f:
         cols = [
@@ -220,18 +235,14 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None) 
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         for gid, qs in by_group.items():
-            if len(qs) != 3:
+            if len(qs) not in (2, 3):
                 continue
-            w.writerow({
-                "group_id": gid,
-                "player_a": qs[0].player_name,
-                "player_b": qs[1].player_name,
-                "player_c": qs[2].player_name,
-                "odds_a": qs[0].decimal_odds,
-                "odds_b": qs[1].decimal_odds,
-                "odds_c": qs[2].decimal_odds,
-                "settlement_rule": qs[0].settlement_rule or "dead_heat",
-            })
+            row = {"group_id": gid,
+                   "settlement_rule": qs[0].settlement_rule or "dead_heat"}
+            for slot, q in zip("abc", qs):  # player_c/odds_c stay blank for 2-balls
+                row[f"player_{slot}"] = q.player_name
+                row[f"odds_{slot}"] = q.decimal_odds
+            w.writerow(row)
     return path
 
 
