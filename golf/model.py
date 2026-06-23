@@ -620,7 +620,8 @@ def _fold_name(name: str) -> str:
 
 
 # Nickname / first-name aliases that fold-matching cannot resolve. Maps an
-# alternate name (any source) to the canonical fitted name. Folded on both sides.
+# alternate name (any source) to the canonical fitted name. Matched folded on
+# both sides (see _FOLDED_ALIASES), so case/accents of the source don't matter.
 NAME_ALIASES = {
     "Matthew Fitzpatrick": "Matt Fitzpatrick",
     "Christopher Gotterup": "Chris Gotterup",
@@ -631,7 +632,12 @@ NAME_ALIASES = {
     "John Keefer": "Johnny Keefer",
     "Benjamin James": "Ben James",
     "Nicolas Echavarria": "Nico Echavarria",
+    "Samuel Stevens": "Sam Stevens",
 }
+
+# Folded alias keys so lookups are case/accent-insensitive (e.g. a board's
+# "SAMUEL STEVENS" still hits the "Samuel Stevens" entry).
+_FOLDED_ALIASES = {_fold_name(k): v for k, v in NAME_ALIASES.items()}
 
 
 def _folded_index(params: dict) -> dict[str, str]:
@@ -654,7 +660,7 @@ def resolve_name(name: str, params: dict) -> str | None:
     hit = idx.get(_fold_name(name))
     if hit:
         return hit
-    alias = NAME_ALIASES.get(name)
+    alias = _FOLDED_ALIASES.get(_fold_name(name))
     if alias:
         return idx.get(_fold_name(alias), alias if alias in players else None)
     return None
