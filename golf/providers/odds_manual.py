@@ -42,6 +42,23 @@ class OddsQuote:
 
 HEADER_RE = re.compile(r"^[23]\s*Ball.*-\s*(.+)$", re.I)
 NUM_RE = re.compile(r"^\d+(\.\d+)?$")
+FRAC_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)$")
+
+
+def _parse_odds(token: str) -> float | None:
+    """Decimal odds from a pasted token. Accepts decimal (2.50), UK fractional
+    (6/5, 13/8, 4/6) and evens. Returns None if the token isn't a price."""
+    t = token.strip()
+    if t.lower() in {"evens", "evs", "even"}:
+        return 2.0
+    if NUM_RE.match(t):
+        return float(t)
+    m = FRAC_RE.match(t)
+    if m:
+        num, den = float(m.group(1)), float(m.group(2))
+        if den > 0:
+            return 1.0 + num / den
+    return None
 
 
 def _group_market(n_players: int) -> str:
@@ -189,7 +206,7 @@ class ManualOddsProvider:
 def parse_skybet_threeball_text(text: str) -> list[dict]:
     """Parse pasted Sky Bet-style 3-ball boards.
 
-    Expected shape:
+    Expected shape (odds may be decimal 2.50, fractional 6/5, or evens):
       3 Ball Round 1 - Player A / Player B / Player C
       Player A
       2.50
@@ -210,9 +227,10 @@ def parse_skybet_threeball_text(text: str) -> list[dict]:
             continue
         if cur is None:
             continue
-        if NUM_RE.match(ln):
+        odds = _parse_odds(ln)
+        if odds is not None:
             if pending:
-                cur["players"].append((pending.pop(0), float(ln)))
+                cur["players"].append((pending.pop(0), odds))
         else:
             pending.append(ln)
     if cur is not None:
