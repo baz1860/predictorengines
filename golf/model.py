@@ -360,6 +360,29 @@ def save_model_config(config: dict, metrics: dict | None = None,
     return path
 
 
+# Plausible band for SG: Total per round; values beyond this are mis-scraped.
+MAX_SANE_SG_TOTAL = 4.0
+
+# Scoreboard markers — keep in sync with pgatour_stats._SCOREBOARD_KEYS.
+_SCOREBOARD_KEYS = {
+    "position", "roundscore", "totalscore", "thru", "teetime", "starthole",
+    "leaderboardsortorder", "groupnumber", "scoresort", "currentround",
+}
+
+
+def _looks_like_scoreboard(raw_json: str | None) -> bool:
+    """True if a stored stat row is actually a leaked live-leaderboard entry."""
+    if not raw_json:
+        return False
+    try:
+        blob = json.loads(raw_json)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(blob, dict):
+        return False
+    return any(str(k).lower() in _SCOREBOARD_KEYS for k in blob)
+
+
 def load_public_stat_priors(path: Path | None = None) -> dict[str, dict]:
     """Load current public PGA Tour stat snapshots into player rating priors.
 
@@ -381,6 +404,11 @@ def load_public_stat_priors(path: Path | None = None) -> dict[str, dict]:
                 continue
             if not name:
                 continue
+            # Skip live-leaderboard rows that leaked in tagged as a stat: their
+            # raw_json carries scoreboard keys and `value` is a position/score,
+            # not strokes gained (see pgatour_stats._is_scoreboard_entry).
+            if _looks_like_scoreboard(r.get("raw_json")):
+                continue
             rows.setdefault(name, {})[stat] = value
 
     priors = {}
@@ -394,6 +422,10 @@ def load_public_stat_priors(path: Path | None = None) -> dict[str, dict]:
             if parts:
                 sg_total = sum(parts)
         if sg_total is None:
+            continue
+        # Per-round SG: Total sits in roughly [-4, +4]. Anything outside that is
+        # a mis-scraped value (rank / scoreboard number) — drop, don't blend it.
+        if not -MAX_SANE_SG_TOTAL <= sg_total <= MAX_SANE_SG_TOTAL:
             continue
         priors[name] = {
             "sg_total": round(float(sg_total), 4),
