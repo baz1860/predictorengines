@@ -1,53 +1,94 @@
 # Tennis Prediction Engine (ATP + WTA)
 
-Surface-split Bradley-Terry match-outcome model fitted on Jeff Sackmann's free
-match archives, with an exact Markov-chain match simulator for set/game
-sub-markets and a bracket Monte-Carlo for outright markets. Follows the golf
-engine's `fetch → fit → predict → simulate → edge` backbone and registers into
-the shared app contract under id `tennis`.
+A tennis betting engine. It does the same four things the World Cup engine does,
+on a week-by-week, draw-by-draw basis:
 
-See [`plans/tennis_engine_plan.md`](../plans/tennis_engine_plan.md) for the full design.
+1. **pulls the week's tournament list** (ESPN ATP/WTA scoreboards),
+2. **gets the draw** for a tournament,
+3. **prices every match with a fitted model** (surface-split Bradley–Terry, with
+   an exact Markov-chain set/games simulator and a bracket Monte-Carlo), and
+4. **prints the best bets — round by round** (R128 → … → final).
 
-## Quick start
+## Use it
+
+See what's on this week, then price one tournament's draw:
 
 ```bash
-# 1. Seed match history (ATP + WTA, no API key needed)
-python3 -m tennis.fetch --seed 2019 2020 2021 2022 2023 2024 2025
+python3 -m tennis.season --schedule                 # live ATP tournaments + draws
+python3 -m tennis.season --schedule --tour wta
 
-# 2. Fit the models (separate ATP / WTA fits)
-python3 -m tennis.model --fit --tour atp
-python3 -m tennis.model --fit --tour wta
-
-# 3. Per-tournament: load the draw and book prices, then price
-python3 -m tennis.fetch --draw-template    # fill in tennis/data/draw.csv
-python3 -m tennis.fetch --odds-template    # fill in tennis/data/odds.csv
-
-# Daily refresh (accumulate new results → refit both tours)
-bash tennis/update.sh
+python3 -m tennis.season                            # price the current ATP draw
+python3 -m tennis.season --tour wta --event Berlin  # pick a tournament by name
 ```
 
-Prediction, simulation, and edge are also driven from the app (Predict /
-Simulate / Edge tabs) once the models are fitted.
+That pulls the draw from ESPN, saves it to `data/draw.csv`, and writes
+[`data/card.md`](data/card.md) — the only file you normally read. For every match
+in every round it shows the model's pick and win probability; where you've added
+book prices it also shows the de-vigged market, the edge, and a staked bet
+(**bold** = backed).
 
-## Layout
+```bash
+python3 -m tennis.season --no-fetch                 # reprice the saved draw offline
+python3 -m tennis.season --min-edge 2               # only count ≥2% edges as bets
+```
+
+### Adding prices
+
+Match probabilities come for free; **bets need book odds**, which are yours to
+provide. Write a skeleton and fill it in:
+
+```bash
+python3 -m tennis.fetch --odds-template             # → data/odds.csv
+```
+
+`odds.csv` columns: `tour, surface, best_of, player_a, player_b, odds_a, odds_b`.
+Any match in the draw whose names match a row gets priced, blended toward the
+market, and staked with fractional Kelly. Rerun `python3 -m tennis.season` and
+the backed bets appear in the card.
+
+### First-time setup
+
+Once, to build the match history the model learns from (no API key — Jeff
+Sackmann's free archives):
+
+```bash
+python3 -m tennis.fetch --seed 2019 2020 2021 2022 2023 2024 2025
+python3 -m tennis.model --fit --tour atp
+python3 -m tennis.model --fit --tour wta
+```
+
+Day to day, `bash tennis/update.sh` accumulates new results and refits both
+tours; then `python3 -m tennis.season` is all you run.
+
+## In the app
+
+The **Predict / Simulate / Edge** tabs drive the same engine (head-to-head with
+set/games sub-markets, full-draw outright Monte-Carlo, and staked match-winner
+edges). `tennis.season` is the command-line equivalent that hands you a whole
+draw, round by round, in one page.
+
+---
+
+## Under the hood
+
+`tennis.season` is a thin orchestrator over the modelling, which is where the
+quality lives:
 
 | File | Role |
 |---|---|
-| `providers.py` | `SackmannProvider` → normalised `matches.csv`; store I/O |
-| `fetch.py` | `--seed` / `--accumulate`; `--draw-template` / `--odds-template` |
-| `model.py` | surface-split Bradley-Terry fit (ridge logistic, time-decay) + `predict_match` |
+| `season.py` | **the front door**: schedule → draw → model → round-by-round card |
+| `providers.py` | Sackmann/TML/MatchCharting history → `matches.csv`; ESPN draw scraper |
+| `fetch.py` | `--seed` / `--accumulate` history; `--odds-template` |
+| `model.py` | surface-split Bradley–Terry fit (ridge logistic, time-decay) + `predict_match` |
 | `simulate.py` | Markov chain (game/set/match, tiebreak) + draw / bracket Monte-Carlo |
 | `market.py` | two-way & power de-vig, log-odds market blend, CLV tracking |
-| `validate.py` | walk-forward backtest (match + outright markets) + regression gate |
 | `calibrate.py` | per-market isotonic calibration maps (outright nesting guard) |
 | `portfolio.py` | simultaneous-Kelly staking (per-player + total caps, drawdown brake) |
-| `engine.py` | command API: `schema` / `predict` / `simulate` / `edge` |
-| `data/` | `matches.csv` (source of truth), `*_model_params.json`, `draw.csv`, `odds.csv`, `calibration.json`, `market_blend.json`, `odds_history.csv`, `validation_baseline.json` |
+| `validate.py` | walk-forward backtest (match + outright markets) + regression gate |
+| `engine.py` | in-process command API the app tabs call |
+| `data/` | `matches.csv` (source of truth), `*_model_params.json`, `draw.csv`, `odds.csv`, `card.md`, `calibration.json`, … |
 
-The adapter lives in [`app/engines/tennis.py`](../app/engines/tennis.py);
-contract + behaviour tests in [`test_tennis_contract.py`](../test_tennis_contract.py).
-
-## Model
+### The model
 
 ```
 logit P(A beats B) = skill_A − skill_B
@@ -57,88 +98,30 @@ logit P(A beats B) = skill_A − skill_B
 ```
 
 Fitted by penalised (ridge) logistic regression over a sparse design with
-time-decay sample weights (≈52-week half-life), solved with scipy L-BFGS — no
-scikit-learn dependency. Low-sample players regress toward a rank-based prior
-(`skill ≈ −0.12·log(rank)`); surface offsets are kept only above a minimum
-sample and shrunk harder. ATP and WTA are fitted separately.
+time-decay sample weights (≈52-week half-life), L-BFGS, no scikit-learn. Low
+sample players regress to a rank-based prior; surface offsets are kept only above
+a minimum sample. ATP and WTA are fitted separately.
 
 The Markov chain gives **exact** game/set/match probabilities from point-on-serve
-rates; `point_edge_for_target` inverts it so set/game sub-markets stay
-consistent with the Bradley-Terry match probability. The only stochastic layer
-is the tournament bracket.
+rates, so set/games sub-markets stay consistent with the match probability. A
+matchup-specific serve base (`serve_base()`) sets the total-games regime and a
+fitted `games_cal` corrects the idealised model's ~9% over-prediction of totals,
+making over/under priceable. The only stochastic layer is the bracket.
 
-### Matchup serve base (games markets)
-
-The Markov inversion needs a *serve level* — the average share of points the
-server wins, which sets the total-games regime (two big servers hold more → more
-games). Previously this was a single constant (`BASE_SERVE = 0.64`) for every
-match. `fit()` now also estimates each player's **serve-points-won** and
-**return-points-won** rates from the Sackmann/TML point columns
-(`w_sv_pts/w_sv_won/...`, EB-shrunk to the surface-specific tour average), and
-`model.serve_base()` combines them into a matchup-specific base
-(`spw_i − (rpw_j − avg_rpw)`, averaged over both servers; e.g. Isner–Opelka on
-hard ≈ 0.72 vs De Minaur–Medvedev ≈ 0.60). The headline match probability stays
-pinned to the Bradley-Terry estimate — the base only reshapes the games markets.
-Walk-forward (ATP, 2025) the matchup base lifts the **games-per-set** correlation
-with actual from **+0.11 to +0.18** with no change to match-winner / set-handicap
-/ first-set (those are mathematically independent of the base). When serve stats
-are missing (e.g. the WTA MatchCharting feed, or a low-sample player) it falls
-back to `BASE_SERVE`, so WTA behaviour is unchanged.
-
-### Total-games level calibration (`games_cal`)
-
-The idealised Markov games model over-predicts the *total* by a stable ~9%
-(server-hold and set-count idealisations). `fit()` estimates a multiplicative
-correction `games_cal = Σactual / Σpredicted` on the training matches (walk-forward
-safe; ATP ≈ 0.90, WTA = 1.0 when no scored point data is available) and
-`match_markets(..., games_cal=...)` applies it. Held-out (train < 2025, test 2025)
-this takes expected-total-games **bias from +2.5 to 0.0 games** and **MAE from
-6.13 to 5.49** (serve base + calibration vs the old fixed base), making the
-over/under market priceable.
-
-## Validation & calibration
+### Validation & calibration
 
 ```bash
 python3 -m tennis.validate --since 2023-01-01 --gate              # match markets
-python3 -m tennis.validate --since 2023-01-01 --outright --sims 20000  # + outright
+python3 -m tennis.validate --since 2023-01-01 --outright --sims 20000
 python3 -m tennis.calibrate --fit                                 # isotonic maps + OOS
 ```
 
-`validate.py` refits the model on matches strictly before each retrain date
-(default cadence 28 days, no look-ahead), orients every match neutrally (players
-sorted by folded name so the calibration set isn't biased toward p≈1), and
-scores **match_winner**, **set_hcp** (covers −1.5 sets) and **first_set** against
-completed matches. With `--outright` it additionally **reconstructs each
-tournament's bracket** from its completed matches (linking each round's winners
-back to the matches they won) and Monte-Carlos it to score **win / final / sf /
-qf** reach probabilities — round-robin and irregular events are skipped. It
-reports Brier / Brier-skill / log-loss and a reliability table, writes
-`validation_predictions.csv` (feeds calibration) and a `validation_baseline.json`
-for the `--gate` check (headline = match-winner Brier, tolerance 0.005).
+`validate.py` refits on matches strictly before each retrain date (no
+look-ahead), orients matches neutrally, and scores match_winner / set_hcp /
+first_set, plus reconstructed-bracket win/final/sf/qf with `--outright`. It writes
+the predictions calibration fits on and a baseline for the `--gate` check.
+`calibrate.py` reports an honest grouped K-fold out-of-sample Brier improvement;
+predict and edge apply calibration and the market blend by default.
 
-`calibrate.py` fits an isotonic map per market from those walk-forward
-predictions and reports an honest grouped K-fold (by tournament) out-of-sample
-Brier improvement. Match-winner is typically already well-calibrated; the
-set/first-set and outright markets gain more. Outright markets carry a nesting
-guard (`win ≤ final ≤ sf ≤ qf`). Predict and edge apply calibration by default
-(`calibrated: false` to disable).
-
-`market.py` de-vigs book prices (exact two-way for match markets; power de-vig
-for many-runner outright boards), blends the model toward the market in log-odds
-space (`market_blend.json` weights; `market_blend: false` to disable), and logs
-CLV to `odds_history.csv`. `edge` applies the blend, then `portfolio.py` sizes
-stakes with simultaneous-Kelly: a per-player cap (one player's correlated
-exposure across rounds/markets), a total-card cap, and a drawdown brake.
-
-## Status vs. the plan
-
-Built end-to-end: data pipeline (Phase 1), model (Phase 2), simulation
-(Phase 3), market de-vig/blend + CLV, isotonic calibration, simultaneous-Kelly
-portfolio, walk-forward validation/gate for **both match and outright markets**
-(Phase 4–5), app wiring + settlement (Phase 6).
-
-Remaining polish (follow-ups): a **total_games** over/under market needs a book
-line to calibrate against; market-blend weights are sensible defaults, not yet
-tuned by a sweep; CLV is logged but not yet surfaced in the suite ledger; and
-the app `edge` currently prices match-winner markets (set/first-set/outright
-pricing is available in the engine but not yet exposed as separate edge rows).
+See [`plans/tennis_engine_plan.md`](../plans/tennis_engine_plan.md) for the full
+design and [`app/engines/tennis.py`](../app/engines/tennis.py) for the adapter.
