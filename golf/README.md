@@ -24,26 +24,50 @@ lists:
 - **Tournament card** — outright, top-5/10/20, make-cut and matchup bets the
   model backs (staked, +EV, calibrated and market-blended). Sides it prices but
   doesn't back are left off, so the page is signal not noise.
-- **Round N 3-balls** — that round's 3-ball bets.
+- **Round N matchups** — that round's group bets. Signature/no-cut events play in
+  twosomes (2-balls); full-field events play in threesomes (3-balls). The pricer
+  handles either — the section title reflects whichever you pasted.
 - **Field forecast** — top-10 win / top-N / make-cut for context.
 
 Other things you can do:
 
 ```bash
 python3 -m golf.season --schedule        # the season's tournament list
-python3 -m golf.season --round 2         # also price round 2's 3-balls
+python3 -m golf.season --round 2         # also price round 2's matchups (2-/3-balls)
 python3 -m golf.season --no-refresh      # reprice from cached data (no network)
 python3 -m golf.season --stats --fit     # refresh stat pages + refit, then price
 ```
 
-### Round-by-round 3-balls
+### Round-by-round matchups (2-balls / 3-balls)
 
-3-ball boards aren't on a free feed, so you paste them in. Drop a bookmaker board
+Group boards aren't on a free feed, so you paste them in. Drop a bookmaker board
 into `data/threeballs_r{N}_raw.txt`, then:
 
 ```bash
 python3 -m golf.season --round 1         # parses the paste and prices that round
 ```
+
+The paste is a flat list of header + player + odds lines. A `2 Ball` or `3 Ball`
+header opens a group; each following name is paired with the price on the next
+line. Use **2-ball** headers for twosome events (signature/no-cut) and **3-ball**
+for full-field events — the pricer detects group size from the paste:
+
+```
+3 Ball (Round 1) - Rai / Morikawa / Day      2 Ball (Round 1) - Rai / McNealy
+AARON RAI                                     AARON RAI
+2.75                                          1.90
+COLLIN MORIKAWA                               MAVERICK MCNEALY
+2.38                                          1.90
+JASON DAY
+3.50
+```
+
+Prices land in `data/round_edges.csv` and the card's "Round N matchups" section.
+
+> **Stale-board guard.** Before pricing, every player on the board is checked
+> against the current `data/field.csv`. If names don't match (the usual cause is
+> last week's board left in place), the round is skipped with a loud note rather
+> than pricing the wrong event — so always re-paste the current week's groups.
 
 Outright / place / matchup prices go in `data/odds.csv` and `data/matchups.csv`.
 
@@ -81,7 +105,7 @@ golf/
 ├── model.py        # fit(): time-decayed ridge skill + per-player σ + form +
 │                   #   course fit → model_params.json;  predict_field()
 ├── simulate.py     # 4-round Monte Carlo with cut; joint matchups / 3-balls
-├── round_pricer.py # single-round 3-ball pricing (driven by season.py)
+├── round_pricer.py # single-round group pricing (2-/3-balls; driven by season.py)
 ├── market.py       # power de-vig, log-odds market blend, CLV tracking
 ├── calibrate.py    # isotonic per-market maps (win ≤ T5 ≤ … ≤ cut guard)
 ├── edge.py         # calibrated + blended EV across all markets
@@ -95,7 +119,7 @@ golf/
     ├── card.md             # ← the output you read
     ├── calibration.json, market_blend.json, odds_history.csv (CLV)
     ├── odds.csv, matchups.csv, threeballs.csv   # book prices you provide
-    └── predictions.csv, edge_report.csv, round_3ball_edges.csv  # raw tables
+    └── predictions.csv, edge_report.csv, round_edges.csv  # raw tables
 ```
 
 ### The model
