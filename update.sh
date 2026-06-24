@@ -57,6 +57,8 @@ write_manifest() {
 }
 
 run_dashboard_summary() {
+  echo "== Best-bets card =="
+  python3 scripts/worldcup/card.py || echo "   card skipped"
   echo "== Dashboard =="
   python3 scripts/worldcup/report.py || echo "   dashboard skipped"
   echo "== Daily suite summary =="
@@ -130,4 +132,4 @@ python3 -m engines.worldcup.validate --quiet --gate \
 write_manifest
 run_dashboard_summary
 
-echo "Done: predictions_worldcup_2026.csv, tournament_odds.csv, bet_queue.csv, dashboard.html refreshed."
+echo "Done: predictions_worldcup_2026.csv, tournament_odds.csv, bet_queue.csv, card.md, dashboard.html refreshed."
