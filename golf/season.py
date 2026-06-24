@@ -144,24 +144,23 @@ def _render_card(event_name, predictions, edge_rows, threeball_rows, manifest,
     generated = time.strftime("%Y-%m-%d %H:%M")
     tag = " · major" if major else ""
     tag += f" · {course}" if course else ""
+    market_label = _round_market_label(threeball_rows)
     L = [
         f"# {event_name} — Best Bets",
         "",
         f"_Generated {generated} · fitted model · {sims:,} sims{tag}_",
         "",
-        "## Tournament card (pre-tournament)",
+        _lead(event_name, predictions, edge_rows, threeball_rows, min_edge, market_label),
         "",
-        "Outrights, placement (top-5/10/20), make-cut and matchups — staked at "
-        "calibrated, market-blended, portfolio-sized stakes. Only bets the model "
-        "backs are listed.",
+        "## Tournament bets",
         "",
         _tournament_section(edge_rows),
         "",
-        f"## Round {round_no} {_round_market_label(threeball_rows)}",
+        f"## Round {round_no} {market_label}",
         "",
         _threeball_section(threeball_rows, min_edge, round_no),
         "",
-        "## Field forecast (model context)",
+        "## Field forecast",
         "",
         _forecast_table(predictions),
         "",
@@ -173,20 +172,47 @@ def _render_card(event_name, predictions, edge_rows, threeball_rows, manifest,
     return "\n".join(L)
 
 
+def _lead(event_name, predictions, edge_rows, threeball_rows, min_edge,
+          market_label) -> str:
+    """A short plain-English summary of the week before the detail sections."""
+    picks = _recommended_3balls(threeball_rows, min_edge)
+    staked = [r for r in edge_rows if _truthy(r.get("recommended"))]
+    n = len(picks) + len(staked)
+    total = (sum(_num(r.get("kelly_stake")) for r in picks)
+             + sum(_num(r.get("stake_gbp")) for r in staked))
+    out = [f"The model simulated the {event_name} field and weighed every price it "
+           "could find against its own probabilities."]
+    if predictions:
+        fav = predictions[0]
+        out.append(f" It makes **{fav.get('name', '')}** the favourite at "
+                   f"{_num(fav.get('win_pct')):.0f}% to win.")
+    if n:
+        bets = "bet" if n == 1 else "bets"
+        out.append(f" This week it backs **{n} {bets}** (total stake £{total:.2f}) — "
+                   "each explained below, with the model's number, the price, and why "
+                   "there's an edge. Stakes are fractional-Kelly on a £100 bankroll.")
+    else:
+        out.append(" This week the prices looked efficient — nothing cleared the edge "
+                   "threshold, so there are no bets.")
+    return "".join(out)
+
+
 def _tournament_section(edge_rows: list[dict]) -> str:
     staked = [r for r in edge_rows if _truthy(r.get("recommended"))]
     if not staked:
-        return "_No tournament bet cleared the edge/stake threshold this week._"
+        return ("Outright winner, placement (top-5/10/20) and make-cut prices were all "
+                "checked against the model. None offered enough edge over the market to "
+                "bet this week, so there's nothing staked on the tournament outcome.")
     staked.sort(key=lambda r: -_num(r.get("stake_gbp")))
-    head = ("| Selection | Market | Odds | Model | Market | Edge | Stake |\n"
-            "|---|---|--:|--:|--:|--:|--:|")
-    rows = [
-        f"| {r.get('player','')} | {r.get('market','')} | {_num(r.get('odds')):.2f} "
-        f"| {_pct(r.get('p_model'))} | {_pct(r.get('p_market'))} "
-        f"| {_num(r.get('ev_per_unit'))*100:+.1f}% | £{_num(r.get('stake_gbp')):.2f} |"
-        for r in staked
-    ]
-    return head + "\n" + "\n".join(rows)
+    lines = ["The model backs these tournament-long bets:", ""]
+    for r in staked:
+        lines.append(
+            f"- **{r.get('player', '')}** — {r.get('market', '')} at "
+            f"{_num(r.get('odds')):.2f}. The model gives this {_pct(r.get('p_model'))} "
+            f"against the {_pct(r.get('p_market'))} the market implies "
+            f"(+{_num(r.get('ev_per_unit')) * 100:.0f}% edge). Stake "
+            f"**£{_num(r.get('stake_gbp')):.2f}**.")
+    return "\n".join(lines)
 
 
 _MARKET_NAMES = {"2ball": "2-balls", "3ball": "3-balls"}
@@ -201,37 +227,74 @@ def _round_market_label(rows: list[dict]) -> str:
     return " / ".join(_MARKET_NAMES.get(m, m) for m in markets)
 
 
+def _opponents(group_id: str, rows: list[dict], player: str) -> list[str]:
+    """The other player(s) sharing a pairing/group, for naming in the prose."""
+    if not group_id:
+        return []
+    names = []
+    for r in rows:
+        if r.get("group_id") == group_id and r.get("player") != player:
+            nm = r.get("player")
+            if nm and nm not in names:
+                names.append(nm)
+    return names
+
+
 def _threeball_section(rows: list[dict], min_edge: float, round_no: int) -> str:
     picks = _recommended_3balls(rows, min_edge)
     if not rows:
-        return ("_No round-matchup board loaded for this round. Paste a bookmaker "
-                "2-ball/3-ball board into `golf/data/threeballs_r{n}_raw.txt` and "
-                "rerun with `--round {n}`._".format(n=round_no))
+        return ("_No round board loaded for this round. Bovada's board is pulled "
+                "automatically on refresh; to override, paste one into "
+                "`golf/data/threeballs_r{n}_raw.txt` and rerun with `--round {n}`._"
+                .format(n=round_no))
     if not picks:
-        return "_3-balls priced, but none cleared the edge/stake threshold._"
-    head = ("| Round | Player | Odds | Model | Market | EV | Stake |\n"
-            "|--:|---|--:|--:|--:|--:|--:|")
-    body = [
-        f"| {r.get('round','')} | {r.get('player','')} | {_num(r.get('odds')):.2f} "
-        f"| {_pct(r.get('p_dead_heat_equiv'))} | {_pct(r.get('p_market'))} "
-        f"| {_num(r.get('ev_pct')):+.1f}% | £{_num(r.get('kelly_stake')):.2f} |"
-        for r in picks
+        return ("The round board priced cleanly, but no pairing was mispriced enough "
+                "to clear the edge threshold — no round bets this week.")
+    market = picks[0].get("market", "2ball")
+    unit = "group" if market == "3ball" else "pairing"
+    total = sum(_num(p.get("kelly_stake")) for p in picks)
+    out = [
+        f"A first-round {unit} bet backs one player to post the lower opening round "
+        f"within their tee {unit} (a tie splits the stake). The model simulates each "
+        f"{unit} and bets only when its win probability beats the price. "
+        f"**{len(picks)} cleared the threshold** this round (total stake £{total:.2f}), "
+        "strongest edge first:",
+        "",
     ]
-    return head + "\n" + "\n".join(body)
+    top = picks[:6]
+    for p in top:
+        opp = _opponents(p.get("group_id", ""), rows, p.get("player", ""))
+        vs = " / ".join(opp) if opp else "the field"
+        out.append(
+            f"- **{p.get('player', '')}** over {vs} — {_num(p.get('odds')):.2f}. The "
+            f"model has him {_pct(p.get('p_dead_heat_equiv'))} to take the {unit}, "
+            f"against {_pct(p.get('p_market'))} implied by the price — a "
+            f"+{_num(p.get('ev_pct')):.0f}% edge. Stake **£{_num(p.get('kelly_stake')):.2f}**.")
+    rest = picks[6:]
+    if rest:
+        out += ["", f"Also backed, at smaller edges ({len(rest)}):", "",
+                "| Player | Odds | Model | Edge | Stake |", "|---|--:|--:|--:|--:|"]
+        out += [
+            f"| {p.get('player', '')} | {_num(p.get('odds')):.2f} "
+            f"| {_pct(p.get('p_dead_heat_equiv'))} | +{_num(p.get('ev_pct')):.0f}% "
+            f"| £{_num(p.get('kelly_stake')):.2f} |"
+            for p in rest
+        ]
+    return "\n".join(out)
 
 
 def _forecast_table(predictions: list[dict], top: int = 10) -> str:
     if not predictions:
         return "_No field forecast — run a refresh or seed rounds.csv._"
-    head = ("| # | Player | Win | Top 5 | Top 10 | Make cut | Avg fin |\n"
-            "|--:|---|--:|--:|--:|--:|--:|")
-    rows = []
-    for i, r in enumerate(predictions[:top], 1):
-        rows.append(
-            f"| {i} | {r.get('name','')} | {_num(r.get('win_pct')):.1f}% "
-            f"| {_num(r.get('top5_pct')):.0f}% | {_num(r.get('top10_pct')):.0f}% "
-            f"| {_num(r.get('cut_pct')):.0f}% | {_num(r.get('avg_finish')):.1f} |")
-    return head + "\n" + "\n".join(rows)
+    intro = ("Not bets — just the model's own read on the field, for context: each "
+             "player's chance to win and to finish top-10.")
+    head = "| Player | Win | Top 10 |\n|---|--:|--:|"
+    rows = [
+        f"| {r.get('name', '')} | {_num(r.get('win_pct')):.1f}% "
+        f"| {_num(r.get('top10_pct')):.0f}% |"
+        for r in predictions[:top]
+    ]
+    return intro + "\n\n" + head + "\n" + "\n".join(rows)
 
 
 def _notes_section(manifest: dict, notes: list[str]) -> str:
