@@ -610,12 +610,16 @@ _TRANSLIT = str.maketrans({
 
 
 def _fold_name(name: str) -> str:
-    """Accent- and case-insensitive key for matching player names across sources
-    (e.g. 'Ludvig Aberg' from a book vs fitted 'Ludvig Åberg', or 'Hojgaard' vs
-    'Højgaard' — note ø/æ do not decompose under NFKD, so transliterate first)."""
+    """Accent-, case- and punctuation-insensitive key for matching player names
+    across sources (e.g. 'Ludvig Aberg' from a book vs fitted 'Ludvig Åberg',
+    'Hojgaard' vs 'Højgaard' — ø/æ do not decompose under NFKD, so transliterate
+    first — and 'J J Spaun' vs 'J.J. Spaun', where punctuation differs)."""
     s = str(name).translate(_TRANSLIT)
     nfkd = unicodedata.normalize("NFKD", s)
     stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
+    # Punctuation (dots in initials, apostrophes, hyphens) → space so e.g.
+    # "J.J." and "J J" fold the same; whitespace is then collapsed.
+    stripped = "".join(c if (c.isalnum() or c.isspace()) else " " for c in stripped)
     return " ".join(stripped.lower().split())
 
 

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import provider_qa as qa
 from . import store
+from .providers.bovada import BovadaGolfProvider, export_csvs as bovada_export_csvs
 from .providers.espn import EspnGolfProvider
 from .providers.odds_manual import ManualOddsProvider, THREEBALLS_RAW, write_threeballs_csv
 from .providers.odds_theoddsapi import MAJOR_SPORT_KEYS, TheOddsApiGolfProvider
@@ -67,6 +68,7 @@ def run_refresh(
     round_no: int = 1,
     fit: bool = False,
     use_cache: bool = False,
+    bovada: bool = True,
 ) -> dict:
     """Run the free-source refresh and return the manifest payload.
 
@@ -134,6 +136,36 @@ def run_refresh(
             except Exception as exc:  # noqa: BLE001
                 checks.append(qa.SourceCheck("open_meteo", False, "warning", str(exc)))
 
+    # Bovada: standard free, keyless source for this week's outright / matchup /
+    # 2-3-ball boards. Writes the odds.csv / matchups.csv / threeballs.csv
+    # contract that the pricer and the manual loaders below read. Best-effort:
+    # the endpoint is unofficial and geo-sensitive, so any failure degrades to a
+    # QA warning with the previous CSVs (or a manual paste) left intact.
+    bovada_rows = 0
+    if bovada and event:
+        try:
+            provider = BovadaGolfProvider()
+            coupon = provider.fetch_coupon(use_cache=use_cache)
+            b_quotes = provider.event_quotes(
+                coupon, event.name, event_id=event.event_id, round_no=round_no)
+            if b_quotes:
+                written = bovada_export_csvs(b_quotes)
+                checks.extend(provider.qa_checks(b_quotes))
+                with store.connect() as con:
+                    store.upsert_odds_quotes(con, [q.as_dict() for q in b_quotes])
+                bovada_rows = len(b_quotes)
+                checks.append(qa.SourceCheck(
+                    "bovada", True, "info",
+                    "wrote " + ", ".join(f"{k} ({v})" for k, v in written.items())
+                    if written else "no priced markets exported", bovada_rows))
+            else:
+                checks.append(qa.SourceCheck(
+                    "bovada", True, "warning",
+                    f"no Bovada markets matched event '{event.name}'", 0))
+        except Exception as exc:  # noqa: BLE001 — never let a flaky book break refresh
+            checks.append(qa.SourceCheck("bovada", False, "warning", str(exc), 0))
+    provider_rows["bovada"] = bovada_rows
+
     manual = ManualOddsProvider()
     quotes = []
     if event:
@@ -196,8 +228,9 @@ def run_refresh(
             "ESPN/golfastR-style event data",
             "PGA Tour public stats pages",
             "Open-Meteo weather",
+            "Bovada weekly outright/matchup/2-3-ball boards",
             "The Odds API major outrights",
-            "manual odds boards",
+            "manual odds boards (override)",
         ],
     }
     path = store.write_manifest(manifest)
