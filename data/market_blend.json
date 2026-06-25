@@ -1,8 +1,14 @@
 {
   "w": 0.163,
-  "n": 64,
-  "logloss_blend": 0.9994,
-  "logloss_model_only": 1.0278,
-  "logloss_market_only": 1.0003,
-  "source": "WC2022 (data/wc2022_odds.csv), logit-space 1X2 blend"
+  "w_refit_full": 1.0,
+  "w_refit_cv": 1.0,
+  "n": 128,
+  "source": "refit on WC2018+WC2022 (de-vigged 1X2), logit/geometric blend, leave-one-tournament-out CV",
+  "logloss_model_only": 1.0186,
+  "logloss_market_only": 0.9705,
+  "logloss_blend": 0.9705,
+  "cv_mean_logloss": 0.9705,
+  "active": false,
+  "note": "Refit over 128 WC matches puts the optimal blend weight at w=1.0 (pure market): the model adds no 1X2 signal over the published World Cup line. This is a no-edge result, NOT a weight to deploy (w=1.0 = copy the market and pay the vig). Kept active=false and left the prior w=0.163 in place. Operational read: do not bet WC 1X2 on model edge; the model's value, if any, is in softer markets (less-watched internationals, specific totals) where it can beat a slower line. Re-run engines/worldcup/fit_market_blend.py as more odds history accrues.",
+  "prior_value_backup": "data/market_blend.json.bak.preblend (w=0.163, fit on WC2022 n=64)"
 }
