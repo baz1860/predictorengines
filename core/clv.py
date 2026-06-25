@@ -56,8 +56,10 @@ def closing_odds(hist, match_date, home, away, side):
              & (hist["side"] == side)].copy()
     if m.empty:
         return None
-    cutoff = pd.Timestamp(str(match_date)) + pd.Timedelta(days=1)
-    m["t"] = pd.to_datetime(m["snapshot_time"], errors="coerce")
+    # snapshot_time is tz-aware (ISO with offset); build a tz-aware cutoff so the
+    # comparison doesn't raise "Cannot compare tz-naive and tz-aware".
+    cutoff = pd.Timestamp(str(match_date), tz="UTC") + pd.Timedelta(days=1)
+    m["t"] = pd.to_datetime(m["snapshot_time"], errors="coerce", utc=True)
     m = m[m["t"] <= cutoff]
     if m.empty:
         return None
