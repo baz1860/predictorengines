@@ -38,14 +38,17 @@ CARD_MD = DATA_DIR / "card.md"
 DEFAULT_KELLY = 0.25
 
 DRAW_COLUMNS = ["tour", "tourney_name", "surface", "best_of", "round",
-                "player_a", "player_b"]
+                "player_a", "player_b", "state", "winner", "score", "match_id"]
 
 # Bracket order, earliest round first.
-_ROUND_ORDER = ["Q1", "Q2", "QF-Q", "R128", "R64", "R32", "R16", "QF", "SF", "F"]
+_ROUND_ORDER = ["Q1", "Q2", "QF-Q", "R256", "R128", "R64", "R32", "R16",
+                "R1", "R2", "R3", "R4", "QF", "SF", "F"]
 _ROUND_LABEL = {"R128": "Round of 128", "R64": "Round of 64", "R32": "Round of 32",
                 "R16": "Round of 16", "QF": "Quarterfinals", "SF": "Semifinals",
                 "F": "Final", "Q1": "Qualifying R1", "Q2": "Qualifying R2",
-                "QF-Q": "Qualifying final"}
+                "QF-Q": "Qualifying final", "R256": "Round of 256",
+                "R1": "Round 1", "R2": "Round 2", "R3": "Round 3",
+                "R4": "Round 4"}
 
 
 # ── schedule ──────────────────────────────────────────────────────────────────
@@ -96,7 +99,7 @@ def build_card(
         write_draw_csv(draw)
         notes.append(f"draw: {draw.tourney_name} (ESPN) → draw.csv")
         tourney_name, surface, best_of = draw.tourney_name, draw.surface, draw.best_of
-        matches = [(m.round, m.player_a, m.player_b) for m in draw.matches]
+        matches = [_draw_match_row(m) for m in draw.matches]
     else:
         matches, surface, best_of, tourney_name = _load_draw_csv(tour)
         notes.append(f"draw: {tourney_name} (saved draw.csv)" if matches
@@ -109,10 +112,12 @@ def build_card(
 
     by_round: dict[str, list[dict]] = {}
     n_bets = 0
-    for rnd, a, b in matches:
+    for m in matches:
+        rnd, a, b = m["round"], m["player_a"], m["player_b"]
         row = _price_match(a, b, surface, params, h2h_fn, maps,
                            odds.get(_key(a, b)), w_mkt if blended else None,
-                           bankroll, kelly)
+                           bankroll, kelly, state=m.get("state", ""),
+                           winner=m.get("winner", ""))
         if row.get("recommended") and row["edge"] >= min_edge:
             n_bets += 1
         by_round.setdefault(rnd or "R?", []).append(row)
@@ -125,17 +130,36 @@ def build_card(
             "bets": n_bets, "output": str(output), "notes": notes}
 
 
+def _draw_match_row(m) -> dict:
+    return {"round": m.round, "player_a": m.player_a, "player_b": m.player_b,
+            "state": getattr(m, "state", ""), "winner": getattr(m, "winner", ""),
+            "score": getattr(m, "score", ""), "match_id": getattr(m, "match_id", "")}
+
+
+def _is_tbd(name: str) -> bool:
+    return not str(name or "").strip() or str(name).strip().upper() == "TBD"
+
+
 def _price_match(a, b, surface, params, h2h_fn, maps, odds_pair, w_mkt,
-                 bankroll, kelly) -> dict:
+                 bankroll, kelly, state: str = "", winner: str = "") -> dict:
+    base_row = {"round_a": a, "round_b": b, "favourite": "", "p_fav": None,
+                "odds": 0.0, "p_market": 0.0, "edge": 0.0, "stake": 0.0,
+                "recommended": False, "completed": False, "status": ""}
+    if state == "post" and winner:
+        base_row.update(favourite=winner, completed=True, status="Complete")
+        return base_row
+    if _is_tbd(a) or _is_tbd(b):
+        base_row.update(favourite="TBD", status="Pending")
+        return base_row
+
     h2h = h2h_fn(a, b, surface) if h2h_fn else 0.0
     p_a = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)["p_a"]
     if maps:
         p_a = C.apply_one("match_winner", p_a, maps)
     fav, p_fav = (a, p_a) if p_a >= 0.5 else (b, 1 - p_a)
 
-    row = {"round_a": a, "round_b": b, "favourite": fav, "p_fav": p_fav,
-           "odds": 0.0, "p_market": 0.0, "edge": 0.0, "stake": 0.0,
-           "recommended": False}
+    row = {**base_row, "favourite": fav, "p_fav": p_fav,
+           "status": "Live" if state == "in" else ""}
     if not odds_pair:
         return row
     # Price the favourite's side with the book. odds_pair maps lowered name → odds.
@@ -173,11 +197,13 @@ def _render_card(tourney_name, tour, surface, best_of, by_round, min_edge,
         rows = by_round[rnd]
         L.append(f"## {_ROUND_LABEL.get(rnd, rnd)}")
         L.append("")
-        L.append("| Match | Model pick | P(win) | Odds | Market | Edge | Stake |")
-        L.append("|---|---|--:|--:|--:|--:|--:|")
-        rows.sort(key=lambda r: (-r["edge"] if r["odds"] else 1, -r["p_fav"]))
+        L.append("| Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |")
+        L.append("|---|---|---|--:|--:|--:|--:|--:|")
+        rows.sort(key=lambda r: (r["completed"], -r["edge"] if r["odds"] else 1,
+                                 -(r["p_fav"] or 0)))
         for r in rows:
             match = f"{r['round_a']} v {r['round_b']}"
+            status = r.get("status") or "To play"
             if r["odds"]:
                 odds = f"{r['odds']:.2f}"
                 mkt = f"{r['p_market']*100:.0f}%"
@@ -185,8 +211,9 @@ def _render_card(tourney_name, tour, surface, best_of, by_round, min_edge,
                 stake = f"£{r['stake']:.2f}" if r["recommended"] else "—"
             else:
                 odds = mkt = edge = stake = "—"
+            pwin = f"{r['p_fav']*100:.0f}%" if r["p_fav"] is not None else "—"
             pick = f"**{r['favourite']}**" if r["recommended"] else r["favourite"]
-            L.append(f"| {match} | {pick} | {r['p_fav']*100:.0f}% | {odds} "
+            L.append(f"| {match} | {status} | {pick} | {pwin} | {odds} "
                      f"| {mkt} | {edge} | {stake} |")
         L.append("")
 
@@ -215,7 +242,10 @@ def write_draw_csv(draw, path: Path = DRAW_CSV) -> Path:
             w.writerow({"tour": draw.tour, "tourney_name": draw.tourney_name,
                         "surface": draw.surface, "best_of": draw.best_of,
                         "round": m.round, "player_a": m.player_a,
-                        "player_b": m.player_b})
+                        "player_b": m.player_b, "state": getattr(m, "state", ""),
+                        "winner": getattr(m, "winner", ""),
+                        "score": getattr(m, "score", ""),
+                        "match_id": getattr(m, "match_id", "")})
     return path
 
 
@@ -230,7 +260,11 @@ def _load_draw_csv(tour: str):
             a, b = (r.get("player_a") or "").strip(), (r.get("player_b") or "").strip()
             if not (a and b):
                 continue
-            matches.append((r.get("round") or "R?", a, b))
+            matches.append({"round": r.get("round") or "R?", "player_a": a,
+                            "player_b": b, "state": r.get("state") or "",
+                            "winner": r.get("winner") or "",
+                            "score": r.get("score") or "",
+                            "match_id": r.get("match_id") or ""})
             surface = (r.get("surface") or surface).lower()
             name = r.get("tourney_name") or name
             try:

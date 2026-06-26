@@ -21,7 +21,8 @@ python3 -m tennis.season                            # price the current ATP draw
 python3 -m tennis.season --tour wta --event Berlin  # pick a tournament by name
 ```
 
-That pulls the draw from ESPN, saves it to `data/draw.csv`, and writes
+That pulls the draw from ESPN, including completed matches and their winners,
+saves it to `data/draw.csv`, and writes
 [`data/card.md`](data/card.md) — the only file you normally read. For every match
 in every round it shows the model's pick and win probability; where you've added
 book prices it also shows the de-vigged market, the edge, and a staked bet
@@ -40,6 +41,10 @@ provide. Write a skeleton and fill it in:
 ```bash
 python3 -m tennis.fetch --odds-template             # → data/odds.csv
 ```
+
+`draw.csv` columns: `tour, tourney_name, surface, best_of, round, player_a,
+player_b, state, winner, score, match_id`. `state=post` plus `winner` locks a
+completed result; future rounds are simulated from the surviving players.
 
 `odds.csv` columns: `tour, surface, best_of, player_a, player_b, odds_a, odds_b`.
 Any match in the draw whose names match a row gets priced, blended toward the

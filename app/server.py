@@ -165,6 +165,10 @@ class TennisMatch(BaseModel):
     round: str = ""
     player_a: str
     player_b: str
+    state: str = Field(default="", max_length=12)
+    winner: str = Field(default="", max_length=80)
+    score: str = Field(default="", max_length=80)
+    match_id: str = Field(default="", max_length=40)
     odds_a: float | None = Field(default=None, ge=1.0, le=1000.0)
     odds_b: float | None = Field(default=None, ge=1.0, le=1000.0)
 
@@ -458,13 +462,15 @@ def tennis_draw_fetch(body: dict = None):
     draw_csv = TENNIS_DATA / "draw.csv"
     odds_csv = TENNIS_DATA / "odds.csv"
 
-    # Write draw.csv (all upcoming + live matches)
+    # Write draw.csv (completed, live, and upcoming matches)
     draw_buf = io.StringIO()
     w = csv.writer(draw_buf)
-    w.writerow(["tour", "tourney_name", "surface", "best_of", "round", "player_a", "player_b"])
+    w.writerow(["tour", "tourney_name", "surface", "best_of", "round",
+                "player_a", "player_b", "state", "winner", "score", "match_id"])
     for m in draw.matches:
         w.writerow([draw.tour, draw.tourney_name, draw.surface,
-                    draw.best_of, m.round, m.player_a, m.player_b])
+                    draw.best_of, m.round, m.player_a, m.player_b,
+                    m.state, m.winner, m.score, m.match_id])
     draw_csv.write_text(draw_buf.getvalue())
 
     # Preserve existing odds for any players already in odds.csv
@@ -482,11 +488,16 @@ def tennis_draw_fetch(body: dict = None):
     w2.writerow(["tour", "surface", "best_of", "player_a", "player_b", "odds_a", "odds_b"])
     for m in draw.matches:
         key = (m.player_a, m.player_b)
+        if "TBD" in (m.player_a.upper(), m.player_b.upper()):
+            continue
         if key in existing_odds:
             r = existing_odds[key]
             w2.writerow([draw.tour, draw.surface, draw.best_of,
                          m.player_a, m.player_b,
                          r.get("odds_a",""), r.get("odds_b","")])
+        elif m.state in ("pre", "in"):
+            w2.writerow([draw.tour, draw.surface, draw.best_of,
+                         m.player_a, m.player_b, "", ""])
     odds_csv.write_text(odds_buf.getvalue())
 
     return {
@@ -496,7 +507,8 @@ def tennis_draw_fetch(body: dict = None):
         "best_of": draw.best_of,
         "matches": [
             {"round": m.round, "player_a": m.player_a, "player_b": m.player_b,
-             "odds_a": None, "odds_b": None, "state": m.state}
+             "odds_a": None, "odds_b": None, "state": m.state,
+             "winner": m.winner, "score": m.score, "match_id": m.match_id}
             for m in draw.matches
         ],
     }
@@ -527,7 +539,11 @@ def tennis_draw_get():
                     pass
                 key = (pa, pb)
                 draw_rows[key] = {"round": row.get("round") or "", "player_a": pa, "player_b": pb,
-                                  "odds_a": None, "odds_b": None}
+                                  "odds_a": None, "odds_b": None,
+                                  "state": row.get("state") or "",
+                                  "winner": row.get("winner") or "",
+                                  "score": row.get("score") or "",
+                                  "match_id": row.get("match_id") or ""}
 
     # Merge odds
     if odds_csv.exists():
@@ -539,7 +555,9 @@ def tennis_draw_get():
                 key = (pa, pb)
                 if key not in draw_rows:
                     draw_rows[key] = {"round": "", "player_a": pa, "player_b": pb,
-                                      "odds_a": None, "odds_b": None}
+                                      "odds_a": None, "odds_b": None,
+                                      "state": "", "winner": "",
+                                      "score": "", "match_id": ""}
                 try:
                     draw_rows[key]["odds_a"] = float(row["odds_a"]) if row.get("odds_a") else None
                     draw_rows[key]["odds_b"] = float(row["odds_b"]) if row.get("odds_b") else None
@@ -564,12 +582,14 @@ def tennis_draw_post(payload: TennisDrawPayload):
     # Write draw.csv
     draw_buf = io.StringIO()
     w = csv.writer(draw_buf)
-    w.writerow(["tour", "tourney_name", "surface", "best_of", "round", "player_a", "player_b"])
+    w.writerow(["tour", "tourney_name", "surface", "best_of", "round",
+                "player_a", "player_b", "state", "winner", "score", "match_id"])
     for m in payload.matches:
         pa, pb = m.player_a.strip(), m.player_b.strip()
         if pa and pb:
             w.writerow([payload.tour, payload.tourney_name, payload.surface,
-                        payload.best_of, m.round, pa, pb])
+                        payload.best_of, m.round, pa, pb, m.state,
+                        m.winner.strip(), m.score, m.match_id])
     draw_csv.write_text(draw_buf.getvalue())
 
     # Write odds.csv (only rows where at least one odds value provided)
