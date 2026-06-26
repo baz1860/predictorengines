@@ -449,9 +449,64 @@ def component_matrices(params: dict, home: str, away: str,
     }
 
 
+def apply_player_adj(M: np.ndarray, player_adj: dict) -> np.ndarray:
+    """Re-scale a score matrix using player availability multipliers.
+
+    player_adj format
+    -----------------
+    {
+      "home": {"attack_mult": float, "defense_mult": float},
+      "away": {"attack_mult": float, "defense_mult": float},
+    }
+
+    attack_mult  < 1.0  → team's scoring rate reduced (key attackers out)
+    defense_mult > 1.0  → opponent's scoring rate raised (key defenders out)
+
+    The blended matrix's expected goals are extracted, multipliers applied,
+    and a new score_matrix built.  This keeps Dixon-Coles low-score
+    corrections intact while correctly propagating availability information
+    into both 1X2 and totals/BTTS markets.
+    """
+    if not player_adj:
+        return M
+    h_adj = player_adj.get("home") or {}
+    a_adj = player_adj.get("away") or {}
+    att_h = float(h_adj.get("attack_mult", 1.0))
+    def_h = float(h_adj.get("defense_mult", 1.0))
+    att_a = float(a_adj.get("attack_mult", 1.0))
+    def_a = float(a_adj.get("defense_mult", 1.0))
+
+    # Extract current expected-goals from the blended matrix
+    xg_h = float(sum(i * float(M[i, :].sum()) for i in range(M.shape[0])))
+    xg_a = float(sum(j * float(M[:, j].sum()) for j in range(M.shape[1])))
+
+    # Home team scores less if their attackers are out; more if away's D is out
+    lam_h = max(0.05, xg_h * att_h * def_a)
+    # Away team scores less if their attackers are out; more if home's D is out
+    lam_a = max(0.05, xg_a * att_a * def_h)
+
+    return score_matrix(lam_h, lam_a)
+
+
 def predict(home: str, away: str, competition: str | None = None,
             model: str = "ensemble", neutral: bool = False,
-            params: dict | None = None) -> dict:
+            params: dict | None = None,
+            player_adj: dict | None = None) -> dict:
+    """Predict match outcome probabilities.
+
+    Parameters
+    ----------
+    home, away:    Team names (must exist in params["teams"]).
+    competition:   Competition name (used for strength adjustment).
+    model:         "ensemble" | "goals" | "elo" | "xg" | "xpress".
+    neutral:       True for a neutral venue.
+    params:        Pre-loaded model params (default: load from disk).
+    player_adj:    Optional player availability multipliers from
+                   club_soccer.player_features.PlayerFeatureStore.
+                   Format: {"home": {"attack_mult": float, "defense_mult": float},
+                             "away": {"attack_mult": float, "defense_mult": float}}
+                   Values outside [0.80, 1.25] are silently clamped.
+    """
     params = load_params() if params is None else params
     teams = set(params["teams"])
     if home not in teams:
@@ -476,13 +531,31 @@ def predict(home: str, away: str, competition: str | None = None,
         M = score_matrix(*_lambdas_xpress(params, home, away, competition, neutral), rho)
     else:
         raise ValueError("Unknown model: use ensemble, goals, elo, xg, or xpress.")
+
+    # Apply player availability adjustment (if provided)
+    player_adj_applied = bool(player_adj)
+    if player_adj:
+        # Clamp multipliers to [0.80, 1.25] to prevent overcorrection
+        for side in ("home", "away"):
+            if side in player_adj:
+                player_adj[side]["attack_mult"]  = max(0.80, min(1.25, float(player_adj[side].get("attack_mult", 1.0))))
+                player_adj[side]["defense_mult"] = max(0.80, min(1.25, float(player_adj[side].get("defense_mult", 1.0))))
+        M = apply_player_adj(M, player_adj)
+
     probs = probs_from_matrix(M)
     xg_h = float(sum(i * M[i, :].sum() for i in range(M.shape[0])))
     xg_a = float(sum(j * M[:, j].sum() for j in range(M.shape[1])))
-    return {"home": home, "away": away, "competition": competition or "",
-            "model": model, "xg_home": round(xg_h, 2), "xg_away": round(xg_a, 2),
-            "probs": {k: round(v, 4) for k, v in probs.items()},
-            "scorelines": top_scorelines(M), "matrix": M}
+    out = {"home": home, "away": away, "competition": competition or "",
+           "model": model, "xg_home": round(xg_h, 2), "xg_away": round(xg_a, 2),
+           "probs": {k: round(v, 4) for k, v in probs.items()},
+           "scorelines": top_scorelines(M), "matrix": M}
+    if player_adj_applied:
+        out["player_adj"] = {
+            side: {k: v for k, v in player_adj.get(side, {}).items()
+                   if k in ("attack_mult", "defense_mult", "n_missing")}
+            for side in ("home", "away")
+        }
+    return out
 
 
 def main() -> None:

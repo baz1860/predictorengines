@@ -671,6 +671,11 @@ def fetch_bsd(mode: str, api_key: str) -> None:
                 _upsert_csv(AVAILABILITY_CSV, df,
                             ["team", "player", "provider_fixture_id", "source"])
                 print(f"live-data: availability -> {len(df)} row(s)")
+            # Auto-sync confirmed absences into data/absences_api.csv so that
+            # engines/worldcup/squads.py picks them up without manual editing.
+            n_abs = sync_bsd_absences(wc_events)
+            if n_abs:
+                print(f"live-data: synced {n_abs} confirmed absence(s) -> data/absences_api.csv")
 
         # ── per-fixture lineups + stats (require event detail call) ─────────
         if mode in ("prekickoff", "postmatch", "all"):
@@ -709,6 +714,46 @@ def fetch_bsd(mode: str, api_key: str) -> None:
 
     except Exception as exc:
         print(f"live-data: BSD refresh skipped ({exc})")
+
+
+def sync_bsd_absences(wc_events: list[dict]) -> int:
+    """Write confirmed BSD absences to data/absences_api.csv.
+
+    squads.py's load_absences() reads BOTH absences.csv (manual) AND
+    absences_api.csv (auto-populated by this function), so the squad-strength
+    Elo adjustment picks these up automatically on the next edge run.
+
+    Only players with ``affects_availability=True`` are written — i.e. those
+    confirmed injured, suspended, or withdrawn from the squad, not merely
+    "doubtful" — to avoid penalising teams for players who might play.
+
+    Returns the number of rows written (0 if nothing changed).
+    """
+    absences_api_csv = ROOT / "data" / "absences_api.csv"
+
+    df = parse_availability_bsd(wc_events)
+    if df.empty:
+        return 0
+
+    # Keep only confirmed absences
+    confirmed = df[df["affects_availability"] == True].copy()  # noqa: E712
+    if confirmed.empty:
+        absences_api_csv.write_text("team,player,note\n")
+        return 0
+
+    # Map to squads.py format: team, player, note
+    out = pd.DataFrame({
+        "team":   confirmed["team"],
+        "player": confirmed["player"],
+        "note":   confirmed.apply(
+            lambda r: f"{r.get('status', '')} — {r.get('reason', '')}".strip(" —"),
+            axis=1,
+        ),
+    }).dropna(subset=["team", "player"]).drop_duplicates(subset=["team", "player"])
+
+    absences_api_csv.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(absences_api_csv, index=False)
+    return len(out)
 
 
 def _load_fixture_rows_for_api() -> list[dict]:
