@@ -619,6 +619,8 @@ _ROUND_MAP: dict[str, str] = {
     "Qualifying Final": "QF-Q",
     "Round 1": "R1",
     "Round 2": "R2",
+    "Round 3": "R3",
+    "Round 4": "R4",
     "Round of 128": "R128",
     "Round of 64": "R64",
     "Round of 32": "R32",
@@ -626,6 +628,13 @@ _ROUND_MAP: dict[str, str] = {
     "Quarterfinal": "QF",
     "Semifinal": "SF",
     "Final": "F",
+}
+
+_MAJOR_ROUND_MAP: dict[str, str] = {
+    "Round 1": "R128",
+    "Round 2": "R64",
+    "Round 3": "R32",
+    "Round 4": "R16",
 }
 
 _ESPN_ATP_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard"
@@ -638,6 +647,9 @@ class DrawMatch:
     player_a: str
     player_b: str
     state: str          # "pre" | "in" | "post"
+    winner: str = ""
+    score: str = ""
+    match_id: str = ""
 
 
 @dataclass
@@ -691,23 +703,35 @@ def _espn_draw(tour: str) -> list[TournamentDraw]:
         matches: list[DrawMatch] = []
         for comp in competitions:
             state = comp.get("status", {}).get("type", {}).get("state", "")
-            # Only include upcoming (pre) and in-progress (in) matches
-            if state not in ("pre", "in"):
+            if state not in ("pre", "in", "post"):
                 continue
             competitors = comp.get("competitors", [])
-            names = [c.get("athlete", {}).get("fullName", "").strip()
-                     for c in sorted(competitors, key=lambda c: c.get("order", 99))]
-            # Filter out TBD slots
-            names = [n for n in names if n and n.upper() not in ("TBD", "")]
+            ordered = sorted(competitors, key=lambda c: c.get("order", 99))
+            names = [(c.get("athlete", {}).get("fullName", "").strip() or "TBD")
+                     for c in ordered]
             if len(names) < 2:
                 continue
+            names = names[:2]
             round_raw = comp.get("round", {}).get("displayName", "")
-            round_code = _ROUND_MAP.get(round_raw, round_raw)
+            round_code = (_MAJOR_ROUND_MAP.get(round_raw) if major else None) \
+                or _ROUND_MAP.get(round_raw, round_raw)
+            winner = ""
+            for c, name in zip(ordered, names):
+                if c.get("winner") is True and name.upper() != "TBD":
+                    winner = name
+                    break
+            # Fully unresolved future matches do not help the card; bracket
+            # simulation creates those rounds from the surviving players.
+            if all(n.upper() == "TBD" for n in names):
+                continue
             matches.append(DrawMatch(
                 round=round_code,
                 player_a=names[0],
                 player_b=names[1],
                 state=state,
+                winner=winner,
+                score=comp.get("status", {}).get("type", {}).get("detail", "") or "",
+                match_id=str(comp.get("id") or ""),
             ))
 
         if matches:
