@@ -1,47 +1,54 @@
-# U.S. Open — Best Bets
+# Travelers Championship — Best Bets
 
-_Generated 2026-06-23 21:16 · fitted model · 50,000 sims · major_
+_Generated 2026-06-26 02:18 · fitted model · 50,000 sims_
 
-## Tournament card (pre-tournament)
+The model simulated the Travelers Championship field and weighed every price it could find against its own probabilities. It makes **Scottie Scheffler** the favourite at 12% to win. This week it backs **15 bets** (total stake £22.94) — each explained below, with the model's number, the price, and why there's an edge. Stakes are fractional-Kelly on a £100 bankroll.
 
-Outrights, placement (top-5/10/20), make-cut and matchups — staked at calibrated, market-blended, portfolio-sized stakes. Only bets the model backs are listed.
+## Tournament bets
 
-_No tournament bet cleared the edge/stake threshold this week._
+Outright winner, placement (top-5/10/20) and make-cut prices were all checked against the model. None offered enough edge over the market to bet this week, so there's nothing staked on the tournament outcome.
 
-## Round 1 3-balls
+## Round 1 2-balls
 
-| Round | Player | Odds | Model | Market | EV | Stake |
-|--:|---|--:|--:|--:|--:|--:|
-| 1 | J.T. POSTON | 2.88 | 58.4% | 31.9% | +68.1% | £9.05 |
-| 1 | TOMMY FLEETWOOD | 2.88 | 49.2% | 31.9% | +41.8% | £5.56 |
-| 1 | TOM KIM | 3.00 | 44.2% | 31.4% | +32.6% | £4.07 |
-| 1 | AARON RAI | 2.75 | 47.7% | 34.0% | +31.2% | £4.46 |
-| 1 | KEITH MITCHELL | 2.10 | 59.9% | 43.7% | +25.8% | £5.87 |
-| 1 | JACKSON SUBER | 2.50 | 47.7% | 36.1% | +19.2% | £3.20 |
-| 1 | BEN SILVERMAN | 3.10 | 36.2% | 29.8% | +12.1% | £1.44 |
-| 1 | AKSHAY BHATIA | 2.88 | 38.4% | 31.9% | +10.5% | £1.39 |
-| 1 | RYAN FOX | 2.75 | 40.1% | 34.3% | +10.4% | £1.48 |
-| 1 | BRANDON WU | 3.10 | 35.4% | 29.6% | +9.8% | £1.16 |
-| 1 | PADRAIG HARRINGTON | 3.75 | 28.9% | 25.3% | +8.5% | £0.77 |
-| 1 | JUSTIN THOMAS | 3.10 | 35.0% | 29.5% | +8.4% | £1.01 |
-| 1 | VIKTOR HOVLAND | 3.25 | 33.3% | 29.0% | +8.2% | £0.91 |
-| 1 | DAVIS THOMPSON | 2.75 | 39.0% | 34.0% | +7.1% | £1.02 |
-| 1 | SCOTTIE SCHEFFLER | 1.57 | 67.5% | 57.4% | +5.9% | £2.59 |
+A first-round pairing bet backs one player to post the lower opening round within their tee pairing (a tie splits the stake). The model simulates each pairing and bets only when its win probability beats the price. **15 cleared the threshold** this round (total stake £22.94), strongest edge first:
 
-## Field forecast (model context)
+- **Adam Scott** over Akshay Bhatia — 2.05. The model has him 55.4% to take the pairing, against 46.8% implied by the price — a +14% edge. Stake **£3.22**.
+- **Jake Knapp** over Ryan Gerard — 2.30. The model has him 48.9% to take the pairing, against 41.7% implied by the price — a +13% edge. Stake **£2.42**.
+- **Michael Kim** over Sam Stevens — 2.05. The model has him 53.4% to take the pairing, against 46.8% implied by the price — a +10% edge. Stake **£2.27**.
+- **Tony Finau** over Ben James — 1.95. The model has him 55.8% to take the pairing, against 48.9% implied by the price — a +9% edge. Stake **£2.34**.
+- **Mark Hubbard** over Jhonattan Vegas — 1.91. The model has him 56.2% to take the pairing, against 50.0% implied by the price — a +7% edge. Stake **£2.03**.
+- **Justin Rose** over Corey Conners — 1.83. The model has him 58.1% to take the pairing, against 52.2% implied by the price — a +7% edge. Stake **£1.96**.
 
-| # | Player | Win | Top 5 | Top 10 | Make cut | Avg fin |
-|--:|---|--:|--:|--:|--:|--:|
-| 1 | Aaron Rai | 8.2% | 29% | 45% | 90% | 15.3 |
-| 2 | Scottie Scheffler | 7.8% | 29% | 46% | 91% | 15.0 |
-| 3 | Collin Morikawa | 7.1% | 25% | 39% | 85% | 17.3 |
-| 4 | Tommy Fleetwood | 6.8% | 27% | 43% | 90% | 15.8 |
-| 5 | J.T. Poston | 6.0% | 24% | 38% | 87% | 17.2 |
-| 6 | Keith Mitchell | 3.0% | 14% | 24% | 77% | 22.4 |
-| 7 | Rory McIlroy | 2.3% | 11% | 21% | 73% | 23.8 |
-| 8 | Tom Kim | 1.8% | 9% | 17% | 68% | 25.6 |
-| 9 | Jon Rahm | 1.8% | 9% | 16% | 66% | 26.3 |
-| 10 | John Parry | 1.8% | 10% | 19% | 74% | 24.8 |
+Also backed, at smaller edges (9):
+
+| Player | Odds | Model | Edge | Stake |
+|---|--:|--:|--:|--:|
+| Nicolai Hojgaard | 2.15 | 49.5% | +6% | £1.39 |
+| Hideki Matsuyama | 1.83 | 57.7% | +6% | £1.72 |
+| Collin Morikawa | 2.15 | 48.1% | +3% | £0.75 |
+| Maverick McNealy | 2.00 | 51.7% | +3% | £0.86 |
+| Patrick Cantlay | 1.77 | 58.4% | +3% | £1.09 |
+| Ludvig Aberg | 1.87 | 55.2% | +3% | £0.94 |
+| Keith Mitchell | 1.80 | 57.1% | +3% | £0.87 |
+| Wyndham Clark | 2.10 | 48.7% | +2% | £0.51 |
+| J.T. Poston | 1.80 | 56.6% | +2% | £0.57 |
+
+## Field forecast
+
+Not bets — just the model's own read on the field, for context: each player's chance to win and to finish top-10.
+
+| Player | Win | Top 10 |
+|---|--:|--:|
+| Scottie Scheffler | 11.7% | 46% |
+| Wyndham Clark | 3.8% | 26% |
+| Ludvig Åberg | 3.5% | 24% |
+| Alex Fitzpatrick | 3.2% | 24% |
+| Cameron Young | 3.0% | 22% |
+| Sam Burns | 2.9% | 22% |
+| Tommy Fleetwood | 2.8% | 24% |
+| Xander Schauffele | 2.4% | 21% |
+| Kristoffer Reitan | 2.4% | 19% |
+| Justin Thomas | 2.3% | 19% |
 
 ## Notes
 

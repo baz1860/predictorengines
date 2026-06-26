@@ -48,6 +48,11 @@ ODDS_CSV = HERE / "odds.csv"
 # fetch). See app/provenance.py, which points the worldcup "odds" input here.
 ODDS_LIVE_CSV = HERE / "data" / "odds_live.csv"
 REPORT = HERE / "edge_report.csv"
+QUEUE = HERE / "bet_queue.csv"
+# Columns of the morning bet queue the narrative card (scripts/worldcup/card.py)
+# reads. Kept here so the CLI and the desktop adapter write an identical file.
+QUEUE_COLS = ["match_date", "match", "bet", "odds", "p_model", "p_book",
+              "edge", "stake", "adjustments", "squad_adj"]
 KELLY_FRACTION = 0.25   # quarter Kelly: tempers overconfident models
 MIN_EDGE = 0.0          # show everything; flag strong edges in the report
 # ── Portfolio staking discipline (M7), all fractions of bankroll ─────────────
@@ -556,6 +561,42 @@ def auto_bet_candidates(confident, bankroll, portfolio=True, peak=None,
     return auto
 
 
+def write_bet_queue(auto, bankroll, flags_str="raw-model", squad_map=None):
+    """Write the morning bet queue (bet_queue.csv) the narrative card reads.
+
+    Shared by the CLI (main) and the desktop adapter so a UI edge run refreshes
+    exactly the same artifact. `auto` is the auto_bet_candidates frame; an empty
+    frame writes a header-only queue (i.e. 'no bets this week')."""
+    squad_map = squad_map or {}
+    if not auto.empty:
+        q = auto.copy()
+        q["stake"] = (q["stake_post"] if "stake_post" in q.columns
+                      else (q["kelly_stake"] * bankroll).round(2))
+        q["adjustments"] = flags_str
+        q["squad_adj"] = [", ".join(f"{t} {squad_map[t]:+.0f}" for t in (h, a)
+                                    if t in squad_map) or "-"
+                          for h, a in zip(q["home"], q["away"])]
+        q[QUEUE_COLS].to_csv(QUEUE, index=False)
+    else:
+        pd.DataFrame(columns=QUEUE_COLS).to_csv(QUEUE, index=False)
+    return QUEUE
+
+
+def regenerate_card():
+    """Render data/worldcup/card.md from the freshly written queue.
+
+    Returns the card Path on success or the Exception on failure — never raises,
+    so a card-rendering problem can't break an edge run. Callers print the
+    outcome in their own voice (CLI prints a path; the adapter stays silent)."""
+    try:
+        from scripts.worldcup.card import OUT as CARD_OUT, render_card
+        CARD_OUT.parent.mkdir(parents=True, exist_ok=True)
+        CARD_OUT.write_text(render_card())
+        return CARD_OUT
+    except Exception as e:  # noqa: BLE001 — card is best-effort, never fatal
+        return e
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--template", action="store_true",
@@ -774,20 +815,7 @@ def main():
         flags.append("conf-adj")
     flags_str = "+".join(flags) if flags else "raw-model"
     sq_map = active_sq if "active_sq" in locals() else {}
-    QUEUE = HERE / "bet_queue.csv"
-    qcols = ["match_date", "match", "bet", "odds", "p_model", "p_book", "edge",
-             "stake", "adjustments", "squad_adj"]
-    if not auto.empty:
-        q = auto.copy()
-        q["stake"] = (q["stake_post"] if "stake_post" in q.columns
-                      else (q["kelly_stake"] * bankroll).round(2))
-        q["adjustments"] = flags_str
-        q["squad_adj"] = [", ".join(f"{t} {sq_map[t]:+.0f}" for t in (h, a)
-                                    if t in sq_map) or "-"
-                          for h, a in zip(q["home"], q["away"])]
-        q[qcols].to_csv(QUEUE, index=False)
-    else:
-        pd.DataFrame(columns=qcols).to_csv(QUEUE, index=False)
+    write_bet_queue(auto, bankroll, flags_str, sq_map)
     print(f"\nMorning bet queue -> {QUEUE.name} "
           f"({0 if auto.empty else len(auto)} candidate(s); adjustments: {flags_str})")
 
@@ -804,6 +832,15 @@ def main():
                   f"confidence < {BET_CONF_MIN:.0%}, or no positive edge).")
 
     print(f"\nFull report (all outcomes) -> {REPORT.name}")
+
+    # Regenerate the narrative best-bets card from the queue we just wrote, so a
+    # single edge run refreshes data/worldcup/card.md alongside edge_report.csv
+    # (mirrors golf's season.py front door). Never block the report if it fails.
+    card = regenerate_card()
+    if isinstance(card, Path):
+        print(f"Narrative card -> {card.relative_to(HERE)}")
+    else:
+        print(f"   (could not write card.md: {card})")
 
 
 if __name__ == "__main__":
