@@ -181,8 +181,10 @@ class WorldCupAdapter(EngineAdapter):
         if squad_adj:
             from engines.worldcup.squads import adjusted_sources
             sources, ratings, _adj = adjusted_sources(model)
+            squad_map = {t: a for t, a in _adj.items() if a}
         else:
             sources, ratings = build_sources(model)
+            squad_map = {}
         _, upcoming = load_matches()
         neutral_lookup = {(r.home_team, r.away_team): bool(r.neutral)
                           for r in upcoming.itertuples(index=False)}
@@ -217,24 +219,44 @@ class WorldCupAdapter(EngineAdapter):
         recorded = 0
         for row in rows:
             row["recommended"] = False
+        auto = pd.DataFrame()
         if rows:
             df = pd.DataFrame(rows)
             ledger = bankroll_store.load_ledger()
             picks = E.top_confident_picks(df, ledger=ledger)
-            picks = E.auto_bet_candidates(
+            auto = E.auto_bet_candidates(
                 picks, bankroll, portfolio=not no_portfolio,
                 peak=bankroll_store.current_peak(), ledger=ledger, verbose=False)
-            if not picks.empty:
-                rec_keys = set(zip(picks["home"], picks["away"], picks["side"]))
+            if not auto.empty:
+                rec_keys = set(zip(auto["home"], auto["away"], auto["side"]))
                 for row in rows:
                     if (row["home"], row["away"], row["side"]) in rec_keys:
                         row["recommended"] = True
                 if record:
-                    picks = picks.copy()
-                    picks["source"] = odds_source
-                    picks["model"] = model
-                    placed = bankroll_store.place_bets(self.id, self.sport, picks)
+                    placed_picks = auto.copy()
+                    placed_picks["source"] = odds_source
+                    placed_picks["model"] = model
+                    placed = bankroll_store.place_bets(self.id, self.sport,
+                                                       placed_picks)
                     recorded = len(placed)
+
+        # Refresh the shared bet queue + narrative card so a UI edge run keeps
+        # data/worldcup/card.md in step with the CLI (engines.worldcup.edge).
+        flags = []
+        if calibrated:
+            flags.append("calibrated")
+        if market_blend:
+            flags.append(
+                f"market-blend(w={modifiers['mkt_blend_w']:.2f},1X2+OU+BTTS)")
+        if modifiers.get("totals_lam_mult", 1.0) != 1.0:
+            flags.append(f"totals-calib(lam x{modifiers['totals_lam_mult']:.2f})")
+        if context:
+            flags.append("context")
+        if squad_adj:
+            flags.append("squad-adj")
+        E.write_bet_queue(auto, bankroll, "+".join(flags) or "raw-model",
+                          squad_map)
+        E.regenerate_card()
 
         columns = [
             {"key": "date", "label": "Date", "fmt": "text"},
