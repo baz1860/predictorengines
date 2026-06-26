@@ -93,7 +93,15 @@ def write_template(path: Path = ODDS_CSV) -> None:
 
 
 def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
-                   bankroll: float = 100.0, calib_maps=None) -> list[dict]:
+                   bankroll: float = 100.0, calib_maps=None,
+                   player_adj_map: dict | None = None) -> list[dict]:
+    """Compute edge rows from priced odds.
+
+    player_adj_map, if provided, maps (home_lower, away_lower, comp) →
+    player_adj dict from PlayerFeatureStore, e.g.:
+        {("arsenal", "chelsea", "Premier League"):
+            {"home": {"attack_mult": 0.88, ...}, "away": {...}}}
+    """
     out = []
     params = M.load_params()
     for (date, comp, home, away, market), grp in odds.groupby(
@@ -101,8 +109,27 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
         priced = grp[np.isfinite(grp["odds"]) & (grp["odds"] > 1.0)]
         if len(priced) < 2:
             continue
+
+        # Player availability adjustment for this match
+        p_adj = None
+        p_adj_meta: dict = {}
+        if player_adj_map is not None:
+            p_adj = player_adj_map.get((str(home).lower(), str(away).lower(), str(comp)))
+            if p_adj:
+                h_a = p_adj.get("home", {})
+                a_a = p_adj.get("away", {})
+                p_adj_meta = {
+                    "player_adj_home": round(float(h_a.get("attack_mult", 1.0)), 4),
+                    "player_adj_away": round(float(a_a.get("attack_mult", 1.0)), 4),
+                    "def_adj_home":    round(float(h_a.get("defense_mult", 1.0)), 4),
+                    "def_adj_away":    round(float(a_a.get("defense_mult", 1.0)), 4),
+                    "n_missing_home":  int(h_a.get("n_missing", 0)),
+                    "n_missing_away":  int(a_a.get("n_missing", 0)),
+                }
+
         try:
-            pred = M.predict(home, away, comp, model_name, params=params)
+            pred = M.predict(home, away, comp, model_name, params=params,
+                             player_adj=p_adj)
         except ValueError:
             continue
         if calib_maps is not None:
@@ -118,16 +145,19 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
             raw_line = r.get("line", np.nan)
             line = "" if pd.isna(raw_line) else float(raw_line)
             label = bet_label(home, away, str(r["market"]), str(r["side"]), line)
-            out.append({"date": str(date), "competition": comp,
-                        "match": f"{home} v {away}", "home": home, "away": away,
-                        "market": r["market"], "side": r["side"], "line": line,
-                        "bet": label, "odds": round(float(r["odds"]), 3),
-                        "p_model": round(float(p_model), 3),
-                        "p_book": round(float(p_book), 3),
-                        "edge": round(float(p_model - p_book), 3),
-                        "ev_per_unit": round(float(ev), 3),
-                        "kelly_stake": round(float(kfrac), 4),
-                        "stake_gbp": round(float(kfrac) * bankroll, 2)})
+            row = {"date": str(date), "competition": comp,
+                   "match": f"{home} v {away}", "home": home, "away": away,
+                   "market": r["market"], "side": r["side"], "line": line,
+                   "bet": label, "odds": round(float(r["odds"]), 3),
+                   "p_model": round(float(p_model), 3),
+                   "p_book": round(float(p_book), 3),
+                   "edge": round(float(p_model - p_book), 3),
+                   "ev_per_unit": round(float(ev), 3),
+                   "kelly_stake": round(float(kfrac), 4),
+                   "stake_gbp": round(float(kfrac) * bankroll, 2)}
+            if p_adj_meta:
+                row.update(p_adj_meta)
+            out.append(row)
     out.sort(key=lambda x: -x["ev_per_unit"])
     return out
 
@@ -321,6 +351,75 @@ def fetch_the_odds_api(api_key: str | None = None) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def fetch_player_adjustments(api_key: str | None = None) -> dict:
+    """Build player availability adjustments for all upcoming BSD matches.
+
+    Fetches upcoming BSD events (which embed ``unavailable_players``),
+    runs each through PlayerFeatureStore, and returns a dict:
+
+        { (home_lower, away_lower, competition_name): player_adj_dict }
+
+    where player_adj_dict = {"home": {"attack_mult": float, ...},
+                              "away": {"attack_mult": float, ...}}
+
+    Also returns market dispersion info if BSD provides multi-bookmaker odds.
+    Silently returns an empty dict if BSD key is missing or the feature store
+    has no data yet — the edge report will just lack player columns in that case.
+    """
+    try:
+        from bsd_client import get_all_events, league_name as bsd_league_name
+        from .competitions import comp_from_bsd_league
+        from .player_features import PlayerFeatureStore, market_dispersion
+    except ImportError as exc:
+        print(f"  player_adj: import failed ({exc}), skipping.")
+        return {}
+
+    key = api_key or get_key("bsd", env="BSD_API_KEY")
+    if not key:
+        return {}
+
+    store = PlayerFeatureStore()
+    store.load()
+
+    # Also try to rebuild from already-cached event files (no extra API calls)
+    if not store._data:
+        n = store.refresh_from_cache()
+        if n:
+            print(f"  player_adj: built player stats from {n} cached events.")
+
+    try:
+        events = get_all_events(key, status="upcoming")
+    except Exception as exc:
+        print(f"  player_adj: BSD fetch failed ({exc}), skipping.")
+        return {}
+
+    adj_map: dict = {}
+    n_adj = 0
+    for ev in events:
+        comp = comp_from_bsd_league(bsd_league_name(ev))
+        if comp is None:
+            continue
+        home = str(ev.get("home_team") or "")
+        away = str(ev.get("away_team") or "")
+        if not home or not away:
+            continue
+
+        adj = store.adjustments_for_match(ev)
+        disp = market_dispersion(ev)
+        # Embed market dispersion into adj for downstream use
+        adj["market_dispersion"] = disp
+
+        map_key = (home.lower(), away.lower(), comp.name)
+        adj_map[map_key] = adj
+        if adj["home"]["n_missing"] > 0 or adj["away"]["n_missing"] > 0:
+            n_adj += 1
+
+    if adj_map:
+        print(f"  player_adj: {len(adj_map)} upcoming matches; "
+              f"{n_adj} with listed absentees.")
+    return adj_map
+
+
 def grade(side: str, market: str, line, home_goals: float, away_goals: float) -> str:
     hg, ag = int(home_goals), int(away_goals)
     if market == "1x2":
@@ -353,6 +452,10 @@ def main() -> None:
     ap.add_argument("--bankroll", type=float, default=100.0)
     ap.add_argument("--calibrated", action="store_true",
                     help="apply fitted 1X2 calibration (needs validate.py --calibrate)")
+    ap.add_argument("--player-adj", action="store_true",
+                    help="adjust predictions for player availability (injuries/suspensions) "
+                         "from BSD unavailable_players data. Also adds market-dispersion "
+                         "columns from BSD multi-bookmaker odds. Requires a BSD key.")
     args = ap.parse_args()
     if args.template:
         write_template()
@@ -365,6 +468,15 @@ def main() -> None:
         if calib_maps is None:
             sys.exit("--calibrated needs data/calibration.json. "
                      "Fit it first: python3 validate.py --calibrate")
+
+    # Player availability adjustments (optional; needs BSD key)
+    player_adj_map: dict | None = None
+    if args.player_adj:
+        print("Fetching player availability adjustments from BSD...")
+        player_adj_map = fetch_player_adjustments(args.api_key)
+        if not player_adj_map:
+            print("  (no adjustments computed — check BSD key or player cache)")
+
     try:
         if args.bsd_odds:
             odds = fetch_bsd_odds(args.api_key)
@@ -372,13 +484,21 @@ def main() -> None:
             odds = fetch_the_odds_api(args.api_key)
         else:
             odds = load_odds()
-        rows = rows_from_odds(odds, args.model, args.bankroll, calib_maps)
+        rows = rows_from_odds(odds, args.model, args.bankroll, calib_maps, player_adj_map)
     except Exception as e:
         sys.exit(str(e))
     DATA.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(REPORT, index=False)
     if rows:
-        print(pd.DataFrame(rows).head(30).to_string(index=False))
+        # Show player adjustment columns if present
+        show_cols = ["date", "match", "market", "side", "odds", "p_model",
+                     "p_book", "edge", "ev_per_unit", "kelly_stake", "stake_gbp"]
+        if player_adj_map:
+            show_cols += ["n_missing_home", "n_missing_away",
+                          "player_adj_home", "player_adj_away"]
+        df_out = pd.DataFrame(rows)
+        visible = [c for c in show_cols if c in df_out.columns]
+        print(df_out[visible].head(30).to_string(index=False))
     else:
         print("No priced edges found.")
     print(f"Saved -> {REPORT}")
