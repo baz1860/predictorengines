@@ -496,7 +496,7 @@ button.mt-export { padding: 4px 12px; font-size: 13px; }
 /* ---- Draw editor ---- */
 .draw-row {
   display: grid;
-  grid-template-columns: 100px 1fr 28px 1fr 90px 90px 32px;
+  grid-template-columns: 72px 72px minmax(120px, 1fr) 24px minmax(120px, 1fr) minmax(110px, .9fr) 78px 78px 32px;
   gap: 6px;
   align-items: center;
   padding: 6px 0;
@@ -505,7 +505,7 @@ button.mt-export { padding: 4px 12px; font-size: 13px; }
 .draw-row:last-child { border-bottom: none; }
 .draw-row-header { font-size: 11px; color: var(--muted); font-weight: 600; padding-bottom: 4px; }
 .draw-vs { text-align: center; font-size: 12px; color: var(--muted); }
-.draw-round, .draw-pa, .draw-pb {
+.draw-round, .draw-state, .draw-pa, .draw-pb, .draw-winner {
   padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--surface); color: var(--text); font-size: 13px; width: 100%;
 }

@@ -1296,9 +1296,16 @@ const drawState = { matches: [] };
 function drawRowHTML(m, i) {
   return `<div class="draw-row" data-idx="${i}">
     <input class="draw-round" placeholder="Round (e.g. R32)" value="${esc(m.round || "")}" list="draw-round-suggestions" />
+    <select class="draw-state" title="Match status">
+      <option value="" ${!m.state ? "selected" : ""}></option>
+      <option value="pre" ${m.state === "pre" ? "selected" : ""}>pre</option>
+      <option value="in" ${m.state === "in" ? "selected" : ""}>live</option>
+      <option value="post" ${m.state === "post" ? "selected" : ""}>done</option>
+    </select>
     <input class="draw-pa" placeholder="Player A" value="${esc(m.player_a || "")}" list="draw-player-names" autocomplete="off" />
     <span class="draw-vs">vs</span>
     <input class="draw-pb" placeholder="Player B" value="${esc(m.player_b || "")}" list="draw-player-names" autocomplete="off" />
+    <input class="draw-winner" placeholder="Winner" value="${esc(m.winner || "")}" list="draw-player-names" autocomplete="off" />
     <input class="draw-odds draw-odds-a" type="number" min="1" max="1000" step="0.01" placeholder="Odds A" value="${m.odds_a != null ? m.odds_a : ""}" />
     <input class="draw-odds draw-odds-b" type="number" min="1" max="1000" step="0.01" placeholder="Odds B" value="${m.odds_b != null ? m.odds_b : ""}" />
     <button class="draw-remove ghost" data-idx="${i}" title="Remove">✕</button>
@@ -1314,7 +1321,7 @@ function renderDrawRows() {
   }
   host.innerHTML = `
     <div class="draw-row draw-row-header">
-      <span>Round</span><span>Player A</span><span></span><span>Player B</span>
+      <span>Round</span><span>Status</span><span>Player A</span><span></span><span>Player B</span><span>Winner</span>
       <span>Odds A</span><span>Odds B</span><span></span>
     </div>
     ${drawState.matches.map((m, i) => drawRowHTML(m, i)).join("")}`;
@@ -1323,8 +1330,10 @@ function renderDrawRows() {
   host.querySelectorAll(".draw-row[data-idx]").forEach((row) => {
     const i = parseInt(row.dataset.idx);
     row.querySelector(".draw-round").oninput = (e) => { drawState.matches[i].round = e.target.value; };
+    row.querySelector(".draw-state").onchange = (e) => { drawState.matches[i].state = e.target.value; };
     row.querySelector(".draw-pa").oninput = (e) => { drawState.matches[i].player_a = e.target.value; };
     row.querySelector(".draw-pb").oninput = (e) => { drawState.matches[i].player_b = e.target.value; };
+    row.querySelector(".draw-winner").oninput = (e) => { drawState.matches[i].winner = e.target.value; };
     row.querySelector(".draw-odds-a").oninput = (e) => {
       const v = parseFloat(e.target.value); drawState.matches[i].odds_a = isNaN(v) ? null : v;
     };
@@ -1351,6 +1360,10 @@ function _applyDrawData(d) {
     round: m.round || "",
     player_a: m.player_a || "",
     player_b: m.player_b || "",
+    state: m.state || "",
+    winner: m.winner || "",
+    score: m.score || "",
+    match_id: m.match_id || "",
     odds_a: m.odds_a ?? null,
     odds_b: m.odds_b ?? null,
   }));
@@ -1414,7 +1427,7 @@ async function setupDraw() {
   };
 
   $("draw-add-btn").onclick = () => {
-    drawState.matches.push({ round: "", player_a: "", player_b: "", odds_a: null, odds_b: null });
+    drawState.matches.push({ round: "", player_a: "", player_b: "", state: "", winner: "", score: "", match_id: "", odds_a: null, odds_b: null });
     renderDrawRows();
   };
 
