@@ -39,6 +39,19 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
 
 
+_ROUND_WORDS = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "final": 4}
+
+
+def _round_from_desc(desc: str) -> int | None:
+    """Round number named in a market description, e.g. '2nd Round 2-Balls' → 2,
+    'Final Round Match-Ups' → 4. Returns None when the description names no round,
+    so the caller can fall back to its own round_no. Reading the round from the
+    feed (rather than trusting the --round flag) means a board is labelled by what
+    Bovada says it settles on, and two rounds posted at once never get conflated."""
+    m = re.search(r"(1st|2nd|3rd|4th|final)\s+round", desc)
+    return _ROUND_WORDS[m.group(1)] if m else None
+
+
 def _decimal(price: dict) -> float | None:
     """Decimal odds from a Bovada price object (prefer its own decimal field,
     fall back to parsing the fractional)."""
@@ -104,6 +117,9 @@ class BovadaGolfProvider:
                 for o in market.get("outcomes", [])]
         outs = [(n, d) for n, d in outs if n and d]
         gid_base = str(ev.get("id") or ev.get("link") or desc)
+        # Prefer the round the feed names ('2nd Round 2-Balls' → 2); fall back to
+        # the caller's round_no only when the description is round-agnostic.
+        round_no = _round_from_desc(desc) or round_no
 
         def rows(market_name, settlement, group_id=""):
             return [OddsQuote(event_id=event_id, market=market_name, player_name=n,
