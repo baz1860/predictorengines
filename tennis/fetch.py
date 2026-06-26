@@ -27,7 +27,7 @@ DRAW_CSV = DATA_DIR / "draw.csv"
 ODDS_CSV = DATA_DIR / "odds.csv"
 
 DRAW_COLUMNS = ["tour", "tourney_name", "surface", "best_of", "round",
-                "player_a", "player_b"]
+                "player_a", "player_b", "state", "winner", "score", "match_id"]
 ODDS_COLUMNS = ["tour", "surface", "best_of", "player_a", "player_b",
                 "odds_a", "odds_b"]
 
@@ -65,9 +65,10 @@ def main() -> None:
 
     if args.draw_template:
         write_template(DRAW_CSV, DRAW_COLUMNS,
-                       {"tour": "atp", "tourney_name": "Wimbledon",
+                        {"tour": "atp", "tourney_name": "Wimbledon",
                         "surface": "grass", "best_of": 5, "round": "R128",
-                        "player_a": "Carlos Alcaraz", "player_b": "Jannik Sinner"})
+                        "player_a": "Carlos Alcaraz", "player_b": "Jannik Sinner",
+                        "state": "pre"})
         return
     if args.odds_template:
         write_template(ODDS_CSV, ODDS_COLUMNS,

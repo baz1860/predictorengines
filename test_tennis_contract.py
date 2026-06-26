@@ -208,6 +208,43 @@ def _adapter_contract() -> None:
     validate_edge_rows(edge.get("rows") or [])
 
 
+def _partial_draw_progression() -> None:
+    from app.engines import registry
+
+    partial = pd.DataFrame([
+        dict(tour="atp", tourney_name="Synthetic Open", surface="hard", best_of=3,
+             round="QF", player_a=NAMES[0], player_b=NAMES[7],
+             state="post", winner=NAMES[0], score="", match_id="qf1"),
+        dict(tour="atp", tourney_name="Synthetic Open", surface="hard", best_of=3,
+             round="QF", player_a=NAMES[3], player_b=NAMES[4],
+             state="post", winner=NAMES[3], score="", match_id="qf2"),
+        dict(tour="atp", tourney_name="Synthetic Open", surface="hard", best_of=3,
+             round="QF", player_a=NAMES[1], player_b=NAMES[6],
+             state="post", winner=NAMES[1], score="", match_id="qf3"),
+        dict(tour="atp", tourney_name="Synthetic Open", surface="hard", best_of=3,
+             round="QF", player_a=NAMES[2], player_b=NAMES[5],
+             state="post", winner=NAMES[2], score="", match_id="qf4"),
+        dict(tour="atp", tourney_name="Synthetic Open", surface="hard", best_of=3,
+             round="SF", player_a=NAMES[0], player_b=NAMES[3],
+             state="pre", winner="", score="", match_id="sf1"),
+        dict(tour="atp", tourney_name="Synthetic Open", surface="hard", best_of=3,
+             round="SF", player_a=NAMES[1], player_b=NAMES[2],
+             state="pre", winner="", score="", match_id="sf2"),
+    ])
+    partial.to_csv(DATA / "draw.csv", index=False)
+
+    ad = registry.get("tennis")
+    sim = ad.simulate({"tour": "atp", "sims": 2500, "seed": 3})
+    validate_table(sim)
+    rows = {r["player"]: r for r in sim["rows"]}
+    assert "4 locked result(s)" in sim["note"], f"locked results missing: {sim['note']}"
+    assert abs(sum(r["win"] for r in sim["rows"]) - 1.0) < 0.05, "win probs ≠ 1"
+    assert rows[NAMES[7]]["win"] == 0.0 and rows[NAMES[7]]["sf"] == 0.0, \
+        "known QF loser should not advance"
+    assert rows[NAMES[0]]["sf"] == 1.0 and rows[NAMES[3]]["sf"] == 1.0, \
+        "known semifinalists should be locked into SF"
+
+
 def _validation_and_calibration() -> None:
     from tennis import calibrate as C
     from tennis import model as M
@@ -333,6 +370,7 @@ def main() -> int:
             M.save_params(M.fit(df, tour=tour), tour=tour)
         _check("model_behaviour", _model_behaviour)
         _check("adapter_contract", _adapter_contract)
+        _check("partial_draw_progression", _partial_draw_progression)
         _check("settlement", _settlement)
         _check("market+portfolio", _market_and_portfolio)
         _check("outright_backtest", _outright_backtest)

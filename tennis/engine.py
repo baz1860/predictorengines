@@ -146,12 +146,12 @@ def cmd_predict(p):
     }
 
 
-def _load_draw(tour: str) -> list[tuple[str, str]]:
+def _load_draw(tour: str):
     if not DRAW_CSV.exists():
         raise ValueError(f"No draw. Add {DRAW_CSV} "
                          "(tour, surface, best_of, round, player_a, player_b) "
                          "or run: python -m tennis.fetch --draw-template")
-    pairings: list[tuple[str, str]] = []
+    rows: list[dict] = []
     surface = "hard"
     best_of = 3
     with open(DRAW_CSV, newline="") as f:
@@ -160,27 +160,37 @@ def _load_draw(tour: str) -> list[tuple[str, str]]:
                 continue
             a, b = (row.get("player_a") or "").strip(), (row.get("player_b") or "").strip()
             if a and b:
-                pairings.append((a, b))
+                rows.append({
+                    "round": (row.get("round") or "").strip(),
+                    "player_a": a,
+                    "player_b": b,
+                    "state": (row.get("state") or "").strip(),
+                    "winner": (row.get("winner") or "").strip(),
+                })
                 surface = (row.get("surface") or surface).lower()
                 try:
                     best_of = int(float(row.get("best_of") or best_of))
                 except ValueError:
                     pass
-    if not pairings:
+    if not rows:
         raise ValueError(f"No {tour.upper()} rows in {DRAW_CSV}.")
-    return pairings, surface, best_of
+    return rows, surface, best_of
 
 
 def cmd_simulate(p):
     tour = _tour(p)
     params = _load_params_or_raise(tour)
-    pairings, surface, best_of = _load_draw(tour)
+    draw_rows, surface, best_of = _load_draw(tour)
     n = _sims_arg(p)
     import numpy as np
     rng = np.random.default_rng(int(p.get("seed", 0)) or None)
     hf = _h2h_fn(tour, bool(p.get("h2h", True)))
-    res = S.simulate_draw(pairings, params, surface, best_of=best_of,
-                          n_sims=n, rng=rng, h2h_fn=hf)
+    try:
+        res = S.simulate_draw_rows(draw_rows, params, surface, best_of=best_of,
+                                   n_sims=n, rng=rng, h2h_fn=hf)
+    except ValueError as e:
+        raise ValueError(f"{e}. Re-fetch the draw from ESPN or save a draw with "
+                         "completed winners/state columns.") from None
     rows = [{"player": k, "win": round(v["win"], 4), "final": round(v["final"], 4),
              "sf": round(v["sf"], 4), "qf": round(v["qf"], 4)}
             for k, v in res.items()]
@@ -191,7 +201,10 @@ def cmd_simulate(p):
         {"key": "final", "label": "Final", "fmt": "pct"},
         {"key": "sf", "label": "SF", "fmt": "pct"},
         {"key": "qf", "label": "QF", "fmt": "pct"}]
-    note = (f"{n:,} sims · {len(pairings)} first-round matches · "
+    locked = sum(1 for r in draw_rows if (r.get("state") == "post" and r.get("winner")))
+    note = (f"{n:,} sims · {len(draw_rows)} draw rows"
+            + (f" · {locked} locked result(s)" if locked else "")
+            + f" · "
             f"{tour.upper()} · {surface} · best-of-{best_of}")
     return {"note": note, "columns": columns, "rows": rows}
 
