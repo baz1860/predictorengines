@@ -587,7 +587,30 @@ def fit(rounds_df, asof=None, config: dict | None = None) -> dict:
     }
 
 
+def _assert_sane_priors(params: dict) -> None:
+    """Refuse to persist scoreboard-contaminated priors. The loader already drops
+    out-of-range rows, but a prior can only reach here via a clean fit — so a
+    value outside ±MAX_SANE_SG_TOTAL means something bypassed the read guard
+    (e.g. a hand-edited or legacy params dict). Fail loud rather than bake a
+    leaderboard position into the rating that the card never re-fits away."""
+    bad = []
+    for name, row in (params.get("public_stat_priors") or {}).items():
+        try:
+            sg = float(row["sg_total"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not -MAX_SANE_SG_TOTAL <= sg <= MAX_SANE_SG_TOTAL:
+            bad.append((name, sg))
+    if bad:
+        preview = ", ".join(f"{n}={v:g}" for n, v in bad[:5])
+        raise ValueError(
+            f"refusing to save model_params.json: {len(bad)} public_stat_prior(s) "
+            f"outside ±{MAX_SANE_SG_TOTAL} SG — looks like scoreboard contamination "
+            f"({preview}). Refit from a clean pgatour_stats.csv.")
+
+
 def save_params(params: dict, path: Path | None = None) -> Path:
+    _assert_sane_priors(params)
     path = path or PARAMS_JSON
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
