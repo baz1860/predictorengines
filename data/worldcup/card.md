@@ -1,8 +1,8 @@
 # World Cup 2026 — Best Bets
 
-_Generated 2026-06-27 08:56 · blend model · fitted Elo + Poisson_
+_Generated 2026-06-27 10:29 · blend model · fitted Elo + Poisson_
 
-The model rates every nation on its full international history, turns each fixture into an expected scoreline, and then weighs its own probabilities against every price it can find. It makes **Argentina** the tournament favourite at 23% to lift the trophy. This week it backs **6 bets** (total stake £17.49) — each explained below, with the model's number, the price, and exactly where the edge comes from. Stakes are fractional-Kelly on a £112 bankroll.
+The model rates every nation on its full international history, turns each fixture into an expected scoreline, and then weighs its own probabilities against every price it can find. It makes **Argentina** the tournament favourite at 23% to lift the trophy. This week it backs **4 bets** (total stake £3.57) — each explained below, with the model's number, the price, and exactly where the edge comes from. Stakes are fractional-Kelly on a £112 bankroll.
 
 ## How the model thinks
 
@@ -15,37 +15,27 @@ Every number below comes from one pipeline, so it's worth knowing what drives it
 
 ## Match bets
 
-Each bet pits the model's probability against the bookmaker's price on an upcoming match; it only fires when its own number is the bigger one. **6 bets cleared the threshold** (total stake £17.49), strongest edge first.
-
-### Over 2.5 goals — Croatia v Ghana
-**2.33** · model 50.4% vs market 40.7% · **+9.8pp edge** · stake **£4.01**
-
-The model rates Croatia at Elo 1953 against Ghana's 1704, a 249-point edge to Croatia. The two attacks project to **1.94 + 0.73 = 2.67** expected goals, just above the 2.5 line. That makes Over a **50%** shot, where the price only allows 41% — the market is pricing a tighter game than the model sees.
+Each bet pits the model's probability against the bookmaker's price on an upcoming match; it only fires when its own number is the bigger one. **4 bets cleared the threshold** (total stake £3.57), strongest edge first.
 
 ### Croatia win — Croatia v Ghana
-**1.91** · model 59.8% vs market 50.3% · **+9.5pp edge** · stake **£4.68**
+**1.91** · model 52.6% vs market 50.3% · **+2.3pp edge** · stake **£0.74**
 
-The model rates Croatia at Elo 1953 against Ghana's 1704, a 249-point edge to Croatia. Run through the goal model that comes out as an expected **1.94–0.73** in Croatia's favour, and once every scoreline is added up Croatia win it **60%** of the time. The 50% price baked into the odds is too generous for a side the model likes this much over Ghana.
+The model rates Croatia at Elo 1953 against Ghana's 1704, a 249-point edge to Croatia. Run through the goal model that comes out as an expected **1.94–0.73** in Croatia's favour, and once every scoreline is added up Croatia win it **53%** of the time. The 50% price baked into the odds is too generous for a side the model likes this much over Ghana.
 
 ### Under 2.5 goals — DR Congo v Uzbekistan
-**1.77** · model 62.1% vs market 54.1% · **+8.0pp edge** · stake **£3.87**
+**1.77** · model 55.4% vs market 54.1% · **+1.3pp edge** · stake **£0.77**
 
-The model rates DR Congo (Elo 1765) and Uzbekistan (Elo 1774) as near-equals — a gap of just 9 points. Between them the sides project to only **1.18 + 1.21 = 2.39** expected goals, just below the 2.5 line, so the model leans Under at **62%** against the 54% the price implies — it expects a cagier match than the bookmaker.
-
-### Over 2.5 goals — Jordan v Argentina
-**1.52** · model 69.1% vs market 63.1% · **+6.0pp edge** · stake **£2.90**
-
-The model rates Argentina at Elo 2205 against Jordan's 1717, a 488-point edge to Argentina. The two attacks project to **0.46 + 3.10 = 3.56** expected goals, comfortably above the 2.5 line. That makes Over a **69%** shot, where the price only allows 63% — the market is pricing a tighter game than the model sees.
-
-### Under 2.5 goals — Colombia v Portugal
-**2.02** · model 50.2% vs market 47.2% · **+3.0pp edge** · stake **£0.76**
-
-The model rates Colombia at Elo 2077 against Portugal's 2043, a 34-point edge to Colombia. Between them the sides project to only **1.28 + 1.12 = 2.40** expected goals, just below the 2.5 line, so the model leans Under at **50%** against the 47% the price implies — it expects a cagier match than the bookmaker.
+The model rates DR Congo (Elo 1765) and Uzbekistan (Elo 1774) as near-equals — a gap of just 9 points. Between them the sides project to only **1.18 + 1.21 = 2.39** expected goals, just below the 2.5 line, so the model leans Under at **55%** against the 54% the price implies — it expects a cagier match than the bookmaker.
 
 ### Argentina win — Jordan v Argentina
-**1.15** · model 84.4% vs market 83.5% · **+0.9pp edge** · stake **£1.27**
+**1.15** · model 83.7% vs market 83.5% · **+0.3pp edge** · stake **£1.17**
 
 The model rates Argentina at Elo 2205 against Jordan's 1717, a 488-point edge to Argentina. Run through the goal model that comes out as an expected **3.10–0.46** in Argentina's favour, and once every scoreline is added up Argentina win it **84%** of the time. The 84% price baked into the odds is too generous for a side the model likes this much over Jordan.
+
+### Over 2.5 goals — Jordan v Argentina
+**1.50** · model 63.7% vs market 63.6% · **+0.1pp edge** · stake **£0.89**
+
+The model rates Argentina at Elo 2205 against Jordan's 1717, a 488-point edge to Argentina. The two attacks project to **0.46 + 3.10 = 3.56** expected goals, comfortably above the 2.5 line. That makes Over a **64%** shot, where the price only allows 64% — the market is pricing a tighter game than the model sees.
 
 ## Title outlook
 
@@ -82,5 +72,5 @@ Not bets — the model's read on the next matchday (2026-06-27). For each game: 
 ## Notes
 
 - Bankroll £111.67. Settled 52 bets (27 won), net £+14.69 on a £100 start.
-- Model adjustments active this run: totals-calib(lam x1.09).
+- Model adjustments active this run: calibrated+market-blend(w=0.16,1X2+OU+BTTS)+totals-calib(lam x1.09)+context+stakes(coef=0.15)+squad-adj.
 - Same numbers as charts: `dashboard.html` (`python3 scripts/worldcup/report.py`).
