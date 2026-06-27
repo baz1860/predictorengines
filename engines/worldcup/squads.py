@@ -268,6 +268,43 @@ def load_adj_split():
     return dict(zip(df["team"], half)), dict(zip(df["team"], half))
 
 
+FORM_MULTS_FILE = HERE / "data" / "worldcup" / "form_multipliers.json"
+
+
+def load_form_mults():
+    """team -> (attack_mult, defense_mult) from the player-form layer.
+
+    Off unless data/worldcup/form_multipliers.json exists (written by
+    scripts.worldcup.player_form_multipliers --write). attack_mult scales the
+    team's own goals; defense_mult scales the OPPONENT's goals (>1 = concede more)."""
+    import json
+    if not FORM_MULTS_FILE.exists():
+        return {}
+    raw = json.loads(FORM_MULTS_FILE.read_text())
+    return {t: (float(v["attack_mult"]), float(v["defense_mult"]))
+            for t, v in raw.items()}
+
+
+def wrap_form_mults(sources, form_mults):
+    """Wrap lambda sources with per-team form multipliers (no-op if empty).
+
+    Composable: apply AFTER build_sources/adjusted_sources so the form layer
+    stacks on top of Elo (+ optional conf/squad) adjustments."""
+    if not form_mults:
+        return sources
+    wrapped = []
+    for fn, rho in sources:
+        def make(fn):
+            def f(t1, t2, h1=0.0, h2=0.0):
+                l1, l2 = fn(t1, t2, h1, h2)
+                am1, dm1 = form_mults.get(t1, (1.0, 1.0))
+                am2, dm2 = form_mults.get(t2, (1.0, 1.0))
+                return l1 * am1 * dm2, l2 * am2 * dm1   # own attack * opp defence-leak
+            return f
+        wrapped.append((make(fn), rho))
+    return wrapped
+
+
 def adjusted_sources(model="blend", extra_out=None):
     """build_sources(), with each lambda pair scaled asymmetrically by availability.
 

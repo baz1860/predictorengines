@@ -618,6 +618,11 @@ def main():
     ap.add_argument("--conf-adj", action="store_true",
                     help="apply confederation strength adjustment to Elo ratings "
                          "(calibrate fraction first: python confederation_adj.py --backtest)")
+    ap.add_argument("--form-adj", action="store_true",
+                    help="apply player-form multipliers from data/worldcup/"
+                         "form_multipliers.json (write it with "
+                         "scripts.worldcup.player_form_multipliers --write). "
+                         "OFF by default; PoC layer, validate before trusting.")
     ap.add_argument("--calibrated", action="store_true",
                     help="apply isotonic probability calibration to the model's 1X2 "
                          "(maps from data/calibration.json; fit with: "
@@ -702,6 +707,21 @@ def main():
             else:
                 print("Squad adjustment on, but no absences listed "
                       "(data/absences.csv / injuries.py).")
+
+    # Player-form multipliers (PoC layer) — composes on top of everything above.
+    if getattr(args, "form_adj", False):
+        from .squads import load_form_mults, wrap_form_mults
+        form_mults = load_form_mults()
+        if form_mults:
+            sources = wrap_form_mults(sources, form_mults)
+            movers = {t: m for t, m in form_mults.items()
+                      if abs(m[0] - 1) > 0.02 or abs(m[1] - 1) > 0.02}
+            print(f"Player-form adjustment: {len(form_mults)} teams "
+                  f"({len(movers)} materially adjusted)")
+        else:
+            print("Form adjustment on, but data/worldcup/form_multipliers.json "
+                  "missing (write it: player_form_multipliers --write).")
+
     neutral_lookup = {(r.home_team, r.away_team): bool(r.neutral)
                       for r in upcoming.itertuples(index=False)}
 
