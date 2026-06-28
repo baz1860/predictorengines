@@ -8,6 +8,8 @@ force a bet or hide missing market data.
 from __future__ import annotations
 
 import argparse
+import csv
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -101,6 +103,22 @@ def run_refresh(
     except Exception as exc:  # noqa: BLE001
         checks.append(qa.SourceCheck("espn.field", False, "error", str(exc), 0))
         provider_rows["espn_field"] = 0
+
+    # Live in-tournament scores → between-rounds snapshot the engine auto-routes
+    # to once a round is complete. Best-effort: a parser/network failure degrades
+    # to a QA warning and leaves the engine on its pre-tournament projection.
+    rounds_done = 0
+    if event:
+        try:
+            rounds_done = _write_live_scores(espn, event, use_cache=use_cache)
+            provider_rows["live_scores_round"] = rounds_done
+            checks.append(qa.SourceCheck(
+                "espn.live_scores", True, "info",
+                (f"between-rounds snapshot after round {rounds_done}"
+                 if rounds_done else "pre-tournament — no completed rounds yet"),
+                rounds_done))
+        except Exception as exc:  # noqa: BLE001 — never let scoring break refresh
+            checks.append(qa.SourceCheck("espn.live_scores", False, "warning", str(exc), 0))
 
     stats_written = None
     if stats:
@@ -221,6 +239,7 @@ def run_refresh(
         "field_csv": str(store.FIELD_CSV),
         "stats_csv": str(stats_written) if stats_written else "",
         "provider_rows": provider_rows,
+        "rounds_done": rounds_done,
         "weather": weather_summary,
         "qa": summary,
         "source_priority": [
@@ -236,6 +255,43 @@ def run_refresh(
     path = store.write_manifest(manifest)
     manifest["manifest_path"] = str(path)
     return manifest
+
+
+LIVE_SCORES_CSV = DATA_DIR / "scores_live.csv"
+LIVE_STATE_JSON = DATA_DIR / "live_state.json"
+PREDICTIONS_INPLAY_CSV = DATA_DIR / "predictions_inplay.csv"
+
+
+def _write_live_scores(espn, event, *, use_cache: bool = False) -> int:
+    """Write the between-rounds scores snapshot and live_state.json.
+
+    Returns the number of completed rounds (0 = pre-tournament). When no round
+    is complete we clear any stale in-play artefacts so the engine falls back to
+    its pre-tournament projection instead of last week's leaderboard.
+    """
+    rows, rounds_done = espn.completed_round_scores(event.event_id, use_cache=use_cache)
+
+    if rounds_done < 1 or not rows:
+        for stale in (LIVE_SCORES_CSV, LIVE_STATE_JSON, PREDICTIONS_INPLAY_CSV):
+            stale.unlink(missing_ok=True)
+        return 0
+
+    with open(LIVE_SCORES_CSV, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["name", "score", "made_cut"])
+        w.writeheader()
+        for r in rows:
+            w.writerow({"name": r["name"], "score": r["score"], "made_cut": r["made_cut"]})
+
+    survivors = sum(1 for r in rows if r["made_cut"])
+    LIVE_STATE_JSON.write_text(json.dumps({
+        "event_id": event.event_id,
+        "event_name": event.name,
+        "rounds_done": rounds_done,
+        "scores_csv": LIVE_SCORES_CSV.name,
+        "survivors": survivors,
+        "updated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+    }, indent=2))
+    return rounds_done
 
 
 def _print_summary(manifest: dict, path: Path) -> None:
