@@ -175,6 +175,72 @@ class EspnGolfProvider:
                             ))
         return out
 
+    def completed_round_scores(
+        self, event_id: str | None = None, use_cache: bool = False
+    ) -> tuple[list[dict], int]:
+        """Build a between-rounds scores snapshot from the live leaderboard.
+
+        Returns ``(rows, rounds_done)`` where each row is
+        ``{"name", "score", "made_cut", "completed"}``:
+
+          * ``score``    – cumulative strokes-to-par through the completed rounds
+                           (the number shown on the leaderboard between rounds).
+          * ``completed``– how many rounds this player has fully finished.
+          * ``made_cut`` – 1 unless the player is cut/withdrawn/disqualified, or
+                           has played fewer rounds than the field (i.e. is out).
+
+        ``rounds_done`` is the number of rounds completed by the bulk of the
+        field — the largest round R that at least half of the started players
+        have finished. A round counts as "finished" for a player only when all
+        18 holes are present, so an in-progress round is never double-counted.
+        This is intentionally a *between-rounds* view: run it after a round
+        completes and before the next tees off.
+        """
+        payload = self.current_event_payload(event_id, use_cache=use_cache)
+        players: list[dict] = []
+        for ev in payload.get("events", []) or []:
+            for comp in ev.get("competitions", []) or []:
+                for c in comp.get("competitors", []) or []:
+                    athlete = c.get("athlete") or {}
+                    name = (athlete.get("displayName") or athlete.get("fullName") or "").strip()
+                    if not name:
+                        continue
+                    cum = 0.0
+                    completed = 0
+                    for rline in c.get("linescores") or []:
+                        holes = rline.get("linescores") or []
+                        if len(holes) < 18:
+                            continue  # round in progress — don't count it
+                        completed += 1
+                        cum += _to_par(rline.get("displayValue"))
+                    players.append({
+                        "name": name,
+                        "score": cum,
+                        "completed": completed,
+                        "_cut_flag": _is_out(c),
+                    })
+
+        started = [p for p in players if p["completed"] > 0]
+        rounds_done = 0
+        if started:
+            for r in (3, 2, 1):
+                if sum(1 for p in started if p["completed"] >= r) >= 0.5 * len(started):
+                    rounds_done = r
+                    break
+
+        rows = []
+        for p in players:
+            made_cut = 1
+            if p["_cut_flag"] or (rounds_done and p["completed"] < rounds_done):
+                made_cut = 0
+            rows.append({
+                "name": p["name"],
+                "score": int(p["score"]) if float(p["score"]).is_integer() else p["score"],
+                "made_cut": made_cut,
+                "completed": p["completed"],
+            })
+        return rows, rounds_done
+
     def qa_checks(self, field_rows: Iterable[EspnFieldEntry]) -> list[qa.SourceCheck]:
         rows = [r.as_store_row() for r in field_rows]
         return [
@@ -228,6 +294,27 @@ def _course_name(ev: dict, comp: dict) -> str:
 
 def _status_name(comp: dict) -> str:
     return str(((comp.get("status") or {}).get("type") or {}).get("name") or "")
+
+
+def _to_par(value) -> float:
+    """Parse an ESPN to-par display ('-7', 'E', '+2', '') into a number."""
+    s = str(value or "").strip()
+    if s in ("", "E", "e", "EVEN", "Even", "even", "-", "--"):
+        return 0.0
+    try:
+        return float(s.replace("+", ""))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _is_out(competitor: dict) -> bool:
+    """True if the competitor is cut, withdrawn, or disqualified."""
+    blob = " ".join(str(x) for x in (
+        _status_name(competitor),
+        ((competitor.get("status") or {}).get("type") or {}).get("description"),
+        competitor.get("displayValue"),
+    )).upper()
+    return any(tok in blob for tok in ("CUT", "WD", "WITHDR", "DQ", "DISQ", "MDF"))
 
 
 def _safe_int(value) -> int | None:

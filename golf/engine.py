@@ -12,6 +12,9 @@ Commands:
   predict   – head-to-head matchup probability for two players (joint sim)
   edge      – calibrated + market-blended edges across all markets, portfolio-staked
 """
+import json
+from pathlib import Path
+
 import numpy as np
 
 from . import edge as GE
@@ -20,7 +23,10 @@ from . import portfolio as GPORT
 from . import refresh as GREF
 from . import round_pricer as GRP
 from . import simulate as GSIM
+from . import simulate_inplay as GSIP
 from .providers.odds_manual import ManualOddsProvider
+
+DATA_DIR = Path(__file__).parent / "data"
 
 
 def _field_names() -> list[str]:
@@ -59,13 +65,96 @@ def _rated_field(course="", major=False):
                            course_history=ch, recent_form=load_recent_form()), False
 
 
+def _live_state(p) -> dict | None:
+    """Resolve the in-play state for the current event, or None for pre-tournament.
+
+    Order of precedence:
+      1. ``p["pretournament"]`` truthy → force the pre-tournament projection.
+      2. explicit ``p["rounds_done"]`` (+ optional ``p["scores_csv"]``).
+      3. ``data/live_state.json`` written by refresh from the live leaderboard.
+
+    Returns ``{"rounds_done", "scores", "source", "event_name"}`` where ``scores``
+    maps lowercase player name → cumulative strokes-to-par, or None when there is
+    no completed round to condition on.
+    """
+    if p.get("pretournament") or p.get("force_pretournament"):
+        return None
+
+    rounds_done = 0
+    scores_path = None
+    event_name = ""
+    source = ""
+
+    if p.get("rounds_done"):
+        rounds_done = int(p["rounds_done"])
+        scores_path = Path(p.get("scores_csv") or (DATA_DIR / "scores_live.csv"))
+        source = "explicit params"
+    else:
+        state_file = DATA_DIR / "live_state.json"
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text())
+            except (ValueError, OSError):
+                state = {}
+            rounds_done = int(state.get("rounds_done") or 0)
+            event_name = state.get("event_name", "")
+            scores_path = DATA_DIR / state.get("scores_csv", "scores_live.csv")
+            source = "live leaderboard"
+
+    if rounds_done < 1 or not scores_path or not Path(scores_path).exists():
+        return None
+    if rounds_done >= GSIP.TOTAL_ROUNDS:
+        return None  # tournament complete — nothing left to simulate
+
+    scores = GSIP.load_scores(Path(scores_path))
+    if not scores:
+        return None
+    return {"rounds_done": rounds_done, "scores": scores,
+            "source": source, "event_name": event_name}
+
+
+def _inplay_results(rated, state, n, rng, matchups=None, threeballs=None):
+    """Run the in-play sim over the rated field; return (results, survivors).
+
+    The results dict mirrors the pre-tournament sim's shape so edge.price_all can
+    consume it unchanged: per-player win/top5/top10/top20/made_cut, the reserved
+    ``__cut_binds__`` flag, and (when requested) score-aware ``__matchups__`` /
+    ``__threeballs__``. The make-cut market is suppressed in-play — survivors are
+    already through, so it is not a live betting market.
+    """
+    scores = state["scores"]
+    survivors = [pl for pl in rated if pl.name.lower() in scores]
+    if not survivors:
+        raise ValueError(
+            "No field players matched the live scores snapshot (name mismatch?). "
+            "Re-run refresh, or pass pretournament=1 to force the pre-event model.")
+    res = GSIP.simulate_inplay(survivors, scores, state["rounds_done"],
+                               n_sims=n, rng=rng,
+                               matchups=matchups, threeballs=threeballs)
+    results = {"__cut_binds__": False}
+    for name, r in res.items():
+        if name.startswith("__"):
+            results[name] = r          # pass reserved keys through unchanged
+            continue
+        results[name] = {
+            "win": r["win"], "top5": r["top5"], "top10": r["top10"],
+            "top20": r["top20"], "made_cut": 1.0, "missed_cut": 0.0,
+            "avg_finish": r["avg_finish"], "current_score": r["current_score"],
+            "n_sims": r["n_sims"],
+        }
+    return results, survivors
+
+
 def cmd_schema(_p=None):
     names = sorted(_field_names())
+    state = _live_state({})
     return {"kind": "field", "names": names, "models": [],
             "default_sims": 50000, "sim_options": [10000, 50000, 100000],
             "markets": ["win", "top5", "top10", "top20", "cut", "matchup", "3ball"],
             "competitor_label": "Player",
-            "fitted": model.load_params() is not None}
+            "fitted": model.load_params() is not None,
+            "live": state is not None,
+            "rounds_done": state["rounds_done"] if state else 0}
 
 
 def cmd_refresh(p):
@@ -118,6 +207,17 @@ def _sims_arg(p):
 
 
 def cmd_simulate(p):
+    """Field projection. Auto-routes to the in-play sim once a round is complete.
+
+    Before round 1 (no live scores) this is the pre-tournament projection off the
+    fitted ratings. Once refresh has recorded a completed round, it conditions on
+    the live leaderboard instead — fixing the rounds played and simulating only
+    those remaining. Pass ``pretournament=1`` to force the pre-event projection.
+    """
+    state = _live_state(p)
+    if state is not None:
+        return cmd_simulate_inplay(p, _state=state)
+
     n = _sims_arg(p)
     course = p.get("course", "") or ""
     major = bool(p.get("major", False))
@@ -153,6 +253,60 @@ def cmd_simulate(p):
         note += (f" · ⚠ cut does not bind (field {len(rated)} ≤ cut {cut_rule}): "
                  "make-cut/top-N not meaningful")
     return {"note": note, "columns": columns, "rows": rows}
+
+
+def cmd_simulate_inplay(p, _state=None):
+    """In-tournament projection conditioned on the live leaderboard.
+
+    Fixes each surviving player's score through the completed rounds and
+    simulates the remainder, so win/top-N reflect the current standings rather
+    than the pre-event ratings. Reads live_state.json (written by refresh) unless
+    ``rounds_done``/``scores_csv`` are passed explicitly.
+    """
+    state = _state if _state is not None else _live_state(p)
+    if state is None:
+        raise ValueError(
+            "No completed-round scores available. Run refresh during a live event, "
+            "or pass rounds_done=N with a scores_csv.")
+    n = _sims_arg(p)
+    course = p.get("course", "") or ""
+    major = bool(p.get("major", False))
+    rated, fitted = _rated_field(course, major)
+    rng = np.random.default_rng(int(p.get("seed", 0)) or None)
+    results, survivors = _inplay_results(rated, state, n, rng)
+    GSIP.write_predictions_inplay(survivors, _results_for_writer(results), state["rounds_done"])
+
+    rows = []
+    for pl in survivors:
+        r = results[pl.name]
+        score = int(r["current_score"])
+        rows.append({"name": pl.name, "rating": round(pl.rating, 2),
+                     "score": f"{score:+d}" if score else "E",
+                     "win": round(r["win"], 4), "top5": round(r["top5"], 4),
+                     "top10": round(r["top10"], 4), "top20": round(r["top20"], 4),
+                     "avg_finish": round(r["avg_finish"], 1)})
+    rows.sort(key=lambda x: -x["win"])
+    columns = [
+        {"key": "name", "label": "Player", "fmt": "text"},
+        {"key": "score", "label": "Thru", "fmt": "text"},
+        {"key": "rating", "label": "Rating", "fmt": "signed_num"},
+        {"key": "win", "label": "Win", "fmt": "pct1"},
+        {"key": "top5", "label": "Top 5", "fmt": "pct"},
+        {"key": "top10", "label": "Top 10", "fmt": "pct"},
+        {"key": "top20", "label": "Top 20", "fmt": "pct"},
+        {"key": "avg_finish", "label": "Avg fin", "fmt": "num1"}]
+    rd = state["rounds_done"]
+    left = GSIP.TOTAL_ROUNDS - rd
+    src = "fitted model" if fitted else "legacy players.csv"
+    ev_label = (state.get("event_name") + " · ") if state.get("event_name") else ""
+    note = (f"{ev_label}in-play after R{rd} ({left} to play) · {n:,} sims · "
+            f"{len(survivors)} survivors · {src} · live leaderboard")
+    return {"note": note, "columns": columns, "rows": rows}
+
+
+def _results_for_writer(results: dict) -> dict:
+    """Adapt engine results back to the write_predictions_inplay shape."""
+    return {k: v for k, v in results.items() if not k.startswith("__")}
 
 
 def cmd_predict(p):
@@ -198,9 +352,22 @@ def cmd_edge(p):
     pairs = [(a, b) for (a, b) in matchup_odds]
     trios = [t for t in threeball_odds]
     n = _sims_arg(p)
-    results = GSIM.simulate_tournament(rated, n_sims=n, cut_rule=int(p.get("cut_rule", 65)),
-                                       rng=np.random.default_rng(0),
-                                       matchups=pairs, threeballs=trios)
+    state = _live_state(p)
+    inplay_note = ""
+    if state is not None:
+        # Live: every market — outrights, places, and tournament-long
+        # matchups/3-balls — is priced off the same in-play sim, conditioned on
+        # the leaderboard. (Round-by-round groups have their own path in
+        # round_3balls.) Groups naming a cut player are skipped by the sim.
+        results, _surv = _inplay_results(
+            rated, state, n, np.random.default_rng(0),
+            matchups=pairs, threeballs=trios)
+        rd = state["rounds_done"]
+        inplay_note = f" · in-play after R{rd} (live leaderboard)"
+    else:
+        results = GSIM.simulate_tournament(rated, n_sims=n, cut_rule=int(p.get("cut_rule", 65)),
+                                           rng=np.random.default_rng(0),
+                                           matchups=pairs, threeballs=trios)
     rows = GE.price_all(rated, results, odds_data, matchup_odds, threeball_odds,
                         bankroll=bankroll, kelly=kelly, calibrated=calibrated,
                         blended=blended, min_edge=min_edge)
@@ -224,8 +391,8 @@ def cmd_edge(p):
     note = (f"{len([r for r in rows if r['recommended']])} staked / {len(rows)} "
             f"priced · {GPORT.summary(staked, bankroll, peak)}"
             f"{' · calibrated' if calibrated else ''}"
-            f"{' · market-blend' if blended else ''}")
-    if not results.get("__cut_binds__", True):
+            f"{' · market-blend' if blended else ''}{inplay_note}")
+    if not results.get("__cut_binds__", True) and state is None:
         note += (f" · ⚠ cut does not bind (field {len(rated)} ≤ cut rule): "
                  "make-cut suppressed")
     return {"note": note, "columns": columns, "rows": rows}
@@ -279,5 +446,6 @@ def cmd_round_3balls(p):
 
 
 COMMANDS = {"schema": lambda p: cmd_schema(), "refresh": cmd_refresh,
-            "simulate": cmd_simulate, "predict": cmd_predict, "edge": cmd_edge,
+            "simulate": cmd_simulate, "simulate_inplay": cmd_simulate_inplay,
+            "predict": cmd_predict, "edge": cmd_edge,
             "round_3balls": cmd_round_3balls}
