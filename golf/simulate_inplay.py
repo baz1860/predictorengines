@@ -57,6 +57,8 @@ def simulate_inplay(
     rounds_done: int,
     n_sims: int = 50_000,
     rng: np.random.Generator | None = None,
+    matchups: list[tuple[str, str]] | None = None,
+    threeballs: list[tuple[str, str, str]] | None = None,
 ) -> dict[str, dict]:
     """
     Simulate the remaining rounds starting from current scores.
@@ -68,6 +70,14 @@ def simulate_inplay(
         current_scores: name_lower → cumulative score through rounds_done
         rounds_done:    Rounds already completed (1, 2, or 3)
         n_sims:         Monte Carlo iterations
+        matchups:       Optional tournament-long head-to-heads to settle from the
+                        SAME simulated finishes (lower 72-hole total wins). Pairs
+                        naming a non-survivor are skipped.
+        threeballs:     Optional tournament-long 3-balls, settled likewise.
+
+    When matchups/threeballs are given, the result carries the reserved keys
+    ``__matchups__`` {(a,b): {a, b, tie}} and ``__threeballs__``
+    {(a,b,c): {a, b, c, tie}}, matching simulate.simulate_tournament's contract.
     """
     rng = rng or np.random.default_rng()
     rounds_left = TOTAL_ROUNDS - rounds_done
@@ -107,6 +117,37 @@ def simulate_inplay(
     future_totals = future_scores.sum(axis=2)                  # (n_sims, n)
     totals        = base_scores[np.newaxis, :] + future_totals # (n_sims, n)
 
+    # Tournament-long matchups / 3-balls off the SAME simulated finals. Only
+    # survivor-vs-survivor groups are settled here; a group naming a cut player
+    # is dropped (that bet is already decided and must not be sim-priced).
+    idx_of = {nm.lower(): i for i, nm in enumerate(names)}
+    mu_idx = [(a, b, idx_of[a.lower()], idx_of[b.lower()])
+              for a, b in (matchups or [])
+              if a.lower() in idx_of and b.lower() in idx_of]
+    tb_idx = [(a, b, c, idx_of[a.lower()], idx_of[b.lower()], idx_of[c.lower()])
+              for a, b, c in (threeballs or [])
+              if a.lower() in idx_of and b.lower() in idx_of and c.lower() in idx_of]
+
+    mres: dict = {}
+    for a, b, ia, ib in mu_idx:
+        ta, tb = totals[:, ia], totals[:, ib]      # lower total = better
+        a_w = int(np.count_nonzero(ta < tb))
+        b_w = int(np.count_nonzero(tb < ta))
+        mres[(a, b)] = {a: a_w / n_sims, b: b_w / n_sims,
+                        "tie": (n_sims - a_w - b_w) / n_sims}
+
+    tres: dict = {}
+    for a, b, c, ia, ib, ic in tb_idx:
+        ta, tb, tc = totals[:, ia], totals[:, ib], totals[:, ic]
+        mn = np.minimum(np.minimum(ta, tb), tc)
+        a_best, b_best, c_best = (ta == mn), (tb == mn), (tc == mn)
+        uniq = (a_best.astype(np.int8) + b_best + c_best) == 1   # no shared min
+        a_w = int(np.count_nonzero(a_best & uniq))
+        b_w = int(np.count_nonzero(b_best & uniq))
+        c_w = int(np.count_nonzero(c_best & uniq))
+        tres[(a, b, c)] = {a: a_w / n_sims, b: b_w / n_sims, c: c_w / n_sims,
+                           "tie": (n_sims - a_w - b_w - c_w) / n_sims}
+
     # Rank for each sim
     for sim in range(n_sims):
         t = totals[sim]
@@ -138,6 +179,11 @@ def simulate_inplay(
             "avg_finish":  fin_sum[i] / n_sims,
             "n_sims":      n_sims,
         }
+
+    if mres:
+        results["__matchups__"] = mres
+    if tres:
+        results["__threeballs__"] = tres
 
     return results
 
