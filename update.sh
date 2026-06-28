@@ -78,11 +78,15 @@ if [[ "$MODE" == "morning" ]]; then
 fi
 
 if [[ "$MODE" == "prekickoff" ]]; then
+  # Same flow as morning, but with prekickoff live data (confirmed lineups,
+  # published ~1h before kickoff) and a freshly written narrative card.
+  refresh_results
   refresh_live prekickoff
-  echo "== Refreshing squad availability ratings =="
-  python3 -m engines.worldcup.squads | tail -1 || echo "   squad ratings skipped"
+  refit_models
+  write_predictions
   run_edge
   write_manifest
+  run_dashboard_summary
   echo "Done: pre-kickoff World Cup refresh complete."
   exit 0
 fi
