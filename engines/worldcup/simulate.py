@@ -22,6 +22,7 @@ import pandas as pd
 
 from .predictor import load_matches, score_matrix, MAX_GOALS
 from .dixoncoles import build_sources
+from .squads import adjusted_sources
 
 HOSTS = {"United States", "Mexico", "Canada"}
 
@@ -279,9 +280,19 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--model", choices=["elo", "dc", "blend"], default="blend",
                     help="lambda source (default: blend, best in backtest)")
+    ap.add_argument("--squad-adj", dest="squad_adj", action="store_true",
+                    default=True,
+                    help="apply injury/availability Elo adjustments from "
+                         "data/squad_ratings.csv (default: on)")
+    ap.add_argument("--no-squad-adj", dest="squad_adj", action="store_false",
+                    help="disable squad availability adjustments")
     args = ap.parse_args()
 
-    sources, ratings = build_sources(args.model)
+    if args.squad_adj:
+        sources, ratings, adj = adjusted_sources(args.model)
+    else:
+        sources, ratings = build_sources(args.model)
+        adj = {}
     model = MatchModel(sources)
     group_matches = load_group_matches()
     rng = np.random.default_rng(args.seed)
@@ -301,6 +312,7 @@ def main():
         counts[champ]["champion"] += 1
 
     rows = [{"team": t, "group": TEAM_GROUP[t], "elo": round(ratings[t]),
+             "elo_adj": round(adj.get(t, 0.0), 1),
              **{s: round(c[s] / args.sims, 4) for s, c in
                 ((s, counts[t]) for s in stages)}}
             for t in counts]

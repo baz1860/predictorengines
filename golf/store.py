@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import sqlite3
+import tempfile
 import time
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -19,6 +21,72 @@ DATA_DIR = Path(__file__).parent / "data"
 DB_PATH = DATA_DIR / "golf.db"
 FIELD_CSV = DATA_DIR / "field.csv"
 ROUNDS_CSV = DATA_DIR / "rounds.csv"
+
+# ── database location resolution ─────────────────────────────────────────────
+# golf.db normally lives next to the CSV contract in golf/data. Some filesystems
+# (network shares, fuse mounts like the desktop-app sandbox) cannot service the
+# fsync/locking SQLite needs and raise "disk I/O error". When that happens we
+# transparently relocate the cache to local scratch so the engine still runs —
+# the CSVs in golf/data remain the source of truth the model consumes, so a
+# fresh local cache loses nothing (refresh re-imports them every run). Set
+# GOLF_DB_PATH to force a specific location.
+_ACTIVE_DB_PATH: Path | None = None
+
+
+def _sqlite_usable(path: Path) -> bool:
+    """True if SQLite can actually create/write/commit at this location.
+
+    Probes the real DB file (creating/dropping a throwaway table) rather than a
+    sidecar, because some mounts that fail SQLite I/O also block file deletion —
+    a separate probe file would become undeletable litter.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(path)
+        try:
+            con.execute("CREATE TABLE IF NOT EXISTS _ioprobe(x)")
+            con.execute("INSERT INTO _ioprobe(x) VALUES (1)")
+            con.commit()
+            con.execute("DROP TABLE _ioprobe")
+            con.commit()
+        finally:
+            con.close()
+        return True
+    except sqlite3.Error:
+        return False
+
+
+def active_db_path() -> Path:
+    """Resolve the writable DB path once per process.
+
+    Order: GOLF_DB_PATH env override → canonical golf/data/golf.db if SQLite is
+    usable there → local scratch fallback (tempdir/golf_engine/golf.db).
+    """
+    global _ACTIVE_DB_PATH
+    if _ACTIVE_DB_PATH is not None:
+        return _ACTIVE_DB_PATH
+
+    env = os.environ.get("GOLF_DB_PATH")
+    if env:
+        _ACTIVE_DB_PATH = Path(env)
+        _ACTIVE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        return _ACTIVE_DB_PATH
+
+    # Probe a sidecar so we never touch the real golf.db while testing the mount.
+    probe = DB_PATH.parent / ".sqlite_ioprobe.db"
+    usable = _sqlite_usable(probe)
+    for leftover in (probe, probe.with_name(probe.name + "-journal")):
+        try:
+            leftover.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    if usable:
+        _ACTIVE_DB_PATH = DB_PATH
+    else:
+        _ACTIVE_DB_PATH = Path(tempfile.gettempdir()) / "golf_engine" / "golf.db"
+        _ACTIVE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return _ACTIVE_DB_PATH
 MANIFEST_JSON = DATA_DIR / "free_source_manifest.json"
 
 
@@ -142,18 +210,19 @@ CREATE TABLE IF NOT EXISTS provider_runs (
 """
 
 
-def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
-    p = Path(path)
+def connect(path: Path | str | None = None) -> sqlite3.Connection:
+    p = Path(path) if path is not None else active_db_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(p)
     con.row_factory = sqlite3.Row
     return con
 
 
-def init_db(path: Path | str = DB_PATH) -> Path:
-    with connect(path) as con:
+def init_db(path: Path | str | None = None) -> Path:
+    p = Path(path) if path is not None else active_db_path()
+    with connect(p) as con:
         con.executescript(SCHEMA)
-    return Path(path)
+    return Path(p)
 
 
 def _pid(name: str, source_id: str = "") -> str:
@@ -295,10 +364,11 @@ def upsert_field(con: sqlite3.Connection, event_id: str, rows: Iterable[Mapping]
     return len(rows)
 
 
-def import_rounds_csv(path: Path | str = ROUNDS_CSV, db_path: Path | str = DB_PATH) -> int:
+def import_rounds_csv(path: Path | str = ROUNDS_CSV, db_path: Path | str | None = None) -> int:
     path = Path(path)
     if not path.exists():
         return 0
+    db_path = active_db_path() if db_path is None else db_path
     init_db(db_path)
     with path.open() as f, connect(db_path) as con:
         rows = list(csv.DictReader(f))
@@ -364,7 +434,8 @@ def import_rounds_csv(path: Path | str = ROUNDS_CSV, db_path: Path | str = DB_PA
 
 
 def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
-                     db_path: Path | str = DB_PATH) -> Path:
+                     db_path: Path | str | None = None) -> Path:
+    db_path = active_db_path() if db_path is None else db_path
     init_db(db_path)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -397,7 +468,8 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
 
 def record_provider_run(provider: str, action: str, ok: bool, rows: int = 0,
                         warnings: list | None = None,
-                        db_path: Path | str = DB_PATH) -> None:
+                        db_path: Path | str | None = None) -> None:
+    db_path = active_db_path() if db_path is None else db_path
     init_db(db_path)
     run_id = f"{provider}:{action}:{int(time.time() * 1000)}"
     with connect(db_path) as con:
