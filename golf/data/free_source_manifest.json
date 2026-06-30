@@ -1,79 +1,116 @@
 {
-  "generated_at": "2026-06-28T16:46:06",
+  "generated_at": "2026-06-30T22:01:51",
   "event": {
-    "event_id": "401811953",
-    "name": "Travelers Championship",
-    "start_date": "2026-06-25",
-    "end_date": "2026-06-28",
-    "course_name": "Travelers Championship",
-    "status": "STATUS_IN_PROGRESS",
+    "event_id": "401811954",
+    "name": "John Deere Classic",
+    "start_date": "2026-07-02",
+    "end_date": "2026-07-05",
+    "course_name": "John Deere Classic",
+    "status": "STATUS_SCHEDULED",
     "tour": "pga",
     "source": "espn",
-    "source_event_id": "401811953"
+    "source_event_id": "401811954"
   },
   "database": "/Users/lucky/AI Models/Soccer Prediction/golf/data/golf.db",
   "field_csv": "/Users/lucky/AI Models/Soccer Prediction/golf/data/field.csv",
   "stats_csv": "",
   "provider_rows": {
     "rounds_csv": 81997,
-    "espn_field": 72,
-    "bovada": 68,
-    "manual_odds": 162
+    "espn_field": 144,
+    "open_meteo": 52,
+    "bovada": 168,
+    "manual_odds": 208
   },
-  "weather": {},
+  "weather": {
+    "temperature_2m": 27.988,
+    "precipitation": 3.3,
+    "wind_speed_10m": 14.946,
+    "wind_gusts_10m": 21.367,
+    "wind_direction_10m": 203.6,
+    "hours": 52,
+    "forecast_ready": true,
+    "applied": false,
+    "reason": "no tee times",
+    "course_name": "John Deere Classic",
+    "event_name": "John Deere Classic",
+    "resolved_course": "TPC Deere Run",
+    "matched": "John Deere Classic",
+    "latitude": 41.4793,
+    "longitude": -90.392,
+    "timezone": "America/Chicago",
+    "tee_times": {
+      "r1": 0,
+      "r2": 0
+    }
+  },
   "qa": {
-    "ok": true,
+    "ok": false,
     "errors": [],
-    "warnings": [],
+    "warnings": [
+      {
+        "source": "weather_application",
+        "ok": false,
+        "severity": "warning",
+        "message": "weather fetched but no tee times are available, so wave adjustment will not affect ratings",
+        "rows": 0
+      }
+    ],
     "checks": [
       {
         "source": "espn.field",
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 72
+        "rows": 144
       },
       {
         "source": "espn.field",
         "ok": true,
         "severity": "info",
-        "message": "72 row(s)",
-        "rows": 72
+        "message": "144 row(s)",
+        "rows": 144
+      },
+      {
+        "source": "weather_application",
+        "ok": false,
+        "severity": "warning",
+        "message": "weather fetched but no tee times are available, so wave adjustment will not affect ratings",
+        "rows": 0
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 68
+        "rows": 168
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
-        "message": "68 row(s)",
-        "rows": 68
+        "message": "168 row(s)",
+        "rows": 168
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
-        "message": "wrote threeballs.csv (20)",
-        "rows": 68
+        "message": "wrote odds.csv (144), matchups.csv (12)",
+        "rows": 168
       },
       {
         "source": "manual_odds",
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 162
+        "rows": 208
       },
       {
         "source": "manual_odds",
         "ok": true,
         "severity": "info",
-        "message": "162 row(s)",
-        "rows": 162
+        "message": "208 row(s)",
+        "rows": 208
       }
     ]
   },

@@ -443,7 +443,10 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
         rows = con.execute(
             """
             SELECT p.display_name AS name, f.world_rank, f.status,
-                   e.name AS event, '' AS course_sigma,
+                   e.name AS event, e.course_name AS course,
+                   f.tee_time_r1, f.tee_time_r2,
+                   f.start_hole_r1, f.start_hole_r2,
+                   '' AS course_sigma,
                    '' AS odds_win, '' AS odds_top5, '' AS odds_top10,
                    '' AS odds_top20, '' AS odds_cut
             FROM field_entries f
@@ -455,7 +458,9 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
             (event_id,),
         ).fetchall()
     cols = [
-        "name", "world_rank", "status", "event", "course_sigma",
+        "name", "world_rank", "status", "event", "course",
+        "tee_time_r1", "tee_time_r2", "start_hole_r1", "start_hole_r2",
+        "course_sigma",
         "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut",
     ]
     with path.open("w", newline="") as f:

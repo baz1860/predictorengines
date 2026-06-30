@@ -63,8 +63,25 @@ def main() -> None:
 
     # Collect every unique player and rate them (single set of ratings/sigmas)
     names = sorted({nm for g in groups for nm, _ in g["players"]})
-    rated = M.predict_field(names, params, course=args.course, is_major=args.major)
-    rating = {p.name: p.rating for p in rated}
+    field_by_norm = {}
+    try:
+        for p in M.load_field(players=M.load_players()):
+            key = " ".join(p.name.casefold().split())
+            field_by_norm[key] = p
+            canon = M.resolve_name(p.name, params)
+            if canon:
+                field_by_norm[" ".join(canon.casefold().split())] = p
+    except FileNotFoundError:
+        pass
+    field_items = []
+    for nm in names:
+        p = field_by_norm.get(" ".join(nm.casefold().split()))
+        field_items.append(p if p is not None else M.Player(name=nm))
+    rated = M.predict_field(field_items, params, course=args.course, is_major=args.major)
+    rating = {
+        p.name: p.rating + float((getattr(p, "weather_round_adj", {}) or {}).get(1, 0.0))
+        for p in rated
+    }
     sigma = {p.name: p.sigma for p in rated}
     resolved = {nm: M.resolve_name(nm, params) for nm in names}
 
