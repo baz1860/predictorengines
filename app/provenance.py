@@ -77,7 +77,7 @@ ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
     "tennis": [
         ("matches", "tennis/data/matches.csv", "results", "fetch.py --seed / --accumulate"),
         ("draw", "tennis/data/draw.csv", "fixtures", "fetch.py --draw-template / manual"),
-        ("odds", "tennis/data/odds.csv", "odds", "manual"),
+        ("odds", "tennis/data/odds.csv", "odds", "manual / The Odds API"),
         ("model_atp", "tennis/data/atp_model_params.json", "model", "model.py --fit --tour atp"),
         ("model_wta", "tennis/data/wta_model_params.json", "model", "model.py --fit --tour wta"),
     ],
