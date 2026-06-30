@@ -23,6 +23,7 @@ class CourseLocation:
     latitude: float
     longitude: float
     timezone: str = "auto"
+    aliases: tuple[str, ...] = ()
 
 
 class OpenMeteoProvider:
@@ -45,13 +46,30 @@ class OpenMeteoProvider:
                     lon = float(row.get("longitude") or row.get("lon"))
                 except (TypeError, ValueError):
                     continue
-                out[_key(name)] = CourseLocation(
+                aliases = tuple(
+                    a.strip() for a in str(row.get("aliases") or "").split(";")
+                    if a.strip()
+                )
+                loc = CourseLocation(
                     course_name=name,
                     latitude=lat,
                     longitude=lon,
                     timezone=row.get("timezone") or "auto",
+                    aliases=aliases,
                 )
+                for key in (name, *aliases):
+                    out[_key(key)] = loc
         return out
+
+    def resolve_location(self, course_name: str = "",
+                         event_name: str = "") -> tuple[CourseLocation | None, str]:
+        """Resolve ESPN course/event text to a configured course location."""
+        locs = self.load_course_locations()
+        for raw in (course_name, event_name):
+            key = _key(raw)
+            if key and key in locs:
+                return locs[key], raw
+        return None, course_name or event_name
 
     def forecast(self, location: CourseLocation, start_date: str, days: int = 4,
                  use_cache: bool = True) -> dict:
@@ -113,6 +131,52 @@ class OpenMeteoProvider:
             "hours": len(keep),
         }
 
+    def wave_features(self, payload: dict, split_hour: int = 12,
+                      start_hour: int = 7, end_hour: int = 19) -> dict:
+        """Round/day early-vs-late weather penalties in strokes.
+
+        This is intentionally conservative. It uses wind speed, gusts, and rain
+        to estimate relative wave difficulty; only the early/late difference is
+        consumed by the model and field-centering removes any tournament-level
+        scoring effect.
+        """
+        hourly = payload.get("hourly") or {}
+        times = hourly.get("time") or []
+        per_date: dict[str, dict[str, list[int]]] = {}
+        for i, ts in enumerate(times):
+            text = str(ts)
+            if len(text) < 13:
+                continue
+            date = text[:10]
+            try:
+                hour = int(text[11:13])
+            except ValueError:
+                continue
+            if not start_hour <= hour <= end_hour:
+                continue
+            side = "late" if hour >= split_hour else "early"
+            per_date.setdefault(date, {"early": [], "late": []})[side].append(i)
+
+        rounds = {}
+        for rnd, date in enumerate(sorted(per_date), 1):
+            sides = per_date[date]
+            early = _difficulty(hourly, sides["early"])
+            late = _difficulty(hourly, sides["late"])
+            if early is None or late is None:
+                continue
+            avg = (early + late) / 2.0
+            rounds[str(rnd)] = {
+                "date": date,
+                "wave_penalty": {
+                    "split_hour": split_hour,
+                    "early_penalty": round(early - avg, 3),
+                    "late_penalty": round(late - avg, 3),
+                    "early_raw": round(early, 3),
+                    "late_raw": round(late, 3),
+                },
+            }
+        return {"rounds": rounds}
+
     def _request(self, label: str, url: str, params: dict, use_cache: bool = True) -> dict:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         key = "_".join([
@@ -156,3 +220,14 @@ def _circular_mean(values, idx: list[int]) -> float | None:
     sin_m = statistics.fmean(math.sin(v) for v in vals)
     cos_m = statistics.fmean(math.cos(v) for v in vals)
     return round((math.degrees(math.atan2(sin_m, cos_m)) + 360) % 360, 1)
+
+
+def _difficulty(hourly: dict, idx: list[int]) -> float | None:
+    if not idx:
+        return None
+    wind = _mean(hourly.get("wind_speed_10m"), idx) or 0.0
+    gust = _mean(hourly.get("wind_gusts_10m"), idx) or wind
+    rain = _sum(hourly.get("precipitation"), idx) or 0.0
+    # Open-Meteo wind is usually km/h for the default endpoint. A 10 km/h wind
+    # wave gap should matter, but not swamp skill.
+    return 0.018 * wind + 0.010 * max(0.0, gust - wind) + 0.030 * rain

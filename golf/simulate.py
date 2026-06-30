@@ -81,39 +81,46 @@ def load_sim_config(path: Path | None = None) -> tuple[float, float | None, floa
 _USE_CONFIG = object()   # sentinel: "fall back to load_sim_config()"
 
 
-def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df):
+def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
+                 score_shifts=None):
     """Draw (n_sims, n, 4) round scores under the round-correlation / t-tail
     scoring model. Pulled out so the win market can be re-drawn under its own
     regime; the rng draw order matches the historical inline code exactly."""
     rc = float(min(max(round_corr, 0.0), 0.95))
     if rc <= 0.0 and tail_df is None:
         # Legacy path: independent Gaussian rounds (bit-for-bit unchanged).
-        return rng.normal(
+        scores = rng.normal(
             loc=means[np.newaxis, :, np.newaxis],
             scale=sigmas[np.newaxis, :, np.newaxis],
             size=(n_sims, n, 4),
         )
-    persist_sd = sigmas * math.sqrt(rc)          # per-player week effect
-    trans_sd = sigmas * math.sqrt(1.0 - rc)      # per-round component
-    u = rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
-    if tail_df is not None and float(tail_df) > 2.0:
-        df = float(tail_df)
-        # variance-standardise the t so the marginal per-round spread stays
-        # sigma (Var(t_df) = df/(df-2)); preserves single-round calibration.
-        z = rng.standard_t(df, size=(n_sims, n, 4)) * math.sqrt((df - 2.0) / df)
     else:
-        z = rng.standard_normal((n_sims, n, 4))
-    return (means[np.newaxis, :, np.newaxis]
-            + u[:, :, np.newaxis]
-            + z * trans_sd[np.newaxis, :, np.newaxis])
+        persist_sd = sigmas * math.sqrt(rc)          # per-player week effect
+        trans_sd = sigmas * math.sqrt(1.0 - rc)      # per-round component
+        u = rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
+        if tail_df is not None and float(tail_df) > 2.0:
+            df = float(tail_df)
+            # variance-standardise the t so the marginal per-round spread stays
+            # sigma (Var(t_df) = df/(df-2)); preserves single-round calibration.
+            z = rng.standard_t(df, size=(n_sims, n, 4)) * math.sqrt((df - 2.0) / df)
+        else:
+            z = rng.standard_normal((n_sims, n, 4))
+        scores = (means[np.newaxis, :, np.newaxis]
+                  + u[:, :, np.newaxis]
+                  + z * trans_sd[np.newaxis, :, np.newaxis])
+    if score_shifts is not None:
+        scores = scores + score_shifts[np.newaxis, :, :]
+    return scores
 
 
-def _win_frac(rng, means, sigmas, n_sims, n, round_corr, tail_df) -> np.ndarray:
+def _win_frac(rng, means, sigmas, n_sims, n, round_corr, tail_df,
+              score_shifts=None) -> np.ndarray:
     """Per-player win probability (fraction of sims with the low 72-hole total)
     under a given scoring regime. Ties count for each tied player, matching the
     dense-rank==1 convention of the full simulator. No cut is applied — the
     winner is always well inside it. Vectorised; skips the ranking loop."""
-    scores = _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df)
+    scores = _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
+                          score_shifts=score_shifts)
     tot = scores.sum(axis=2)                              # (n_sims, n) 72-hole
     is_best = tot == tot.min(axis=1, keepdims=True)
     return is_best.sum(axis=0) / n_sims
@@ -128,8 +135,28 @@ def win_market_probs(players: list[Player], n_sims: int, round_corr: float,
     rng = rng or np.random.default_rng()
     means = np.array([-p.rating for p in players])
     sigmas = np.array([p.sigma for p in players])
-    frac = _win_frac(rng, means, sigmas, n_sims, len(players), round_corr, tail_df)
+    shifts = _weather_score_shifts(players)
+    frac = _win_frac(rng, means, sigmas, n_sims, len(players), round_corr, tail_df,
+                     score_shifts=shifts)
     return {p.name: float(frac[i]) for i, p in enumerate(players)}
+
+
+def _weather_score_shifts(players: list[Player]) -> np.ndarray | None:
+    """Per-player, per-round score shifts from weather.
+
+    Player weather adjustments are stored as rating nudges (positive helps).
+    Scores are lower-is-better, so we subtract the rating nudge from that round's
+    score mean. Return None when all shifts are zero to preserve legacy draws.
+    """
+    shifts = np.zeros((len(players), 4), dtype=float)
+    for i, p in enumerate(players):
+        adj = getattr(p, "weather_round_adj", {}) or {}
+        for rnd in range(1, 5):
+            try:
+                shifts[i, rnd - 1] = -float(adj.get(rnd, 0.0))
+            except (TypeError, ValueError):
+                pass
+    return shifts if np.any(np.abs(shifts) > 1e-12) else None
 
 
 def simulate_tournament(
@@ -223,6 +250,7 @@ def simulate_tournament(
     # Expected score per round = -rating (lower = better)
     # Scores are relative to field average (0 = average field score)
     means = -ratings  # shape (n,)
+    score_shifts = _weather_score_shifts(players)
 
     # Accumulators
     wins      = np.zeros(n, dtype=np.int64)
@@ -235,7 +263,9 @@ def simulate_tournament(
 
     # Draw all rounds in bulk for speed.  Shape: (n_sims, n_players, 4_rounds).
     # Place/cut markets use this primary draw (validated round_corr/tail_df).
-    scores_all = _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df)
+    scores_all = _draw_scores(
+        rng, means, sigmas, n_sims, n, round_corr, tail_df,
+        score_shifts=score_shifts)
 
     # Market-aware win shape: redraw the field under the win regime and price the
     # win market off *its* leaderboard. Place/cut markets stay on the primary
@@ -246,7 +276,8 @@ def simulate_tournament(
     win_frac = None
     if win_regime:
         win_frac = _win_frac(rng, means, sigmas, n_sims, n,
-                             win_round_corr, win_tail_df)
+                             win_round_corr, win_tail_df,
+                             score_shifts=score_shifts)
 
     # R1+R2 totals
     r36 = scores_all[:, :, 0] + scores_all[:, :, 1]  # (n_sims, n)
@@ -367,6 +398,7 @@ def write_predictions(
     path = path or DATA_DIR / "predictions.csv"
     cols = [
         "rank", "name", "rating", "sigma", "owgr",
+        "course_fit", "course_arch_adj", "weather_wave_adj", "global_prior_adj",
         "win_pct", "top5_pct", "top10_pct", "top20_pct",
         "cut_pct", "avg_finish",
     ]
@@ -385,6 +417,10 @@ def write_predictions(
                 "rating":     f"{p.rating:+.3f}",
                 "sigma":      f"{p.sigma:.2f}",
                 "owgr":       p.owgr,
+                "course_fit": f"{getattr(p, 'course_fit', 0.0):+.3f}",
+                "course_arch_adj": f"{getattr(p, 'course_arch_adj', 0.0):+.3f}",
+                "weather_wave_adj": f"{getattr(p, 'weather_wave_adj', 0.0):+.3f}",
+                "global_prior_adj": f"{getattr(p, 'global_prior_adj', 0.0):+.3f}",
                 "win_pct":    f"{r['win']*100:.2f}",
                 "top5_pct":   f"{r['top5']*100:.1f}",
                 "top10_pct":  f"{r['top10']*100:.1f}",
@@ -460,8 +496,7 @@ def main():
     params = M.load_params()
     if params:
         print("Ratings: fitted model (model_params.json)")
-        field = M.predict_field([p.name for p in field], params,
-                                course=args.course, is_major=args.major)
+        field = M.predict_field(field, params, course=args.course, is_major=args.major)
     else:
         print("Ratings: legacy players.csv composite")
         field = compute_ratings(

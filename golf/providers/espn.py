@@ -53,6 +53,10 @@ class EspnFieldEntry:
     status: str = "active"
     country: str = ""
     world_rank: int | None = None
+    tee_time_r1: str = ""
+    tee_time_r2: str = ""
+    start_hole_r1: str = ""
+    start_hole_r2: str = ""
     source: str = "espn"
 
     def as_store_row(self) -> dict:
@@ -111,12 +115,17 @@ class EspnGolfProvider:
                         continue
                     status = _status_name(c) or "active"
                     flag = athlete.get("flag") or {}
+                    round_meta = _field_round_meta(c)
                     out.append(EspnFieldEntry(
                         name=name,
                         source_player_id=str(athlete.get("id") or c.get("id") or ""),
                         status=status,
                         country=str(flag.get("alt") or ""),
                         world_rank=_safe_int(c.get("rank")),
+                        tee_time_r1=round_meta.get("tee_time_r1", ""),
+                        tee_time_r2=round_meta.get("tee_time_r2", ""),
+                        start_hole_r1=round_meta.get("start_hole_r1", ""),
+                        start_hole_r2=round_meta.get("start_hole_r2", ""),
                     ))
         return out
 
@@ -242,7 +251,10 @@ class EspnGolfProvider:
         return rows, rounds_done
 
     def qa_checks(self, field_rows: Iterable[EspnFieldEntry]) -> list[qa.SourceCheck]:
-        rows = [r.as_store_row() for r in field_rows]
+        rows = [
+            r.as_store_row() if hasattr(r, "as_store_row") else dict(r)
+            for r in field_rows
+        ]
         return [
             qa.require_columns("espn.field", rows, ["name", "status", "source_player_id"]),
             qa.min_rows("espn.field", rows, 20),
@@ -296,25 +308,39 @@ def _status_name(comp: dict) -> str:
     return str(((comp.get("status") or {}).get("type") or {}).get("name") or "")
 
 
-def _to_par(value) -> float:
-    """Parse an ESPN to-par display ('-7', 'E', '+2', '') into a number."""
-    s = str(value or "").strip()
-    if s in ("", "E", "e", "EVEN", "Even", "even", "-", "--"):
-        return 0.0
-    try:
-        return float(s.replace("+", ""))
-    except (TypeError, ValueError):
-        return 0.0
+def _field_round_meta(comp: dict) -> dict[str, str]:
+    """Best-effort tee metadata from ESPN linescore statistics.
+
+    ESPN has changed this shape more than once. We scan display values rather
+    than depending on stat names so missing/changed metadata simply degrades to
+    blanks in field.csv.
+    """
+    out: dict[str, str] = {}
+    for round_line in comp.get("linescores", []) or []:
+        rnd = _safe_int(round_line.get("period"))
+        if rnd not in (1, 2):
+            continue
+        vals: list[str] = []
+        for cat in (round_line.get("statistics") or {}).get("categories", []) or []:
+            for stat in cat.get("stats", []) or []:
+                display = str(stat.get("displayValue") or "").strip()
+                if display:
+                    vals.append(display)
+        for val in vals:
+            low = val.lower()
+            if ("am" in low or "pm" in low or "gmt" in low or "utc" in low
+                    or _looks_like_iso_time(val)):
+                out[f"tee_time_r{rnd}"] = val
+                break
+        for val in vals:
+            if val in {"1", "10"}:
+                out[f"start_hole_r{rnd}"] = val
+                break
+    return out
 
 
-def _is_out(competitor: dict) -> bool:
-    """True if the competitor is cut, withdrawn, or disqualified."""
-    blob = " ".join(str(x) for x in (
-        _status_name(competitor),
-        ((competitor.get("status") or {}).get("type") or {}).get("description"),
-        competitor.get("displayValue"),
-    )).upper()
-    return any(tok in blob for tok in ("CUT", "WD", "WITHDR", "DQ", "DISQ", "MDF"))
+def _looks_like_iso_time(value: str) -> bool:
+    return len(value) >= 16 and value[4:5] == "-" and "T" in value
 
 
 def _safe_int(value) -> int | None:
