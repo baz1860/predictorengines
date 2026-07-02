@@ -18,6 +18,7 @@ import csv
 import datetime as _dt
 import json
 import math
+import argparse
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -209,7 +210,65 @@ def clv_pct(bet_odds: float, player: str, market: str, event: str = "") -> float
     return round(bet_odds / closing_odds - 1.0, 4)
 
 
-if __name__ == "__main__":
+def clv_report(edge_path: Path | None = None, predictions_path: Path | None = None,
+               event: str = "") -> dict:
+    """CLV grouped by market and feature regime.
+
+    Uses edge_report.csv rows as placed/candidate prices and odds_history.csv as
+    the close. Feature regimes are inferred from predictions.csv adjustment
+    columns: weather/course/global.
+    """
+    edge_path = edge_path or DATA_DIR / "edge_report.csv"
+    predictions_path = predictions_path or DATA_DIR / "predictions.csv"
+    if not edge_path.exists():
+        raise FileNotFoundError(f"No edge report at {edge_path}")
+    pred = {}
+    if predictions_path.exists():
+        with predictions_path.open() as f:
+            for r in csv.DictReader(f):
+                pred[r.get("name", "")] = r
+    groups: dict[str, list[float]] = {}
+    rows = []
+    with edge_path.open() as f:
+        for r in csv.DictReader(f):
+            player = r.get("player", "")
+            side = r.get("side", "")
+            market_name = side.split(":", 1)[0] if ":" in side else side
+            try:
+                odds = float(r.get("odds") or 0)
+            except ValueError:
+                continue
+            val = clv_pct(odds, player, market_name, event=event)
+            if val is None:
+                continue
+            p = pred.get(player, {})
+            regimes = [f"market:{market_name}"]
+            for key, label in (
+                ("weather_wave_adj", "weather"),
+                ("course_arch_adj", "course_arch"),
+                ("global_prior_adj", "global_prior"),
+            ):
+                try:
+                    if abs(float(p.get(key) or 0.0)) > 1e-9:
+                        regimes.append(f"feature:{label}")
+                except ValueError:
+                    pass
+            for g in regimes:
+                groups.setdefault(g, []).append(val)
+            rows.append({"player": player, "market": market_name, "clv": val})
+    summary = {
+        g: {
+            "n": len(vals),
+            "mean_clv": round(sum(vals) / len(vals), 4),
+            "hit_rate": round(sum(1 for v in vals if v > 0) / len(vals), 4),
+        }
+        for g, vals in sorted(groups.items())
+        if vals
+    }
+    return {"rows": rows, "summary": summary}
+
+
+def _demo() -> None:
     # demo: power vs multiplicative on a realistic full outright board
     # (favourites + a long tail; implied probs sum to ~1.5 = 50% overround).
     board = {"Scheffler": 5.0, "McIlroy": 9.0, "Rahm": 15.0, "Schauffele": 22.0,
@@ -230,3 +289,21 @@ if __name__ == "__main__":
     print("\nplace-line de-vig (single-sided):")
     for mkt, o in (("top10", 4.5), ("cut", 1.5)):
         print(f"  {mkt:<6} odds {o} → fair {devig_line(o, mkt)*100:.1f}%")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Golf market utilities")
+    ap.add_argument("--clv-report", action="store_true")
+    ap.add_argument("--event", default="")
+    args = ap.parse_args()
+    if args.clv_report:
+        rep = clv_report(event=args.event)
+        print("CLV report")
+        for group, row in rep["summary"].items():
+            print(f"  {group:<24} n={row['n']:<4} mean={row['mean_clv']:+.2%} hit={row['hit_rate']:.1%}")
+    else:
+        _demo()
+
+
+if __name__ == "__main__":
+    main()

@@ -109,6 +109,29 @@ def test_odds_validation_cfb():
               any("expected" in e["message"] for e in errs))
 
 
+def test_odds_validation_nhl():
+    with tempfile.TemporaryDirectory() as d:
+        good = Path(d) / "nhl_good.csv"
+        good.write_text(
+            "date,home,away,market,side,line,odds\n"
+            "2026-10-09,Toronto Maple Leafs,Boston Bruins,ml,home,,1.88\n"
+            "2026-10-09,Toronto Maple Leafs,Boston Bruins,spread,away,1.5,1.43\n"
+            "2026-10-09,Toronto Maple Leafs,Boston Bruins,total,over,6.5,1.95\n")
+        check("valid nhl odds → no errors", PV.validate_odds_file("nhl", good) == [])
+
+        bad = Path(d) / "nhl_bad.csv"
+        bad.write_text(
+            "date,home,away,market,side,line,odds\n"
+            "2026-10-09,A,B,total,home,6.5,1.90\n"
+            "2026-10-09,A,B,spread,away,,1.90\n"
+            "2026-10-09,A,B,ml,home,,1.0\n")
+        errs = PV.validate_odds_file("nhl", bad)
+        cols = {(e["row"], e["column"]) for e in errs}
+        check("nhl flags bad total side", (1, "side") in cols, str(cols))
+        check("nhl flags missing puck-line line", (2, "line") in cols, str(cols))
+        check("nhl flags odds <= 1.0", (3, "odds") in cols, str(cols))
+
+
 def test_odds_validation_wide():
     with tempfile.TemporaryDirectory() as d:
         bad = Path(d) / "wc.csv"
@@ -125,6 +148,7 @@ def main():
     test_freshness_and_manifest()
     test_freshness_warnings_never_raises()
     test_odds_validation_cfb()
+    test_odds_validation_nhl()
     test_odds_validation_wide()
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)

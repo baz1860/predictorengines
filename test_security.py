@@ -168,8 +168,9 @@ def test_key_file_perms():
 def test_preflight():
     import preflight
     report = preflight.build_report()
+    expected = {"worldcup", "club_soccer", "cfb", "golf", "tennis", "nhl"}
     check("preflight reports all engines",
-          set(report["engines"]) == {"worldcup", "club_soccer", "cfb", "golf"},
+          set(report["engines"]) == expected,
           str(set(report["engines"])))
 
 

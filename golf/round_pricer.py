@@ -90,8 +90,41 @@ def price_round_groups(
     names = sorted({q.player_name for qs in groups.values() for q in qs})
     if not names:
         return []
-    rated = M.predict_field(names, params, course=course, is_major=is_major)
-    rating = {p.name: p.rating for p in rated}
+    field_by_norm = {}
+    try:
+        for p in M.load_field(players=M.load_players()):
+            field_by_norm[_norm_name(p.name)] = p
+            canon = M.resolve_name(p.name, params)
+            if canon:
+                field_by_norm[_norm_name(canon)] = p
+    except FileNotFoundError:
+        pass
+    field_items = []
+    for name in names:
+        item = field_by_norm.get(_norm_name(name))
+        if item is None:
+            canon = M.resolve_name(name, params)
+            item = field_by_norm.get(_norm_name(canon or ""))
+        if item is None:
+            item = M.Player(name=name)
+        else:
+            item = M.Player(
+                name=name,
+                owgr=item.owgr,
+                country=item.country,
+                tee_time_r1=item.tee_time_r1,
+                tee_time_r2=item.tee_time_r2,
+                start_hole_r1=item.start_hole_r1,
+                start_hole_r2=item.start_hole_r2,
+            )
+        field_items.append(item)
+    round_no = next((q.round_no for qs in groups.values() for q in qs if q.round_no), 1)
+    rated = M.predict_field(
+        field_items, params, course=course, is_major=is_major, round_no=int(round_no or 1))
+    rating = {
+        p.name: p.rating + float((getattr(p, "weather_round_adj", {}) or {}).get(int(round_no or 1), 0.0))
+        for p in rated
+    }
     sigma = {p.name: p.sigma for p in rated}
     resolved = {name: M.resolve_name(name, params) for name in names}
     n_rounds = {

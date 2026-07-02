@@ -19,6 +19,7 @@ python3 -m tennis.season --schedule --tour wta
 
 python3 -m tennis.season                            # price the current ATP draw
 python3 -m tennis.season --tour wta --event Berlin  # pick a tournament by name
+python3 -m tennis.season --event Wimbledon --odds-api # also pull book prices
 ```
 
 That pulls the draw from ESPN, including completed matches and their winners,
@@ -36,7 +37,20 @@ python3 -m tennis.season --min-edge 2               # only count ≥2% edges as 
 ### Adding prices
 
 Match probabilities come for free; **bets need book odds**, which are yours to
-provide. Write a skeleton and fill it in:
+provide or fetch from The Odds API:
+
+```bash
+python3 -m tennis.fetch --odds-api --tours atp --event Wimbledon
+python3 -m tennis.fetch --odds-api --tours wta --event Wimbledon
+```
+
+You can also do it in the normal card run:
+
+```bash
+python3 -m tennis.season --tour atp --event Wimbledon --odds-api --min-edge 2
+```
+
+For manual entry, write a skeleton and fill it in:
 
 ```bash
 python3 -m tennis.fetch --odds-template             # → data/odds.csv

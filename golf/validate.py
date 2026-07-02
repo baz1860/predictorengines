@@ -34,6 +34,7 @@ from . import simulate as gsim
 DATA_DIR = Path(__file__).parent / "data"
 PRED_CSV = DATA_DIR / "validation_predictions.csv"
 BASELINE_JSON = DATA_DIR / "validation_baseline.json"
+WEATHER_CONFIG_JSON = DATA_DIR / "weather_config.json"
 
 MARKETS = ["win", "top5", "top10", "top20", "cut"]
 TOPN = {"top5": 5, "top10": 10, "top20": 20}
@@ -99,7 +100,8 @@ def _actuals(event: pd.DataFrame) -> dict[str, dict]:
 def walk_forward(df: pd.DataFrame, since: str, sims: int,
                  seed: int = 0, verbose: bool = True,
                  config: dict | None = None,
-                 sim_config: dict | None = None) -> pd.DataFrame:
+                 sim_config: dict | None = None,
+                 feature_flags: dict | None = None) -> pd.DataFrame:
     """Walk-forward predictions. `config` tunes the model fit; `sim_config`
     (optional) overrides the scoring shape passed to the simulator, e.g.
     {"round_corr":.3,"tail_df":6,"win_round_corr":.1,"win_tail_df":6}."""
@@ -127,7 +129,8 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
         except ValueError:
             continue
         rated = model.predict_field(field, params, course=str(ev.course),
-                                    is_major=bool(ev.is_major))
+                                    is_major=bool(ev.is_major),
+                                    feature_flags=feature_flags)
         res = gsim.simulate_tournament(
             rated, n_sims=sims, cut_rule=65, rng=rng,
             round_corr=sc.get("round_corr"),
@@ -422,6 +425,70 @@ def sweep_win_corr(since: str, sims: int, seed: int = 0,
     return {"scored": scored, "chosen": best_c, "promote": bool(promote)}
 
 
+def tune_weather_coefficients(write: bool = False) -> dict:
+    """Estimate conservative weather score coefficients from enriched rounds.
+
+    Requires rounds.csv columns: wind_speed, wind_gust, precipitation. Tee times
+    are ideal but not required for this first coefficient pass because the model
+    applies coefficients to early/late wave differences at refresh time.
+    """
+    df = model.load_rounds_df()
+    required = ["wind_speed", "wind_gust", "precipitation"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise SystemExit(
+            "Weather tuning needs historical weather-enriched rounds.csv columns: "
+            + ", ".join(missing)
+            + ". Run/implement historical Open-Meteo enrichment before promotion."
+        )
+    wx = df.dropna(subset=["score_to_par", *required]).copy()
+    if len(wx) < 1000:
+        raise SystemExit(f"Weather tuning needs >=1000 enriched rounds, found {len(wx)}.")
+    wx["gust_delta"] = (wx["wind_gust"].astype(float) - wx["wind_speed"].astype(float)).clip(lower=0)
+    # Remove tournament-round setup difficulty first; fit weather to residual setup.
+    tr = wx["tournament_id"].astype(str) + "|" + wx["round"].astype(str)
+    y = wx["score_to_par"].astype(float) - wx.groupby(tr)["score_to_par"].transform("mean")
+    X = wx[["wind_speed", "gust_delta", "precipitation"]].astype(float).values
+    X = np.column_stack([np.ones(len(X)), X])
+    beta = np.linalg.lstsq(X, y.values, rcond=None)[0]
+    coefs = {
+        "intercept": round(float(beta[0]), 6),
+        "wind_speed": round(float(beta[1]), 6),
+        "gust_delta": round(float(beta[2]), 6),
+        "precipitation": round(float(beta[3]), 6),
+        "n_rounds": int(len(wx)),
+        "source": "golf.validate --tune-weather",
+    }
+    print("Weather coefficient fit:")
+    for k, v in coefs.items():
+        print(f"  {k}: {v}")
+    if write:
+        WEATHER_CONFIG_JSON.write_text(json.dumps(coefs, indent=2) + "\n")
+        print(f"  wrote {WEATHER_CONFIG_JSON}")
+    return coefs
+
+
+def ablation_report(since: str, sims: int, seed: int = 0,
+                    features: list[str] | None = None) -> dict:
+    features = features or ["weather", "course_arch", "global_priors"]
+    df = model.load_rounds_df()
+    base = walk_forward(df, since=since, sims=sims, seed=seed, verbose=False)
+    if base.empty:
+        raise SystemExit("No base predictions for ablation.")
+    out = {"base": summarize(base), "ablations": {}}
+    print("Feature ablation report")
+    print(f"  base headline {out['base']['headline_brier']:.5f}")
+    for feat in features:
+        pred = walk_forward(
+            df, since=since, sims=sims, seed=seed, verbose=False,
+            feature_flags={feat: False})
+        rep = summarize(pred)
+        out["ablations"][feat] = rep
+        delta = rep["headline_brier"] - out["base"]["headline_brier"]
+        print(f"  without {feat:<13} headline {rep['headline_brier']:.5f} Δ {delta:+.5f}")
+    return out
+
+
 def print_report(rep: dict) -> None:
     print(f"\n{'Market':<8}{'N':>7}{'base':>8}{'Brier':>9}{'vs base':>9}"
           f"{'skill':>8}{'logloss':>9}")
@@ -456,6 +523,10 @@ def main():
                     help="screen/tune free-data fit hyperparameters")
     ap.add_argument("--sweep-win-corr", action="store_true",
                     help="pick the win-market round_corr (place markets unaffected)")
+    ap.add_argument("--tune-weather", action="store_true",
+                    help="fit weather coefficients from weather-enriched historical rounds")
+    ap.add_argument("--ablate", nargs="*", default=None,
+                    help="feature ablation report, e.g. --ablate weather course_arch global_priors")
     ap.add_argument("--write", action="store_true",
                     help="with --tune-config/--sweep-win-corr, write promoted config")
     args = ap.parse_args()
@@ -466,6 +537,15 @@ def main():
 
     if args.sweep_win_corr:
         sweep_win_corr(args.since, sims=args.sims, seed=args.seed, write=args.write)
+        return
+
+    if args.tune_weather:
+        tune_weather_coefficients(write=args.write)
+        return
+
+    if args.ablate is not None:
+        ablation_report(args.since, sims=args.sims, seed=args.seed,
+                        features=args.ablate or None)
         return
 
     df = model.load_rounds_df()

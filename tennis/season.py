@@ -11,13 +11,14 @@ directly for a normal week.
     python -m tennis.season                         # price the current ATP draw
     python -m tennis.season --tour wta --event Berlin
     python -m tennis.season --no-fetch              # reprice the saved draw.csv
+    python -m tennis.season --event Wimbledon --odds-api
 
 The draw is pulled automatically from ESPN and saved to `tennis/data/draw.csv`
-(so `simulate`/`edge` keep working). Book odds are still yours to provide: drop
-matchup prices into `tennis/data/odds.csv` (`--odds-template` writes a skeleton)
-and any match the model rates above the market shows an edge and a stake. Without
-odds the card still gives you the model's pick and win probability for every
-match in every round.
+(so `simulate`/`edge` keep working). Book odds can be fetched from The Odds API
+with `--odds-api` or entered manually in `tennis/data/odds.csv`
+(`--odds-template` writes a skeleton). Any match the model rates above the market
+shows an edge and a stake. Without odds the card still gives you the model's pick
+and win probability for every match in every round.
 """
 
 from __future__ import annotations
@@ -84,6 +85,9 @@ def build_card(
     min_edge: float = 0.0,
     calibrated: bool = True,
     blended: bool = True,
+    fetch_odds: bool = False,
+    api_key: str | None = None,
+    odds_regions: str = "eu",
     output: Path = CARD_MD,
 ) -> dict:
     """Pull the draw, price every match with the fitted model + book odds, and
@@ -104,6 +108,22 @@ def build_card(
         matches, surface, best_of, tourney_name = _load_draw_csv(tour)
         notes.append(f"draw: {tourney_name} (saved draw.csv)" if matches
                      else "draw: none found")
+
+    if fetch_odds:
+        try:
+            from . import fetch as FETCH
+            odds_event = tourney_name or tourney
+            odds_rows = FETCH.fetch_odds_api(tour=tour, event=odds_event,
+                                             api_key=api_key,
+                                             regions=odds_regions)
+            if odds_rows:
+                FETCH.write_odds_csv(odds_rows)
+                notes.append(f"odds: {len(odds_rows)} h2h rows "
+                             f"(The Odds API → odds.csv)")
+            else:
+                notes.append("odds: no h2h rows fetched")
+        except Exception as exc:
+            notes.append(f"odds: fetch skipped ({exc})")
 
     odds = _load_odds(tour)
     maps = C.load_maps() if calibrated else None
@@ -335,6 +355,12 @@ def main() -> None:
     ap.add_argument("--kelly", type=float, default=DEFAULT_KELLY)
     ap.add_argument("--min-edge", type=float, default=0.0,
                     help="min %% edge to count a bet as backed (default 0)")
+    ap.add_argument("--odds-api", action="store_true",
+                    help="fetch h2h prices from The Odds API into odds.csv before pricing")
+    ap.add_argument("--api-key", default=None,
+                    help="The Odds API key; defaults to THE_ODDS_API_KEY/data/api_keys.json")
+    ap.add_argument("--regions", default="eu",
+                    help="The Odds API regions for --odds-api (default: eu)")
     args = ap.parse_args()
 
     if args.schedule:
@@ -343,7 +369,9 @@ def main() -> None:
 
     summary = build_card(tour=args.tour, tourney=args.event,
                          fetch=not args.no_fetch, bankroll=args.bankroll,
-                         kelly=args.kelly, min_edge=args.min_edge)
+                         kelly=args.kelly, min_edge=args.min_edge,
+                         fetch_odds=args.odds_api, api_key=args.api_key,
+                         odds_regions=args.regions)
     print(f"{summary['event'] or summary['tour'].upper()} — "
           f"{summary['matches']} match(es), {summary['bets']} bet(s) backed")
     for n in summary["notes"]:

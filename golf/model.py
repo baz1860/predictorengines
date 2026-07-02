@@ -30,6 +30,9 @@ ROUNDS_CSV = DATA_DIR / "rounds.csv"
 PARAMS_JSON = DATA_DIR / "model_params.json"
 MODEL_CONFIG_JSON = DATA_DIR / "model_config.json"
 PUBLIC_STATS_CSV = DATA_DIR / "pgatour_stats.csv"
+COURSE_FEATURES_CSV = DATA_DIR / "course_features.csv"
+WEATHER_FEATURES_JSON = DATA_DIR / "weather_features.json"
+GLOBAL_PRIORS_CSV = DATA_DIR / "global_player_priors.csv"
 
 # Weight parameters for composite rating
 W_BASELINE = 0.55
@@ -61,6 +64,14 @@ class Player:
     datagolf_skill: float = 0.0 # DataGolf composite (if available)
     owgr: int = 999             # Official World Golf Ranking
     country: str = ""
+    tee_time_r1: str = ""
+    tee_time_r2: str = ""
+    start_hole_r1: str = ""
+    start_hole_r2: str = ""
+    weather_wave_adj: float = 0.0
+    weather_round_adj: dict = field(default_factory=dict)
+    course_arch_adj: float = 0.0
+    global_prior_adj: float = 0.0
     course_fit: float = 0.0     # SG at this specific course (filled by load_course_fit)
     course_rounds: int = 0      # How many rounds at this course
     recent_form: float = 0.0    # Exponentially-weighted recent SG
@@ -154,6 +165,11 @@ def load_field(
             sigma_override = _safe_float(row.get("course_sigma"), 0.0)
             if sigma_override > 0:
                 p.sigma = sigma_override
+            p.owgr = _safe_int(row.get("world_rank") or row.get("owgr"), p.owgr)
+            p.tee_time_r1 = row.get("tee_time_r1", "")
+            p.tee_time_r2 = row.get("tee_time_r2", "")
+            p.start_hole_r1 = row.get("start_hole_r1", "")
+            p.start_hole_r2 = row.get("start_hole_r2", "")
 
             field_players.append(p)
 
@@ -332,6 +348,9 @@ DEFAULT_MODEL_CONFIG = {
 }
 
 PUBLIC_STAT_BLEND = 0.15
+GLOBAL_PRIOR_MAX_BLEND = 0.25
+COURSE_ARCH_MAX_ABS = 0.45
+WEATHER_WAVE_MAX_ABS = 0.35
 
 
 def load_model_config(path: Path | None = None) -> dict:
@@ -693,26 +712,6 @@ def resolve_name(name: str, params: dict) -> str | None:
     return None
 
 
-def rating_for(name: str, params: dict, course: str = "") -> tuple[float, float]:
-    """(rating, sigma) for one player from fitted params. Unknown → default."""
-    canon = resolve_name(name, params)
-    pl = params.get("players", {}).get(canon) if canon else None
-    fw = params.get("form_weight", FORM_WEIGHT)
-    stat_prior = _public_stat_prior(name, params, canon)
-    if pl is None:
-        if stat_prior is not None:
-            return stat_prior, params.get("sigma_field", DEFAULT_SIGMA) * 1.05
-        return params.get("default_skill", -0.5), \
-               params.get("sigma_field", DEFAULT_SIGMA) * 1.1
-    rating = pl["skill"] + fw * pl.get("form", 0.0)
-    if stat_prior is not None:
-        blend = float(params.get("public_stat_blend", PUBLIC_STAT_BLEND))
-        rating = (1 - blend) * rating + blend * stat_prior
-    if course:
-        rating += params.get("courses", {}).get(course, {}).get(canon, 0.0)
-    return rating, pl.get("sigma", params.get("sigma_field", DEFAULT_SIGMA))
-
-
 def _public_stat_prior(name: str, params: dict, canon: str | None = None) -> float | None:
     priors = params.get("public_stat_priors", {}) or {}
     for key in (canon, name):
@@ -731,25 +730,310 @@ def _public_stat_prior(name: str, params: dict, canon: str | None = None) -> flo
     return None
 
 
+def _public_stat_components(name: str, params: dict, canon: str | None = None) -> dict[str, float]:
+    priors = params.get("public_stat_priors", {}) or {}
+    candidates = [canon, name]
+    folded = _fold_name(name)
+    candidates.extend(
+        p_name for p_name in priors
+        if _fold_name(p_name) == folded
+    )
+    for key in candidates:
+        row = priors.get(key) if key else None
+        stats = (row or {}).get("stats") or {}
+        out = {}
+        for k, v in stats.items():
+            try:
+                out[str(k).lower()] = float(v)
+            except (TypeError, ValueError):
+                continue
+        if out:
+            return out
+    return {}
+
+
+def load_course_features(path: Path | None = None) -> dict[str, dict[str, float]]:
+    """Optional course-archetype coefficients.
+
+    CSV columns:
+      course, sg_ott, sg_app, sg_arg, sg_putt, distance, accuracy, wind_exposure
+
+    Values are small multipliers, normally in [-1, +1]. `distance` and
+    `accuracy` both use public SG:OTT as the free-source proxy unless richer
+    driving sub-stats are available.
+    """
+    path = path or COURSE_FEATURES_CSV
+    if not path.exists():
+        return {}
+    out: dict[str, dict[str, float]] = {}
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            course = (row.get("course") or row.get("course_name") or "").strip()
+            if not course:
+                continue
+            vals = {}
+            for key in (
+                "sg_ott", "sg_app", "sg_arg", "sg_atg", "sg_putt",
+                "distance", "accuracy", "wind_exposure",
+            ):
+                try:
+                    vals[key] = float(row.get(key) or 0.0)
+                except (TypeError, ValueError):
+                    vals[key] = 0.0
+            out[_fold_name(course)] = vals
+    return out
+
+
+def load_weather_features(path: Path | None = None) -> dict:
+    """Load optional tournament/round weather features written by refresh.py."""
+    path = path or WEATHER_FEATURES_JSON
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+def load_global_player_priors(path: Path | None = None) -> dict[str, dict]:
+    """Manual/global-tour priors for thin PGA samples.
+
+    CSV columns: name, sg_total, sigma, source, notes. These are intentionally
+    explicit rather than scraped, so majors can include LIV/DPWT/international
+    players without forcing them through a weak PGA-only default.
+    """
+    path = path or GLOBAL_PRIORS_CSV
+    if not path.exists():
+        return {}
+    out = {}
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            name = (row.get("name") or row.get("player") or "").strip()
+            if not name:
+                continue
+            try:
+                sg = float(row.get("sg_total") or row.get("skill"))
+            except (TypeError, ValueError):
+                continue
+            rec = {"sg_total": max(-2.5, min(3.0, sg))}
+            try:
+                sig = float(row.get("sigma") or 0.0)
+                if sig > 0:
+                    rec["sigma"] = max(1.8, min(4.5, sig))
+            except (TypeError, ValueError):
+                pass
+            rec["source"] = row.get("source", "")
+            rec["notes"] = row.get("notes", "")
+            out[_fold_name(name)] = rec
+    return out
+
+
+def _owgr_skill_prior(rank: int | None) -> float | None:
+    """Conservative SG/round prior from world rank for thin global samples."""
+    if rank is None or rank <= 0 or rank >= 999:
+        return None
+    # Smoothly maps roughly: #1≈2.2, #10≈1.3, #50≈0.7, #100≈0.4, #300≈0.0.
+    return max(-0.6, min(2.2, 2.2 - 0.4 * math.log(float(rank))))
+
+
+def _global_player_prior(name: str, canon: str | None = None,
+                         priors: dict | None = None) -> dict | None:
+    priors = priors if priors is not None else load_global_player_priors()
+    for key in (name, canon):
+        folded = _fold_name(key or "")
+        if folded in priors:
+            return priors[folded]
+    return None
+
+
+def _course_arch_adjustment(name: str, params: dict, course: str,
+                            canon: str | None = None,
+                            course_features: dict | None = None) -> float:
+    if not course:
+        return 0.0
+    features = course_features if course_features is not None else load_course_features()
+    prof = features.get(_fold_name(course), {})
+    if not prof:
+        return 0.0
+    stats = _public_stat_components(name, params, canon)
+    if not stats:
+        return 0.0
+    sg_ott = stats.get("sg_ott", stats.get("sg_t2g", 0.0) * 0.35)
+    parts = {
+        "sg_ott": sg_ott,
+        "distance": sg_ott,
+        "accuracy": sg_ott,
+        "sg_app": stats.get("sg_app", 0.0),
+        "sg_arg": stats.get("sg_arg", stats.get("sg_atg", 0.0)),
+        "sg_atg": stats.get("sg_arg", stats.get("sg_atg", 0.0)),
+        "sg_putt": stats.get("sg_putt", 0.0),
+    }
+    raw = sum(float(prof.get(k, 0.0)) * float(v) for k, v in parts.items())
+    # Course archetype is a nudge on top of durable skill, not a second model.
+    return max(-COURSE_ARCH_MAX_ABS, min(COURSE_ARCH_MAX_ABS, 0.12 * raw))
+
+
+def _tee_hour(value: str) -> float | None:
+    import re
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        m12 = re.search(r"\b(\d{1,2}):(\d{2})\s*([AP]M)\b", text, re.I)
+        if m12:
+            hour = int(m12.group(1)) % 12
+            if m12.group(3).lower() == "pm":
+                hour += 12
+            return hour + int(m12.group(2)) / 60.0
+        m24 = re.search(r"\b(\d{1,2}):(\d{2})(?::\d{2})?\b", text)
+        if m24:
+            return int(m24.group(1)) + int(m24.group(2)) / 60.0
+        if "T" in text:
+            text = text.split("T", 1)[1]
+        hh, mm = text[:5].split(":")
+        return int(hh) + int(mm) / 60.0
+    except Exception:
+        return None
+
+
+def _weather_wave_adjustment(player: Player, weather_features: dict,
+                             round_no: int = 1) -> float:
+    if not weather_features:
+        return 0.0
+    rounds = weather_features.get("rounds") or {}
+    r = rounds.get(str(round_no)) or weather_features
+    wave = r.get("wave_penalty") or {}
+    if not wave:
+        return 0.0
+    tee = _tee_hour(getattr(player, f"tee_time_r{round_no}", ""))
+    if tee is None:
+        return 0.0
+    split = float(wave.get("split_hour", 12.0))
+    side = "late" if tee >= split else "early"
+    penalty = float(wave.get(f"{side}_penalty", 0.0))
+    # Positive rating means strokes gained; a weather penalty lowers rating.
+    return max(-WEATHER_WAVE_MAX_ABS, min(WEATHER_WAVE_MAX_ABS, -penalty))
+
+
+def _weather_round_adjustments(player: Player, weather_features: dict) -> dict[int, float]:
+    return {
+        rnd: _weather_wave_adjustment(player, weather_features, rnd)
+        for rnd in range(1, 5)
+    }
+
+
+def _rating_for_components(name: str, params: dict, course: str = "",
+                           world_rank: int | None = None,
+                           course_features: dict | None = None,
+                           global_priors: dict | None = None,
+                           feature_flags: dict | None = None) -> tuple[float, float, dict]:
+    """(rating, sigma, components) for one player from fitted params."""
+    canon = resolve_name(name, params)
+    pl = params.get("players", {}).get(canon) if canon else None
+    fw = params.get("form_weight", FORM_WEIGHT)
+    stat_prior = _public_stat_prior(name, params, canon)
+    flags = {"course_arch": True, "global_priors": True, **(feature_flags or {})}
+    manual_global = _global_player_prior(name, canon, global_priors) if flags["global_priors"] else None
+    global_prior = _owgr_skill_prior(world_rank) if flags["global_priors"] else None
+    components = {
+        "base": 0.0,
+        "form": 0.0,
+        "public_stat": 0.0,
+        "course_fit": 0.0,
+        "course_arch": 0.0,
+        "global_prior": 0.0,
+    }
+    if pl is None:
+        rating = params.get("default_skill", -0.5)
+        if manual_global is not None:
+            rating = float(manual_global["sg_total"])
+            components["global_prior"] = rating
+        elif stat_prior is not None:
+            rating = stat_prior
+            components["public_stat"] = stat_prior
+        elif global_prior is not None:
+            rating = global_prior
+            components["global_prior"] = global_prior
+        sigma = manual_global.get("sigma") if manual_global and manual_global.get("sigma") else \
+            params.get("sigma_field", DEFAULT_SIGMA) * 1.08
+    else:
+        skill = float(pl["skill"])
+        form_adj = fw * float(pl.get("form", 0.0))
+        rating = skill + form_adj
+        components["base"] = skill
+        components["form"] = form_adj
+        if stat_prior is not None:
+            blend = float(params.get("public_stat_blend", PUBLIC_STAT_BLEND))
+            components["public_stat"] = blend * (stat_prior - rating)
+            rating = (1 - blend) * rating + blend * stat_prior
+        gp = float(manual_global["sg_total"]) if manual_global is not None else global_prior
+        if gp is not None:
+            n_rounds = float(pl.get("n_rounds", 0.0) or 0.0)
+            blend = min(GLOBAL_PRIOR_MAX_BLEND, 30.0 / (n_rounds + 120.0))
+            components["global_prior"] = blend * (gp - rating)
+            rating = (1 - blend) * rating + blend * gp
+        sigma = pl.get("sigma", params.get("sigma_field", DEFAULT_SIGMA))
+    if course:
+        cf = params.get("courses", {}).get(course, {}).get(canon, 0.0)
+        arch = _course_arch_adjustment(name, params, course, canon, course_features) \
+            if flags["course_arch"] else 0.0
+        components["course_fit"] = cf
+        components["course_arch"] = arch
+        rating += cf + arch
+    return rating, sigma, components
+
+
+def rating_for(name: str, params: dict, course: str = "",
+               world_rank: int | None = None) -> tuple[float, float]:
+    """(rating, sigma) for one player from fitted params. Unknown → default."""
+    rating, sigma, _components = _rating_for_components(
+        name, params, course, world_rank=world_rank)
+    return rating, sigma
+
+
 def predict_field(field_names, params: dict, course: str = "",
-                  is_major: bool = False) -> list[Player]:
+                  is_major: bool = False, weather_features: dict | None = None,
+                  round_no: int = 1, feature_flags: dict | None = None) -> list[Player]:
     """Build rated Player objects for a field from fitted params.
 
     Accepts an iterable of names or Player objects. Ratings are centred on the
     field mean (= 0) so simulate.py reads them directly; σ keeps absolute scale.
     """
     maj_mult = params.get("major_sigma_mult", 1.0) if is_major else 1.0
+    course_features = load_course_features()
+    global_priors = load_global_player_priors()
+    weather_features = load_weather_features() if weather_features is None else weather_features
+    flags = {"weather": True, "course_arch": True, "global_priors": True, **(feature_flags or {})}
     out: list[Player] = []
     for item in field_names:
         name = item.name if isinstance(item, Player) else str(item)
-        rating, sigma = rating_for(name, params, course)
+        world_rank = getattr(item, "owgr", None) if isinstance(item, Player) else None
+        rating, sigma, comps = _rating_for_components(
+            name, params, course, world_rank=world_rank,
+            course_features=course_features,
+            global_priors=global_priors,
+            feature_flags=flags)
         canon = resolve_name(name, params)
         pl = params.get("players", {}).get(canon, {}) if canon else {}
         p = Player(name=name)
+        if isinstance(item, Player):
+            p.owgr = item.owgr
+            p.country = item.country
+            p.tee_time_r1 = item.tee_time_r1
+            p.tee_time_r2 = item.tee_time_r2
+            p.start_hole_r1 = item.start_hole_r1
+            p.start_hole_r2 = item.start_hole_r2
         p.rating = rating
         p.sigma = sigma * maj_mult
         p.sg_baseline = pl.get("skill", rating)
         p.recent_form = pl.get("form", 0.0)
+        p.course_fit = comps.get("course_fit", 0.0)
+        p.course_arch_adj = comps.get("course_arch", 0.0)
+        p.global_prior_adj = comps.get("global_prior", 0.0)
+        p.weather_round_adj = _weather_round_adjustments(p, weather_features) \
+            if flags["weather"] else {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}
+        p.weather_wave_adj = p.weather_round_adj.get(round_no, 0.0)
         out.append(p)
     if out:
         mean_r = sum(p.rating for p in out) / len(out)

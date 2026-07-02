@@ -73,6 +73,12 @@ def _flags(engine: str) -> list[dict]:
         mb = ROOT / "data" / "market_blend.json"
         out.append({"label": "1X2 market blend", "active": mb.exists(),
                     "note": "market_blend.json present" if mb.exists() else "not fitted"})
+    elif engine == "nhl":
+        stats = ROOT / "nhl" / "data" / "team_stats.csv"
+        out.append({"label": "Local team baseline", "active": stats.exists(),
+                    "note": "team_stats.csv present" if stats.exists() else "missing"})
+        out.append({"label": "Market blend", "active": False,
+                    "note": "experimental, off by default"})
     return out
 
 
