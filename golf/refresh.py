@@ -22,8 +22,10 @@ from .providers.odds_manual import ManualOddsProvider, THREEBALLS_RAW, write_thr
 from .providers.odds_theoddsapi import MAJOR_SPORT_KEYS, TheOddsApiGolfProvider
 from .providers.pgatour_stats import PgaTourStatsProvider, write_stats_csv
 from .providers.weather import OpenMeteoProvider
+from .tee_times import RAW_TXT as TEE_TIMES_RAW, parse_tee_sheet_text, write_tee_times_csv
 
 DATA_DIR = Path(__file__).parent / "data"
+TEE_TIMES_CSV = DATA_DIR / "tee_times.csv"
 
 
 def main() -> None:
@@ -36,6 +38,8 @@ def main() -> None:
                     help="optional The Odds API golf sport key for major outrights")
     ap.add_argument("--manual-raw", default=str(THREEBALLS_RAW),
                     help="manual 3-ball raw paste path")
+    ap.add_argument("--tee-raw", default=str(TEE_TIMES_RAW),
+                    help="manual tee-sheet raw paste path")
     ap.add_argument("--round", type=int, default=1, dest="round_no",
                     help="round number for manual 3-ball raw paste")
     ap.add_argument("--fit", action="store_true", help="refit model_params.json after refresh")
@@ -50,6 +54,7 @@ def main() -> None:
         weather=args.weather,
         odds_api_sport=args.odds_api_sport,
         manual_raw=args.manual_raw,
+        tee_raw=args.tee_raw,
         round_no=args.round_no,
         fit=args.fit,
         use_cache=args.use_cache,
@@ -67,6 +72,7 @@ def run_refresh(
     weather: bool = False,
     odds_api_sport: str = "",
     manual_raw: str = str(THREEBALLS_RAW),
+    tee_raw: str = str(TEE_TIMES_RAW),
     round_no: int = 1,
     fit: bool = False,
     use_cache: bool = False,
@@ -93,7 +99,35 @@ def run_refresh(
         if event:
             with store.connect() as con:
                 store.upsert_events(con, [event.as_store_row()])
+            tee_raw_path = Path(tee_raw)
+            if tee_raw_path.exists():
+                tee_rows = parse_tee_sheet_text(
+                    tee_raw_path.read_text(errors="replace"),
+                    event_id=event.event_id,
+                    event=event.name,
+                    default_round=round_no,
+                )
+                if tee_rows:
+                    write_tee_times_csv(tee_rows)
+                    checks.append(qa.SourceCheck(
+                        "manual_tee_sheet",
+                        True,
+                        "info",
+                        f"parsed {len(tee_rows)} tee-time row(s) from paste",
+                        len(tee_rows),
+                    ))
         field_rows = espn.field(event.event_id if event else (event_id or None), use_cache=use_cache)
+        if event and field_rows:
+            tee_overrides = _load_tee_time_overrides(event.event_id, event.name)
+            if tee_overrides:
+                field_rows = _apply_tee_time_overrides(field_rows, tee_overrides)
+                checks.append(qa.SourceCheck(
+                    "manual_tee_times",
+                    True,
+                    "info",
+                    f"applied tee times for {len(tee_overrides)} player(s)",
+                    len(tee_overrides),
+                ))
         checks.extend(espn.qa_checks(field_rows))
         provider_rows["espn_field"] = len(field_rows)
         if event and field_rows:
@@ -135,23 +169,86 @@ def run_refresh(
                 store.upsert_stat_rows(con, [r.as_dict() for r in stat_rows])
 
     weather_summary = {}
+    weather_detail = {"applied": False, "reason": "not requested"}
     if weather and event:
         weather_provider = OpenMeteoProvider()
-        locs = weather_provider.load_course_locations()
-        loc = locs.get(_course_key(event.course_name))
+        loc, matched = weather_provider.resolve_location(
+            course_name=event.course_name,
+            event_name=event.name,
+        )
         if loc is None:
+            _clear_weather_features()
+            weather_detail = {
+                "applied": False,
+                "reason": "no course coordinates",
+                "course_name": event.course_name,
+                "event_name": event.name,
+                "lookup": matched,
+            }
             checks.append(qa.SourceCheck(
                 "open_meteo",
                 False,
                 "warning",
-                f"no coordinates for course '{event.course_name}' in golf/data/course_locations.csv",
+                f"no coordinates for course/event '{matched}' in golf/data/course_locations.csv",
             ))
         else:
             try:
                 payload = weather_provider.forecast(loc, event.start_date, use_cache=use_cache)
                 weather_summary = weather_provider.summarize_wave(payload)
+                weather_features = weather_provider.wave_features(payload)
+                tee_counts = _tee_time_counts(field_rows)
+                has_wave = bool(weather_features.get("rounds"))
+                has_tee_times = any(tee_counts.values())
+                weather_detail = {
+                    "forecast_ready": has_wave,
+                    "applied": has_wave and has_tee_times,
+                    "reason": (
+                        "ok" if has_wave and has_tee_times
+                        else "no tee times" if has_wave
+                        else "no wave split"
+                    ),
+                    "course_name": event.course_name,
+                    "event_name": event.name,
+                    "resolved_course": loc.course_name,
+                    "matched": matched,
+                    "latitude": loc.latitude,
+                    "longitude": loc.longitude,
+                    "timezone": loc.timezone,
+                    "tee_times": tee_counts,
+                }
+                (DATA_DIR / "weather_features.json").write_text(
+                    json.dumps({
+                        "event_id": event.event_id,
+                        "event_name": event.name,
+                        "course": event.course_name,
+                        "resolved_course": loc.course_name,
+                        "location": {
+                            "latitude": loc.latitude,
+                            "longitude": loc.longitude,
+                            "timezone": loc.timezone,
+                        },
+                        "tee_times": tee_counts,
+                        **weather_features,
+                    }, indent=2) + "\n"
+                )
                 provider_rows["open_meteo"] = weather_summary.get("hours", 0)
+                if not has_tee_times:
+                    checks.append(qa.SourceCheck(
+                        "weather_application",
+                        False,
+                        "warning",
+                        "weather fetched but no tee times are available, so wave adjustment will not affect ratings",
+                        0,
+                    ))
             except Exception as exc:  # noqa: BLE001
+                _clear_weather_features()
+                weather_detail = {
+                    "applied": False,
+                    "reason": str(exc),
+                    "course_name": event.course_name,
+                    "event_name": event.name,
+                    "resolved_course": loc.course_name,
+                }
                 checks.append(qa.SourceCheck("open_meteo", False, "warning", str(exc)))
 
     # Bovada: standard free, keyless source for this week's outright / matchup /
@@ -239,8 +336,7 @@ def run_refresh(
         "field_csv": str(store.FIELD_CSV),
         "stats_csv": str(stats_written) if stats_written else "",
         "provider_rows": provider_rows,
-        "rounds_done": rounds_done,
-        "weather": weather_summary,
+        "weather": {**weather_summary, **weather_detail},
         "qa": summary,
         "source_priority": [
             "local verified cache",
@@ -330,6 +426,70 @@ def _infer_major_sport(event_name: str) -> str:
 
 def _course_key(name: str) -> str:
     return " ".join(str(name or "").lower().split())
+
+
+def _norm_name(name: str) -> str:
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", str(name or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return " ".join(s.lower().replace(".", "").replace(",", "").split())
+
+
+def _load_tee_time_overrides(event_id: str, event_name: str) -> dict[str, dict]:
+    """Manual tee sheet: event_id,event,name,round,tee_time,start_hole."""
+    if not TEE_TIMES_CSV.exists():
+        return {}
+    import csv
+
+    out: dict[str, dict] = {}
+    with TEE_TIMES_CSV.open() as f:
+        for row in csv.DictReader(f):
+            row_event_id = str(row.get("event_id") or "").strip()
+            row_event = str(row.get("event") or row.get("event_name") or "").strip()
+            if row_event_id and row_event_id != str(event_id):
+                continue
+            if row_event and _course_key(row_event) != _course_key(event_name):
+                continue
+            name = str(row.get("name") or row.get("player") or "").strip()
+            if not name:
+                continue
+            try:
+                rnd = int(float(row.get("round") or row.get("round_no") or 1))
+            except (TypeError, ValueError):
+                rnd = 1
+            if rnd not in (1, 2):
+                continue
+            entry = out.setdefault(_norm_name(name), {})
+            tee_time = str(row.get("tee_time") or "").strip()
+            start_hole = str(row.get("start_hole") or "").strip()
+            if tee_time:
+                entry[f"tee_time_r{rnd}"] = tee_time
+            if start_hole:
+                entry[f"start_hole_r{rnd}"] = start_hole
+    return out
+
+
+def _apply_tee_time_overrides(field_rows: list, overrides: dict[str, dict]) -> list:
+    out = []
+    for row in field_rows:
+        data = row.as_store_row() if hasattr(row, "as_store_row") else dict(row)
+        patch = overrides.get(_norm_name(data.get("name", ""))) or {}
+        data.update(patch)
+        out.append(data)
+    return out
+
+
+def _tee_time_counts(field_rows: list) -> dict[str, int]:
+    rows = [r.as_store_row() if hasattr(r, "as_store_row") else dict(r) for r in field_rows]
+    return {
+        "r1": sum(1 for r in rows if r.get("tee_time_r1")),
+        "r2": sum(1 for r in rows if r.get("tee_time_r2")),
+    }
+
+
+def _clear_weather_features() -> None:
+    (DATA_DIR / "weather_features.json").unlink(missing_ok=True)
 
 
 def _dedupe_quotes(quotes: list) -> list:

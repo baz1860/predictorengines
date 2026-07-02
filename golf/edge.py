@@ -571,12 +571,11 @@ def build_rated_field(course: str = "", major: bool = False):
     """Rated Player objects from the fitted model (legacy players.csv fallback)."""
     from . import model as M
     from .model import load_field, load_players
-    names = [p.name for p in load_field(players=load_players())]
+    field = load_field(players=load_players())
     params = M.load_params()
     if params:
-        return M.predict_field(names, params, course=course, is_major=major), True
+        return M.predict_field(field, params, course=course, is_major=major), True
     from .model import compute_ratings, load_course_history, load_recent_form
-    field = load_field(players=load_players())
     ch = load_course_history(course) if course else {}
     return compute_ratings(field, course=course, is_major=major,
                            course_history=ch, recent_form=load_recent_form()), False

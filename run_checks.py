@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent
 # Explicit order: foundational contracts first, then milestones, then V3 add-ons.
 # Any other test_*.py in the repo is appended so new suites are picked up too.
 ORDERED = [
-    "test_engines_contract", "test_security", "test_bankroll", "test_club_soccer",
+    "test_engines_contract", "test_nhl_contract", "test_security", "test_bankroll", "test_club_soccer",
     "test_m2", "test_m3", "test_m4", "test_m5", "test_m6", "test_m7",
     "test_market_blend", "test_clv_suite", "test_cfb_blend", "test_provenance",
     "test_model_audit",

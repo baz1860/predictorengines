@@ -1,26 +1,29 @@
 {
-  "generated_at": "2026-06-27T17:39:43",
+  "generated_at": "2026-07-02T09:18:12",
   "event": {
-    "event_id": "401811953",
-    "name": "Travelers Championship",
-    "start_date": "2026-06-25",
-    "end_date": "2026-06-28",
-    "course_name": "Travelers Championship",
-    "status": "STATUS_IN_PROGRESS",
+    "event_id": "401811954",
+    "name": "John Deere Classic",
+    "start_date": "2026-07-02",
+    "end_date": "2026-07-05",
+    "course_name": "John Deere Classic",
+    "status": "STATUS_SCHEDULED",
     "tour": "pga",
     "source": "espn",
-    "source_event_id": "401811953"
+    "source_event_id": "401811954"
   },
-  "database": "/Users/lucky/AI Models/Soccer Prediction/golf/data/golf.db",
-  "field_csv": "/Users/lucky/AI Models/Soccer Prediction/golf/data/field.csv",
+  "database": "/sessions/laughing-exciting-pasteur/tmp/golf_engine/golf.db",
+  "field_csv": "/sessions/laughing-exciting-pasteur/mnt/Soccer Prediction/golf/data/field.csv",
   "stats_csv": "",
   "provider_rows": {
     "rounds_csv": 81997,
-    "espn_field": 72,
-    "bovada": 66,
-    "manual_odds": 188
+    "espn_field": 144,
+    "bovada": 380,
+    "manual_odds": 336
   },
-  "weather": {},
+  "weather": {
+    "applied": false,
+    "reason": "not requested"
+  },
   "qa": {
     "ok": true,
     "errors": [],
@@ -31,49 +34,49 @@
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 72
+        "rows": 144
       },
       {
         "source": "espn.field",
         "ok": true,
         "severity": "info",
-        "message": "72 row(s)",
-        "rows": 72
+        "message": "144 row(s)",
+        "rows": 144
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 66
+        "rows": 380
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
-        "message": "66 row(s)",
-        "rows": 66
+        "message": "380 row(s)",
+        "rows": 380
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
-        "message": "wrote threeballs.csv (33)",
-        "rows": 66
+        "message": "wrote odds.csv (143), matchups.csv (26), threeballs.csv (47)",
+        "rows": 380
       },
       {
         "source": "manual_odds",
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 188
+        "rows": 336
       },
       {
         "source": "manual_odds",
         "ok": true,
         "severity": "info",
-        "message": "188 row(s)",
-        "rows": 188
+        "message": "336 row(s)",
+        "rows": 336
       }
     ]
   },

@@ -1,7 +1,7 @@
 # Sports Predictor
 
 A local-first sports prediction and betting-analysis suite for World Cup 2026,
-club soccer, college football, and PGA golf.
+club soccer, college football, PGA golf, tennis, and NHL.
 
 The project combines model-driven predictions, market/odds comparison,
 bankroll tracking, validation gates, and a desktop-style web UI. It is designed
@@ -23,6 +23,10 @@ for research, paper trading, and model evaluation rather than blind wagering.
 - **Golf engine**: PGA/majors round-history model, Monte Carlo tournament
   simulation, calibrated/market-anchored edge pricing, matchup and placement
   markets.
+- **Tennis engine**: ATP/WTA head-to-head, draw simulation, match-winner edge
+  pricing, and settlement against completed matches.
+- **NHL engine**: expected-goals baseline for win probability, puck lines,
+  totals, edge pricing, staking, and settlement.
 - **Shared suite layer**: engine contracts, suite ledger, pooled bankroll,
   portfolio caps, settlement, dashboard payloads, validation gates, and
   security checks.
@@ -65,6 +69,8 @@ Python environment has the dependencies installed.
 ├── club_soccer/          # Club soccer model, fetchers, calibration, edge
 ├── cfb/                  # College football models, validation, edge, data
 ├── golf/                 # Golf model, providers, simulation, edge, validation
+├── tennis/               # ATP/WTA model, draw simulator, edge, data
+├── nhl/                  # NHL expected-goals model, edge, data
 ├── data/                 # World Cup data, suite ledger, shared model artifacts
 ├── predictor.py          # World Cup match prediction CLI
 ├── simulate.py           # World Cup tournament simulation
@@ -80,6 +86,8 @@ Engine-specific details live in:
 - [club_soccer/README.md](club_soccer/README.md)
 - [cfb/README.md](cfb/README.md)
 - [golf/README.md](golf/README.md)
+- [tennis/README.md](tennis/README.md)
+- [nhl/README.md](nhl/README.md)
 - [docs/archive/V3_PLAN.md](docs/archive/V3_PLAN.md) and [docs/archive/V3_NOTES.md](docs/archive/V3_NOTES.md)
 
 ## Desktop App
@@ -146,6 +154,15 @@ python3 -m golf.model --fit
 python3 -m golf.simulate --sims 50000
 python3 -m golf.edge --min-edge 1.0
 python3 -m golf.round_pricer --round 1 --min-edge 4
+```
+
+NHL:
+
+```bash
+python3 -m nhl.predictor "Toronto Maple Leafs" "Boston Bruins"
+python3 -m nhl.edge --template
+python3 -m nhl.edge --model blend --bankroll 250
+python3 -m nhl.backtest --results nhl/data/results.csv --model blend
 ```
 
 ## API Keys
@@ -231,6 +248,8 @@ Important data sources include:
 - CFB games and lines: `cfb/data/`
 - Golf round history: `golf/data/rounds.csv`
 - Club soccer fixtures/model artifacts: `club_soccer/data/`
+- Tennis matches/model artifacts: `tennis/data/`
+- NHL team baseline, fixtures, results, and odds: `nhl/data/`
 
 Refresh scripts exist per engine (`update.sh`, `golf/update.sh`,
 `club_soccer/update.sh`) but may require local API keys depending on the source.

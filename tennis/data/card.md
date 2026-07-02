@@ -1,6 +1,6 @@
 # Wimbledon — Best Bets
 
-_Generated 2026-06-26 21:30 · ATP · grass · best-of-5 · fitted model_
+_Generated 2026-06-30 21:15 · ATP · grass · best-of-5 · fitted model_
 
 ## Qualifying R1
 
@@ -133,73 +133,111 @@ _Generated 2026-06-26 21:30 · ATP · grass · best-of-5 · fitted model_
 
 | Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |
 |---|---|---|--:|--:|--:|--:|--:|
-| Jannik Sinner v Miomir Kecmanovic | To play | Jannik Sinner | 100% | — | — | — | — |
-| Wu Yibing v Novak Djokovic | To play | Novak Djokovic | 95% | — | — | — | — |
-| Felix Auger-Aliassime v Alexandr Shevchenko | To play | Felix Auger-Aliassime | 83% | — | — | — | — |
-| Alex de Minaur v Roman Andres Burruchaga | To play | Alex de Minaur | 83% | — | — | — | — |
-| Alexander Blockx v Alexander Zverev | To play | Alexander Zverev | 82% | — | — | — | — |
-| Marin Cilic v Daniil Medvedev | To play | Daniil Medvedev | 82% | — | — | — | — |
-| Dane Sweeny v Grigor Dimitrov | To play | Grigor Dimitrov | 82% | — | — | — | — |
-| Jakub Mensik v Toby Samuel | To play | Jakub Mensik | 81% | — | — | — | — |
-| Hugo Gaston v Stefanos Tsitsipas | To play | Stefanos Tsitsipas | 76% | — | — | — | — |
-| Otto Virtanen v Ben Shelton | To play | Ben Shelton | 76% | — | — | — | — |
-| Stan Wawrinka v Matteo Berrettini | To play | Matteo Berrettini | 76% | — | — | — | — |
-| Jiri Lehecka v Alexei Popyrin | To play | Jiri Lehecka | 75% | — | — | — | — |
-| Andrey Rublev v Roman Safiullin | To play | Andrey Rublev | 75% | — | — | — | — |
-| Karen Khachanov v Billy Harris | To play | Karen Khachanov | 75% | — | — | — | — |
-| Tallon Griekspoor v James Duckworth | To play | Tallon Griekspoor | 75% | — | — | — | — |
-| Brandon Nakashima v Jack Pinnington Jones | To play | Brandon Nakashima | 74% | — | — | — | — |
-| Frances Tiafoe v Terence Atmane | To play | Frances Tiafoe | 73% | — | — | — | — |
-| Alejandro Davidovich Fokina v Juan Manuel Cerundolo | To play | Alejandro Davidovich Fokina | 73% | — | — | — | — |
-| Michael Zheng v Cameron Norrie | To play | Cameron Norrie | 72% | — | — | — | — |
-| Alexandre Muller v Tommy Paul | To play | Tommy Paul | 72% | — | — | — | — |
-| Mariano Navone v Flavio Cobolli | To play | Flavio Cobolli | 72% | — | — | — | — |
-| Thanasi Kokkinakis v Alexander Bublik | To play | Alexander Bublik | 71% | — | — | — | — |
-| Arthur Rinderknech v Oliver Tarvet | To play | Arthur Rinderknech | 69% | — | — | — | — |
-| Dalibor Svrcina v Learner Tien | To play | Learner Tien | 67% | — | — | — | — |
-| Raphael Collignon v Arthur Fils | To play | Arthur Fils | 67% | — | — | — | — |
-| Aleksandar Vukic v Jenson Brooksby | To play | Jenson Brooksby | 65% | — | — | — | — |
-| Roberto Bautista Agut v Joao Fonseca | To play | Joao Fonseca | 65% | — | — | — | — |
-| Luca Van Assche v Marton Fucsovics | To play | Marton Fucsovics | 65% | — | — | — | — |
-| SoonWoo Kwon v Martin Landaluce | To play | SoonWoo Kwon | 64% | — | — | — | — |
-| Denis Shapovalov v Pablo Carreno Busta | To play | Denis Shapovalov | 64% | — | — | — | — |
-| Aleksandar Kovacevic v Botic Van De Zandschulp | To play | Aleksandar Kovacevic | 64% | — | — | — | — |
-| Rafael Jodar v Felix Gill | To play | Rafael Jodar | 64% | — | — | — | — |
-| Alex Michelsen v Jacob Fearnley | To play | Alex Michelsen | 64% | — | — | — | — |
-| Thiago Agustin Tirante v Fabian Marozsan | To play | Fabian Marozsan | 62% | — | — | — | — |
-| Ethan Quinn v Luciano Darderi | To play | Luciano Darderi | 60% | — | — | — | — |
-| Jaume Munar v Francisco Cerundolo | To play | Francisco Cerundolo | 60% | — | — | — | — |
-| Benjamin Bonzi v Gabriel Diallo | To play | Gabriel Diallo | 60% | — | — | — | — |
-| Nuno Borges v Tristan Boyer | To play | Nuno Borges | 59% | — | — | — | — |
-| Adolfo Daniel Vallejo v Nicolas Mejia | To play | Adolfo Daniel Vallejo | 59% | — | — | — | — |
-| Valentin Royer v Harry Wendelken | To play | Valentin Royer | 59% | — | — | — | — |
-| Matteo Arnaldi v Quentin Halys | To play | Matteo Arnaldi | 59% | — | — | — | — |
-| Ugo Humbert v Zizou Bergs | To play | Ugo Humbert | 59% | — | — | — | — |
-| Sho Shimabukuro v Jaime Faria | To play | Sho Shimabukuro | 59% | — | — | — | — |
-| Hamad Medjedovic v Sebastian Ofner | To play | Hamad Medjedovic | 59% | — | — | — | — |
-| Alex Molcan v Daniel Altmaier | To play | Alex Molcan | 59% | — | — | — | — |
-| Jesper de Jong v Rinky Hijikata | To play | Jesper de Jong | 59% | — | — | — | — |
-| Casper Ruud v Hubert Hurkacz | To play | Hubert Hurkacz | 57% | — | — | — | — |
-| Emilio Nava v Ignacio Buse | To play | Ignacio Buse | 57% | — | — | — | — |
-| Jan-Lennard Struff v Sebastian Baez | To play | Sebastian Baez | 57% | — | — | — | — |
-| Taylor Fritz v Jack Draper | To play | Taylor Fritz | 56% | — | — | — | — |
-| Camilo Ugo Carabelli v Daniel Merida | To play | Camilo Ugo Carabelli | 56% | — | — | — | — |
-| Kamil Majchrzak v Alejandro Tabilo | To play | Kamil Majchrzak | 56% | — | — | — | — |
-| Adrian Mannarino v Titouan Droguet | To play | Adrian Mannarino | 56% | — | — | — | — |
-| Damir Dzumhur v Arthur Fery | To play | Arthur Fery | 55% | — | — | — | — |
-| Adam Walton v Dino Prizmic | To play | Dino Prizmic | 53% | — | — | — | — |
-| Patrick Kypson v Mackenzie McDonald | To play | Mackenzie McDonald | 53% | — | — | — | — |
-| Corentin Moutet v Marcos Giron | To play | Marcos Giron | 53% | — | — | — | — |
-| Marco Trungelliti v Martin Damm | To play | Martin Damm | 53% | — | — | — | — |
-| Yannick Hanfmann v Giovanni Mpetshi Perricard | To play | Giovanni Mpetshi Perricard | 53% | — | — | — | — |
-| Lorenzo Sonego v Tomas Martin Etcheverry | To play | Lorenzo Sonego | 51% | — | — | — | — |
-| Vit Kopriva v Jan Choinski | To play | Vit Kopriva | 51% | — | — | — | — |
-| Shintaro Mochizuki v Max Basing | To play | Shintaro Mochizuki | 51% | — | — | — | — |
-| Kyrian Jacquet v Vilius Gaubas | To play | Kyrian Jacquet | 51% | — | — | — | — |
-| Mattia Bellucci v Zachary Svajda | To play | Mattia Bellucci | 51% | — | — | — | — |
+| Frances Tiafoe v Terence Atmane | To play | Frances Tiafoe | 73% | 1.14 | 83% | -10.9% | — |
+| Stan Wawrinka v Matteo Berrettini | Live | Matteo Berrettini | 76% | 1.06 | 88% | -12.0% | — |
+| Mariano Navone v Flavio Cobolli | To play | Flavio Cobolli | 72% | 1.06 | 88% | -14.3% | — |
+| Alex Molcan v Daniel Altmaier | To play | Alex Molcan | 59% | 1.30 | 72% | -14.9% | — |
+| Rafael Jodar v Felix Gill | Complete | Rafael Jodar | — | — | — | — | — |
+| Denis Shapovalov v Pablo Carreno Busta | Complete | Pablo Carreno Busta | — | — | — | — | — |
+| Emilio Nava v Ignacio Buse | Complete | Ignacio Buse | — | — | — | — | — |
+| Aleksandar Vukic v Jenson Brooksby | Complete | Jenson Brooksby | — | — | — | — | — |
+| Marco Trungelliti v Martin Damm | Complete | Martin Damm | — | — | — | — | — |
+| Aleksandar Kovacevic v Botic Van De Zandschulp | Complete | Botic Van De Zandschulp | — | — | — | — | — |
+| Dalibor Svrcina v Learner Tien | Complete | Learner Tien | — | — | — | — | — |
+| Andrey Rublev v Roman Safiullin | Complete | Roman Safiullin | — | — | — | — | — |
+| Luca Van Assche v Marton Fucsovics | Complete | Marton Fucsovics | — | — | — | — | — |
+| Shintaro Mochizuki v Max Basing | Complete | Shintaro Mochizuki | — | — | — | — | — |
+| Alexandre Muller v Tommy Paul | Complete | Tommy Paul | — | — | — | — | — |
+| Michael Zheng v Cameron Norrie | Complete | Michael Zheng | — | — | — | — | — |
+| Camilo Ugo Carabelli v Daniel Merida | Complete | Daniel Merida | — | — | — | — | — |
+| Casper Ruud v Hubert Hurkacz | Complete | Hubert Hurkacz | — | — | — | — | — |
+| Hamad Medjedovic v Sebastian Ofner | Complete | Sebastian Ofner | — | — | — | — | — |
+| Jannik Sinner v Miomir Kecmanovic | Complete | Jannik Sinner | — | — | — | — | — |
+| Roberto Bautista Agut v Joao Fonseca | Complete | Joao Fonseca | — | — | — | — | — |
+| Nuno Borges v Tristan Boyer | Complete | Nuno Borges | — | — | — | — | — |
+| Arthur Rinderknech v Oliver Tarvet | Complete | Arthur Rinderknech | — | — | — | — | — |
+| Adam Walton v Dino Prizmic | Complete | Dino Prizmic | — | — | — | — | — |
+| Ethan Quinn v Luciano Darderi | Complete | Ethan Quinn | — | — | — | — | — |
+| Jan-Lennard Struff v Sebastian Baez | Complete | Jan-Lennard Struff | — | — | — | — | — |
+| SoonWoo Kwon v Martin Landaluce | Complete | SoonWoo Kwon | — | — | — | — | — |
+| Hugo Gaston v Stefanos Tsitsipas | Complete | Stefanos Tsitsipas | — | — | — | — | — |
+| Thiago Agustin Tirante v Fabian Marozsan | Complete | Fabian Marozsan | — | — | — | — | — |
+| Marin Cilic v Daniil Medvedev | Complete | Daniil Medvedev | — | — | — | — | — |
+| Adolfo Daniel Vallejo v Nicolas Mejia | Complete | Nicolas Mejia | — | — | — | — | — |
+| Alejandro Davidovich Fokina v Juan Manuel Cerundolo | Complete | Alejandro Davidovich Fokina | — | — | — | — | — |
+| Felix Auger-Aliassime v Aleksandr Shevchenko | Complete | Felix Auger-Aliassime | — | — | — | — | — |
+| Wu Yibing v Novak Djokovic | Complete | Novak Djokovic | — | — | — | — | — |
+| Sho Shimabukuro v Jaime Faria | Complete | Jaime Faria | — | — | — | — | — |
+| Valentin Royer v Harry Wendelken | Complete | Valentin Royer | — | — | — | — | — |
+| Kamil Majchrzak v Alejandro Tabilo | Complete | Kamil Majchrzak | — | — | — | — | — |
+| Yannick Hanfmann v Giovanni Mpetshi Perricard | Complete | Yannick Hanfmann | — | — | — | — | — |
+| Adrian Mannarino v Titouan Droguet | Complete | Adrian Mannarino | — | — | — | — | — |
+| Otto Virtanen v Ben Shelton | Complete | Otto Virtanen | — | — | — | — | — |
+| Alex Michelsen v Jacob Fearnley | Complete | Jacob Fearnley | — | — | — | — | — |
+| Alex de Minaur v Roman Andres Burruchaga | Complete | Alex de Minaur | — | — | — | — | — |
+| Matteo Arnaldi v Quentin Halys | Complete | Quentin Halys | — | — | — | — | — |
+| Damir Dzumhur v Arthur Fery | Complete | Arthur Fery | — | — | — | — | — |
+| Jesper de Jong v Rinky Hijikata | Complete | Jesper de Jong | — | — | — | — | — |
+| Benjamin Bonzi v Gabriel Diallo | Complete | Gabriel Diallo | — | — | — | — | — |
+| Pablo Llamas Ruiz v Zachary Svajda | Complete | Zachary Svajda | — | — | — | — | — |
+| Taylor Fritz v Dusan Lajovic | Complete | Taylor Fritz | — | — | — | — | — |
+| Thanasi Kokkinakis v Alexander Bublik | Complete | Alexander Bublik | — | — | — | — | — |
+| Ugo Humbert v Zizou Bergs | Complete | Zizou Bergs | — | — | — | — | — |
+| Brandon Nakashima v Jack Pinnington Jones | Complete | Brandon Nakashima | — | — | — | — | — |
+| Kyrian Jacquet v Vilius Gaubas | Complete | Kyrian Jacquet | — | — | — | — | — |
+| Jaume Munar v Francisco Cerundolo | Complete | Jaume Munar | — | — | — | — | — |
+| Jakub Mensik v Toby Samuel | Complete | Jakub Mensik | — | — | — | — | — |
+| Karen Khachanov v Billy Harris | Complete | Karen Khachanov | — | — | — | — | — |
+| Patrick Kypson v Mackenzie McDonald | Complete | Patrick Kypson | — | — | — | — | — |
+| Lorenzo Sonego v Tomas Martin Etcheverry | Complete | Lorenzo Sonego | — | — | — | — | — |
+| Corentin Moutet v Marcos Giron | Complete | Marcos Giron | — | — | — | — | — |
+| Alexander Blockx v Alexander Zverev | Complete | Alexander Zverev | — | — | — | — | — |
+| Raphael Collignon v Arthur Fils | Complete | Arthur Fils | — | — | — | — | — |
+| Tallon Griekspoor v James Duckworth | Complete | James Duckworth | — | — | — | — | — |
+| Dane Sweeny v Grigor Dimitrov | Complete | Grigor Dimitrov | — | — | — | — | — |
+| Jiri Lehecka v Alexei Popyrin | Complete | Jiri Lehecka | — | — | — | — | — |
+| Vit Kopriva v Jan Choinski | Complete | Jan Choinski | — | — | — | — | — |
+
+## Round of 64
+
+| Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |
+|---|---|---|--:|--:|--:|--:|--:|
+| Roman Safiullin v Botic Van De Zandschulp | To play | **Roman Safiullin** | 73% | 1.74 | 55% | +11.5% | £3.89 |
+| Quentin Halys v Marcos Giron | To play | **Marcos Giron** | 65% | 1.89 | 50% | +9.1% | £2.55 |
+| Jannik Sinner v Nuno Borges | To play | **Jannik Sinner** | 100% | 1.02 | 94% | +2.0% | £24.99 |
+| Gabriel Diallo v Lorenzo Sonego | To play | Gabriel Diallo | 56% | 1.95 | 48% | +1.7% | — |
+| Hubert Hurkacz v Sebastian Ofner | To play | Hubert Hurkacz | 81% | 1.29 | 74% | -0.2% | — |
+| Daniel Merida v Daniil Medvedev | To play | Daniil Medvedev | 92% | — | — | — | — |
+| Arthur Rinderknech v Martin Damm | To play | Arthur Rinderknech | 59% | — | — | — | — |
+| Jakub Mensik v Grigor Dimitrov | To play | Grigor Dimitrov | 57% | — | — | — | — |
+| TBD v Arthur Fils | Pending | TBD | — | — | — | — | — |
+| James Duckworth v TBD | Pending | TBD | — | — | — | — | — |
+| Jiri Lehecka v TBD | Pending | TBD | — | — | — | — | — |
+| TBD v Jan Choinski | Pending | TBD | — | — | — | — | — |
+| Jenson Brooksby v Ignacio Buse | To play | Jenson Brooksby | 59% | 1.71 | 56% | -1.8% | — |
+| Jacob Fearnley v Jaume Munar | To play | Jaume Munar | 60% | 1.68 | 56% | -2.4% | — |
+| Zizou Bergs v Jaime Faria | To play | Zizou Bergs | 75% | 1.35 | 69% | -2.9% | — |
+| Alex de Minaur v Adrian Mannarino | To play | Alex de Minaur | 83% | 1.20 | 78% | -3.0% | — |
+| Felix Auger-Aliassime v Dino Prizmic | To play | Felix Auger-Aliassime | 81% | 1.16 | 82% | -5.8% | — |
+| Kyrian Jacquet v Alexander Bublik | To play | Alexander Bublik | 74% | 1.27 | 74% | -6.6% | — |
+| Zachary Svajda v Kamil Majchrzak | To play | Kamil Majchrzak | 62% | 1.48 | 64% | -6.9% | — |
+| Taylor Fritz v Patrick Kypson | To play | Taylor Fritz | 83% | 1.06 | 88% | -8.6% | — |
+| Stefanos Tsitsipas v Novak Djokovic | To play | Novak Djokovic | 76% | 1.15 | 82% | -8.6% | — |
+| Valentin Royer v Alexander Zverev | To play | Alexander Zverev | 83% | 1.05 | 90% | -8.8% | — |
+| SoonWoo Kwon v Tommy Paul | To play | Tommy Paul | 76% | 1.11 | 86% | -9.6% | — |
+| Alejandro Davidovich Fokina v Fabian Marozsan | To play | Alejandro Davidovich Fokina | 59% | 1.43 | 67% | -10.0% | — |
+| Karen Khachanov v Yannick Hanfmann | To play | Karen Khachanov | 64% | 1.32 | 71% | -10.3% | — |
+| Marton Fucsovics v Learner Tien | To play | Learner Tien | 62% | 1.35 | 70% | -10.6% | — |
+| Arthur Fery v Otto Virtanen | To play | Otto Virtanen | 53% | 1.57 | 59% | -12.0% | — |
+| Shintaro Mochizuki v Ethan Quinn | To play | Ethan Quinn | 57% | 1.39 | 68% | -12.3% | — |
+| Jesper de Jong v Joao Fonseca | To play | Joao Fonseca | 67% | 1.15 | 83% | -13.2% | — |
+| Brandon Nakashima v Jan-Lennard Struff | To play | Brandon Nakashima | 59% | 1.28 | 74% | -14.2% | — |
+| Rafael Jodar v Pablo Carreno Busta | To play | Rafael Jodar | 56% | 1.29 | 74% | -15.7% | — |
+| Nicolas Mejia v Michael Zheng | To play | Michael Zheng | 53% | 1.24 | 77% | -18.5% | — |
 
 ## Notes
 
-- 0 bet(s) backed (model edge over the book, staked).
+- 2 bet(s) backed (model edge over the book, staked).
 - Bold pick = staked bet. Add prices to `tennis/data/odds.csv` to price more matches.
 - draw: Wimbledon (ESPN) → draw.csv
+- odds: 31 h2h rows (The Odds API → odds.csv)
