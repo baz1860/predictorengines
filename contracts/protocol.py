@@ -74,6 +74,7 @@ _MARKET_ALIASES = {
     "1x2": "1x2", "h2h": "1x2", "moneyline_1x2": "1x2",
     "ml": "ml", "moneyline": "ml", "money_line": "ml",
     "spread": "spread", "handicap": "spread", "ats": "spread",
+    "puck_line": "spread", "puckline": "spread", "run_line": "spread",
     "total": "total", "totals": "total", "ou": "total", "over_under": "total",
     "btts": "btts", "both_teams_to_score": "btts",
     "win": "win", "outright": "win", "winner": "win",
