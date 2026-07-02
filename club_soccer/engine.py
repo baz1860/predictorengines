@@ -76,9 +76,9 @@ def cmd_edge(p: dict) -> dict:
     bankroll = float(p.get("bankroll", 100.0))
     model_name = p.get("model") or "ensemble"
     odds_source = p.get("odds_source") or "manual"
-    if odds_source == "api":
-        odds = E.fetch_api_odds()
-        note = "API-Football odds"
+    if odds_source == "bsd":
+        odds = E.fetch_bsd_odds()
+        note = "BSD odds"
     elif odds_source == "the-odds-api":
         odds = E.fetch_the_odds_api()
         note = "The Odds API odds"

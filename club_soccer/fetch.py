@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from api_keys import get_key
-from bsd_client import get_all_events, league_name as bsd_league_name, event_date_utc
+from bsd_client import get_all_events, get_event, league_name as bsd_league_name, event_date_utc
 from .competitions import COMPETITIONS, comp_from_bsd_league
 
 HERE = Path(__file__).resolve().parent
@@ -30,19 +30,51 @@ DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
 RAW = DATA / "bsd_cache"
 
-# BSD event status values
+# BSD event status values (raw, lowercase, as returned by the API)
 _FINISHED_STATUSES = {"finished", "ft", "aet", "pen"}
-_UPCOMING_STATUSES = {"upcoming", "scheduled", "ns"}
+_UPCOMING_STATUSES = {"notstarted", "upcoming", "scheduled", "ns"}
+
+# BSD's /api/events/ status filter only accepts these exact enum values
+# (notstarted|inprogress|finished|postponed|cancelled). Our CLI/callers use a
+# looser vocabulary ("upcoming") for readability — translate before querying.
+_STATUS_TO_BSD = {
+    "upcoming": "notstarted",
+    "scheduled": "notstarted",
+    "ns": "notstarted",
+    "finished": "finished",
+    "ft": "finished",
+}
+
+# BSD's /api/events/ defaults to a rolling ~7-day window when no date_from/
+# date_to/season is given. To get a useful "current" fetch (recent results +
+# real upcoming fixtures) we must always pass an explicit window.
+_DEFAULT_LOOKBACK_DAYS = 14   # re-pull recent results to catch late score/status corrections
+_DEFAULT_HORIZON_DAYS = 1095  # ~3 years: effectively "everything BSD has scheduled"
+
+# Finished rows dated further than this into the future are corrupt (mirrors
+# the guard in _bsd_to_fixture_row below).
+_FUTURE_FT_GRACE_DAYS = 1
 
 
 def _bsd_to_fixture_row(event: dict, comp_name: str, comp_api_id: int,
-                        country: str, kind: str) -> dict:
-    """Map a single BSD event dict to our fixtures.csv schema."""
+                        country: str, kind: str) -> dict | None:
+    """Map a single BSD event dict to our fixtures.csv schema.
+
+    Returns None (caller skips + counts) if the event claims to be finished
+    but its kickoff date is implausibly far in the future — seen in the wild
+    as mis-dated Champions League league-phase rows (e.g. status "finished",
+    date a year ahead). Trusting that would poison Elo recency weighting.
+    """
     home = event.get("home_team") or ""
     away = event.get("away_team") or ""
     kickoff = event_date_utc(event)
     date_str = str(kickoff)[:10]          # YYYY-MM-DD
     status_raw = str(event.get("status") or "").lower()
+
+    if status_raw in _FINISHED_STATUSES and date_str:
+        cutoff = str((datetime.now(timezone.utc) + timedelta(days=_FUTURE_FT_GRACE_DAYS)).date())
+        if date_str > cutoff:
+            return None
     # Scores
     score = event.get("score") or event.get("result") or {}
     if isinstance(score, dict):
@@ -95,28 +127,48 @@ def _bsd_to_fixture_row(event: dict, comp_name: str, comp_api_id: int,
     }
 
 
-def _fetch_bsd_events(api_key: str, status: str | None = None) -> list[dict]:
-    """Fetch all BSD football events (optionally filtered by status)."""
+def _fetch_bsd_events(api_key: str, status: str | None = None,
+                      date_from: str | None = None,
+                      date_to: str | None = None) -> list[dict]:
+    """Fetch all BSD football events matching the given filters.
+
+    date_from/date_to should normally both be set: BSD's /api/events/
+    silently defaults to a rolling ~7-day window when neither is given.
+    """
     RAW.mkdir(parents=True, exist_ok=True)
     kwargs: dict = {}
     if status:
-        kwargs["status"] = status
+        kwargs["status"] = _STATUS_TO_BSD.get(status.lower(), status)
+    if date_from:
+        kwargs["date_from"] = date_from
+    if date_to:
+        kwargs["date_to"] = date_to
     return get_all_events(api_key, **kwargs)
 
 
 def fetch_fixtures(season: int | None = None,
                    current: bool = False,
                    api_key: str | None = None,
-                   status: str | None = None) -> pd.DataFrame:
+                   status: str | None = None,
+                   date_from: str | None = None,
+                   date_to: str | None = None,
+                   days_ahead: int | None = None) -> pd.DataFrame:
     """Fetch club soccer fixtures from BSD and return as a DataFrame.
 
     Parameters
     ----------
-    season:   If provided, filter rows to this season start year.
-    current:  If True, merge fetched rows onto the existing fixtures.csv
-              (de-duped by fixture_id, keeping latest).
-    api_key:  BSD API key.  Falls back to BSD_API_KEY env / api_keys.json.
-    status:   BSD status filter: "upcoming", "finished", or None (all).
+    season:     If provided, filter rows to this season start year.
+    current:    If True, merge fetched rows onto the existing fixtures.csv
+                (de-duped by fixture_id, keeping latest).
+    api_key:    BSD API key.  Falls back to BSD_API_KEY env / api_keys.json.
+    status:     BSD status filter: "upcoming", "finished", or None (all).
+    date_from:  ISO date lower bound. Defaults to today - 14d (catches late
+                score/status corrections on recent results) when both
+                date_from and date_to are omitted.
+    date_to:    ISO date upper bound. Defaults to today + days_ahead (or
+                ~3 years, i.e. "everything BSD has scheduled") when both
+                date_from and date_to are omitted.
+    days_ahead: Caps the default upper bound; ignored if date_to is given.
     """
     key = api_key or get_key("bsd", env="BSD_API_KEY")
     if not key:
@@ -125,11 +177,18 @@ def fetch_fixtures(season: int | None = None,
             "and add 'bsd' to data/api_keys.json, or set BSD_API_KEY."
         )
 
-    events = _fetch_bsd_events(key, status=status)
+    if date_from is None and date_to is None:
+        today = datetime.now(timezone.utc).date()
+        date_from = str(today - timedelta(days=_DEFAULT_LOOKBACK_DAYS))
+        horizon = days_ahead if days_ahead is not None else _DEFAULT_HORIZON_DAYS
+        date_to = str(today + timedelta(days=horizon))
+
+    events = _fetch_bsd_events(key, status=status, date_from=date_from, date_to=date_to)
 
     # Build a name->Competition lookup for fast resolution
     rows: list[dict] = []
     unmatched_leagues: set[str] = set()
+    future_finished_skipped = 0
 
     for ev in events:
         lname = bsd_league_name(ev)
@@ -139,6 +198,9 @@ def fetch_fixtures(season: int | None = None,
             continue
         row = _bsd_to_fixture_row(ev, comp.name, comp.api_id,
                                   comp.country, comp.kind)
+        if row is None:
+            future_finished_skipped += 1
+            continue
         rows.append(row)
 
     if unmatched_leagues:
@@ -146,6 +208,10 @@ def fetch_fixtures(season: int | None = None,
         shown = sorted(unmatched_leagues)[:10]
         suffix = f" (+{len(unmatched_leagues) - 10} more)" if len(unmatched_leagues) > 10 else ""
         print(f"  fetch: unrecognised BSD leagues (ignored): {shown}{suffix}")
+
+    if future_finished_skipped:
+        print(f"  fetch: skipped {future_finished_skipped} finished event(s) with "
+              f"implausible future kickoff dates")
 
     df = pd.DataFrame(rows)
 
@@ -162,7 +228,76 @@ def fetch_fixtures(season: int | None = None,
 
     DATA.mkdir(exist_ok=True)
     df.to_csv(FIXTURES, index=False)
+
+    if not df.empty:
+        played_n = int(df["home_goals"].notna().sum())
+        upcoming_n = int(df["home_goals"].isna().sum())
+        try:
+            dates = pd.to_datetime(df["date"], errors="coerce")
+            recent_cut = pd.Timestamp.now(tz="UTC").tz_localize(None) - pd.Timedelta(days=7)
+            finished_last_7d = int(((dates >= recent_cut) & df["home_goals"].notna()).sum())
+        except Exception:
+            finished_last_7d = 0
+        print(f"  fetch: played={played_n} upcoming={upcoming_n} "
+              f"finished-in-last-7-days={finished_last_7d}")
+
     return df
+
+
+def repair_future_dated(api_key: str | None = None) -> tuple[int, int]:
+    """Repair or drop 'finished' fixtures.csv rows dated implausibly in the future.
+
+    For each such row, re-fetch the event by fixture_id and take its real
+    kickoff date. If the refetch fails (event not found/expired on BSD) or
+    still yields a future date, drop the row rather than trust it.
+
+    Returns (repaired, dropped).
+    """
+    if not FIXTURES.exists():
+        print("No fixtures.csv found; nothing to repair.")
+        return (0, 0)
+
+    key = api_key or get_key("bsd", env="BSD_API_KEY")
+    df = pd.read_csv(FIXTURES)
+    cutoff = str((datetime.now(timezone.utc) + timedelta(days=_FUTURE_FT_GRACE_DAYS)).date())
+    mask = df["status"].astype(str).str.upper().isin({"FT", "FIN", "AET", "PEN"}) & (df["date"] > cutoff)
+    bad_idx = list(df[mask].index)
+
+    if not bad_idx:
+        print("repaired 0, dropped 0 (no future-dated finished rows found)")
+        return (0, 0)
+
+    repaired = 0
+    drop_idx: list[int] = []
+    for idx in bad_idx:
+        fid = df.at[idx, "fixture_id"]
+        new_date: str | None = None
+        if key:
+            try:
+                ev = get_event(key, fid)
+                d = event_date_utc(ev)[:10]
+                if d and d <= cutoff:
+                    new_date = d
+            except Exception:
+                new_date = None
+        if new_date:
+            df.at[idx, "date"] = new_date
+            month, year = int(new_date[5:7]), int(new_date[:4])
+            df.at[idx, "season"] = year if month >= 7 else year - 1
+            repaired += 1
+        else:
+            drop_idx.append(idx)
+            print(f"  dropped unrepairable row: fixture_id={fid} "
+                  f"{df.at[idx, 'home']} vs {df.at[idx, 'away']} ({df.at[idx, 'date']})")
+
+    if drop_idx:
+        df = df.drop(index=drop_idx).reset_index(drop=True)
+
+    DATA.mkdir(exist_ok=True)
+    df.to_csv(FIXTURES, index=False)
+    dropped = len(drop_idx)
+    print(f"repaired {repaired}, dropped {dropped}")
+    return (repaired, dropped)
 
 
 def main() -> None:
@@ -175,15 +310,34 @@ def main() -> None:
                     help="merge fetched rows into existing fixtures.csv")
     ap.add_argument("--status", choices=["upcoming", "finished"],
                     help="BSD status filter (default: fetch all)")
+    ap.add_argument("--date-from", dest="date_from", help="ISO date lower bound")
+    ap.add_argument("--date-to", dest="date_to", help="ISO date upper bound")
+    ap.add_argument("--days-ahead", dest="days_ahead", type=int,
+                    help="how far ahead to fetch upcoming fixtures "
+                         "(default: ~3 years, i.e. everything BSD has scheduled)")
     ap.add_argument("--api-key", dest="api_key",
                     help="BSD API key (overrides env / api_keys.json)")
+    ap.add_argument("--repair", action="store_true",
+                    help="repair or drop finished fixtures.csv rows dated "
+                         "implausibly in the future, then exit")
     args = ap.parse_args()
+
+    if args.repair:
+        try:
+            repair_future_dated(api_key=args.api_key)
+        except Exception as e:
+            sys.exit(str(e))
+        return
+
     try:
         df = fetch_fixtures(
             season=args.season,
             current=args.current,
             api_key=args.api_key,
             status=args.status,
+            date_from=args.date_from,
+            date_to=args.date_to,
+            days_ahead=args.days_ahead,
         )
     except Exception as e:
         sys.exit(str(e))

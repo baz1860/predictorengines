@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -21,13 +24,21 @@ GATE_TOL = 0.01
 ENSEMBLE_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
 ENSEMBLE_REGRESS_TOL = 0.0015
 
+CLUBELO_CACHE = DATA / "clubelo_cache"
+CLUBELO_URL = "http://api.clubelo.com/{date}"
+CLUBELO_HOME_ADV = 65.0          # ClubElo's own published home-advantage constant
+CLUBELO_WINDOW_DAYS = 60         # a single Elo snapshot is only meaningful near its date
+
 
 def metrics(rows: list[dict]) -> dict:
     if not rows:
-        return {"n": 0, "accuracy": 0.0, "brier": 0.0, "log_loss": 0.0}
+        return {"n": 0, "accuracy": 0.0, "brier": 0.0, "log_loss": 0.0,
+                "brier_ou25": 0.0, "brier_btts": 0.0}
     correct = 0
     brier = 0.0
     log_loss = 0.0
+    brier_ou25 = 0.0
+    brier_btts = 0.0
     for r in rows:
         probs = np.array([r["p_home"], r["p_draw"], r["p_away"]])
         actual = int(r["actual"])
@@ -35,9 +46,15 @@ def metrics(rows: list[dict]) -> dict:
         one = np.eye(3)[actual]
         brier += float(np.sum((probs - one) ** 2))
         log_loss += float(-np.log(max(1e-12, probs[actual])))
+        if "p_over25" in r and "total_goals" in r:
+            y_over = 1.0 if float(r["total_goals"]) > 2.5 else 0.0
+            brier_ou25 += (float(r["p_over25"]) - y_over) ** 2
+        if "p_btts" in r and "btts_actual" in r:
+            brier_btts += (float(r["p_btts"]) - float(r["btts_actual"])) ** 2
     n = len(rows)
     return {"n": n, "accuracy": correct / n, "brier": brier / n,
-            "log_loss": log_loss / n}
+            "log_loss": log_loss / n,
+            "brier_ou25": brier_ou25 / n, "brier_btts": brier_btts / n}
 
 
 def _metrics_arr(P: np.ndarray, A: np.ndarray) -> tuple[float, float, float]:
@@ -83,9 +100,13 @@ def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict
             actual = 0 if r.home_goals > r.away_goals else (
                 1 if r.home_goals == r.away_goals else 2)
             p = pred["probs"]
+            total_goals = float(r.home_goals) + float(r.away_goals)
+            btts_actual = 1.0 if (r.home_goals > 0 and r.away_goals > 0) else 0.0
             rows.append({"date": str(r.date.date()), "home": r.home,
                          "away": r.away, "actual": actual,
-                         "p_home": p["home"], "p_draw": p["draw"], "p_away": p["away"]})
+                         "p_home": p["home"], "p_draw": p["draw"], "p_away": p["away"],
+                         "p_over25": p["over25"], "p_btts": p["btts_yes"],
+                         "total_goals": total_goals, "btts_actual": btts_actual})
             kept += 1
         if verbose:
             print(f"  [{k:>2}/{len(months)}] {ym}  tested {kept}")
@@ -328,6 +349,87 @@ def apply_maps(P, maps):
     return out / s
 
 
+# ── ClubElo benchmark (optional, report-only — never a model input) ──────────
+def _fetch_clubelo(date: str) -> pd.DataFrame | None:
+    """One cached snapshot of api.clubelo.com/{date} (all clubs, that date's
+    ratings). Degrades to None on any network problem — this is a sanity-check
+    comparison, not something a pipeline should ever fail on."""
+    CLUBELO_CACHE.mkdir(parents=True, exist_ok=True)
+    path = CLUBELO_CACHE / f"{date}.csv"
+    if path.exists():
+        try:
+            return pd.read_csv(path)
+        except Exception:
+            return None
+    req = urllib.request.Request(CLUBELO_URL.format(date=date),
+                                 headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        print(f"  clubelo: fetch failed for {date} ({exc}) — benchmark skipped")
+        return None
+    path.write_text(raw, encoding="utf-8")
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return None
+
+
+def benchmark_clubelo(verbose: bool = True) -> dict | None:
+    """Report-only: convert ClubElo ratings to a 1X2 probability via the same
+    shape as model._lambdas_elo, and compare Brier to ours on walk-forward
+    rows near the snapshot date (a single snapshot is only meaningful close
+    to its own date — matches within CLUBELO_WINDOW_DAYS of the most recent
+    played match). Never fed into model.fit/predict. Skips cleanly offline
+    or if no team names match ClubElo's naming."""
+    from .names import FDCOUK_ALIASES
+    rows, _ = walk_forward(verbose=False)
+    if not rows:
+        print("clubelo benchmark: no walk-forward rows — skipped")
+        return None
+    df = pd.DataFrame(rows)
+    anchor = str(df["date"].max())
+    elo_df = _fetch_clubelo(anchor)
+    if elo_df is None or elo_df.empty or "Club" not in elo_df.columns:
+        print("clubelo benchmark: unavailable — skipped")
+        return None
+    elo_map = {FDCOUK_ALIASES.get(r.Club, r.Club): float(r.Elo)
+              for r in elo_df.itertuples(index=False)}
+
+    window = df[pd.to_datetime(df["date"]) >= pd.Timestamp(anchor) - pd.Timedelta(days=CLUBELO_WINDOW_DAYS)]
+    matched = 0
+    brier_sum = 0.0
+    for r in window.itertuples(index=False):
+        eh, ea = elo_map.get(r.home), elo_map.get(r.away)
+        if eh is None or ea is None:
+            continue
+        diff = (eh + CLUBELO_HOME_ADV - ea) / 400.0
+        total = 2.55 + 0.20 * abs(diff)
+        share = 1.0 / (1.0 + math.exp(-1.2 * diff))
+        lam_h, lam_a = max(0.15, total * share), max(0.15, total * (1 - share))
+        mat = M.score_matrix(lam_h, lam_a, M.DC_RHO)
+        p = M.probs_from_matrix(mat)
+        probs = np.array([p["home"], p["draw"], p["away"]])
+        one = np.eye(3)[int(r.actual)]
+        brier_sum += float(np.sum((probs - one) ** 2))
+        matched += 1
+    if matched == 0:
+        print("clubelo benchmark: no team names matched ClubElo's naming — skipped")
+        return None
+    clubelo_brier = brier_sum / matched
+    our_brier = metrics(window.to_dict("records"))["brier"]
+    out = {"anchor_date": anchor, "window_days": CLUBELO_WINDOW_DAYS,
+           "n_matched": matched, "n_window": int(len(window)),
+           "our_brier": round(our_brier, 4), "clubelo_brier": round(clubelo_brier, 4)}
+    if verbose:
+        print(f"\nClubElo benchmark (report-only, never a model input)")
+        print(f"  snapshot {anchor}, matches in the trailing {CLUBELO_WINDOW_DAYS}d, "
+              f"n={matched}/{len(window)} name-matched")
+        print(f"  our Brier {our_brier:.4f}  vs  ClubElo-implied Brier {clubelo_brier:.4f}")
+    return out
+
+
 def _arrays_from_rows(rows):
     P = np.array([[r["p_home"], r["p_draw"], r["p_away"]] for r in rows], dtype=float)
     A = np.array([int(r["actual"]) for r in rows], dtype=int)
@@ -372,6 +474,9 @@ def main() -> None:
                     help="tune goals/elo/xg/xgf/xpress ensemble weights")
     ap.add_argument("--write", action="store_true",
                     help="with --tune-ensemble, write promoted weights and baseline")
+    ap.add_argument("--benchmark-clubelo", action="store_true",
+                    help="report-only: compare ClubElo-implied 1X2 Brier to ours "
+                         "near the most recent walk-forward date; never a model input")
     args = ap.parse_args()
     if args.tune_ensemble:
         tune_ensemble(write=args.write)
@@ -379,14 +484,26 @@ def main() -> None:
     if args.calibrate:
         cmd_calibrate()
         return
+    if args.benchmark_clubelo:
+        benchmark_clubelo()
+        return
     rows, m = walk_forward(verbose=True)
     print(f"Walk-forward Club Soccer validation (n={m['n']})")
     print(f"accuracy {m['accuracy']:.1%}  Brier {m['brier']:.4f}  log-loss {m['log_loss']:.4f}")
+    print(f"OU2.5 Brier {m['brier_ou25']:.4f}  BTTS Brier {m['brier_btts']:.4f}")
     DATA.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(DATA / "validation_predictions.csv", index=False)
     if args.update_baseline or not BASELINE.exists():
-        BASELINE.write_text(json.dumps({"brier": m["brier"], "gate_tol": GATE_TOL}, indent=2))
+        base = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
+        base.update({"brier": m["brier"], "gate_tol": base.get("gate_tol", GATE_TOL),
+                     "brier_ou25": m["brier_ou25"], "brier_btts": m["brier_btts"]})
+        BASELINE.write_text(json.dumps(base, indent=2))
         print(f"Baseline written -> {BASELINE}")
+    elif BASELINE.exists():
+        base = json.loads(BASELINE.read_text())
+        if "brier_ou25" in base:
+            print(f"  Δ vs baseline: OU2.5 {m['brier_ou25'] - base['brier_ou25']:+.4f}  "
+                  f"BTTS {m['brier_btts'] - base.get('brier_btts', 0):+.4f}")
     if args.gate:
         base = json.loads(BASELINE.read_text())
         limit = float(base["brier"]) + float(base.get("gate_tol", GATE_TOL))
