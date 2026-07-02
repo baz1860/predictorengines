@@ -52,6 +52,19 @@ ENGINE_FILES: dict[str, list[tuple[str, str, bool]]] = {
         ("odds", "golf/data/odds.csv", False),
         ("3-balls", "golf/data/threeballs.csv", False),
     ],
+    "tennis": [
+        ("matches", "tennis/data/matches.csv", True),
+        ("ATP model", "tennis/data/atp_model_params.json", True),
+        ("WTA model", "tennis/data/wta_model_params.json", True),
+        ("draw", "tennis/data/draw.csv", False),
+        ("odds", "tennis/data/odds.csv", False),
+    ],
+    "nhl": [
+        ("team stats", "nhl/data/team_stats.csv", True),
+        ("fixtures", "nhl/data/fixtures.csv", False),
+        ("results", "nhl/data/results.csv", False),
+        ("odds", "nhl/data/odds.csv", False),
+    ],
 }
 
 # Which API keys each engine can use (for the masked-key report).
@@ -60,6 +73,8 @@ ENGINE_KEYS: dict[str, list[str]] = {
     "club_soccer": ["api-football", "the-odds-api"],
     "cfb": [],
     "golf": ["the-odds-api"],
+    "tennis": [],
+    "nhl": [],
 }
 
 

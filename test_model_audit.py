@@ -36,7 +36,8 @@ def check(name, cond, detail=""):
 
 
 def test_audit_structure():
-    for eng in ("worldcup", "club_soccer", "cfb", "golf"):
+    from app.engines import registry
+    for eng in [e.id for e in registry.all()]:
         a = model_audit.audit(eng)
         check(f"{eng}: has validation status",
               a["validation"]["status"] in ("PASS", "FAIL", "unknown"),
@@ -80,8 +81,8 @@ def test_template_enrichment():
 
 def test_no_secret_values():
     import json
-    blob = json.dumps([model_audit.audit(e) for e in
-                       ("worldcup", "club_soccer", "cfb", "golf")])
+    from app.engines import registry
+    blob = json.dumps([model_audit.audit(e.id) for e in registry.all()])
     # the audit must not embed any odds-API key material
     from app import settings_store
     keys = settings_store.load().get("odds_api_keys", {}) or {}

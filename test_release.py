@@ -57,7 +57,9 @@ def test_daily_summary_offline():
             s = daily_summary.build_summary()
         check("has the top-level sections",
               all(k in s for k in ("generated_at", "bankroll", "engines", "clv")), str(s.keys()))
-        check("covers all four engines", len(s["engines"]) == 4, str(list(s["engines"])))
+        from app.engines import registry
+        expected = {e.id for e in registry.all()}
+        check("covers registered engines", set(s["engines"]) == expected, str(list(s["engines"])))
         check("each engine has a gate status",
               all(e["validation"] in ("PASS", "FAIL", "unknown") for e in s["engines"].values()))
         check("clv degrades to a local action",
