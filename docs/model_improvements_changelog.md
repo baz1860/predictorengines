@@ -120,3 +120,149 @@ validation are the cheapest next checks.
 - `engines/worldcup/data/market_blend.json` → `data/market_blend.json` — refit recorded, left inactive (`.bak.preblend` = original)
 - `club_soccer/corners_model.py` — corners model + shots GLM + validation (new)
 - `engines/worldcup/totals_probe.py` — international totals model-vs-book probe (new)
+
+## Club Soccer Phase 4 — league structure & position (2026-07-02)
+
+Following `plans/club_soccer_engine_plan.md` Phase 4. Three fitted/gated candidates,
+each evaluated honestly against the incumbent on walk-forward Brier; none clears the bar,
+so all three ship **inactive** (`"active": false`), exactly as designed.
+
+### P4.4 Fitted competition strength (`model.py::fit_comp_strength`)
+Mean end-of-fit Elo of each league's >=6-match teams in the last completed season (2025),
+min-max rescaled to `[0.15, 1.10]`; cups at 0.95x their parent league. Written to
+`data/comp_strength.json`.
+
+**Result (full walk-forward, n=16714):** active=false (incumbent hand-set constants)
+Brier **0.61256**; active=true (fitted) Brier **0.61275** — worse by +0.00018. Rejected;
+stays inactive.
+
+### P4.5 Promoted/relegated-team shrinkage prior (`model.py::tune_promo_prior`)
+Grid-searched pi in {0.80, 0.85, 0.90, 0.95, 1.00} — a promoted team's attack/defence
+shrinkage prior seeded from its own previous-season rate x pi instead of `global_avg`
+(relegated: symmetric). Evaluated on promoted/relegated teams' first 10 league matches,
+seasons 2023-2026 (n=826).
+
+**Result:** baseline (no prior) Brier **0.6496**; every grid point was worse (pi=0.80 best
+of the active runs at 0.6500). Rejected; stays inactive.
+
+### P4.6 Season-boundary Elo regression + half-life re-tune (`model.py::tune_season_boundary`)
+Grid-searched `season_regress_rho` in {0.0, 0.1, 0.2, 0.3, 0.4} x `HALF_LIFE_DAYS` in
+{180, 270, 365} on Aug-Oct fixtures only (n=4466 per cell; the walk-forward months outside
+Aug-Oct don't need refitting for this check, since a given month's `fit()` call only
+depends on its own train cutoff — an exact optimization, not an approximation).
+
+**Result:** the incumbent (rho=0, half_life=365) was already the best cell in the grid
+(Brier 0.6206); every other combination was equal or worse. Confirms the existing
+365-day half-life needs no change and Elo carrying straight across July is, on this data,
+not costing anything. No promotion needed (nothing to promote — incumbent already wins).
+
+### P4.7 Cup tier_gap (`context.py::_cup_tier_gap`)
+Feature wired into the context GLM design matrix, but **fixtures.csv has zero PLAYED
+domestic-cup rows** across the whole 2022-2026 history (FA Cup/EFL Cup/Scottish Cup/
+DFB-Pokal/Coppa Italia/Coupe de France/Copa del Rey all show only upcoming, unplayed
+fixtures) — the original historical seed never ingested cup results. `tier_gap` is
+therefore a constant-zero column; `context.py::fit_context` now generically drops any
+zero-variance design column (was previously only xi_load14_diff-specific) rather than
+crashing on the resulting singular IRLS matrix. Nothing to fit yet — revisit once
+`season.py`'s daily pipeline (P8) has accumulated real cup results.
+
+### Files
+- `club_soccer/standings.py` — point-in-time league tables (new)
+- `club_soccer/motivation.py` — pos/ppg/fight/dead features (new)
+- `club_soccer/competitions.py` — `teams_n`/`releg_spots`/`promo_spots`/`euro_spots` + fitted-strength file consultation (extended)
+- `club_soccer/model.py` — `fit_comp_strength`, `tune_promo_prior`, `tune_season_boundary`, `_promo_relegation_priors`, season-boundary Elo regression in the Elo loop (extended)
+- `club_soccer/context.py` — `ppg_diff`/`fight_diff`/`dead_diff`/`tier_gap` terms, generic zero-variance column guard (extended)
+- `data/comp_strength.json`, `model_params.json["promo_prior"/"season_regress_rho"/"half_life_days"]` — diagnostic artifacts, all inactive
+
+## Club Soccer Phase 5 — weather (2026-07-02)
+
+`data/venues.csv` (265 teams, city-level lat/lon, 100% coverage on the 12
+core tracked leagues). `weather.py` backfilled `data/weather.csv` from
+Open-Meteo's archive+forecast APIs: **15,104 of 17,008** matched fixtures
+got real weather (89%; the remainder mostly hit late-stage rate limiting on
+a multi-year backfill and were skipped, not fabricated). Wired into
+`context.py` as symmetric terms (`wind_high`, `precip`, `temp_cold`,
+`temp_hot` — same value for both sides, since weather shifts totals, not
+which side benefits) plus the OU2.5-Brier-specific gate criterion from plan
+§12 (1X2 log-loss allowed to move ≤ 0.0005; primary metric is OU2.5 Brier).
+
+**Result:** none of the four weather terms cleared |t| >= 2
+(wind_high t=-0.76, precip t=1.65, temp_cold t=-1.30, temp_hot t=0.49, on
+33,946 side-observations) — no detectable weather effect on goals in this
+sample at city-level precision. All four pruned from the fit; nothing to
+gate-check against OU2.5 Brier since none survived. Ships inactive.
+(`context.py::fit_context` also gained a generic zero-variance-column drop,
+needed independently for `tier_gap` — see Phase 4's P4.7 note — reused here
+before real weather data existed, verified again with real data.)
+
+### Files
+- `club_soccer/data/venues.csv`, `club_soccer/weather.py` (new)
+- `club_soccer/context.py` — weather terms + OU2.5-specific validate() gate (extended)
+
+## Club Soccer Phase 6 — market layer (2026-07-02)
+
+`snapshot_odds.py` (P6.1): discovered BSD's real multi-bookmaker data lives
+at `/api/v2/events/{id}/odds/comparison/`, not the `event["bookmakers"]`
+field the plan assumed (doesn't exist on list/detail responses) — added
+`bsd_client.odds_comparison()`. Only populated close to kickoff empirically
+(same-day, even for major leagues) — no market snapshot data was available
+for any of our tracked competitions' upcoming fixtures at write time (all
+are 1+ weeks out, mid-close-season).
+
+`market_model.py` (P6.2): `line_history`/`do_not_bet`, wired into
+`edge.py` (auto-on past 30 days of snapshot history; prints "warming up:
+Nd" before that — currently 0.0d, correctly inactive).
+
+`fit_market_blend.py` (P6.3): time-series CV blend weight (1X2 and OU2.5
+separately) vs `market_history.csv`'s Bet365 pre-match odds, splits
+{2024, 2025}. **Result: w=0.0 (pure market) wins every split, both
+markets** — the grid search degenerates to "just use the market" because
+nothing beats it, consistent with `backtest_market.py`'s finding (P1.5:
+model 1X2 log-loss 1.023 vs market 0.997). Since w=0 ties rather than
+strictly beats the market, `beats_both` is correctly False — rejected,
+`app/market_blend.DEFAULT_BLEND_ON` untouched.
+
+Found + fixed a real bug during testing: `snapshot_odds.append_snapshots`'s
+dedupe pass used `pd.to_datetime` without `format="mixed"`, so a column
+with a mix of `T`-separator (freshly generated) and space-separator
+(post-CSV-round-trip `str(Timestamp)`) timestamps silently NaT'd (and
+dropped) every row after the first format pandas inferred — would have
+made every snapshot after the first look like a fresh event forever,
+defeating the whole point of the movement-tracking dedupe window.
+
+### Files
+- `bsd_client.py` — `odds_comparison()` (new)
+- `club_soccer/snapshot_odds.py`, `club_soccer/market_model.py`, `club_soccer/fit_market_blend.py` (new)
+- `club_soccer/edge.py` — do-not-bet wiring (extended)
+- `data/market_blend_suite.json["club_soccer"/"club_soccer_ou25"]` — both 0.0, inactive
+
+## Club Soccer Phase 7 — real xG from Understat: BLOCKED, not implemented (2026-07-02)
+
+The plan called for scraping Understat's embedded match JSON for top-5-league
+real xG, citing "no aggressive bot protection." Verified live before writing
+any scraper:
+
+1. **The embedded-JSON scraping pattern no longer works.** `understat.com/league/EPL/{season}`
+   returns an identical 17,480-byte page for every season tested (2024, 2025)
+   with no `var datesData/teamsData/playersData = JSON.parse(...)` anywhere
+   in the HTML — the site has been rewritten to load match/team data via a
+   client-side call after page load, not embedded server-side. A handful of
+   guessed REST/GraphQL endpoint paths all 404.
+2. **`understat.com/robots.txt` is now `User-agent: * / Disallow: /`** — a
+   blanket disallow on the entire site. The plan's own ground rule ("Respect
+   robots/ToS") makes this a hard stop regardless of (1): even if a working
+   data endpoint were found, scraping it would violate the site's stated
+   policy.
+
+Neither fact was true when `docs/DATA_SOURCING_PLAN.md` §2 was written (or
+wasn't checked against the live site) — this is a real, current change, not
+a bug in this session's code. **P7 is not implemented.** The `xg`/`xgf`
+ensemble components keep the existing SoT x conversion-rate proxy for every
+competition, including the top-5 leagues Understat would have covered. If
+real xG is wanted later, it needs a different source that (a) actually
+serves the data server-side or via a documented API, and (b) permits
+automated access — e.g. a paid provider, or re-checking Understat's policy
+in case it's reverted.
+
+### Files
+- none changed for this phase

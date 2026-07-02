@@ -114,10 +114,20 @@ def team_names(df: pd.DataFrame | None = None) -> list[str]:
     return sorted(set(df["home"].dropna()) | set(df["away"].dropna()))
 
 
-def _weights(dates: pd.Series) -> np.ndarray:
+def _weights(dates: pd.Series, half_life_days: float = HALF_LIFE_DAYS) -> np.ndarray:
     anchor = dates.max()
     age = (anchor - dates).dt.days.to_numpy(dtype=float)
-    return np.exp(-math.log(2) * age / HALF_LIFE_DAYS)
+    return np.exp(-math.log(2) * age / half_life_days)
+
+
+def _season_year(d) -> int:
+    d = pd.Timestamp(d)
+    return d.year if d.month >= 7 else d.year - 1
+
+
+def _crossed_july1(prev, curr) -> bool:
+    """True iff a July 1 boundary falls strictly between prev and curr."""
+    return _season_year(prev) != _season_year(curr)
 
 
 def _poisson_pmf(lam: float) -> np.ndarray:
@@ -154,12 +164,81 @@ def top_scorelines(M: np.ndarray, n: int = 5) -> list[dict]:
     return [{"score": f"{i}-{j}", "prob": round(p, 4)} for i, j, p in flat[:n]]
 
 
-def fit(df: pd.DataFrame | None = None) -> dict:
+def _promo_relegation_priors(df: pd.DataFrame, teams: list[str]) -> dict[str, dict]:
+    """team -> {"status": "promoted"|"relegated", "prev_gf": float, "prev_ga": float}
+    (previous-season goals-for/against per match, across all competitions),
+    for teams whose most recent league match's Competition.tier differs from
+    their last league match of the previous season. Point-in-time safe —
+    uses only `df`'s own contents (whatever training window the caller
+    passed), so it's safe to call from inside a walk-forward fit()."""
+    from .competitions import get as comp_get
+
+    league = df[df["type"] == "league"]
+    if league.empty:
+        return {}
+
+    rate_rows = []
+    for r in df.itertuples(index=False):
+        rate_rows.append((r.home, r.season, r.home_goals, r.away_goals))
+        rate_rows.append((r.away, r.season, r.away_goals, r.home_goals))
+    rate_df = pd.DataFrame(rate_rows, columns=["team", "season", "gf", "ga"])
+    rates = rate_df.groupby(["team", "season"]).agg(gf=("gf", "mean"), ga=("ga", "mean"))
+
+    last_league_comp: dict[tuple, str] = {}
+    for r in league.sort_values("date").itertuples(index=False):
+        last_league_comp[(r.home, r.season)] = r.competition
+        last_league_comp[(r.away, r.season)] = r.competition
+
+    seasons_by_team: dict[str, set] = {}
+    for (t, s) in rates.index:
+        seasons_by_team.setdefault(t, set()).add(s)
+
+    out: dict[str, dict] = {}
+    for t in teams:
+        seasons = seasons_by_team.get(t)
+        if not seasons or len(seasons) < 2:
+            continue
+        last_season = max(seasons)
+        prev_season = last_season - 1
+        if prev_season not in seasons:
+            continue
+        comp_last = last_league_comp.get((t, last_season))
+        comp_prev = last_league_comp.get((t, prev_season))
+        if not comp_last or not comp_prev:
+            continue
+        c_last, c_prev = comp_get(comp_last), comp_get(comp_prev)
+        if c_last is None or c_prev is None or c_last.tier <= 0 or c_prev.tier <= 0:
+            continue
+        if c_last.tier == c_prev.tier:
+            continue
+        status = "promoted" if c_last.tier < c_prev.tier else "relegated"
+        prev_gf, prev_ga = rates.loc[(t, prev_season)]
+        out[t] = {"status": status, "prev_gf": float(prev_gf), "prev_ga": float(prev_ga)}
+    return out
+
+
+def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
+        season_regress_rho: float = 0.0, half_life_days: float = HALF_LIFE_DAYS) -> dict:
+    """
+    promo_prior: optional {"pi": float, "active": bool} (P4.5). When active,
+    a promoted/relegated team's attack/defence shrinkage prior (see the gf/ga
+    block below) is seeded from ITS OWN previous-season scoring rate scaled
+    by pi (promoted: attack*pi, defence/pi; relegated: symmetric) instead of
+    the league-wide global_avg. Defaults to inactive (matches model_params.json
+    if not passed).
+    season_regress_rho: (P4.6) when a team's consecutive matches straddle a
+    July 1 boundary, its Elo regresses toward the mean Elo of the upcoming
+    match's competition: elo <- (1-rho)*elo + rho*league_mean. 0.0 (default)
+    = incumbent behaviour (no regression).
+    half_life_days: recency half-life for the exponential match-weighting
+    (P4.6 re-tunes this alongside season_regress_rho). Defaults to the
+    incumbent HALF_LIFE_DAYS.
+    """
     df = played(load_fixtures() if df is None else df).sort_values("date")
     if df.empty:
         raise ValueError("No played fixtures available to fit the model.")
     teams = sorted(set(df["home"]) | set(df["away"]))
-    w = _weights(df["date"])
+    w = _weights(df["date"], half_life_days)
     avg_home = float(np.average(df["home_goals"], weights=w))
     avg_away = float(np.average(df["away_goals"], weights=w))
     global_avg = max(0.8, (avg_home + avg_away) / 2)
@@ -254,12 +333,26 @@ def fit(df: pd.DataFrame | None = None) -> dict:
             stats[r.home]["wxp"] += wt
             stats[r.away]["wxp"] += wt
 
+    promo_active = bool((promo_prior or {}).get("active", False))
+    promo_pi = float((promo_prior or {}).get("pi", 1.0))
+    promo_info = _promo_relegation_priors(df, teams) if promo_active else {}
+
     attack, defence, attack_xg, defence_xg = {}, {}, {}, {}
     attack_xpress, defence_xpress = {}, {}
     base_xf, base_xa = {}, {}
     for t in teams:
-        gf = (stats[t]["gf"] + global_avg * 4) / (stats[t]["wf"] + 4)
-        ga = (stats[t]["ga"] + global_avg * 4) / (stats[t]["wa"] + 4)
+        info = promo_info.get(t)
+        if info is not None:
+            if info["status"] == "promoted":
+                gf_prior = info["prev_gf"] * promo_pi
+                ga_prior = info["prev_ga"] / promo_pi
+            else:  # relegated: symmetric
+                gf_prior = info["prev_gf"] / promo_pi
+                ga_prior = info["prev_ga"] * promo_pi
+        else:
+            gf_prior = ga_prior = global_avg
+        gf = (stats[t]["gf"] + gf_prior * 4) / (stats[t]["wf"] + 4)
+        ga = (stats[t]["ga"] + ga_prior * 4) / (stats[t]["wa"] + 4)
         attack[t] = float(math.log(max(0.25, gf) / global_avg))
         defence[t] = float(math.log(max(0.25, ga) / global_avg))
         xf = (stats[t]["xf"] + global_avg * 4) / (stats[t]["wx"] + 4)
@@ -293,8 +386,23 @@ def fit(df: pd.DataFrame | None = None) -> dict:
         fdef[t] = float(np.clip(math.log(max(0.25, ra) / max(0.25, base_xa[t])), -0.4, 0.4))
 
     elo = {t: BASE_ELO for t in teams}
+    if season_regress_rho > 0:
+        comp_teams: dict[str, set] = {}
+        for r in df.itertuples(index=False):
+            comp_teams.setdefault(r.competition, set()).update((r.home, r.away))
+    last_date: dict[str, pd.Timestamp] = {}
     for r in df.itertuples(index=False):
         h, a = r.home, r.away
+        if season_regress_rho > 0:
+            for team in (h, a):
+                prev = last_date.get(team)
+                if prev is not None and _crossed_july1(prev, r.date):
+                    members = comp_teams.get(r.competition, set())
+                    vals = [elo[t] for t in members if t in elo]
+                    league_mean = float(np.mean(vals)) if vals else BASE_ELO
+                    elo[team] = (1 - season_regress_rho) * elo[team] + season_regress_rho * league_mean
+            last_date[h] = r.date
+            last_date[a] = r.date
         adv = 0.0 if int(r.neutral) else HOME_ADV_ELO
         exp_h = 1.0 / (1.0 + 10 ** ((elo[a] - (elo[h] + adv)) / 400.0))
         actual_h = 1.0 if r.home_goals > r.away_goals else (0.5 if r.home_goals == r.away_goals else 0.0)
@@ -351,6 +459,278 @@ def load_params() -> dict:
     params = fit()
     save_params(params)
     return params
+
+
+# ── P4.4: fitted competition strength (replaces hand-set constants, gated) ────
+COMP_STRENGTH = DATA / "comp_strength.json"
+
+# Cup -> parent top-flight league, for the "0.95 x parent's fitted strength"
+# rule. Domestic cups only; European competitions are priced on their own
+# hand-set constant (no single "parent league").
+_CUP_PARENT_LEAGUE = {
+    "FA Cup": "Premier League", "EFL Cup": "Premier League",
+    "Scottish Cup": "Scottish Premiership", "Scottish League Cup": "Scottish Premiership",
+    "DFB-Pokal": "Bundesliga", "Coppa Italia": "Serie A",
+    "Coupe de France": "Ligue 1", "Copa del Rey": "La Liga",
+}
+
+
+def fit_comp_strength(verbose: bool = True, save: bool = True) -> dict:
+    """Fitted per-competition strength from the shared Elo scale, replacing
+    the hand-set `Competition.strength` constants.
+
+    For each LEAGUE competition: mean end-of-fit Elo of teams that played
+    >= 6 matches in it during the last completed season (today's season - 1;
+    Elo is shared across competitions in fit(), so cross-league cup/Europe
+    matches and promoted teams already propagate information into it).
+    Mapped to [0.15, 1.10] via a min-max rescale over league competitions
+    only. Domestic cups take 0.95x their parent league's fitted value.
+
+    Written to data/comp_strength.json with "active": false — inactive
+    until promoted per plan Sec 12 (competitions.strength() ignores this
+    file unless "active" is true).
+    """
+    from datetime import datetime, timezone
+    from .competitions import COMPETITIONS
+
+    df = played(load_fixtures())
+    params = fit(df)
+    elo = params["elo"]
+
+    today = datetime.now(timezone.utc).date()
+    current_season = today.year if today.month >= 7 else today.year - 1
+    last_completed = current_season - 1
+
+    league_elo: dict[str, float] = {}
+    for comp in COMPETITIONS:
+        if comp.kind != "league":
+            continue
+        sub = df[(df["competition"] == comp.name) & (df["season"] == last_completed)]
+        if sub.empty:
+            continue
+        counts = pd.concat([sub["home"], sub["away"]]).value_counts()
+        teams = [t for t, c in counts.items() if c >= 6]
+        if not teams:
+            continue
+        league_elo[comp.name] = float(np.mean([elo.get(t, BASE_ELO) for t in teams]))
+
+    if not league_elo:
+        raise ValueError(
+            f"No league had a team with >=6 matches in season {last_completed} "
+            "— nothing to fit competition strength from.")
+
+    min_e, max_e = min(league_elo.values()), max(league_elo.values())
+    span = (max_e - min_e) or 1.0
+    strengths: dict[str, float] = {}
+    for name, mean_elo in league_elo.items():
+        s = 0.15 + 0.85 * (mean_elo - min_e) / span
+        strengths[name] = round(float(np.clip(s, 0.15, 1.10)), 4)
+
+    for comp in COMPETITIONS:
+        if comp.kind == "cup":
+            parent = _CUP_PARENT_LEAGUE.get(comp.name)
+            if parent and parent in strengths:
+                strengths[comp.name] = round(0.95 * strengths[parent], 4)
+
+    payload = dict(strengths)
+    payload["active"] = False
+    payload["_fit_season"] = last_completed
+    if verbose:
+        print(f"Fitted competition strength (season {last_completed} Elo, "
+              f">=6-match teams):")
+        for name in sorted(strengths):
+            hand_set = next((c.strength for c in COMPETITIONS if c.name == name), None)
+            print(f"  {name:25s} fitted={strengths[name]:.4f}  hand-set={hand_set}")
+    if save:
+        COMP_STRENGTH.parent.mkdir(exist_ok=True)
+        COMP_STRENGTH.write_text(json.dumps(payload, indent=2))
+        if verbose:
+            print(f"  saved -> {COMP_STRENGTH.name} (active=false; promote per plan Sec 12)")
+    return payload
+
+
+# ── P4.5: promoted/relegated-team shrinkage-prior multiplier (gated) ──────────
+PROMO_PI_GRID = (0.80, 0.85, 0.90, 0.95, 1.00)
+PROMO_EVAL_SEASONS = (2023, 2024, 2025, 2026)
+PROMO_FIRST_N_ROUNDS = 10
+
+
+def tune_promo_prior(verbose: bool = True, save: bool = False) -> dict:
+    """Grid-search the promotion/relegation shrinkage-prior multiplier pi
+    (P4.5), on walk-forward Brier restricted to promoted/relegated teams'
+    first PROMO_FIRST_N_ROUNDS league matches of seasons in
+    PROMO_EVAL_SEASONS. Report-only: writes model_params.json's
+    "promo_prior" key with "active": false regardless of outcome — a code
+    change (mirroring comp_adj_active's pattern) is what actually promotes
+    a gated term to the default path.
+    """
+    df_all = played(load_fixtures()).sort_values("date").reset_index(drop=True)
+    df_all["_ym"] = df_all["date"].dt.to_period("M")
+    months = sorted(df_all["_ym"].unique())
+
+    def _eval(pi: float, active: bool) -> tuple[float, int]:
+        brier_sum, n = 0.0, 0
+        for ym in months:
+            test = df_all[df_all["_ym"] == ym]
+            train_cut = test["date"].min()
+            train = df_all[df_all["date"] < train_cut]
+            if len(train) < 200:
+                continue
+            try:
+                params = fit(train, promo_prior={"pi": pi, "active": active})
+            except Exception:
+                continue
+            seen = set(params["teams"])
+            info = _promo_relegation_priors(train, params["teams"]) if active else \
+                _promo_relegation_priors(train, list(seen))
+            if not info:
+                continue
+            round_counts: dict[tuple, int] = {}
+            for r in train[train["type"] == "league"].itertuples(index=False):
+                round_counts[(r.home, r.season)] = round_counts.get((r.home, r.season), 0) + 1
+                round_counts[(r.away, r.season)] = round_counts.get((r.away, r.season), 0) + 1
+            for r in test.itertuples(index=False):
+                if r.type != "league" or r.season not in PROMO_EVAL_SEASONS:
+                    continue
+                if r.home not in seen or r.away not in seen:
+                    continue
+                h_elig = r.home in info and round_counts.get((r.home, r.season), 0) < PROMO_FIRST_N_ROUNDS
+                a_elig = r.away in info and round_counts.get((r.away, r.season), 0) < PROMO_FIRST_N_ROUNDS
+                if not (h_elig or a_elig):
+                    continue
+                try:
+                    pred = predict(r.home, r.away, r.competition, "ensemble",
+                                   bool(r.neutral), params)
+                except ValueError:
+                    continue
+                actual = 0 if r.home_goals > r.away_goals else (
+                    1 if r.home_goals == r.away_goals else 2)
+                p = np.array([pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"]])
+                brier_sum += float(np.sum((p - np.eye(3)[actual]) ** 2))
+                n += 1
+        return (brier_sum / n if n else float("nan")), n
+
+    baseline_brier, baseline_n = _eval(pi=1.0, active=False)
+    if verbose:
+        print(f"Promo-prior tuning (promoted/relegated teams' first "
+              f"{PROMO_FIRST_N_ROUNDS} league rounds, seasons {PROMO_EVAL_SEASONS}):")
+        print(f"  baseline (inactive, global_avg prior): n={baseline_n} brier={baseline_brier:.4f}")
+
+    grid_results = {}
+    for pi in PROMO_PI_GRID:
+        brier, n = _eval(pi=pi, active=True)
+        grid_results[pi] = {"brier": brier, "n": n}
+        if verbose:
+            print(f"  pi={pi:.2f}  n={n}  brier={brier:.4f}")
+
+    valid = {pi: r for pi, r in grid_results.items() if r["n"] > 0}
+    best_pi = min(valid, key=lambda k: valid[k]["brier"]) if valid else 1.0
+    best_brier = valid[best_pi]["brier"] if valid else float("nan")
+    promotes = bool(valid) and baseline_n > 0 and best_brier < baseline_brier
+
+    payload = {"pi": best_pi, "active": False,
+               "baseline_brier": round(baseline_brier, 6) if baseline_n else None,
+               "best_brier": round(best_brier, 6) if valid else None,
+               "would_promote": promotes,
+               "grid": {f"{k:.2f}": v for k, v in grid_results.items()}}
+    if verbose:
+        print(f"  best pi={best_pi} vs baseline: "
+              f"{'would PROMOTE' if promotes else 'reject — keep prior OFF'}")
+    if save:
+        params = load_params()
+        params["promo_prior"] = payload
+        save_params(params)
+        if verbose:
+            print(f"  saved diagnostic -> {PARAMS.name}['promo_prior'] (active=false)")
+    return payload
+
+
+# ── P4.6: season-boundary Elo regression + recency half-life re-tune (gated) ──
+SEASON_REGRESS_RHO_GRID = (0.0, 0.1, 0.2, 0.3, 0.4)   # 0.0 = incumbent
+HALF_LIFE_GRID = (180.0, 270.0, 365.0)                # 365 = incumbent
+AUG_OCT_MONTHS = (8, 9, 10)
+
+
+def tune_season_boundary(verbose: bool = True, save: bool = False) -> dict:
+    """Grid-search season_regress_rho x half_life_days (P4.6) on walk-forward
+    Brier restricted to August-October fixtures (where a season-boundary
+    effect would live). Only refits for Aug/Sep/Oct test months — a given
+    month's fit() call only depends on its own train cutoff, so skipping
+    months we don't score is exact, not an approximation, and cuts the grid
+    search to a fraction of a full walk-forward's fit() calls.
+
+    Report-only: writes model_params.json's "season_regress_rho"/
+    "half_life_days" keys with "active": false regardless of outcome — a
+    code change to fit()'s defaults is what actually promotes this.
+    """
+    df_all = played(load_fixtures()).sort_values("date").reset_index(drop=True)
+    df_all["_ym"] = df_all["date"].dt.to_period("M")
+    months = [ym for ym in sorted(df_all["_ym"].unique()) if ym.month in AUG_OCT_MONTHS]
+
+    def _eval(rho: float, hl: float) -> tuple[float, int]:
+        brier_sum, n = 0.0, 0
+        for ym in months:
+            test = df_all[df_all["_ym"] == ym]
+            train = df_all[df_all["date"] < test["date"].min()]
+            if len(train) < 200:
+                continue
+            try:
+                params = fit(train, season_regress_rho=rho, half_life_days=hl)
+            except Exception:
+                continue
+            seen = set(params["teams"])
+            for r in test.itertuples(index=False):
+                if r.home not in seen or r.away not in seen:
+                    continue
+                try:
+                    pred = predict(r.home, r.away, r.competition, "ensemble",
+                                   bool(r.neutral), params)
+                except ValueError:
+                    continue
+                actual = 0 if r.home_goals > r.away_goals else (
+                    1 if r.home_goals == r.away_goals else 2)
+                p = np.array([pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"]])
+                brier_sum += float(np.sum((p - np.eye(3)[actual]) ** 2))
+                n += 1
+        return (brier_sum / n if n else float("nan")), n
+
+    if verbose:
+        print(f"Season-boundary tuning (Aug-Oct fixtures only, {len(months)} months):")
+
+    grid: dict[tuple, dict] = {}
+    for hl in HALF_LIFE_GRID:
+        for rho in SEASON_REGRESS_RHO_GRID:
+            brier, n = _eval(rho, hl)
+            grid[(rho, hl)] = {"brier": brier, "n": n}
+            if verbose:
+                print(f"  rho={rho:.1f} half_life={hl:.0f}  n={n}  brier={brier:.4f}")
+
+    incumbent = grid.get((0.0, 365.0))
+    valid = {k: v for k, v in grid.items() if v["n"] > 0}
+    best_key = min(valid, key=lambda k: valid[k]["brier"]) if valid else (0.0, 365.0)
+    best = valid.get(best_key)
+    promotes = bool(incumbent and best and best["brier"] < incumbent["brier"]
+                    and best_key != (0.0, 365.0))
+
+    payload = {
+        "season_regress_rho": {"value": best_key[0], "active": False},
+        "half_life_days": {"value": best_key[1], "active": False},
+        "incumbent_brier": round(incumbent["brier"], 6) if incumbent else None,
+        "best_brier": round(best["brier"], 6) if best else None,
+        "would_promote": promotes,
+        "grid": {f"rho={k[0]:.1f},hl={k[1]:.0f}": v for k, v in grid.items()},
+    }
+    if verbose:
+        print(f"  best rho={best_key[0]}, half_life={best_key[1]} vs incumbent "
+              f"(rho=0, hl=365): {'would PROMOTE' if promotes else 'reject — keep incumbent'}")
+    if save:
+        params = load_params()
+        params["season_regress_rho"] = payload["season_regress_rho"]
+        params["half_life_days"] = payload["half_life_days"]
+        save_params(params)
+        if verbose:
+            print(f"  saved diagnostic -> {PARAMS.name} (both active=false)")
+    return payload
 
 
 def _home_mult(params: dict, competition: str | None) -> float:
@@ -488,10 +868,32 @@ def apply_player_adj(M: np.ndarray, player_adj: dict) -> np.ndarray:
     return score_matrix(lam_h, lam_a)
 
 
+def apply_context_adj(M: np.ndarray, context_adj: dict) -> np.ndarray:
+    """Re-scale a score matrix by a fitted context correction (rest,
+    congestion, minutes-load — see context.py). Same mechanism as
+    apply_player_adj: extract expected goals from the current matrix,
+    multiply by each side's fitted multiplier, rebuild.
+
+    context_adj format
+    -------------------
+    {"home": {"mult": float}, "away": {"mult": float}}
+    """
+    if not context_adj:
+        return M
+    mult_h = float((context_adj.get("home") or {}).get("mult", 1.0))
+    mult_a = float((context_adj.get("away") or {}).get("mult", 1.0))
+    xg_h = float(sum(i * float(M[i, :].sum()) for i in range(M.shape[0])))
+    xg_a = float(sum(j * float(M[:, j].sum()) for j in range(M.shape[1])))
+    lam_h = max(0.05, xg_h * mult_h)
+    lam_a = max(0.05, xg_a * mult_a)
+    return score_matrix(lam_h, lam_a)
+
+
 def predict(home: str, away: str, competition: str | None = None,
             model: str = "ensemble", neutral: bool = False,
             params: dict | None = None,
-            player_adj: dict | None = None) -> dict:
+            player_adj: dict | None = None,
+            context_adj: dict | None = None) -> dict:
     """Predict match outcome probabilities.
 
     Parameters
@@ -506,6 +908,9 @@ def predict(home: str, away: str, competition: str | None = None,
                    Format: {"home": {"attack_mult": float, "defense_mult": float},
                              "away": {"attack_mult": float, "defense_mult": float}}
                    Values outside [0.80, 1.25] are silently clamped.
+    context_adj:   Optional rest/congestion/minutes-load correction from
+                   club_soccer.context (report-only/gated — see context.py).
+                   Format: {"home": {"mult": float}, "away": {"mult": float}}
     """
     params = load_params() if params is None else params
     teams = set(params["teams"])
@@ -542,6 +947,9 @@ def predict(home: str, away: str, competition: str | None = None,
                 player_adj[side]["defense_mult"] = max(0.80, min(1.25, float(player_adj[side].get("defense_mult", 1.0))))
         M = apply_player_adj(M, player_adj)
 
+    if context_adj:
+        M = apply_context_adj(M, context_adj)
+
     probs = probs_from_matrix(M)
     xg_h = float(sum(i * M[i, :].sum() for i in range(M.shape[0])))
     xg_a = float(sum(j * M[:, j].sum() for j in range(M.shape[1])))
@@ -555,6 +963,11 @@ def predict(home: str, away: str, competition: str | None = None,
                    if k in ("attack_mult", "defense_mult", "n_missing")}
             for side in ("home", "away")
         }
+    if context_adj:
+        out["context_adj"] = {
+            side: round(float((context_adj.get(side) or {}).get("mult", 1.0)), 4)
+            for side in ("home", "away")
+        }
     return out
 
 
@@ -566,11 +979,32 @@ def main() -> None:
     ap.add_argument("--model", choices=["ensemble", "goals", "elo", "xg", "xpress"], default="ensemble")
     ap.add_argument("--neutral", action="store_true")
     ap.add_argument("--fit", action="store_true")
+    ap.add_argument("--fit-comp-strength", action="store_true",
+                    help="fit competition strength from shared Elo (P4.4); "
+                         "writes data/comp_strength.json, inactive by default")
+    ap.add_argument("--tune-promo-prior", action="store_true",
+                    help="grid-search the promoted/relegated-team shrinkage "
+                         "prior pi (P4.5), report-only")
+    ap.add_argument("--tune-season-boundary", action="store_true",
+                    help="grid-search season_regress_rho x half_life_days "
+                         "on Aug-Oct fixtures (P4.6), report-only")
+    ap.add_argument("--write", action="store_true",
+                    help="with --tune-promo-prior/--tune-season-boundary, "
+                         "save the diagnostic to model_params.json (still inactive)")
     args = ap.parse_args()
     if args.fit:
         params = fit()
         save_params(params)
         print(f"Saved {len(params['teams'])} teams from {params['fitted_matches']} matches -> {PARAMS}")
+        return
+    if args.tune_season_boundary:
+        tune_season_boundary(save=args.write)
+        return
+    if args.fit_comp_strength:
+        fit_comp_strength()
+        return
+    if args.tune_promo_prior:
+        tune_promo_prior(save=args.write)
         return
     if not args.home or not args.away:
         ap.print_help()

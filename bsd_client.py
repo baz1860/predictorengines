@@ -103,6 +103,23 @@ def get_event(api_key: str, event_id: int | str) -> dict:
     return _get(f"/api/events/{event_id}/", api_key)
 
 
+def odds_comparison(api_key: str, event_id: int | str) -> dict:
+    """Multi-bookmaker odds comparison for one event (v2 API).
+
+    Only populated close to kickoff (empirically: same-day for lower-profile
+    leagues; "bookmakers_count": 0 / "markets": {} well in advance). Shape:
+        {"bookmakers_count": int, "markets": {
+            "1x2": {"HOME": {"bookmakers": {slug: {"decimal_odds": float, ...}}}, "DRAW": {...}, "AWAY": {...}},
+            "over_under_25": {"over@2.5": {...}, "under@2.5": {...}},
+            ...
+        }}
+    The top-level odds_* fields on /api/events/ list/detail responses are
+    NOT a multi-bookmaker list despite earlier assumptions — this endpoint
+    is the real source for bookmaker-level data.
+    """
+    return _get(f"/api/v2/events/{event_id}/odds/comparison/", api_key)
+
+
 # ---------------------------------------------------------------------------
 # Convenience helpers
 # ---------------------------------------------------------------------------

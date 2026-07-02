@@ -36,7 +36,7 @@ class ClubSoccerAdapter(EngineAdapter):
         return {"models": ["ensemble", "goals", "elo"],
                 "odds_sources": [
                     {"id": "manual", "label": "Manual club_soccer/data/odds.csv"},
-                    {"id": "api", "label": "API-Football odds"},
+                    {"id": "bsd", "label": "BSD odds (free)"},
                     {"id": "the-odds-api", "label": "The Odds API"}],
                 "has_template": True,
                 "options": [{"id": "market_blend",
