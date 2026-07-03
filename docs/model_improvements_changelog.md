@@ -174,6 +174,50 @@ crashing on the resulting singular IRLS matrix. Nothing to fit yet — revisit o
 - `club_soccer/context.py` — `ppg_diff`/`fight_diff`/`dead_diff`/`tier_gap` terms, generic zero-variance column guard (extended)
 - `data/comp_strength.json`, `model_params.json["promo_prior"/"season_regress_rho"/"half_life_days"]` — diagnostic artifacts, all inactive
 
+### P4.6b Continuous Elo time-decay (`model.py::tune_elo_decay`)
+
+Follow-up investigation: raw Elo has no decay between matches, so a rating
+earned in a past hot spell can carry forward at full strength for years,
+eroding only through actual results. Prompted by a case study where Lincoln
+City held the highest Elo of any team in the Championship/League One pool
+despite a 44% win rate across its full 2022-2026 history.
+
+Added `elo_decay_half_life_days` to `fit()`: before each team's match, its
+Elo decays toward `BASE_ELO` by `0.5 ** (gap_days / half_life)`, where
+`gap_days` is the calendar gap since that team's previous match (any
+competition) — so decay accrues continuously, not just across close-season
+gaps. `tune_elo_decay()` grid-searches
+`{None, 1095, 730, 365, 180, 90}` days on the **full** walk-forward Brier
+(all 43 months, n=16714 — decay can matter any time in the season, unlike
+`season_regress_rho` which only bites at the July boundary).
+
+**Result:** every decay half-life tested made Brier *worse* than the
+undecayed incumbent, monotonically with decay strength:
+
+| half-life | none (incumbent) | 1095d | 730d | 365d | 180d | 90d |
+|---|---|---|---|---|---|---|
+| Brier | 0.6126 | 0.6128 | 0.6129 | 0.6133 | 0.6139 | 0.6150 |
+
+Rejected by the gate; stays inactive (`elo_decay_half_life_days: null`).
+
+Re-examined the Lincoln case that motivated this: their overall 44% win
+rate average hides a complete in-sample turnaround —
+30%/43%/35% win rate in 2022-23/23-24/24-25, then **31W-10D-5L (67%)** in
+2025-26, all league matches, the most recent ending 29 days before the
+dataset's latest date. Lincoln's high Elo isn't stale — it's Elo correctly
+tracking a team currently running away with League One. Decay does pull
+Lincoln's rating down at every tested half-life (1750->1666 at 90d), but
+even the most aggressive setting tested doesn't unseat them as the pool's
+top-rated team, because the signal decay is fighting is real, not stale.
+This explains the aggregate result: decay discounts genuine current form
+(the common case) as readily as it discounts genuinely stale form (the rare
+case Lincoln was mistaken for), a net loss on held-out accuracy. Ships as a
+gated, inactive `fit()` parameter + `--tune-elo-decay` CLI diagnostic;
+`predict.py`'s default call path is unaffected.
+
+### Files (P4.6b)
+- `club_soccer/model.py` — `elo_decay_half_life_days` param on `fit()`, decay applied in the Elo loop before season-boundary regression, `tune_elo_decay()`, `--tune-elo-decay` CLI flag (extended)
+
 ## Club Soccer Phase 5 — weather (2026-07-02)
 
 `data/venues.csv` (265 teams, city-level lat/lon, 100% coverage on the 12

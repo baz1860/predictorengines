@@ -92,9 +92,32 @@ class EspnGolfProvider:
 
     def current_event_payload(self, event_id: str | None = None,
                               use_cache: bool = False) -> dict:
+        # ESPN's scoreboard ignores the `event` query param — it always returns
+        # the current week. To pin a specific event (by id or name, including a
+        # finished past event) resolve it to its date and fetch the dated board.
+        if event_id:
+            dates, label = self._resolve_event_dates(str(event_id))
+            if dates:
+                return self._json(label, ESPN_SCOREBOARD, {"dates": dates}, use_cache)
         params = {"event": event_id} if event_id else {}
         label = "scoreboard_current" if not event_id else "scoreboard_event"
         return self._json(label, ESPN_SCOREBOARD, params, use_cache)
+
+    def _resolve_event_dates(self, query: str) -> tuple[str, str]:
+        """Map an event id or name to (YYYYMMDD, cache_label) via the season
+        schedule. Returns ('', '') when nothing matches (caller falls back to the
+        current-week board)."""
+        q = query.strip().lower()
+        if not q:
+            return "", ""
+        try:
+            events = self.schedule(use_cache=True)
+        except Exception:  # noqa: BLE001 — schedule offline → fall back to current
+            return "", ""
+        for ev in events:
+            if q == ev.event_id.lower() or q in ev.name.lower():
+                return ev.start_date.replace("-", ""), f"scoreboard_ev_{ev.event_id}"
+        return "", ""
 
     def current_event(self, event_id: str | None = None,
                       use_cache: bool = False) -> EspnEvent | None:
@@ -306,6 +329,23 @@ def _course_name(ev: dict, comp: dict) -> str:
 
 def _status_name(comp: dict) -> str:
     return str(((comp.get("status") or {}).get("type") or {}).get("name") or "")
+
+
+def _to_par(display) -> float:
+    """ESPN round/aggregate to-par string → float. Blank, dash or 'E' → 0.0."""
+    s = str(display if display is not None else "").strip()
+    if s in ("", "-", "--", "—", "E", "e"):
+        return 0.0
+    try:
+        return float(s.replace("+", ""))
+    except ValueError:
+        return 0.0
+
+
+def _is_out(competitor: dict) -> bool:
+    """True when a competitor has left the tournament (cut, WD or DQ)."""
+    status = _status_name(competitor).upper()
+    return any(k in status for k in ("CUT", "WD", "WITHDR", "DQ", "DISQUAL"))
 
 
 def _field_round_meta(comp: dict) -> dict[str, str]:
