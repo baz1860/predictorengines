@@ -153,12 +153,382 @@ def test_runner_and_adapter():
         check("unknown command rejected", True)
 
 
+def test_health_and_repair():
+    print("6. data health + repair guard")
+    from club_soccer import health as H
+    from club_soccer import fetch as F
+
+    report = H.run_checks()
+    check("future_ft_rows is 0 on shipped data", report["future_ft_rows"] == 0)
+    check("duplicate_fixture_ids is 0 on shipped data", report["duplicate_fixture_ids"] == 0)
+    check("health report ok flag set", report["ok"] is True)
+
+    future_date = "2099-01-01"
+    finished_event = {
+        "id": 1, "home_team": "A", "away_team": "B", "status": "finished",
+        "event_date": f"{future_date}T00:00:00Z",
+    }
+    row = F._bsd_to_fixture_row(finished_event, "Premier League", 39, "England", "league")
+    check("_bsd_to_fixture_row drops future-dated finished event", row is None)
+
+    upcoming_event = dict(finished_event, status="notstarted")
+    row2 = F._bsd_to_fixture_row(upcoming_event, "Premier League", 39, "England", "league")
+    check("_bsd_to_fixture_row keeps future-dated unplayed event", row2 is not None
+          and row2["date"] == future_date)
+
+    # Regression: comp_from_bsd_league must not cross-match unrelated leagues
+    # that merely contain a competition name as a substring (e.g. "USL
+    # Championship" vs "Championship", "CAF Champions League" vs "Champions
+    # League") — this silently blended other continents' results in.
+    check("USL Championship does not match England Championship",
+          C.comp_from_bsd_league("USL Championship") is None)
+    check("CAF Champions League does not match UEFA Champions League",
+          C.comp_from_bsd_league("CAF Champions League") is None)
+    check("Brasileirão Serie A does not match Italy Serie A",
+          C.comp_from_bsd_league("Brasileirão Serie A") is None)
+    check("exact league name still matches",
+          C.comp_from_bsd_league("Championship") is not None
+          and C.comp_from_bsd_league("Championship").name == "Championship")
+
+
+def test_feature_store_pit():
+    print("7. feature store point-in-time")
+    from club_soccer import feature_store as FS
+    from club_soccer import schema as S
+
+    played = pd.DataFrame([
+        {"fixture_id": 1, "date": pd.Timestamp("2026-01-01"), "home": "A", "away": "X"},
+        {"fixture_id": 2, "date": pd.Timestamp("2026-01-05"), "home": "A", "away": "Y"},
+        {"fixture_id": 3, "date": pd.Timestamp("2026-01-08"), "home": "A", "away": "Z"},
+    ])
+    sched = FS._schedule_features(played)
+    row8 = sched[sched["fixture_id"] == 3].iloc[0]
+    check("d8 row rest_days_h counts from d5 only (3 days)", row8["rest_days_h"] == 3.0)
+    check("d8 row matches_30d_h sees d1 and d5 only (2 prior)", row8["matches_30d_h"] == 2)
+    check("d8 row matches_7d_h sees d1 (exactly 7d ago, inclusive) and d5",
+          row8["matches_7d_h"] == 2)
+    row1 = sched[sched["fixture_id"] == 1].iloc[0]
+    check("d1 row has no prior match (rest_days_h is NaN)", pd.isna(row1["rest_days_h"]))
+
+    poisoned = list(S.FEATURE_COLUMNS) + ["home_goals", "result"]
+    safe = S.feature_columns(poisoned)
+    check("OUTCOME columns excluded from schema.feature_columns()",
+          "home_goals" not in safe and "result" not in safe)
+    try:
+        S.assert_no_leakage(["elo_h", "p_close_h"])
+        check("assert_no_leakage rejects an outcome column", False)
+    except S.LeakageError:
+        check("assert_no_leakage rejects an outcome column", True)
+
+
+def test_fdcouk_alias_coverage():
+    print("8. fd.co.uk odds alias coverage")
+    from club_soccer import fetch_fdcouk as FD
+    if not FD.CACHE.exists() or not any(FD.CACHE.glob("*.csv")):
+        print("  SKIP  no fdcouk_cache present (offline / not yet fetched)")
+        return
+    df = FD.build(refresh_current_only=False, verbose=False)  # cache-only, no network
+    fx = M.load_fixtures()
+    played = fx.dropna(subset=["home_goals", "away_goals"]).copy()
+    played["date"] = played["date"].dt.strftime("%Y-%m-%d")
+    ok = True
+    for comp, grp in df.groupby("competition"):
+        p = played[played["competition"] == comp]
+        if p.empty:
+            continue
+        merged = p.merge(grp, left_on=["date", "home", "away"],
+                         right_on=["match_date", "home", "away"],
+                         how="left", indicator=True)
+        cov = float((merged["_merge"] == "both").mean())
+        if cov < 0.95:
+            ok = False
+            print(f"  {comp}: coverage {cov:.1%} < 95%")
+    check("fd.co.uk join coverage >= 95% per competition", ok)
+
+
+def test_minutes_windows():
+    print("9. minutes-load windows")
+    from club_soccer.minutes import player_minutes_row
+
+    apps = [
+        {"date": "2026-01-01", "team": "A", "mins": 90, "xg": 0.1, "xa": 0.0},
+        {"date": "2026-01-05", "team": "A", "mins": 90, "xg": 0.2, "xa": 0.1},
+        {"date": "2026-01-10", "team": "A", "mins": 60, "xg": 0.0, "xa": 0.0},
+    ]
+    row = player_minutes_row(apps, "2026-01-10")
+    # window is (D-7, D]: D-7 = 2026-01-03, so 01-01 (exactly D-9) falls outside
+    check("mins_7d excludes the 01-01 app (outside D-7..D)", row["mins_7d"] == 150.0)
+    check("mins_14d includes all three apps", row["mins_14d"] == 240.0)
+    check("mins_30d includes all three apps", row["mins_30d"] == 240.0)
+    check("mins_season sums apps since 2025-07-01", row["mins_season"] == 240.0)
+    check("starts_season counts 3 apps", row["starts_season"] == 3)
+
+    empty_row = player_minutes_row([], "2026-01-10")
+    check("player_minutes_row handles no apps", empty_row["mins_7d"] == 0.0)
+
+
+def test_transfer_reattribution():
+    print("10. transfer re-attribution")
+    from club_soccer.player_features import PlayerFeatureStore
+    from club_soccer import club_squads as CS
+
+    store = PlayerFeatureStore()
+    store._data = {
+        "v": 2,
+        "j smith": {
+            "name": "J. Smith", "pos": "FW",
+            "apps": [
+                {"date": "2026-01-01", "team": "Club A", "mins": 90, "xg": 0.3, "xa": 0.0,
+                 "side_confident": True},
+                {"date": "2026-02-01", "team": "Club B", "mins": 90, "xg": 0.2, "xa": 0.1,
+                 "side_confident": True},
+            ],
+        },
+    }
+    store._loaded = True
+    squads = CS.squad_asof(store, "2026-02-15", apply_manual=False)
+    row = squads[squads["player"] == "J. Smith"]
+    check("player with A-then-B apps lands in Club B's squad",
+          not row.empty and row.iloc[0]["team"] == "Club B")
+
+    transfers = CS.detect_transfers(store)
+    hit = transfers[transfers["player"] == "J. Smith"]
+    check("transfer detected from Club A to Club B",
+          not hit.empty and hit.iloc[0]["from_team"] == "Club A"
+          and hit.iloc[0]["to_team"] == "Club B")
+
+
+def test_context_apply():
+    print("11. context GLM application")
+    lam_h, lam_a = 1.4, 1.1
+    mat = M.score_matrix(lam_h, lam_a)
+    coef = {"rest_diff": 0.02}
+    rd = 5.0
+    mult_h = np.exp(coef["rest_diff"] * rd)
+    mult_a = np.exp(coef["rest_diff"] * (-rd))
+    context_adj = {"home": {"mult": mult_h}, "away": {"mult": mult_a}}
+    adjusted = M.apply_context_adj(mat, context_adj)
+    xg_h0 = sum(i * mat[i, :].sum() for i in range(mat.shape[0]))
+    xg_a0 = sum(j * mat[:, j].sum() for j in range(mat.shape[1]))
+    xg_h1 = sum(i * adjusted[i, :].sum() for i in range(adjusted.shape[0]))
+    xg_a1 = sum(j * adjusted[:, j].sum() for j in range(adjusted.shape[1]))
+    # score_matrix's Dixon-Coles low-score correction perturbs the marginal
+    # mean slightly away from the raw lambda it's built from (same as
+    # apply_player_adj), so this is approximate, not exact.
+    check("context_adj raises home lambda by ~exp(+0.02*rd)",
+          abs(xg_h1 - xg_h0 * mult_h) < 1e-3)
+    check("context_adj lowers away lambda by ~exp(-0.02*rd)",
+          abs(xg_a1 - xg_a0 * mult_a) < 1e-3)
+    check("opposite-direction shift (home up, away down)", mult_h > 1.0 and mult_a < 1.0)
+
+    empty = M.apply_context_adj(mat, {})
+    check("apply_context_adj no-op on empty dict", np.allclose(empty, mat))
+
+    from club_soccer import context as CTX
+    hangover = CTX._euro_hangover_flags(pd.DataFrame([
+        {"fixture_id": 1, "date": pd.Timestamp("2026-01-01"), "home": "A", "away": "X",
+         "competition": "Champions League", "type": "europe"},
+        {"fixture_id": 2, "date": pd.Timestamp("2026-01-03"), "home": "A", "away": "Y",
+         "competition": "Premier League", "type": "league"},
+    ]))
+    check("euro_hangover_h fires 2 days after a Europe match",
+          hangover[hangover["fixture_id"] == 2].iloc[0]["euro_hangover_h"] == 1)
+
+    tier = CTX._cup_tier_gap(pd.DataFrame([
+        {"fixture_id": 10, "date": pd.Timestamp("2026-01-01"), "home": "A", "away": "X",
+         "competition": "Premier League", "type": "league"},
+        {"fixture_id": 11, "date": pd.Timestamp("2026-01-01"), "home": "Y", "away": "X",
+         "competition": "League Two", "type": "league"},
+        {"fixture_id": 12, "date": pd.Timestamp("2026-01-08"), "home": "A", "away": "Y",
+         "competition": "FA Cup", "type": "cup"},
+    ]))
+    check("tier_gap = away tier(4) - home tier(1) = 3 for a top-flight-vs-League-Two cup tie",
+          tier[tier["fixture_id"] == 12].iloc[0]["tier_gap"] == 3.0)
+
+
+def test_standings_asof():
+    print("12. standings point-in-time")
+    from club_soccer import standings as ST
+
+    fx = pd.DataFrame([
+        {"fixture_id": 1, "date": pd.Timestamp("2026-01-01"), "season": 2025,
+         "competition": "Test League", "type": "league",
+         "home": "A", "away": "B", "home_goals": 2, "away_goals": 0},
+        {"fixture_id": 2, "date": pd.Timestamp("2026-01-02"), "season": 2025,
+         "competition": "Test League", "type": "league",
+         "home": "C", "away": "D", "home_goals": 1, "away_goals": 1},
+        {"fixture_id": 3, "date": pd.Timestamp("2026-01-08"), "season": 2025,
+         "competition": "Test League", "type": "league",
+         "home": "A", "away": "C", "home_goals": 3, "away_goals": 0},
+    ])
+    table = ST.table_asof("Test League", 2025, "2026-01-08", fixtures=fx)
+    check("table has 4 teams", len(table) == 4)
+    a = table[table["team"] == "A"].iloc[0]
+    check("A has 3 points, 1 played (match 3 excluded, asof date not < asof)",
+          a["points"] == 3 and a["played"] == 1)
+    c = table[table["team"] == "C"].iloc[0]
+    check("C has 1 point, 1 played (draw with D only)", c["points"] == 1 and c["played"] == 1)
+    check("A tops the table (3 points beats 1 point)", table.iloc[0]["team"] == "A")
+
+    table_later = ST.table_asof("Test League", 2025, "2026-01-09", fixtures=fx)
+    a2 = table_later[table_later["team"] == "A"].iloc[0]
+    check("match 3 counted once asof moves past it", a2["played"] == 2 and a2["points"] == 6)
+
+
+def test_weather_features():
+    print("13. weather feature formulas")
+    from club_soccer import weather as W
+
+    calm = W.features(temp_c=15.0, precip_mm=0.0, wind_kmh=10.0)
+    check("calm/mild weather has zero shift on every term",
+          all(v == 0.0 for v in calm.values()))
+
+    windy = W.features(temp_c=15.0, precip_mm=0.0, wind_kmh=35.0)
+    check("wind_high = max(0, 35-25)/10 = 1.0", windy["wind_high"] == 1.0)
+
+    wet = W.features(temp_c=15.0, precip_mm=20.0, wind_kmh=0.0)
+    check("precip caps at min(20,10)/5 = 2.0", wet["precip"] == 2.0)
+
+    cold = W.features(temp_c=-10.0, precip_mm=0.0, wind_kmh=0.0)
+    check("temp_cold = max(0, 0-(-10))/5 = 2.0", cold["temp_cold"] == 2.0)
+
+    hot = W.features(temp_c=38.0, precip_mm=0.0, wind_kmh=0.0)
+    check("temp_hot = max(0, 38-28)/5 = 2.0", hot["temp_hot"] == 2.0)
+
+    missing = W.missing_venues()
+    check("missing_venues() returns a list without crashing", isinstance(missing, list))
+
+
+def test_snapshot_odds_dedupe():
+    print("14. snapshot_odds dedupe + market parsing")
+    import tempfile
+    from club_soccer import snapshot_odds as SO
+
+    orig_path = SO.ODDS_HISTORY_CSV
+    with tempfile.TemporaryDirectory() as tmp:
+        SO.ODDS_HISTORY_CSV = Path(tmp) / "odds_history_club.csv"
+        try:
+            rows1 = [{"snapshot_time": "2026-07-02T09:00:00+00:00", "match_date": "2026-07-10",
+                     "competition": "Premier League", "home": "Arsenal", "away": "Chelsea",
+                     "market": "1x2", "side": "home", "odds_median": 2.1, "n_books": 10, "disp": 0.01}]
+            rows2 = [
+                {"snapshot_time": "2026-07-02T10:00:00+00:00", "match_date": "2026-07-10",
+                 "competition": "Premier League", "home": "Arsenal", "away": "Chelsea",
+                 "market": "1x2", "side": "home", "odds_median": 2.05, "n_books": 11, "disp": 0.011},
+                {"snapshot_time": "2026-07-02T16:00:00+00:00", "match_date": "2026-07-10",
+                 "competition": "Premier League", "home": "Arsenal", "away": "Chelsea",
+                 "market": "1x2", "side": "home", "odds_median": 1.95, "n_books": 12, "disp": 0.012},
+            ]
+            SO.append_snapshots(rows1)
+            out = SO.append_snapshots(rows2)
+            # regression: mixed "T"-separator (fresh) vs space-separator
+            # (post-CSV-round-trip str(Timestamp)) snapshot_time formats
+            # must not silently NaT-and-drop rows during the dedupe pass.
+            check("snapshot within the 6h dedupe window is dropped, "
+                  "the one outside it is kept (2 rows survive, not 1 or 3)",
+                  len(out) == 2)
+            check("earliest and latest snapshot both survive",
+                  set(out["snapshot_time"]) == {"2026-07-02T09:00:00+00:00", "2026-07-02T16:00:00+00:00"})
+        finally:
+            SO.ODDS_HISTORY_CSV = orig_path
+
+    m1x2 = SO._market_rows({"HOME": {"bookmakers": {"a": {"decimal_odds": 2.0}, "b": {"decimal_odds": 2.2},
+                                                     "c": {"decimal_odds": 1.9}}},
+                            "DRAW": {"bookmakers": {"a": {"decimal_odds": 3.4}, "b": {"decimal_odds": 3.3},
+                                                     "c": {"decimal_odds": 3.5}}},
+                            "AWAY": {"bookmakers": {"a": {"decimal_odds": 3.6}, "b": {"decimal_odds": 3.5},
+                                                     "c": {"decimal_odds": 3.7}}}},
+                           {"home": "HOME", "draw": "DRAW", "away": "AWAY"})
+    check("_market_rows computes a median odds and n_books=3 per side",
+          m1x2["home"]["n_books"] == 3 and abs(m1x2["home"]["odds_median"] - 2.0) < 1e-9)
+    check("_market_rows computes a dispersion value when >=3 books quote all sides",
+          m1x2["home"]["disp"] is not None and m1x2["home"]["disp"] >= 0)
+
+
+def test_do_not_bet():
+    print("15. do_not_bet suppression rules")
+    import tempfile
+    from club_soccer import market_model as MM
+    from club_soccer import snapshot_odds as SO
+
+    orig_path = SO.ODDS_HISTORY_CSV
+    with tempfile.TemporaryDirectory() as tmp:
+        SO.ODDS_HISTORY_CSV = Path(tmp) / "odds_history_club.csv"
+        try:
+            rows = [
+                # (a) steam: home odds shortened 2.50 -> 2.10, p moves
+                # 0.400 -> 0.476, a +0.076 move >= the 0.03 threshold.
+                {"snapshot_time": "2026-07-01T09:00:00+00:00", "match_date": "2026-07-10",
+                 "competition": "Premier League", "home": "Arsenal", "away": "Chelsea",
+                 "market": "1x2", "side": "home", "odds_median": 2.50, "n_books": 10, "disp": 0.02},
+                {"snapshot_time": "2026-07-02T09:00:00+00:00", "match_date": "2026-07-10",
+                 "competition": "Premier League", "home": "Arsenal", "away": "Chelsea",
+                 "market": "1x2", "side": "home", "odds_median": 2.10, "n_books": 10, "disp": 0.02},
+                # (b) books unanimous (thin disp), single snapshot -> no steam.
+                {"snapshot_time": "2026-07-01T09:00:00+00:00", "match_date": "2026-07-11",
+                 "competition": "Premier League", "home": "Liverpool", "away": "Everton",
+                 "market": "1x2", "side": "away", "odds_median": 3.00, "n_books": 12, "disp": 0.002},
+                # clean row: neither rule should fire.
+                {"snapshot_time": "2026-07-01T09:00:00+00:00", "match_date": "2026-07-12",
+                 "competition": "Premier League", "home": "Fulham", "away": "Brentford",
+                 "market": "1x2", "side": "home", "odds_median": 2.20, "n_books": 10, "disp": 0.02},
+            ]
+            SO.append_snapshots(rows)
+
+            steam_row = {"home": "Arsenal", "away": "Chelsea", "date": "2026-07-10",
+                        "market": "1x2", "side": "home", "edge": 0.10}
+            d1 = MM.do_not_bet(steam_row)
+            check("steam rule (a) fires when the market moved >=3pts toward our side",
+                  d1["suppress"] and "market_moved" in (d1["reason"] or ""))
+
+            thin_row = {"home": "Liverpool", "away": "Everton", "date": "2026-07-11",
+                       "market": "1x2", "side": "away", "edge": 0.02}
+            d2 = MM.do_not_bet(thin_row)
+            check("thin-edge rule (b) fires when books are unanimous and edge < 4%",
+                  d2["suppress"] and "books_unanimous" in (d2["reason"] or ""))
+
+            clean_row = {"home": "Fulham", "away": "Brentford", "date": "2026-07-12",
+                        "market": "1x2", "side": "home", "edge": 0.10}
+            d3 = MM.do_not_bet(clean_row)
+            check("no rule fires on a clean row (no steam, thick disp)", not d3["suppress"])
+        finally:
+            SO.ODDS_HISTORY_CSV = orig_path
+
+
+def test_card_written():
+    print("16. season.py --no-network writes card.md")
+    from club_soccer import season as S
+
+    if S.CARD.exists():
+        S.CARD.unlink()
+    proc = subprocess.run(
+        [sys.executable, "-m", "club_soccer.season", "--no-network", "--fast"],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=120)
+    check("season.py --no-network --fast exits 0", proc.returncode == 0)
+    check("card.md was written", S.CARD.exists())
+    if S.CARD.exists():
+        text = S.CARD.read_text()
+        check("card.md has the freshness header", text.startswith("# Club Soccer —"))
+        check("card.md reports upcoming fixture count", "Upcoming fixtures:" in text)
+
+
 if __name__ == "__main__":
     test_registry()
     test_api_key_lookup()
     test_model_math()
     test_edge_and_settlement()
     test_runner_and_adapter()
+    test_health_and_repair()
+    test_feature_store_pit()
+    test_fdcouk_alias_coverage()
+    test_minutes_windows()
+    test_transfer_reattribution()
+    test_context_apply()
+    test_standings_asof()
+    test_weather_features()
+    test_snapshot_odds_dedupe()
+    test_do_not_bet()
+    test_card_written()
     print()
     if _fails:
         print(f"{len(_fails)} FAILURE(S): " + ", ".join(_fails))

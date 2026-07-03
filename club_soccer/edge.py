@@ -94,13 +94,19 @@ def write_template(path: Path = ODDS_CSV) -> None:
 
 def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                    bankroll: float = 100.0, calib_maps=None,
-                   player_adj_map: dict | None = None) -> list[dict]:
+                   player_adj_map: dict | None = None,
+                   apply_do_not_bet: bool = False) -> list[dict]:
     """Compute edge rows from priced odds.
 
     player_adj_map, if provided, maps (home_lower, away_lower, comp) →
     player_adj dict from PlayerFeatureStore, e.g.:
         {("arsenal", "chelsea", "Premier League"):
             {"home": {"attack_mult": 0.88, ...}, "away": {...}}}
+
+    apply_do_not_bet: when True, run market_model.do_not_bet on each row
+    (P6.2). A suppressed row keeps its edge/EV for visibility but its stake
+    is zeroed and `suppressed_reason` is filled — excluded from the card and
+    from staking, never from the report.
     """
     out = []
     params = M.load_params()
@@ -113,11 +119,13 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
         # Player availability adjustment for this match
         p_adj = None
         p_adj_meta: dict = {}
+        lineup_confidence = 1.0
         if player_adj_map is not None:
             p_adj = player_adj_map.get((str(home).lower(), str(away).lower(), str(comp)))
             if p_adj:
                 h_a = p_adj.get("home", {})
                 a_a = p_adj.get("away", {})
+                lineup_confidence = float(p_adj.get("lineup_confidence", 1.0))
                 p_adj_meta = {
                     "player_adj_home": round(float(h_a.get("attack_mult", 1.0)), 4),
                     "player_adj_away": round(float(a_a.get("attack_mult", 1.0)), 4),
@@ -125,6 +133,7 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                     "def_adj_away":    round(float(a_a.get("defense_mult", 1.0)), 4),
                     "n_missing_home":  int(h_a.get("n_missing", 0)),
                     "n_missing_away":  int(a_a.get("n_missing", 0)),
+                    "lineup_confidence": round(lineup_confidence, 3),
                 }
 
         try:
@@ -141,7 +150,9 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
         for (_, r), p_book in zip(priced.iterrows(), implied):
             p_model = side_prob(pred, str(r["market"]), str(r["side"]))
             ev = p_model * float(r["odds"]) - 1.0
-            kfrac = KELLY_FRACTION * kelly(p_model, float(r["odds"]))
+            # Haircut the stake (not the EV/edge display) by lineup-read
+            # confidence — a shaky lineup should bet smaller, not look less +EV.
+            kfrac = KELLY_FRACTION * kelly(p_model, float(r["odds"])) * lineup_confidence
             raw_line = r.get("line", np.nan)
             line = "" if pd.isna(raw_line) else float(raw_line)
             label = bet_label(home, away, str(r["market"]), str(r["side"]), line)
@@ -157,6 +168,15 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                    "stake_gbp": round(float(kfrac) * bankroll, 2)}
             if p_adj_meta:
                 row.update(p_adj_meta)
+            if apply_do_not_bet:
+                from . import market_model as MM
+                dnb_market = {"1x2": "1x2", "total": "total25"}.get(str(r["market"]))
+                if dnb_market:
+                    decision = MM.do_not_bet({**row, "market": dnb_market})
+                    if decision["suppress"]:
+                        row["suppressed_reason"] = decision["reason"]
+                        row["kelly_stake"] = 0.0
+                        row["stake_gbp"] = 0.0
             out.append(row)
     out.sort(key=lambda x: -x["ev_per_unit"])
     return out
@@ -179,6 +199,36 @@ def _decimal(v: object) -> float | None:
         return f if f > 1.0 else None
     except (TypeError, ValueError):
         return None
+
+
+def _map_api_bet(bet_name: str, value_name: str, odd,
+                 home: str = "", away: str = "") -> tuple[str, str, float | str, float] | None:
+    """Map a bookmaker-API bet/value pair to our (market, side, line, odds) shape."""
+    bet = bet_name.strip().lower()
+    value = value_name.strip().lower()
+    decimal = _decimal(odd)
+    if decimal is None:
+        return None
+    if bet in {"match winner", "fulltime result", "1x2", "winner"}:
+        if value in {"home", "1", home.strip().lower()}:
+            return ("1x2", "home", "", decimal)
+        if value in {"draw", "x"}:
+            return ("1x2", "draw", "", decimal)
+        if value in {"away", "2", away.strip().lower()}:
+            return ("1x2", "away", "", decimal)
+    if "over/under" in bet or bet in {"goals over/under", "total goals"}:
+        parts = value.replace("goals", "").split()
+        if len(parts) >= 2 and parts[0] in {"over", "under"}:
+            try:
+                line = float(parts[1])
+            except ValueError:
+                return None
+            if abs(line - 2.5) < 1e-9:
+                return ("total", parts[0], line, decimal)
+    if bet in {"both teams score", "both teams to score", "btts"}:
+        if value in {"yes", "no"}:
+            return ("btts", value, "", decimal)
+    return None
 
 
 def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
@@ -370,6 +420,7 @@ def fetch_player_adjustments(api_key: str | None = None) -> dict:
         from bsd_client import get_all_events, league_name as bsd_league_name
         from .competitions import comp_from_bsd_league
         from .player_features import PlayerFeatureStore, market_dispersion
+        from .availability import match_availability, match_confidence
     except ImportError as exc:
         print(f"  player_adj: import failed ({exc}), skipping.")
         return {}
@@ -382,13 +433,18 @@ def fetch_player_adjustments(api_key: str | None = None) -> dict:
     store.load()
 
     # Also try to rebuild from already-cached event files (no extra API calls)
-    if not store._data:
+    if not store._player_records():
         n = store.refresh_from_cache()
         if n:
             print(f"  player_adj: built player stats from {n} cached events.")
 
     try:
-        events = get_all_events(key, status="upcoming")
+        # BSD's status enum is notstarted|inprogress|finished|postponed|
+        # cancelled — "upcoming" isn't a real value and silently matches 0
+        # rows. BSD also defaults to a ~7-day forward window with no
+        # date_from/date_to, which is exactly the near-term horizon we want
+        # for pricing, so it's left unset here (unlike fetch.py's --current).
+        events = get_all_events(key, status="notstarted")
     except Exception as exc:
         print(f"  player_adj: BSD fetch failed ({exc}), skipping.")
         return {}
@@ -408,6 +464,11 @@ def fetch_player_adjustments(api_key: str | None = None) -> dict:
         disp = market_dispersion(ev)
         # Embed market dispersion into adj for downstream use
         adj["market_dispersion"] = disp
+        # Uncertainty band + lineup confidence (report-only; edge.py haircuts
+        # the Kelly stake by lineup_confidence, never the point estimate).
+        report = match_availability(store, ev)
+        adj["availability_report"] = report
+        adj["lineup_confidence"] = match_confidence(report)
 
         map_key = (home.lower(), away.lower(), comp.name)
         adj_map[map_key] = adj
@@ -418,6 +479,90 @@ def fetch_player_adjustments(api_key: str | None = None) -> dict:
         print(f"  player_adj: {len(adj_map)} upcoming matches; "
               f"{n_adj} with listed absentees.")
     return adj_map
+
+
+def late_lineup_card(api_key: str | None = None, window_minutes: int = 90) -> list[dict]:
+    """Report-only "late card": for BSD events within `window_minutes` of
+    kickoff where a confirmed starting XI is available, compare the base
+    (pre-match) prediction to a lineup-adjusted one. Printed only — never
+    written to edge_report.csv, never auto-bet (P2.5)."""
+    from bsd_client import get_all_events, league_name as bsd_league_name, event_date_utc
+    from .competitions import comp_from_bsd_league
+    from .player_features import PlayerFeatureStore
+
+    key = api_key or get_key("bsd", env="BSD_API_KEY")
+    if not key:
+        print("  lineups: no BSD key — skipped")
+        return []
+    store = PlayerFeatureStore().load()
+    if not store._player_records():
+        store.refresh_from_cache()
+
+    now = datetime.now(timezone.utc)
+    try:
+        events = get_all_events(key, status="notstarted",
+                                date_from=str(now.date()),
+                                date_to=str(now.date() + pd.Timedelta(days=1)))
+    except Exception as exc:
+        print(f"  lineups: BSD fetch failed ({exc}) — skipped")
+        return []
+
+    params = M.load_params()
+    rows: list[dict] = []
+    for ev in events:
+        comp = comp_from_bsd_league(bsd_league_name(ev))
+        if comp is None:
+            continue
+        try:
+            kickoff = pd.Timestamp(event_date_utc(ev))
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.tz_localize("UTC")
+        except Exception:
+            continue
+        mins_to_ko = (kickoff - pd.Timestamp(now)).total_seconds() / 60.0
+        if not (0.0 <= mins_to_ko <= window_minutes):
+            continue
+
+        lu = store.adjustments_from_lineups(ev)
+        if not lu or not lu.get("home") or not lu.get("away"):
+            continue  # lineups not confirmed yet — nothing to report
+
+        home = str(ev.get("home_team") or "")
+        away = str(ev.get("away_team") or "")
+        try:
+            base = M.predict(home, away, comp.name, "ensemble", params=params)
+        except ValueError:
+            continue
+        h_ratio = float(np.clip(lu["home"]["xi_ratio"], 0.80, 1.25))
+        a_ratio = float(np.clip(lu["away"]["xi_ratio"], 0.80, 1.25))
+        player_adj = {"home": {"attack_mult": h_ratio, "defense_mult": 1.0},
+                      "away": {"attack_mult": a_ratio, "defense_mult": 1.0}}
+        adjusted = M.predict(home, away, comp.name, "ensemble", params=params,
+                             player_adj=player_adj)
+        rows.append({
+            "kickoff_utc": str(kickoff), "mins_to_kickoff": round(mins_to_ko, 1),
+            "competition": comp.name, "home": home, "away": away,
+            "base_p_home": base["probs"]["home"], "base_p_draw": base["probs"]["draw"],
+            "base_p_away": base["probs"]["away"],
+            "lineup_p_home": adjusted["probs"]["home"], "lineup_p_draw": adjusted["probs"]["draw"],
+            "lineup_p_away": adjusted["probs"]["away"],
+            "home_xi_ratio": lu["home"]["xi_ratio"], "away_xi_ratio": lu["away"]["xi_ratio"],
+            "home_n_starters": lu["home"]["n_starters"], "away_n_starters": lu["away"]["n_starters"],
+        })
+
+    if rows:
+        print(f"\nLate lineup card ({len(rows)} match(es) with confirmed XI, report-only):")
+        for r in rows:
+            print(f"  {r['home']} v {r['away']} ({r['competition']}, "
+                  f"kickoff in {r['mins_to_kickoff']:.0f}min)")
+            print(f"    base:    H {r['base_p_home']:.1%}  D {r['base_p_draw']:.1%}  "
+                  f"A {r['base_p_away']:.1%}")
+            print(f"    lineup:  H {r['lineup_p_home']:.1%}  D {r['lineup_p_draw']:.1%}  "
+                  f"A {r['lineup_p_away']:.1%}  "
+                  f"(xi_ratio home={r['home_xi_ratio']:.3f} away={r['away_xi_ratio']:.3f})")
+    else:
+        print("  lineups: no confirmed starting XIs within the window")
+    return rows
 
 
 def grade(side: str, market: str, line, home_goals: float, away_goals: float) -> str:
@@ -452,11 +597,19 @@ def main() -> None:
     ap.add_argument("--bankroll", type=float, default=100.0)
     ap.add_argument("--calibrated", action="store_true",
                     help="apply fitted 1X2 calibration (needs validate.py --calibrate)")
-    ap.add_argument("--player-adj", action="store_true",
+    ap.add_argument("--player-adj", "--availability", dest="player_adj", action="store_true",
                     help="adjust predictions for player availability (injuries/suspensions) "
-                         "from BSD unavailable_players data. Also adds market-dispersion "
-                         "columns from BSD multi-bookmaker odds. Requires a BSD key.")
+                         "from BSD unavailable_players data, and haircut the Kelly stake by "
+                         "lineup-read confidence (a shaky/doubtful absence read bets smaller). "
+                         "Also adds market-dispersion columns. Requires a BSD key.")
+    ap.add_argument("--lineups", action="store_true",
+                    help="print a report-only 'late card' comparing base vs "
+                         "confirmed-lineup predictions for matches kicking off "
+                         "within ~90 minutes. Never auto-bets. Requires a BSD key.")
     args = ap.parse_args()
+    if args.lineups:
+        late_lineup_card(args.api_key)
+        return
     if args.template:
         write_template()
         print(f"Wrote {ODDS_CSV}")
@@ -477,6 +630,17 @@ def main() -> None:
         if not player_adj_map:
             print("  (no adjustments computed — check BSD key or player cache)")
 
+    # do-not-bet suppression (P6.2) — on by default once enough snapshot
+    # history exists to trust the movement signal.
+    from . import market_model as MM
+    history_days = MM.history_age_days()
+    apply_dnb = history_days >= MM.WARMUP_DAYS
+    if apply_dnb:
+        print(f"  market-model: do-not-bet active ({history_days:.1f}d of snapshot history)")
+    else:
+        print(f"  market-model warming up: {history_days:.1f}d "
+              f"(needs {MM.WARMUP_DAYS}d before do-not-bet activates)")
+
     try:
         if args.bsd_odds:
             odds = fetch_bsd_odds(args.api_key)
@@ -484,7 +648,8 @@ def main() -> None:
             odds = fetch_the_odds_api(args.api_key)
         else:
             odds = load_odds()
-        rows = rows_from_odds(odds, args.model, args.bankroll, calib_maps, player_adj_map)
+        rows = rows_from_odds(odds, args.model, args.bankroll, calib_maps, player_adj_map,
+                              apply_do_not_bet=apply_dnb)
     except Exception as e:
         sys.exit(str(e))
     DATA.mkdir(exist_ok=True)

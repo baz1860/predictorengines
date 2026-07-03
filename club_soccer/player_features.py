@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -60,16 +61,21 @@ for p in (str(ROOT), str(HERE)):
         sys.path.insert(0, p)
 
 from bsd_client import (
-    get_all_events, get_event,
+    get_all_events, get_event, event_date_utc,
+    league_name as bsd_league_name,
     unavailable_players as bsd_unavailable,
     lineups as bsd_lineups,
 )
 from api_keys import get_key
 
+CACHE_SCHEMA_VERSION = 2
+
 DATA = HERE / "data"
 PLAYER_CACHE = DATA / "player_stats_cache.json"
 STATS_CACHE  = DATA / "bsd_cache"             # shared with seed_real.py
 MODEL_PARAMS = DATA / "model_params.json"
+ABSENCES_CSV = DATA / "absences_club.csv"
+ABSENCES_COLUMNS = ["recorded_at", "match_date", "competition", "team", "player", "reason", "status"]
 
 # Position → fraction of impact on ATTACK (own goals); rest lands on DEFENCE.
 # A missing striker mostly reduces the team's own scoring.
@@ -173,41 +179,54 @@ def _normalise_pos(raw: str) -> str:
     return "MF"   # default to midfield when unknown
 
 
-def _players_from_event(event_detail: dict) -> list[dict]:
-    """Extract all player entries from a BSD event detail response.
+def _players_from_event(event_detail: dict) -> list[tuple[dict, str | None]]:
+    """Extract all player entries from a BSD event detail response, each
+    tagged with the side ("home"/"away") the source shape assigned it to.
 
-    Tries several known BSD response shapes:
-      1. event_detail["lineups"]["home|away"]["starters|bench"] list of player dicts
+    Tries several known BSD response shapes, all of which group players by
+    side already:
+      1. event_detail["lineups"]["home|away"]["starters|bench"] list
       2. event_detail["players"]["home|away"] list
       3. event_detail["home_players"] / event_detail["away_players"] list
+      4. (fallback) a single flat "players" list with no side grouping —
+         side is None; the caller falls back to a positional-order guess
+         and must mark those entries side_confident=False.
     """
-    players: list[dict] = []
+    out: list[tuple[dict, str | None]] = []
 
-    def _drain(lst):
+    def _drain(lst, side: str | None):
         if isinstance(lst, list):
             for p in lst:
                 entry = _extract_player_entry(p)
                 if entry["name"]:
-                    players.append(entry)
+                    out.append((entry, side))
 
     # Shape 1: lineups
     lineups = event_detail.get("lineups") or {}
     for side in ("home", "away"):
         grp = lineups.get(side) or {}
-        _drain(grp.get("starters") or grp.get("starting_xi") or [])
-        _drain(grp.get("bench") or grp.get("substitutes") or [])
+        _drain(grp.get("starters") or grp.get("starting_xi") or [], side)
+        _drain(grp.get("bench") or grp.get("substitutes") or [], side)
 
-    # Shape 2: players dict
-    if not players:
-        for side in ("home", "away"):
-            _drain((event_detail.get("players") or {}).get(side, []))
+    # Shape 2: players dict keyed by side
+    if not out:
+        players_field = event_detail.get("players")
+        if isinstance(players_field, dict):
+            for side in ("home", "away"):
+                _drain(players_field.get(side, []), side)
 
     # Shape 3: top-level home_players / away_players
-    if not players:
-        _drain(event_detail.get("home_players", []))
-        _drain(event_detail.get("away_players", []))
+    if not out:
+        _drain(event_detail.get("home_players", []), "home")
+        _drain(event_detail.get("away_players", []), "away")
 
-    return players
+    # Shape 4: unstructured flat list — no side information available
+    if not out:
+        players_field = event_detail.get("players")
+        if isinstance(players_field, list):
+            _drain(players_field, None)
+
+    return out
 
 
 # ── Player stats cache ────────────────────────────────────────────────────────
@@ -215,19 +234,25 @@ def _players_from_event(event_detail: dict) -> list[dict]:
 class PlayerFeatureStore:
     """Builds and queries the per-player rolling stats cache.
 
-    The cache is a JSON file:
+    Cache schema v2 — a JSON file:
         {
+          "v": 2,
           "player_name_norm": {
             "name": "original name",
-            "teams": ["Arsenal"],
             "pos": "FW",
-            "matches": [{"xg": 0.4, "xa": 0.1, "mins": 90}, ...]   (last 20)
+            "apps": [{"date": "2026-01-01", "team": "Arsenal", "mins": 90.0,
+                      "xg": 0.4, "xa": 0.1, "side_confident": true}, ...]
+                     (most recent 60, dated so squads/transfers can be
+                     derived by "most recent app wins" — see club_squads.py)
           },
           ...
         }
+    v1 caches (no "v" key, "matches"/"teams" instead of dated "apps") are
+    discarded on load — rebuild with `--from-cache` (bsd_cache event files
+    carry their own dates via event_date_utc, no API calls needed).
     """
 
-    ROLLING_N = 20   # matches kept per player
+    ROLLING_N = 60   # appearances kept per player
 
     def __init__(self, cache_path: Path = PLAYER_CACHE):
         self._path = cache_path
@@ -238,18 +263,30 @@ class PlayerFeatureStore:
 
     # ── I/O ────────────────────────────────────────────────────────────────
 
+    def _player_records(self) -> "list[tuple[str, dict]]":
+        """(key, record) pairs, skipping the "v" schema-version sentinel."""
+        return [(k, v) for k, v in self._data.items() if isinstance(v, dict)]
+
     def load(self) -> "PlayerFeatureStore":
         if self._path.exists():
             try:
-                self._data = json.loads(self._path.read_text())
+                raw = json.loads(self._path.read_text())
             except Exception:
-                self._data = {}
+                raw = {}
+            if raw.get("v") != CACHE_SCHEMA_VERSION:
+                if raw:
+                    print(f"  player cache is schema v{raw.get('v', '1 (unversioned)')}, "
+                          f"not v{CACHE_SCHEMA_VERSION} — discarding; rebuild with "
+                          f"`python3 -m club_soccer.player_features --from-cache`")
+                raw = {}
+            self._data = raw
         self._load_team_baselines()
         self._loaded = True
         return self
 
     def save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._data["v"] = CACHE_SCHEMA_VERSION
         self._path.write_text(json.dumps(self._data, indent=2, ensure_ascii=False))
 
     def _load_team_baselines(self) -> None:
@@ -275,11 +312,16 @@ class PlayerFeatureStore:
     # ── Cache building ──────────────────────────────────────────────────────
 
     def refresh(self, api_key: str, max_events: int = 500,
-                pause: float = 0.1) -> int:
+                pause: float = 0.1, days_back: int = 60) -> int:
         """Fetch finished BSD events and update the player stats cache.
 
         Only fetches event detail for events that aren't already in the
         shared bsd_cache/ directory (used by seed_real.py).
+
+        BSD's /api/events/ silently defaults to a ~7-day forward window when
+        no date_from/date_to is given (see club_soccer/fetch.py), so a plain
+        status="finished" query returns nothing outside a live match week —
+        always pass an explicit lookback window.
 
         Returns the number of events processed.
         """
@@ -288,8 +330,13 @@ class PlayerFeatureStore:
 
         STATS_CACHE.mkdir(parents=True, exist_ok=True)
         print(f"Fetching BSD finished events for player stats cache...")
+        from datetime import datetime, timedelta, timezone
+        today = datetime.now(timezone.utc).date()
+        date_from = str(today - timedelta(days=days_back))
+        date_to = str(today)
         try:
-            events = get_all_events(api_key, status="finished")
+            events = get_all_events(api_key, status="finished",
+                                    date_from=date_from, date_to=date_to)
         except Exception as exc:
             print(f"  ! BSD fetch failed: {exc}")
             return 0
@@ -314,20 +361,17 @@ class PlayerFeatureStore:
                     print(f"  ! event {eid}: {exc}")
                     continue
 
-            players = _players_from_event(detail)
+            date = (event_date_utc(ev) or event_date_utc(detail))[:10]
             home = str(ev.get("home_team") or "")
             away = str(ev.get("away_team") or "")
-            # Tag each player with their likely team (starters from lineups already
-            # know their side; here we use positional order as a fallback).
-            for p in players:
-                team = home if players.index(p) < len(players) // 2 else away
-                self._update_player(p, team)
+            self._ingest_event_players(detail, home, away, date)
             processed += 1
             if processed % 50 == 0:
                 print(f"  ...{processed}/{min(max_events, len(events))}")
 
         self.save()
-        print(f"  Player cache: {len(self._data)} players, {processed} events processed.")
+        print(f"  Player cache: {len(self._player_records())} players, "
+              f"{processed} events processed.")
         return processed
 
     def refresh_from_cache(self) -> int:
@@ -342,38 +386,50 @@ class PlayerFeatureStore:
                 detail = json.loads(cache_file.read_text())
             except Exception:
                 continue
-            players = _players_from_event(detail)
+            date = event_date_utc(detail)[:10]
             home = str(detail.get("home_team") or "")
             away = str(detail.get("away_team") or "")
-            for i, p in enumerate(players):
-                team = home if i < len(players) // 2 else away
-                self._update_player(p, team)
+            self._ingest_event_players(detail, home, away, date)
             processed += 1
         if processed:
             self.save()
         return processed
 
-    def _update_player(self, entry: dict, team: str) -> None:
+    def _ingest_event_players(self, detail: dict, home: str, away: str, date: str) -> None:
+        """Update the cache from one event's player list, using the side each
+        BSD response shape already provides. Only entries with no side at all
+        (an unstructured flat list — shape 4 in `_players_from_event`) fall
+        back to a positional-order guess, tagged side_confident=False."""
+        pairs = _players_from_event(detail)
+        n = len(pairs)
+        for i, (entry, side) in enumerate(pairs):
+            if side == "home":
+                team, confident = home, True
+            elif side == "away":
+                team, confident = away, True
+            else:
+                team, confident = (home if i < n // 2 else away), False
+            self._update_player(entry, team, date, confident)
+
+    def _update_player(self, entry: dict, team: str, date: str,
+                       side_confident: bool = True) -> None:
         key = _norm(entry["name"])
         if not key:
             return
         if key not in self._data:
             self._data[key] = {
                 "name": entry["name"],
-                "teams": [],
                 "pos": entry["pos"],
-                "matches": [],
+                "apps": [],
             }
         rec = self._data[key]
-        if team and team not in rec["teams"]:
-            rec["teams"].append(team)
         if entry["mins"] > 0:
-            rec["matches"].append({
-                "xg": entry["xg"],
-                "xa": entry["xa"],
-                "mins": entry["mins"],
+            rec["apps"].append({
+                "date": date, "team": team,
+                "mins": entry["mins"], "xg": entry["xg"], "xa": entry["xa"],
+                "side_confident": side_confident,
             })
-            rec["matches"] = rec["matches"][-self.ROLLING_N:]
+            rec["apps"] = rec["apps"][-self.ROLLING_N:]
         # Update position if we now have a better signal
         if entry["pos"] != "MF" or rec["pos"] == "MF":
             rec["pos"] = entry["pos"]
@@ -383,12 +439,12 @@ class PlayerFeatureStore:
     def _find_player(self, name: str) -> dict | None:
         """Return the cache entry for name, using fuzzy token matching."""
         key = _norm(name)
-        if key in self._data:
+        if isinstance(self._data.get(key), dict):
             return self._data[key]
         # Try shared-token fallback
         toks = _name_tokens(name)
         best, best_score = None, 0
-        for k, rec in self._data.items():
+        for k, rec in self._player_records():
             shared = len(toks & _name_tokens(rec["name"]))
             if shared > best_score and shared >= 1:
                 best, best_score = rec, shared
@@ -397,11 +453,11 @@ class PlayerFeatureStore:
     def player_xg_per90(self, name: str) -> float | None:
         """Rolling avg xG per 90 minutes for a player; None if unknown."""
         rec = self._find_player(name)
-        if rec is None or not rec["matches"]:
+        if rec is None or not rec["apps"]:
             return None
-        matches = rec["matches"]
-        total_xg = sum(m["xg"] for m in matches)
-        total_mins = sum(m["mins"] for m in matches)
+        apps = rec["apps"]
+        total_xg = sum(m["xg"] for m in apps)
+        total_mins = sum(m["mins"] for m in apps)
         if total_mins < 10:
             return None
         return total_xg / total_mins * 90.0
@@ -611,9 +667,10 @@ class PlayerFeatureStore:
         return result
 
     def summary(self) -> dict:
-        n_players = len(self._data)
-        n_with_stats = sum(1 for r in self._data.values() if r["matches"])
-        n_entries = sum(len(r["matches"]) for r in self._data.values())
+        records = self._player_records()
+        n_players = len(records)
+        n_with_stats = sum(1 for _, r in records if r["apps"])
+        n_entries = sum(len(r["apps"]) for _, r in records)
         return {
             "players": n_players,
             "players_with_stats": n_with_stats,
@@ -694,6 +751,67 @@ def market_dispersion(event: dict) -> dict[str, float | None]:
     }
 
 
+# ── Dated absences (P2.4) ───────────────────────────────────────────────────────
+
+def pull_absences(api_key: str, days_ahead: int = 14) -> int:
+    """Pull unavailable_players for upcoming BSD events in our competitions
+    and append to data/absences_club.csv.
+
+    Append-only; deduped on (match_date, team, player), keeping the row with
+    the latest recorded_at. Point-in-time rule for any consumer: a backtest
+    as-of date A may only use rows with recorded_at <= A.
+    """
+    from datetime import datetime, timedelta, timezone
+    from .competitions import comp_from_bsd_league
+
+    today = datetime.now(timezone.utc).date()
+    try:
+        events = get_all_events(api_key, status="notstarted",
+                                date_from=str(today), date_to=str(today + timedelta(days=days_ahead)))
+    except Exception as exc:
+        print(f"  pull_absences: BSD fetch failed ({exc}) — skipped")
+        return 0
+
+    recorded_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    rows = []
+    for ev in events:
+        comp = comp_from_bsd_league(bsd_league_name(ev))
+        if comp is None:
+            continue
+        match_date = event_date_utc(ev)[:10]
+        home = str(ev.get("home_team") or "")
+        away = str(ev.get("away_team") or "")
+        unavail = bsd_unavailable(ev)
+        for side, team in (("home", home), ("away", away)):
+            for p in unavail.get(side, []):
+                name = str(p.get("name") or "").strip()
+                if not name:
+                    continue
+                rows.append({"recorded_at": recorded_at, "match_date": match_date,
+                            "competition": comp.name, "team": team, "player": name,
+                            "reason": str(p.get("reason") or ""),
+                            "status": str(p.get("status") or "")})
+
+    new_df = pd.DataFrame(rows, columns=ABSENCES_COLUMNS)
+    if ABSENCES_CSV.exists():
+        try:
+            old = pd.read_csv(ABSENCES_CSV)
+        except Exception:
+            old = pd.DataFrame(columns=ABSENCES_COLUMNS)
+        combined = pd.concat([old, new_df], ignore_index=True)
+    else:
+        combined = new_df
+    if not combined.empty:
+        combined = (combined.sort_values("recorded_at")
+                   .drop_duplicates(subset=["match_date", "team", "player"], keep="last")
+                   .sort_values(["match_date", "team", "player"]).reset_index(drop=True))
+    DATA.mkdir(exist_ok=True)
+    combined.to_csv(ABSENCES_CSV, index=False)
+    print(f"  pull_absences: {len(new_df)} rows observed this run "
+          f"({len(combined)} total in {ABSENCES_CSV.name})")
+    return len(new_df)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -720,6 +838,12 @@ def main() -> None:
                     help="Player names missing from the away side")
     ap.add_argument("--max-events", type=int, default=500,
                     help="Max BSD events to process (default 500)")
+    ap.add_argument("--days-back", type=int, default=60,
+                    help="With --refresh, how many days of finished matches "
+                         "to pull (default 60)")
+    ap.add_argument("--pull-absences", action="store_true",
+                    help="Pull unavailable_players for upcoming BSD events and "
+                         "append to data/absences_club.csv (P2.4)")
     ap.add_argument("--pause", type=float, default=0.1,
                     help="Seconds between uncached API calls (default 0.1)")
     ap.add_argument("--api-key", dest="api_key",
@@ -728,12 +852,21 @@ def main() -> None:
 
     store = PlayerFeatureStore()
 
+    if args.pull_absences:
+        key = args.api_key or get_key("bsd", env="BSD_API_KEY")
+        if not key:
+            sys.exit("No BSD key — set BSD_API_KEY or use --api-key.")
+        pull_absences(key)
+        if not (args.refresh or args.from_cache or args.summary or args.player or args.match):
+            return
+
     if args.refresh:
         key = args.api_key or get_key("bsd", env="BSD_API_KEY")
         if not key:
             sys.exit("No BSD key — set BSD_API_KEY or use --api-key.")
         store.load()
-        store.refresh(key, max_events=args.max_events, pause=args.pause)
+        store.refresh(key, max_events=args.max_events, pause=args.pause,
+                      days_back=args.days_back)
     elif args.from_cache:
         store.load()
         n = store.refresh_from_cache()
