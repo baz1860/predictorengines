@@ -1,6 +1,6 @@
 # Wimbledon — Best Bets
 
-_Generated 2026-06-30 21:15 · ATP · grass · best-of-5 · fitted model_
+_Generated 2026-07-03 00:58 · ATP · grass · best-of-5 · fitted model_
 
 ## Qualifying R1
 
@@ -133,10 +133,6 @@ _Generated 2026-06-30 21:15 · ATP · grass · best-of-5 · fitted model_
 
 | Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |
 |---|---|---|--:|--:|--:|--:|--:|
-| Frances Tiafoe v Terence Atmane | To play | Frances Tiafoe | 73% | 1.14 | 83% | -10.9% | — |
-| Stan Wawrinka v Matteo Berrettini | Live | Matteo Berrettini | 76% | 1.06 | 88% | -12.0% | — |
-| Mariano Navone v Flavio Cobolli | To play | Flavio Cobolli | 72% | 1.06 | 88% | -14.3% | — |
-| Alex Molcan v Daniel Altmaier | To play | Alex Molcan | 59% | 1.30 | 72% | -14.9% | — |
 | Rafael Jodar v Felix Gill | Complete | Rafael Jodar | — | — | — | — | — |
 | Denis Shapovalov v Pablo Carreno Busta | Complete | Pablo Carreno Busta | — | — | — | — | — |
 | Emilio Nava v Ignacio Buse | Complete | Ignacio Buse | — | — | — | — | — |
@@ -194,50 +190,75 @@ _Generated 2026-06-30 21:15 · ATP · grass · best-of-5 · fitted model_
 | Alexander Blockx v Alexander Zverev | Complete | Alexander Zverev | — | — | — | — | — |
 | Raphael Collignon v Arthur Fils | Complete | Arthur Fils | — | — | — | — | — |
 | Tallon Griekspoor v James Duckworth | Complete | James Duckworth | — | — | — | — | — |
+| Stan Wawrinka v Matteo Berrettini | Complete | Matteo Berrettini | — | — | — | — | — |
 | Dane Sweeny v Grigor Dimitrov | Complete | Grigor Dimitrov | — | — | — | — | — |
 | Jiri Lehecka v Alexei Popyrin | Complete | Jiri Lehecka | — | — | — | — | — |
 | Vit Kopriva v Jan Choinski | Complete | Jan Choinski | — | — | — | — | — |
+| Alex Molcan v Daniel Altmaier | Complete | Alex Molcan | — | — | — | — | — |
+| Mariano Navone v Flavio Cobolli | Complete | Flavio Cobolli | — | — | — | — | — |
+| Frances Tiafoe v Terence Atmane | Complete | Frances Tiafoe | — | — | — | — | — |
 
 ## Round of 64
 
 | Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |
 |---|---|---|--:|--:|--:|--:|--:|
-| Roman Safiullin v Botic Van De Zandschulp | To play | **Roman Safiullin** | 73% | 1.74 | 55% | +11.5% | £3.89 |
-| Quentin Halys v Marcos Giron | To play | **Marcos Giron** | 65% | 1.89 | 50% | +9.1% | £2.55 |
-| Jannik Sinner v Nuno Borges | To play | **Jannik Sinner** | 100% | 1.02 | 94% | +2.0% | £24.99 |
-| Gabriel Diallo v Lorenzo Sonego | To play | Gabriel Diallo | 56% | 1.95 | 48% | +1.7% | — |
-| Hubert Hurkacz v Sebastian Ofner | To play | Hubert Hurkacz | 81% | 1.29 | 74% | -0.2% | — |
-| Daniel Merida v Daniil Medvedev | To play | Daniil Medvedev | 92% | — | — | — | — |
-| Arthur Rinderknech v Martin Damm | To play | Arthur Rinderknech | 59% | — | — | — | — |
-| Jakub Mensik v Grigor Dimitrov | To play | Grigor Dimitrov | 57% | — | — | — | — |
-| TBD v Arthur Fils | Pending | TBD | — | — | — | — | — |
-| James Duckworth v TBD | Pending | TBD | — | — | — | — | — |
-| Jiri Lehecka v TBD | Pending | TBD | — | — | — | — | — |
-| TBD v Jan Choinski | Pending | TBD | — | — | — | — | — |
-| Jenson Brooksby v Ignacio Buse | To play | Jenson Brooksby | 59% | 1.71 | 56% | -1.8% | — |
-| Jacob Fearnley v Jaume Munar | To play | Jaume Munar | 60% | 1.68 | 56% | -2.4% | — |
-| Zizou Bergs v Jaime Faria | To play | Zizou Bergs | 75% | 1.35 | 69% | -2.9% | — |
-| Alex de Minaur v Adrian Mannarino | To play | Alex de Minaur | 83% | 1.20 | 78% | -3.0% | — |
-| Felix Auger-Aliassime v Dino Prizmic | To play | Felix Auger-Aliassime | 81% | 1.16 | 82% | -5.8% | — |
-| Kyrian Jacquet v Alexander Bublik | To play | Alexander Bublik | 74% | 1.27 | 74% | -6.6% | — |
-| Zachary Svajda v Kamil Majchrzak | To play | Kamil Majchrzak | 62% | 1.48 | 64% | -6.9% | — |
-| Taylor Fritz v Patrick Kypson | To play | Taylor Fritz | 83% | 1.06 | 88% | -8.6% | — |
-| Stefanos Tsitsipas v Novak Djokovic | To play | Novak Djokovic | 76% | 1.15 | 82% | -8.6% | — |
-| Valentin Royer v Alexander Zverev | To play | Alexander Zverev | 83% | 1.05 | 90% | -8.8% | — |
-| SoonWoo Kwon v Tommy Paul | To play | Tommy Paul | 76% | 1.11 | 86% | -9.6% | — |
-| Alejandro Davidovich Fokina v Fabian Marozsan | To play | Alejandro Davidovich Fokina | 59% | 1.43 | 67% | -10.0% | — |
-| Karen Khachanov v Yannick Hanfmann | To play | Karen Khachanov | 64% | 1.32 | 71% | -10.3% | — |
-| Marton Fucsovics v Learner Tien | To play | Learner Tien | 62% | 1.35 | 70% | -10.6% | — |
-| Arthur Fery v Otto Virtanen | To play | Otto Virtanen | 53% | 1.57 | 59% | -12.0% | — |
-| Shintaro Mochizuki v Ethan Quinn | To play | Ethan Quinn | 57% | 1.39 | 68% | -12.3% | — |
-| Jesper de Jong v Joao Fonseca | To play | Joao Fonseca | 67% | 1.15 | 83% | -13.2% | — |
-| Brandon Nakashima v Jan-Lennard Struff | To play | Brandon Nakashima | 59% | 1.28 | 74% | -14.2% | — |
-| Rafael Jodar v Pablo Carreno Busta | To play | Rafael Jodar | 56% | 1.29 | 74% | -15.7% | — |
-| Nicolas Mejia v Michael Zheng | To play | Michael Zheng | 53% | 1.24 | 77% | -18.5% | — |
+| Hubert Hurkacz v Sebastian Ofner | Complete | Hubert Hurkacz | — | — | — | — | — |
+| SoonWoo Kwon v Tommy Paul | Complete | Tommy Paul | — | — | — | — | — |
+| Marton Fucsovics v Learner Tien | Complete | Marton Fucsovics | — | — | — | — | — |
+| Jenson Brooksby v Ignacio Buse | Complete | Jenson Brooksby | — | — | — | — | — |
+| Nicolas Mejia v Michael Zheng | Complete | Michael Zheng | — | — | — | — | — |
+| Alejandro Davidovich Fokina v Fabian Marozsan | Complete | Alejandro Davidovich Fokina | — | — | — | — | — |
+| Jannik Sinner v Nuno Borges | Complete | Jannik Sinner | — | — | — | — | — |
+| Roman Safiullin v Botic Van De Zandschulp | Complete | Roman Safiullin | — | — | — | — | — |
+| Arthur Rinderknech v Martin Damm | Complete | Arthur Rinderknech | — | — | — | — | — |
+| Daniel Merida v Daniil Medvedev | Complete | Daniil Medvedev | — | — | — | — | — |
+| Jesper de Jong v Joao Fonseca | Complete | Joao Fonseca | — | — | — | — | — |
+| Shintaro Mochizuki v Ethan Quinn | Complete | Shintaro Mochizuki | — | — | — | — | — |
+| Felix Auger-Aliassime v Dino Prizmic | Complete | Felix Auger-Aliassime | — | — | — | — | — |
+| Stefanos Tsitsipas v Novak Djokovic | Complete | Novak Djokovic | — | — | — | — | — |
+| Arthur Fery v Otto Virtanen | Complete | Arthur Fery | — | — | — | — | — |
+| Alex de Minaur v Adrian Mannarino | Complete | Alex de Minaur | — | — | — | — | — |
+| Gabriel Diallo v Lorenzo Sonego | Complete | Lorenzo Sonego | — | — | — | — | — |
+| Taylor Fritz v Patrick Kypson | Complete | Taylor Fritz | — | — | — | — | — |
+| Zizou Bergs v Jaime Faria | Complete | Zizou Bergs | — | — | — | — | — |
+| Zachary Svajda v Kamil Majchrzak | Complete | Zachary Svajda | — | — | — | — | — |
+| Rafael Jodar v Pablo Carreno Busta | Complete | Rafael Jodar | — | — | — | — | — |
+| Brandon Nakashima v Jan-Lennard Struff | Complete | Jan-Lennard Struff | — | — | — | — | — |
+| Quentin Halys v Marcos Giron | Complete | Marcos Giron | — | — | — | — | — |
+| Jacob Fearnley v Jaume Munar | Complete | Jaume Munar | — | — | — | — | — |
+| Valentin Royer v Alexander Zverev | Complete | Alexander Zverev | — | — | — | — | — |
+| Matteo Berrettini v Arthur Fils | Complete | Matteo Berrettini | — | — | — | — | — |
+| James Duckworth v Flavio Cobolli | Complete | Flavio Cobolli | — | — | — | — | — |
+| Karen Khachanov v Yannick Hanfmann | Complete | Karen Khachanov | — | — | — | — | — |
+| Jiri Lehecka v Alex Molcan | Complete | Jiri Lehecka | — | — | — | — | — |
+| Jakub Mensik v Grigor Dimitrov | Complete | Grigor Dimitrov | — | — | — | — | — |
+| Frances Tiafoe v Jan Choinski | Complete | Frances Tiafoe | — | — | — | — | — |
+| Kyrian Jacquet v Alexander Bublik | Complete | Alexander Bublik | — | — | — | — | — |
+
+## Round of 32
+
+| Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |
+|---|---|---|--:|--:|--:|--:|--:|
+| Hubert Hurkacz v Tommy Paul | To play | **Hubert Hurkacz** | 52% | 2.62 | 36% | +15.2% | £2.34 |
+| Frances Tiafoe v Alexander Bublik | To play | **Alexander Bublik** | 62% | 2.10 | 45% | +12.2% | £2.78 |
+| Grigor Dimitrov v Matteo Berrettini | To play | **Grigor Dimitrov** | 59% | 2.15 | 44% | +10.3% | £2.23 |
+| Zizou Bergs v Arthur Fery | To play | **Zizou Bergs** | 73% | 1.66 | 57% | +8.0% | £3.03 |
+| Karen Khachanov v Flavio Cobolli | To play | Karen Khachanov | 56% | 1.79 | 52% | -2.9% | — |
+| Felix Auger-Aliassime v Michael Zheng | To play | Felix Auger-Aliassime | 83% | 1.18 | 81% | -3.3% | — |
+| Jannik Sinner v Jenson Brooksby | To play | Jannik Sinner | 95% | 1.02 | 94% | -3.5% | — |
+| Alex de Minaur v Zachary Svajda | To play | Alex de Minaur | 83% | 1.17 | 81% | -3.9% | — |
+| Jan-Lennard Struff v Daniil Medvedev | To play | Daniil Medvedev | 82% | 1.17 | 81% | -4.7% | — |
+| Arthur Rinderknech v Novak Djokovic | To play | Novak Djokovic | 86% | 1.10 | 86% | -5.4% | — |
+| Jiri Lehecka v Jaume Munar | To play | Jiri Lehecka | 73% | 1.30 | 72% | -5.6% | — |
+| Roman Safiullin v Joao Fonseca | To play | Joao Fonseca | 72% | 1.30 | 73% | -5.9% | — |
+| Taylor Fritz v Lorenzo Sonego | To play | Taylor Fritz | 81% | 1.14 | 83% | -6.5% | — |
+| Marcos Giron v Alexander Zverev | To play | Alexander Zverev | 80% | 1.05 | 90% | -9.8% | — |
+| Rafael Jodar v Shintaro Mochizuki | To play | Rafael Jodar | 63% | 1.30 | 73% | -11.4% | — |
+| Alejandro Davidovich Fokina v Marton Fucsovics | To play | Alejandro Davidovich Fokina | 59% | 1.30 | 73% | -13.5% | — |
 
 ## Notes
 
-- 2 bet(s) backed (model edge over the book, staked).
+- 4 bet(s) backed (model edge over the book, staked).
 - Bold pick = staked bet. Add prices to `tennis/data/odds.csv` to price more matches.
 - draw: Wimbledon (ESPN) → draw.csv
-- odds: 31 h2h rows (The Odds API → odds.csv)
+- odds: 16 h2h rows (The Odds API → odds.csv)

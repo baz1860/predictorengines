@@ -1,24 +1,25 @@
 {
-  "generated_at": "2026-07-02T09:18:12",
+  "generated_at": "2026-07-03T14:03:59",
   "event": {
     "event_id": "401811954",
     "name": "John Deere Classic",
     "start_date": "2026-07-02",
     "end_date": "2026-07-05",
     "course_name": "John Deere Classic",
-    "status": "STATUS_SCHEDULED",
+    "status": "STATUS_IN_PROGRESS",
     "tour": "pga",
     "source": "espn",
     "source_event_id": "401811954"
   },
-  "database": "/sessions/laughing-exciting-pasteur/tmp/golf_engine/golf.db",
-  "field_csv": "/sessions/laughing-exciting-pasteur/mnt/Soccer Prediction/golf/data/field.csv",
+  "database": "/sessions/blissful-serene-fermat/tmp/golf_engine/golf.db",
+  "field_csv": "/sessions/blissful-serene-fermat/mnt/Soccer Prediction/golf/data/field.csv",
   "stats_csv": "",
   "provider_rows": {
     "rounds_csv": 81997,
     "espn_field": 144,
-    "bovada": 380,
-    "manual_odds": 336
+    "live_scores_round": 1,
+    "bovada": 121,
+    "manual_odds": 294
   },
   "weather": {
     "applied": false,
@@ -44,39 +45,46 @@
         "rows": 144
       },
       {
+        "source": "espn.live_scores",
+        "ok": true,
+        "severity": "info",
+        "message": "between-rounds snapshot after round 1",
+        "rows": 1
+      },
+      {
         "source": "bovada",
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 380
+        "rows": 121
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
-        "message": "380 row(s)",
-        "rows": 380
+        "message": "121 row(s)",
+        "rows": 121
       },
       {
         "source": "bovada",
         "ok": true,
         "severity": "info",
-        "message": "wrote odds.csv (143), matchups.csv (26), threeballs.csv (47)",
-        "rows": 380
+        "message": "wrote threeballs.csv (33)",
+        "rows": 121
       },
       {
         "source": "manual_odds",
         "ok": true,
         "severity": "info",
         "message": "schema ok",
-        "rows": 336
+        "rows": 294
       },
       {
         "source": "manual_odds",
         "ok": true,
         "severity": "info",
-        "message": "336 row(s)",
-        "rows": 336
+        "message": "294 row(s)",
+        "rows": 294
       }
     ]
   },

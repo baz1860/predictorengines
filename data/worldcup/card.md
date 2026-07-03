@@ -1,8 +1,8 @@
 # World Cup 2026 — Best Bets
 
-_Generated 2026-07-02 09:17 · blend model · fitted Elo + Poisson_
+_Generated 2026-07-03 00:33 · blend model · fitted Elo + Poisson_
 
-The model rates every nation on its full international history, turns each fixture into an expected scoreline, and then weighs its own probabilities against every price it can find. It makes **Argentina** the tournament favourite at 24% to lift the trophy. This week it backs **6 bets** (total stake £23.14) — each explained below, with the model's number, the price, and exactly where the edge comes from. Stakes are fractional-Kelly on a £111 bankroll.
+The model rates every nation on its full international history, turns each fixture into an expected scoreline, and then weighs its own probabilities against every price it can find. It makes **Argentina** the tournament favourite at 24% to lift the trophy. This week it backs **5 bets** (total stake £20.00) — each explained below, with the model's number, the price, and exactly where the edge comes from. Stakes are fractional-Kelly on a £111 bankroll.
 
 ## How the model thinks
 
@@ -15,37 +15,32 @@ Every number below comes from one pipeline, so it's worth knowing what drives it
 
 ## Match bets
 
-Each bet pits the model's probability against the bookmaker's price on an upcoming match; it only fires when its own number is the bigger one. **6 bets cleared the threshold** (total stake £23.14), strongest edge first.
+Each bet pits the model's probability against the bookmaker's price on an upcoming match; it only fires when its own number is the bigger one. **5 bets cleared the threshold** (total stake £20.00), strongest edge first.
 
 ### Over 2.5 goals — Colombia v Ghana
-**2.22** · model 57.8% vs market 42.9% · **+14.9pp edge** · stake **£7.02**
+**2.12** · model 57.8% vs market 44.9% · **+12.9pp edge** · stake **£6.09**
 
-The model rates Colombia at Elo 2075 against Ghana's 1693, a 382-point edge to Colombia. The two attacks project to **2.52 + 0.57 = 3.09** expected goals, comfortably above the 2.5 line. That makes Over a **58%** shot, where the price only allows 43% — the market is pricing a tighter game than the model sees.
+The model rates Colombia at Elo 2075 against Ghana's 1693, a 382-point edge to Colombia. The two attacks project to **2.52 + 0.57 = 3.09** expected goals, comfortably above the 2.5 line. That makes Over a **58%** shot, where the price only allows 45% — the market is pricing a tighter game than the model sees.
 
-### Colombia win — Colombia v Ghana
-**1.52** · model 73.5% vs market 63.0% · **+10.5pp edge** · stake **£6.83**
+### Over 2.5 goals — Portugal v Croatia
+**2.32** · model 50.7% vs market 40.1% · **+10.6pp edge** · stake **£4.03**
 
-The model rates Colombia at Elo 2075 against Ghana's 1693, a 382-point edge to Colombia. Run through the goal model that comes out as an expected **2.52–0.57** in Colombia's favour, and once every scoreline is added up Colombia win it **74%** of the time. The 63% price baked into the odds is too generous for a side the model likes this much over Ghana.
+The model rates Portugal at Elo 2046 against Croatia's 1965, a 81-point edge to Portugal. The two attacks project to **1.40 + 1.02 = 2.42** expected goals, just below the 2.5 line. That makes Over a **51%** shot, where the price only allows 40% — the market is pricing a tighter game than the model sees.
 
 ### Over 2.5 goals — Switzerland v Algeria
-**2.17** · model 53.0% vs market 44.0% · **+9.0pp edge** · stake **£3.82**
+**2.21** · model 53.0% vs market 43.4% · **+9.6pp edge** · stake **£4.22**
 
-The model rates Switzerland at Elo 1983 against Algeria's 1879, a 104-point edge to Switzerland. The two attacks project to **1.46 + 0.98 = 2.44** expected goals, just below the 2.5 line. That makes Over a **53%** shot, where the price only allows 44% — the market is pricing a tighter game than the model sees.
+The model rates Switzerland at Elo 1983 against Algeria's 1879, a 104-point edge to Switzerland. The two attacks project to **1.46 + 0.98 = 2.44** expected goals, just below the 2.5 line. That makes Over a **53%** shot, where the price only allows 43% — the market is pricing a tighter game than the model sees.
+
+### Colombia win — Colombia v Ghana
+**1.43** · model 73.5% vs market 66.8% · **+6.7pp edge** · stake **£3.62**
+
+The model rates Colombia at Elo 2075 against Ghana's 1693, a 382-point edge to Colombia. Run through the goal model that comes out as an expected **2.52–0.57** in Colombia's favour, and once every scoreline is added up Colombia win it **74%** of the time. The 67% price baked into the odds is too generous for a side the model likes this much over Ghana.
 
 ### Over 2.5 goals — Argentina v Cape Verde
-**1.67** · model 64.3% vs market 56.8% · **+7.5pp edge** · stake **£3.34**
+**1.62** · model 64.3% vs market 58.5% · **+5.9pp edge** · stake **£2.04**
 
-The model rates Argentina at Elo 2211 against Cape Verde's 1704, a 507-point edge to Argentina. The two attacks project to **3.21 + 0.44 = 3.65** expected goals, comfortably above the 2.5 line. That makes Over a **64%** shot, where the price only allows 57% — the market is pricing a tighter game than the model sees.
-
-### Over 2.5 goals — Spain v Austria
-**1.73** · model 56.9% vs market 54.8% · **+2.0pp edge** · stake **£0.86**
-
-The model rates Spain at Elo 2197 against Austria's 1897, a 300-point edge to Spain. The two attacks project to **2.14 + 0.67 = 2.81** expected goals, above the 2.5 line. That makes Over a **57%** shot, where the price only allows 55% — the market is pricing a tighter game than the model sees.
-
-### Argentina win — Argentina v Cape Verde
-**1.17** · model 83.8% vs market 82.8% · **+1.0pp edge** · stake **£1.27**
-
-The model rates Argentina at Elo 2211 against Cape Verde's 1704, a 507-point edge to Argentina. Run through the goal model that comes out as an expected **3.21–0.44** in Argentina's favour, and once every scoreline is added up Argentina win it **84%** of the time. The 83% price baked into the odds is too generous for a side the model likes this much over Cape Verde.
+The model rates Argentina at Elo 2211 against Cape Verde's 1704, a 507-point edge to Argentina. The two attacks project to **3.21 + 0.44 = 3.65** expected goals, comfortably above the 2.5 line. That makes Over a **64%** shot, where the price only allows 58% — the market is pricing a tighter game than the model sees.
 
 ## Title outlook
 
@@ -70,11 +65,11 @@ These aren't bets — they're the model's read on the title race, straight from 
 
 ## Fixtures forecast
 
-Not bets — the model's read on the next matchday (2026-07-02). For each game: the expected scoreline that falls out of the Elo gap, and where the probability lands.
+Not bets — the model's read on the next matchday (2026-07-03). For each game: the expected scoreline that falls out of the Elo gap, and where the probability lands.
 
-- **Spain v Austria** (Elo 2197 v 1897): expected **2.14–0.67**, most likely 2-0 — Spain favoured at 71%.
-- **Portugal v Croatia** (Elo 2046 v 1965): expected **1.40–1.02**, most likely 1-1 — Portugal favoured at 44%.
-- **Switzerland v Algeria** (Elo 1983 v 1879): expected **1.46–0.98**, most likely 1-1 — Switzerland favoured at 47%.
+- **Australia v Egypt** (Elo 1904 v 1852): expected **1.32–1.08**, most likely 1-1 — Australia favoured at 41%.
+- **Argentina v Cape Verde** (Elo 2211 v 1704): expected **3.21–0.44**, most likely 3-0 — Argentina favoured at 89%.
+- **Colombia v Ghana** (Elo 2075 v 1693): expected **2.52–0.57**, most likely 2-0 — Colombia favoured at 79%.
 
 ## Notes
 
