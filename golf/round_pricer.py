@@ -164,6 +164,11 @@ def price_round_groups(
             dead_heat_prob_equiv = expected_return / q.decimal_odds
             kf = max(0.0, E.kelly_fraction(dead_heat_prob_equiv, q.decimal_odds) * kelly)
             thin = int(n_rounds.get(q.player_name, 0)) < min_rounds
+            # Never stake a thin-sample player: with too little (or no) history the
+            # rating is a default-skill guess, so a big "edge" against the book is
+            # spurious — the book is pricing information the model can't see. Keep
+            # the probabilities/EV for context, but stake nothing.
+            stake = 0.0 if thin else round(kf * bankroll, 2)
             rows.append({
                 "round": q.round_no or "",
                 "market": q.market,
@@ -177,7 +182,7 @@ def price_round_groups(
                 "p_dead_heat_equiv": round(dead_heat_prob_equiv, 4),
                 "p_market": round(fair[k], 4),
                 "ev_pct": round(ev * 100, 2),
-                "kelly_stake": round(kf * bankroll, 2),
+                "kelly_stake": stake,
                 "thin_sample": thin,
                 "settlement_rule": q.settlement_rule or "dead_heat",
                 "_ev": ev,

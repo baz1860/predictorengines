@@ -369,7 +369,13 @@ def _write_live_scores(espn, event, *, use_cache: bool = False) -> int:
 
     if rounds_done < 1 or not rows:
         for stale in (LIVE_SCORES_CSV, LIVE_STATE_JSON, PREDICTIONS_INPLAY_CSV):
-            stale.unlink(missing_ok=True)
+            try:
+                stale.unlink(missing_ok=True)
+            except OSError:
+                try:            # some mounts block unlink → blank instead
+                    stale.write_text("")
+                except OSError:
+                    pass
         return 0
 
     with open(LIVE_SCORES_CSV, "w", newline="") as f:

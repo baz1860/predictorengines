@@ -27,21 +27,18 @@ import json
 import time
 from pathlib import Path
 
+from . import edge as GEDGE
 from . import engine as GENG
-from . import model
 from . import refresh as GREF
-from . import simulate_inplay as GIP
 from .providers.espn import EspnGolfProvider
 
 DATA_DIR = Path(__file__).parent / "data"
 PREDICTIONS_CSV = DATA_DIR / "predictions.csv"
-PREDICTIONS_INPLAY_CSV = DATA_DIR / "predictions_inplay.csv"
 EDGE_CSV = DATA_DIR / "edge_report.csv"
 ROUND_3BALL_CSV = DATA_DIR / "round_edges.csv"
 MANIFEST_JSON = DATA_DIR / "free_source_manifest.json"
 CARD_MD = DATA_DIR / "card.md"
 LIVE_STATE_JSON = DATA_DIR / "live_state.json"
-SCORES_LIVE_CSV = DATA_DIR / "scores_live.csv"
 
 TOTAL_ROUNDS = 4
 
@@ -75,179 +72,46 @@ def print_schedule(season: int | None = None) -> None:
 
 
 # ── in-play conditioning ─────────────────────────────────────────────────────
-# Once a round is complete, the field projection should condition on the live
-# leaderboard rather than re-run the pre-tournament simulation. We pull ESPN's
-# per-round line scores, reconstruct each survivor's cumulative score through the
-# last fully-completed round, and hand that to the in-play simulator.
+# The engine already ascertains the current event and its completed rounds:
+# refresh reads the live leaderboard (espn.completed_round_scores) and records
+# live_state.json + scores_live.csv, then engine.cmd_simulate / cmd_edge
+# auto-route to the in-play simulator conditioned on that state. The front door
+# just sequences those and mirrors the in-play projection into the canonical
+# predictions.csv so every downstream reader sees the live-conditioned numbers.
 
-def _topar_from_display(value) -> int | None:
-    """ESPN per-round to-par string ('-5', '+2', 'E', '-') → int, or None."""
-    s = str(value).strip()
-    if s in ("", "-", "—"):
-        return None
-    if s.upper() == "E":
-        return 0
-    try:
-        return int(s.replace("+", ""))
-    except ValueError:
-        return None
+def _mirror_inplay_predictions(sim_out: dict, path: Path = PREDICTIONS_CSV) -> None:
+    """Write predictions.csv from an in-play cmd_simulate result.
 
-
-def _live_state(event_id: str, target_round: int) -> dict | None:
-    """Reconstruct cumulative to-par through the last fully-completed round.
-
-    Returns a state dict (event_name, event_id, status, rounds_done,
-    current_scores name_lower→to-par, board) or None when there is no live event
-    or no completed round to condition on.
+    Keeps the pre-tournament schema (so existing readers keep working) and adds a
+    `score_thru` column. cmd_simulate writes predictions_inplay.csv itself; this
+    makes predictions.csv the same live-conditioned board rather than a stale
+    pre-event one.
     """
-    from .providers.espn import _status_name, _safe_int  # local: internal helpers
-
-    prov = EspnGolfProvider()
-    payload = prov.current_event_payload(event_id or None, use_cache=False)
-    evs = payload.get("events") or []
-    if not evs:
-        return None
-    ev = evs[0]
-    ev_name = ev.get("name") or ""
-    eid = str(ev.get("id") or event_id or "")
-    status = ((ev.get("status") or {}).get("type") or {}).get("name") or ""
-    comp = (ev.get("competitions") or [{}])[0]
-
-    per_player = []
-    for c in comp.get("competitors") or []:
-        ath = c.get("athlete") or {}
-        name = (ath.get("displayName") or ath.get("fullName") or "").strip()
-        if not name:
-            continue
-        rounds: dict[int, int] = {}
-        for ls in c.get("linescores") or []:
-            period = _safe_int(ls.get("period"))
-            has_holes = bool(ls.get("linescores"))     # round actually played out
-            tp = _topar_from_display(ls.get("displayValue"))
-            if period and has_holes and tp is not None:
-                rounds[period] = tp
-        per_player.append({
-            "name": name, "rounds": rounds, "status": _status_name(c),
-            "position": c.get("order"), "cum_score": c.get("score"),
-        })
-
-    completed = [max(p["rounds"]) for p in per_player if p["rounds"]]
-    if not completed:
-        return None
-    field_completed = max(completed)
-    # Only ever condition on rounds that are actually finished.
-    rounds_done = min(target_round - 1, field_completed)
-    if rounds_done < 1:
-        return None
-
-    need = range(1, rounds_done + 1)
-    current_scores: dict[str, float] = {}
-    board = []
-    for p in per_player:
-        rs = p["rounds"]
-        if not all(r in rs for r in need):
-            continue   # missed cut / withdrew → not in the remaining field
-        cum = sum(rs[r] for r in need)
-        current_scores[p["name"].lower()] = float(cum)
-        board.append({"name": p["name"], "score_thru": cum,
-                      "rounds_completed": max(rs), "position": p["position"]})
-    if not current_scores:
-        return None
-    return {"event_name": ev_name, "event_id": eid, "status": status,
-            "rounds_done": rounds_done, "current_scores": current_scores,
-            "board": board}
-
-
-def _write_inplay_predictions_csv(survivors, results, path: Path = PREDICTIONS_CSV) -> Path:
-    """Write predictions.csv from in-play results, schema-compatible with the
-    pre-tournament file plus a `score_thru` column. Ranked by win probability."""
+    rows = sim_out.get("rows") or []
     cols = ["rank", "name", "rating", "sigma", "owgr", "win_pct", "top5_pct",
             "top10_pct", "top20_pct", "cut_pct", "avg_finish", "score_thru"]
-    ranked = sorted(survivors, key=lambda p: results[p.name]["win"], reverse=True)
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
-        for rank, p in enumerate(ranked, 1):
-            r = results[p.name]
-            sc = int(round(r["current_score"]))
-            thru = "E" if sc == 0 else f"{sc:+d}"
+        for rank, r in enumerate(rows, 1):
             w.writerow({
-                "rank": rank, "name": p.name,
-                "rating": f"{p.rating:+.3f}", "sigma": f"{p.sigma:.2f}",
-                "owgr": getattr(p, "owgr", 999),
-                "win_pct": f"{r['win'] * 100:.2f}",
-                "top5_pct": f"{r['top5'] * 100:.1f}",
-                "top10_pct": f"{r['top10'] * 100:.1f}",
-                "top20_pct": f"{r['top20'] * 100:.1f}",
+                "rank": rank, "name": r.get("name", ""),
+                "rating": f"{_num(r.get('rating')):+.3f}",
+                "sigma": "", "owgr": "",
+                "win_pct": f"{_num(r.get('win')) * 100:.2f}",
+                "top5_pct": f"{_num(r.get('top5')) * 100:.1f}",
+                "top10_pct": f"{_num(r.get('top10')) * 100:.1f}",
+                "top20_pct": f"{_num(r.get('top20')) * 100:.1f}",
                 "cut_pct": "100.0",
-                "avg_finish": f"{r['avg_finish']:.1f}",
-                "score_thru": thru,
+                "avg_finish": f"{_num(r.get('avg_finish')):.1f}",
+                "score_thru": r.get("score", ""),
             })
-    return path
 
 
-def _write_live_state(state: dict, n_survivors: int, rounds_done: int) -> None:
-    updated = dt.datetime.now().astimezone().isoformat(timespec="seconds")
-    LIVE_STATE_JSON.write_text(json.dumps({
-        "event": state["event_name"],
-        "event_id": state["event_id"],
-        "status": state["status"],
-        "rounds_done": rounds_done,
-        "round_today": rounds_done + 1,
-        "survivors": n_survivors,
-        "updated": updated,
-    }, indent=2))
-    board = sorted(state["board"], key=lambda b: b["score_thru"])
-    with open(SCORES_LIVE_CSV, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["name", "score_thru", "rounds_completed",
-                                          "position", "made_cut"])
-        w.writeheader()
-        for b in board:
-            sc = int(round(b["score_thru"]))
-            w.writerow({"name": b["name"],
-                        "score_thru": "E" if sc == 0 else f"{sc:+d}",
-                        "rounds_completed": b["rounds_completed"],
-                        "position": b["position"], "made_cut": 1})
+def _is_inplay(sim_out: dict) -> bool:
+    """cmd_simulate exposes a live-only 'score' (thru) column when in-play."""
+    return any(c.get("key") == "score" for c in sim_out.get("columns") or [])
 
-
-def _route_inplay(*, event_id, round_no, base, sims, seed, notes) -> dict | None:
-    """If a round is complete, condition on the live leaderboard and write the
-    in-play field projection. Returns the live state, or None to fall back to the
-    pre-tournament simulation."""
-    if round_no < 2:
-        return None
-    try:
-        state = _live_state(event_id, round_no)
-    except Exception as exc:  # noqa: BLE001 — never let a flaky feed break the run
-        notes.append(f"in-play skipped (leaderboard error): {exc}")
-        return None
-    if not state:
-        return None
-
-    rounds_done = state["rounds_done"]
-    current_scores = state["current_scores"]
-    rated, fitted = GENG._rated_field(base.get("course", ""), bool(base.get("major")))
-    survivors = [p for p in rated if p.name.lower() in current_scores]
-    if not survivors:
-        notes.append("in-play skipped: no overlap between field and leaderboard")
-        return None
-
-    import numpy as np
-    rng = np.random.default_rng(int(seed) or None)
-    results = GIP.simulate_inplay(survivors, current_scores, rounds_done,
-                                  n_sims=sims, rng=rng)
-    GIP.write_predictions_inplay(survivors, results, rounds_done,
-                                 path=PREDICTIONS_INPLAY_CSV)
-    _write_inplay_predictions_csv(survivors, results)
-    _write_live_state(state, len(survivors), rounds_done)
-    if rounds_done < round_no - 1:
-        notes.append(f"requested round {round_no} but only R1–{rounds_done} are "
-                     f"complete — conditioned on completed rounds only")
-    notes.append(f"in-play: conditioned on R1–{rounds_done} "
-                 f"({len(survivors)} survivors), simulating round {rounds_done + 1}")
-    state["survivors"] = len(survivors)
-    state["fitted"] = fitted
-    return state
 
 
 # ── card ────────────────────────────────────────────────────────────────────
@@ -256,7 +120,7 @@ def build_card(
     *,
     season: int | None = None,
     event_id: str = "",
-    round_no: int = 1,
+    round_no: int | None = None,
     sims: int = 50_000,
     refresh: bool = True,
     stats: bool = False,
@@ -278,29 +142,49 @@ def build_card(
     notes: list[str] = []
     event: dict = {}
 
+    # Refresh ascertains the current event (ESPN) and records the live state —
+    # which rounds are complete — into live_state.json. cmd_simulate / cmd_edge
+    # then auto-route to the in-play simulator off that state.
     if refresh:
         manifest = GREF.run_refresh(season=season, event=event_id, stats=stats,
-                                    weather=weather, fit=fit, round_no=round_no)
+                                    weather=weather, fit=fit, round_no=round_no or 1)
         event = manifest.get("event") or {}
         notes.append("refresh: " + (event.get("name") or "current event"))
 
-    event_name = event.get("name") or _field_event()
+    # Read the live state the refresh just recorded to report the round and, when
+    # the caller didn't force --round, target this round's 3-ball board.
+    live_state = _read_json(LIVE_STATE_JSON)
+    rounds_done = int(live_state.get("rounds_done") or 0)
+    if round_no is None:
+        round_no = rounds_done + 1 if rounds_done else 1
+
+    event_name = (event.get("name") or live_state.get("event_name")
+                  or _field_event())
     if major is None:
         major = any(h in (event_name or "").lower() for h in _MAJOR_HINTS)
     course = course or event.get("course_name", "")
 
     base = {"sims": sims, "course": course, "major": major, "seed": seed}
 
-    # Once a round is complete, condition the field projection on the live
-    # leaderboard (in-play). Otherwise fall back to the pre-tournament simulation.
-    live = _route_inplay(event_id=event_id, round_no=round_no, base=base,
-                         sims=sims, seed=seed, notes=notes)
-    if live:
-        event_name = live.get("event_name") or event_name
+    # Field projection. cmd_simulate auto-routes to the in-play sim once a round
+    # is complete; mirror that live-conditioned board into predictions.csv so the
+    # card and downstream readers see it (cmd_simulate itself writes the pre-event
+    # predictions.csv, or predictions_inplay.csv when in-play).
+    sim_out = GENG.cmd_simulate(dict(base))
+    if _is_inplay(sim_out):
+        _mirror_inplay_predictions(sim_out)
+        notes.append(
+            f"in-play after R{rounds_done} ({TOTAL_ROUNDS - rounds_done} to play): "
+            f"predictions conditioned on the live leaderboard "
+            f"({len(sim_out.get('rows') or [])} survivors)")
     else:
-        GENG.cmd_simulate(dict(base))       # → predictions.csv (pre-tournament)
+        notes.append("pre-tournament projection (no completed rounds)")
     try:
-        GENG.cmd_edge(dict(base, min_edge=0.0))   # → edge_report.csv (full board)
+        # Full board — outrights, places and tournament matchups/3-balls, all
+        # auto-conditioned on the live leaderboard in-play. cmd_edge computes but
+        # doesn't persist, so write the board here for the card/summary to read.
+        edge_out = GENG.cmd_edge(dict(base, min_edge=0.0))
+        GEDGE.write_edge_report(edge_out.get("rows") or [], path=EDGE_CSV)
     except ValueError as exc:
         notes.append(f"edge skipped: {exc}")
     try:
@@ -323,6 +207,7 @@ def build_card(
     picks_3b = _recommended_3balls(threeball_rows, min_edge)
     return {
         "event": event_name,
+        "round": round_no,
         "output": str(output),
         "tournament_bets": len(staked),
         "round_3ball_bets": len(picks_3b),
@@ -560,9 +445,11 @@ def main() -> None:
     ap.add_argument("--schedule", action="store_true",
                     help="print the season's tournament list and exit")
     ap.add_argument("--season", type=int, default=None, help="season/year")
-    ap.add_argument("--event", default="", help="ESPN event id (default: current)")
-    ap.add_argument("--round", type=int, default=1, dest="round_no",
-                    help="round to price 3-balls for (default 1)")
+    ap.add_argument("--event", default="",
+                    help="ESPN event id or name to force (default: auto-detect current)")
+    ap.add_argument("--round", type=int, default=None, dest="round_no",
+                    help="force the round to predict (default: auto-detect from the "
+                         "live leaderboard)")
     ap.add_argument("--sims", type=int, default=50_000)
     ap.add_argument("--no-refresh", action="store_true",
                     help="reprice from cached data; skip the provider refresh")
@@ -587,7 +474,7 @@ def main() -> None:
         min_edge=args.min_edge,
     )
     print(f"{summary['event']} — {summary['tournament_bets']} tournament bet(s), "
-          f"{summary['round_3ball_bets']} round-{args.round_no} 3-ball bet(s)")
+          f"{summary['round_3ball_bets']} round-{summary['round']} 3-ball bet(s)")
     for n in summary["notes"]:
         print(f"  · {n}")
     print(f"Card → {summary['output']}")
