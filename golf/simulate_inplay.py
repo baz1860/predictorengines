@@ -148,25 +148,18 @@ def simulate_inplay(
         tres[(a, b, c)] = {a: a_w / n_sims, b: b_w / n_sims, c: c_w / n_sims,
                            "tie": (n_sims - a_w - b_w - c_w) / n_sims}
 
-    # Rank for each sim
-    for sim in range(n_sims):
-        t = totals[sim]
-        order = np.argsort(t)
-
-        prev_score = None
-        prev_pos   = 0
-        for rank, idx in enumerate(order):
-            score = t[idx]
-            if score != prev_score:
-                prev_pos   = rank + 1
-                prev_score = score
-
-            pos = prev_pos
-            fin_sum[idx] += pos
-            if pos == 1:  wins[idx]  += 1
-            if pos <= 5:  top5s[idx] += 1
-            if pos <= 10: top10s[idx]+= 1
-            if pos <= 20: top20s[idx]+= 1
+    # Rank every simulation at once. Totals are continuous (base ints + normal
+    # draws), so exact ties are measure-zero and ordinal ranking equals golf
+    # competition ranking — but it runs ~100x faster than a per-sim Python loop.
+    order = np.argsort(totals, axis=1, kind="stable")          # (n_sims, n)
+    ranks = np.empty_like(order)
+    rows = np.arange(n_sims)[:, np.newaxis]
+    ranks[rows, order] = np.arange(1, n + 1)[np.newaxis, :]     # 1 = best score
+    wins    = np.count_nonzero(ranks == 1,  axis=0)
+    top5s   = np.count_nonzero(ranks <= 5,  axis=0)
+    top10s  = np.count_nonzero(ranks <= 10, axis=0)
+    top20s  = np.count_nonzero(ranks <= 20, axis=0)
+    fin_sum = ranks.sum(axis=0, dtype=np.float64)
 
     results = {}
     for i, name in enumerate(names):

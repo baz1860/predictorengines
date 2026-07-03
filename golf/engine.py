@@ -374,8 +374,22 @@ def cmd_edge(p):
     rows = GE.price_all(rated, results, odds_data, matchup_odds, threeball_odds,
                         bankroll=bankroll, kelly=kelly, calibrated=calibrated,
                         blended=blended, min_edge=min_edge)
-    # stake only +EV bets, then apply portfolio discipline
-    staked = [r for r in rows if r["ev_per_unit"] > 0]
+    # Don't stake players with too little history to rate reliably: the model
+    # falls back toward a default skill, so an "edge" against the book is
+    # spurious — the book is pricing information the model can't see. Keep the
+    # rows (probabilities/EV are informative) but never put money on them.
+    min_rounds = int(p.get("min_rounds", 60))
+    _params = model.load_params() or {}
+    _counts = _params.get("players", {})
+
+    def _thin(name: str) -> bool:
+        canon = model.resolve_name(name, _params) if hasattr(model, "resolve_name") else name
+        return int((_counts.get(canon or "") or {}).get("n_rounds", 0)) < min_rounds
+
+    for r in rows:
+        r["thin_sample"] = _thin(r["player"])
+    # stake only +EV, well-sampled bets, then apply portfolio discipline
+    staked = [r for r in rows if r["ev_per_unit"] > 0 and not r["thin_sample"]]
     staked = GPORT.apply_portfolio(staked, bankroll=bankroll, peak=peak)
     staked_keys = {(r["player"], r["side"]) for r in staked}
     stake_by = {(r["player"], r["side"]): r["stake_gbp"] for r in staked}
@@ -410,18 +424,34 @@ def cmd_round_3balls(p):
     quotes = ManualOddsProvider().load_threeballs(event_id=event_id, round_no=round_no)
     if not quotes:
         raise ValueError("No 3-ball odds found in golf/data/threeballs.csv.")
-    missing = GRP.field_mismatch(quotes, _field_names(), params)
+    missing = set(GRP.field_mismatch(quotes, _field_names(), params))
     if missing:
-        # Stale board (e.g. last week's tournament). Drop any prior edges file so
-        # callers that re-read it (season.py) don't render the wrong event.
-        GRP.OUT_CSV.unlink(missing_ok=True)
-        raise ValueError(
-            f"Round-group board does not match the current field: {len(missing)} "
-            f"player(s) not in field.csv (stale board from another event?): "
-            + ", ".join(missing[:12]) + ("…" if len(missing) > 12 else "")
-            + ". Re-paste this event's tee groups into "
-              "golf/data/threeballs_r1_raw.txt and rerun refresh."
-        )
+        board_players = {q.player_name for q in quotes
+                         if q.market in GRP.ROUND_GROUP_MARKETS}
+        frac = len(missing) / max(1, len(board_players))
+        # A large mismatch means the board is for the wrong event (stale) — refuse
+        # and clear the edges file. A handful of unmatched names is just bookmaker
+        # spelling drift (e.g. "Ryan Vools" vs field's "Ryan Voois"): drop only the
+        # groups that name them and price the rest.
+        if frac > 0.5:
+            try:
+                GRP.OUT_CSV.unlink(missing_ok=True)
+            except OSError:
+                try:
+                    GRP.OUT_CSV.write_text("")
+                except OSError:
+                    pass
+            raise ValueError(
+                f"Round-group board does not match the current field: {len(missing)} "
+                f"of {len(board_players)} player(s) not in field.csv (stale board "
+                f"from another event?): " + ", ".join(sorted(missing)[:12])
+                + ("…" if len(missing) > 12 else "")
+                + ". Re-paste this event's tee groups into "
+                  "golf/data/threeballs_r1_raw.txt and rerun refresh.")
+        bad_groups = {q.group_id for q in quotes if q.player_name in missing}
+        quotes = [q for q in quotes if q.group_id not in bad_groups]
+        if not quotes:
+            raise ValueError("No round groups left after dropping unmatched names.")
     bankroll = float(p.get("bankroll", 100.0))
     rows = GRP.price_round_groups(
         quotes,
