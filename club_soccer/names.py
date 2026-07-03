@@ -38,6 +38,28 @@ OVERRIDES = {
     "Inter": "Inter", "Milan": "AC Milan", "Borussia Monchengladbach": "Borussia Monchengladbach",
 }
 
+# football-data.co.uk uses short/local names (e.g. "Man United", "Nott'm
+# Forest") that differ from our fixtures.csv canon. Built empirically by
+# running `python3 -m club_soccer.fetch_fdcouk --show-unmatched` and adding
+# entries until join coverage is >= 95% of league rows per competition
+# (see test_fdcouk_alias_coverage in test_club_soccer.py).
+FDCOUK_ALIASES: dict[str, str] = {
+    "Man City": "Manchester City",
+    "Man United": "Manchester United",
+    "Newcastle": "Newcastle United",
+    "Nott'm Forest": "Nottingham Forest",
+    "Wolves": "Wolverhampton",
+    "Sheffield United": "Sheffield Utd",
+    "Dortmund": "Borussia Dortmund",
+    "Ein Frankfurt": "Eintracht Frankfurt",
+    "Leverkusen": "Bayer Leverkusen",
+    "Ath Bilbao": "Athletic Bilbao",
+    "Ath Madrid": "Atletico Madrid",
+    "Sociedad": "Real Sociedad",
+    "Paris SG": "Paris Saint-Germain",
+    "Milan": "AC Milan",
+}
+
 STOP = {"fc", "cf", "afc", "acf", "ac", "bc", "sc", "sk", "fk", "nk", "gnk", "rc", "rb",
         "ss", "ssc", "as", "ogc", "ofc", "cd", "ud", "club", "calcio", "de", "futbol",
         "hotspur", "1846", "1899", "1909", "04", "05", "1907", "kv", "bsc", "vfb",
