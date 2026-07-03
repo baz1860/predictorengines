@@ -218,7 +218,8 @@ def _promo_relegation_priors(df: pd.DataFrame, teams: list[str]) -> dict[str, di
 
 
 def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
-        season_regress_rho: float = 0.0, half_life_days: float = HALF_LIFE_DAYS) -> dict:
+        season_regress_rho: float = 0.0, half_life_days: float = HALF_LIFE_DAYS,
+        elo_decay_half_life_days: float | None = None) -> dict:
     """
     promo_prior: optional {"pi": float, "active": bool} (P4.5). When active,
     a promoted/relegated team's attack/defence shrinkage prior (see the gf/ga
@@ -233,6 +234,14 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
     half_life_days: recency half-life for the exponential match-weighting
     (P4.6 re-tunes this alongside season_regress_rho). Defaults to the
     incumbent HALF_LIFE_DAYS.
+    elo_decay_half_life_days: (P4.6b) plain Elo has no time decay — a rating
+    earned in one hot spell three years ago carries forward at full strength
+    forever, only eroding through actual match results. When set, a team's
+    Elo continuously decays toward BASE_ELO between matches: its distance
+    from BASE_ELO halves every elo_decay_half_life_days of elapsed calendar
+    time since that team's PREVIOUS match (any competition), applied once
+    right before each of its matches. None (default) = incumbent behaviour
+    (undecayed, standard sequential Elo).
     """
     df = played(load_fixtures() if df is None else df).sort_values("date")
     if df.empty:
@@ -393,6 +402,14 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
     last_date: dict[str, pd.Timestamp] = {}
     for r in df.itertuples(index=False):
         h, a = r.home, r.away
+        if elo_decay_half_life_days:
+            for team in (h, a):
+                prev = last_date.get(team)
+                if prev is not None:
+                    gap_days = (r.date - prev).days
+                    if gap_days > 0:
+                        decay = 0.5 ** (gap_days / elo_decay_half_life_days)
+                        elo[team] = BASE_ELO + (elo[team] - BASE_ELO) * decay
         if season_regress_rho > 0:
             for team in (h, a):
                 prev = last_date.get(team)
@@ -401,8 +418,8 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
                     vals = [elo[t] for t in members if t in elo]
                     league_mean = float(np.mean(vals)) if vals else BASE_ELO
                     elo[team] = (1 - season_regress_rho) * elo[team] + season_regress_rho * league_mean
-            last_date[h] = r.date
-            last_date[a] = r.date
+        last_date[h] = r.date
+        last_date[a] = r.date
         adv = 0.0 if int(r.neutral) else HOME_ADV_ELO
         exp_h = 1.0 / (1.0 + 10 ** ((elo[a] - (elo[h] + adv)) / 400.0))
         actual_h = 1.0 if r.home_goals > r.away_goals else (0.5 if r.home_goals == r.away_goals else 0.0)
@@ -733,6 +750,91 @@ def tune_season_boundary(verbose: bool = True, save: bool = False) -> dict:
     return payload
 
 
+# ── P4.6b: continuous Elo time-decay (gated) ──────────────────────────────────
+# None = incumbent (undecayed). Values are days for the rating's distance from
+# BASE_ELO to halve since a team's previous match — 90d is aggressive (a full
+# summer break alone nearly wipes the rating), 1095d (3y) is barely-there decay.
+ELO_DECAY_GRID = (None, 1095.0, 730.0, 365.0, 180.0, 90.0)
+
+
+def tune_elo_decay(verbose: bool = True, save: bool = False) -> dict:
+    """Grid-search elo_decay_half_life_days (P4.6b) on the FULL walk-forward
+    Brier (unlike season_regress_rho, decay can matter at any point in the
+    season, not just Aug-Oct, so every month has to be scored).
+
+    Report-only: writes model_params.json's "elo_decay_half_life_days" key
+    with "active": false regardless of outcome — a code change to fit()'s
+    default is what actually promotes this.
+    """
+    df_all = played(load_fixtures()).sort_values("date").reset_index(drop=True)
+    df_all["_ym"] = df_all["date"].dt.to_period("M")
+    months = sorted(df_all["_ym"].unique())
+
+    def _eval(half_life: float | None) -> tuple[float, int]:
+        brier_sum, n = 0.0, 0
+        for ym in months:
+            test = df_all[df_all["_ym"] == ym]
+            train = df_all[df_all["date"] < test["date"].min()]
+            if len(train) < 200:
+                continue
+            try:
+                params = fit(train, elo_decay_half_life_days=half_life)
+            except Exception:
+                continue
+            seen = set(params["teams"])
+            for r in test.itertuples(index=False):
+                if r.home not in seen or r.away not in seen:
+                    continue
+                try:
+                    pred = predict(r.home, r.away, r.competition, "ensemble",
+                                   bool(r.neutral), params)
+                except ValueError:
+                    continue
+                actual = 0 if r.home_goals > r.away_goals else (
+                    1 if r.home_goals == r.away_goals else 2)
+                p = np.array([pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"]])
+                brier_sum += float(np.sum((p - np.eye(3)[actual]) ** 2))
+                n += 1
+        return (brier_sum / n if n else float("nan")), n
+
+    if verbose:
+        print(f"Elo decay tuning (full walk-forward, {len(months)} months):")
+
+    grid: dict[float | None, dict] = {}
+    for hl in ELO_DECAY_GRID:
+        brier, n = _eval(hl)
+        grid[hl] = {"brier": brier, "n": n}
+        if verbose:
+            label = "none (incumbent)" if hl is None else f"{hl:.0f}d"
+            print(f"  half_life={label:18s}  n={n}  brier={brier:.4f}")
+
+    incumbent = grid.get(None)
+    valid = {k: v for k, v in grid.items() if v["n"] > 0}
+    best_key = min(valid, key=lambda k: valid[k]["brier"]) if valid else None
+    best = valid.get(best_key)
+    promotes = bool(incumbent and best and best["brier"] < incumbent["brier"]
+                    and best_key is not None)
+
+    payload = {
+        "elo_decay_half_life_days": {"value": best_key, "active": False},
+        "incumbent_brier": round(incumbent["brier"], 6) if incumbent else None,
+        "best_brier": round(best["brier"], 6) if best else None,
+        "would_promote": promotes,
+        "grid": {("none" if k is None else f"{k:.0f}d"): v for k, v in grid.items()},
+    }
+    if verbose:
+        best_label = "none" if best_key is None else f"{best_key:.0f}d"
+        print(f"  best half_life={best_label} vs incumbent (no decay): "
+              f"{'would PROMOTE' if promotes else 'reject — keep incumbent'}")
+    if save:
+        params = load_params()
+        params["elo_decay_half_life_days"] = payload["elo_decay_half_life_days"]
+        save_params(params)
+        if verbose:
+            print(f"  saved diagnostic -> {PARAMS.name} (active=false)")
+    return payload
+
+
 def _home_mult(params: dict, competition: str | None) -> float:
     """Per-competition home-advantage multiplier (1.0 = global), shrunk at fit.
 
@@ -988,9 +1090,13 @@ def main() -> None:
     ap.add_argument("--tune-season-boundary", action="store_true",
                     help="grid-search season_regress_rho x half_life_days "
                          "on Aug-Oct fixtures (P4.6), report-only")
+    ap.add_argument("--tune-elo-decay", action="store_true",
+                    help="grid-search continuous Elo time-decay half-life "
+                         "(P4.6b) on the full walk-forward, report-only")
     ap.add_argument("--write", action="store_true",
-                    help="with --tune-promo-prior/--tune-season-boundary, "
-                         "save the diagnostic to model_params.json (still inactive)")
+                    help="with --tune-promo-prior/--tune-season-boundary/"
+                         "--tune-elo-decay, save the diagnostic to "
+                         "model_params.json (still inactive)")
     args = ap.parse_args()
     if args.fit:
         params = fit()
@@ -999,6 +1105,9 @@ def main() -> None:
         return
     if args.tune_season_boundary:
         tune_season_boundary(save=args.write)
+        return
+    if args.tune_elo_decay:
+        tune_elo_decay(save=args.write)
         return
     if args.fit_comp_strength:
         fit_comp_strength()
