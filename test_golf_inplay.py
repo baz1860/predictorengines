@@ -93,6 +93,121 @@ def test_cut_player_excluded(monkeypatch):
     assert by["CutGuy"]["made_cut"] == 0
 
 
+def test_cut_line_computed_when_feed_omits_it(monkeypatch):
+    # ESPN leaves status null even for cut players, so the cut must be derived
+    # from 36-hole scores: keep the lowest cut_size and ties. Two 36-hole rounds
+    # each (round1 = target score, round2 = level).
+    def player(name, score36):
+        return _competitor(name, [_round_line(1, f"{score36:+d}" if score36 else "E"),
+                                   _round_line(2, "E")])
+    comps = [player("A", -5), player("B", -4), player("C", -3),
+             player("D", -3), player("E", 1), player("F", 5)]
+    prov = _patched_provider(monkeypatch, comps)
+    rows, rounds_done = prov.completed_round_scores("TEST", cut_size=3)
+    assert rounds_done == 2
+    made = {r["name"]: r["made_cut"] for r in rows}
+    # top 3 and ties → -3s both survive; +1 and +5 are cut.
+    assert made == {"A": 1, "B": 1, "C": 1, "D": 1, "E": 0, "F": 0}
+
+
+# ──────────────────────────────────────────────
+# Stale-board guard (engine)
+# ──────────────────────────────────────────────
+
+def test_board_fresh_guard(tmp_path):
+    import os, time
+    board = tmp_path / "matchups.csv"
+    board.write_text("x")
+    now = time.time()
+    # board written well before the refresh manifest → stale
+    os.utime(board, (now - 7200, now - 7200))
+    assert engine._board_fresh(board, ref=now) is False
+    # board written alongside the refresh → fresh
+    os.utime(board, (now - 60, now - 60))
+    assert engine._board_fresh(board, ref=now) is True
+    # unknown ref (pre-tournament, no manifest) → treated as fresh
+    assert engine._board_fresh(board, ref=None) is True
+    # missing file → not fresh
+    assert engine._board_fresh(tmp_path / "nope.csv", ref=now) is False
+
+
+# ──────────────────────────────────────────────
+# Tournament-only board filter (round groups excluded)
+# ──────────────────────────────────────────────
+
+def test_tournament_only_excludes_round_boards(tmp_path):
+    from golf import edge as GE
+    mp = tmp_path / "matchups.csv"
+    mp.write_text(
+        "group_id,player_a,player_b,odds_a,odds_b\n"
+        "bovada-tmatch:1,Alice,Bob,1.8,2.0\n"
+        "bovada-rmatch-r3:2,Cara,Dan,1.9,1.9\n")
+    all_m = GE.load_matchup_odds(path=mp)
+    tour = GE.load_matchup_odds(path=mp, tournament_only=True)
+    assert ("Alice", "Bob") in all_m and ("Cara", "Dan") in all_m
+    assert ("Alice", "Bob") in tour and ("Cara", "Dan") not in tour
+
+    tp = tmp_path / "threeballs.csv"
+    tp.write_text(
+        "group_id,player_a,player_b,player_c,odds_a,odds_b,odds_c\n"
+        "bovada-3ball:1,A,B,C,2.5,2.6,2.7\n"
+        "bovada-3ball-r3:2,D,E,F,2.5,2.6,2.7\n")
+    tour3 = GE.load_threeball_odds(path=tp, tournament_only=True)
+    assert ("A", "B", "C") in tour3 and ("D", "E", "F") not in tour3
+
+
+def test_board_freshness_warns_with_fix_command(tmp_path, monkeypatch):
+    import os, time
+    from golf import refresh
+    monkeypatch.setattr(refresh, "DATA_DIR", tmp_path)
+    now = time.time()
+    (tmp_path / "odds.csv").write_text("x")
+    (tmp_path / "matchups.csv").write_text("x")
+    (tmp_path / "threeballs.csv").write_text("x")
+    os.utime(tmp_path / "odds.csv", (now - 7200, now - 7200))       # stale
+    os.utime(tmp_path / "matchups.csv", (now - 7200, now - 7200))   # stale
+    os.utime(tmp_path / "threeballs.csv", (now - 10, now - 10))     # fresh
+
+    checks = refresh._board_freshness_checks(now, rounds_done=2, event_id="401811954")
+    flagged = {c.source for c in checks}
+    assert flagged == {"freshness.odds.csv", "freshness.matchups.csv"}
+    assert all(c.severity == "warning" for c in checks)
+    # every warning shows the exact command to bring the board back
+    assert all("python3 -m golf.refresh --event 401811954" in c.message for c in checks)
+
+    # pre-tournament: nothing to be stale against
+    assert refresh._board_freshness_checks(now, 0, "401811954") == []
+
+
+def test_card_notes_show_freshness_message():
+    from golf import season
+    manifest = {"qa": {"errors": [], "warnings": [
+        {"source": "freshness.matchups.csv",
+         "message": "matchups.csv is older … Bring it back with:  python3 -m golf.refresh --event X"},
+        {"source": "bovada", "message": "unrelated"},
+    ]}}
+    out = season._notes_section(manifest, ["in-play after R2"])
+    assert "python3 -m golf.refresh --event X" in out          # command surfaced
+    assert "1 other data warning(s)" in out                    # others summarised
+
+
+def test_write_edge_report_clears_on_empty(tmp_path):
+    from golf import edge as GE
+    rep = tmp_path / "edge_report.csv"
+    # A previous run left recommendations on disk.
+    GE.write_edge_report([{"player": "Old Bet", "market": "Win outright",
+                           "side": "win", "odds": 5.0, "p_model": 0.3,
+                           "p_market": 0.2, "ev_per_unit": 0.5,
+                           "stake_gbp": 2.0, "recommended": True}], path=rep)
+    assert "Old Bet" in rep.read_text()
+    # An empty result must clear the file, not leave the stale bet behind.
+    GE.write_edge_report([], path=rep)
+    text = rep.read_text()
+    assert "Old Bet" not in text
+    assert text.strip().splitlines() == [
+        "player,market,side,odds,p_model,p_market,ev_per_unit,stake_gbp,recommended"]
+
+
 # ──────────────────────────────────────────────
 # Refresh snapshot writer
 # ──────────────────────────────────────────────
