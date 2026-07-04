@@ -24,6 +24,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 from itertools import combinations
 from pathlib import Path
@@ -389,14 +390,27 @@ MARKET_LABEL = {"win": "Win outright", "top5": "Top 5", "top10": "Top 10",
                 "top20": "Top 20", "cut": "Make cut"}
 
 
-def load_matchup_odds(path: Path | None = None) -> dict[tuple[str, str], dict]:
-    """matchups.csv: player_a, player_b, odds_a, odds_b → {(a,b): {a,b odds}}."""
+# Group-id tag for a single-round board (e.g. "bovada-3ball-r3", "…-rmatch-r2").
+# Tournament-scope boards (outrights, "…-tmatch") carry no such tag.
+_ROUND_BOARD_TAG = re.compile(r"-r\d", re.I)
+
+
+def load_matchup_odds(path: Path | None = None,
+                      tournament_only: bool = False) -> dict[tuple[str, str], dict]:
+    """matchups.csv: player_a, player_b, odds_a, odds_b → {(a,b): {a,b odds}}.
+
+    With ``tournament_only``, single-round boards (group_id tagged -r1/-r2/-r3)
+    are skipped — those settle on one round and belong to the round card
+    (round_3balls / the round pricer), not the 72-hole tournament edge.
+    """
     path = path or DATA_DIR / "matchups.csv"
     out: dict[tuple[str, str], dict] = {}
     if not path.exists():
         return out
     with open(path) as f:
         for r in csv.DictReader(f):
+            if tournament_only and _ROUND_BOARD_TAG.search(r.get("group_id", "")):
+                continue
             a, b = r.get("player_a", "").strip(), r.get("player_b", "").strip()
             try:
                 oa, ob = float(r["odds_a"]), float(r["odds_b"])
@@ -407,14 +421,22 @@ def load_matchup_odds(path: Path | None = None) -> dict[tuple[str, str], dict]:
     return out
 
 
-def load_threeball_odds(path: Path | None = None) -> dict[tuple[str, str, str], dict]:
-    """threeballs.csv: player_a/b/c, odds_a/b/c → {(a,b,c): {a,b,c odds}}."""
+def load_threeball_odds(path: Path | None = None,
+                        tournament_only: bool = False) -> dict[tuple[str, str, str], dict]:
+    """threeballs.csv: player_a/b/c, odds_a/b/c → {(a,b,c): {a,b,c odds}}.
+
+    With ``tournament_only``, single-round boards (group_id tagged -r1/-r2/-r3)
+    are skipped — they settle on one round and are priced by the round card, not
+    the 72-hole tournament edge.
+    """
     path = path or DATA_DIR / "threeballs.csv"
     out: dict[tuple[str, str, str], dict] = {}
     if not path.exists():
         return out
     with open(path) as f:
         for r in csv.DictReader(f):
+            if tournament_only and _ROUND_BOARD_TAG.search(r.get("group_id", "")):
+                continue
             a, b, c = (r.get(f"player_{x}", "").strip() for x in "abc")
             try:
                 oa, ob, oc = (float(r[f"odds_{x}"]) for x in "abc")
@@ -536,17 +558,19 @@ def price_all(rated, results, odds_data, matchup_odds, threeball_odds,
 
 def write_edge_report(bets: list[dict], path: Path | None = None) -> Path:
     path = path or DATA_DIR / "edge_report.csv"
-    if not bets:
-        print("  No bets with sufficient edge.")
-        return path
-
     cols = ["player", "market", "side", "odds", "p_model", "p_market",
             "ev_per_unit", "stake_gbp", "recommended"]
+    # Always (re)write, even when empty: an empty result must clear the file so
+    # the card and downstream readers never surface a previous run's stale bets
+    # (e.g. after the odds board goes stale mid-tournament).
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         w.writerows(bets)
-    print(f"  {len(bets)} priced markets → {path}")
+    if bets:
+        print(f"  {len(bets)} priced markets → {path}")
+    else:
+        print("  No bets with sufficient edge — cleared edge_report.csv.")
     return path
 
 

@@ -12,6 +12,7 @@ import csv
 import datetime as dt
 import json
 import sys
+import time
 from pathlib import Path
 
 from . import provider_qa as qa
@@ -83,6 +84,7 @@ def run_refresh(
     The CLI and the desktop app use this same function so provider behavior,
     cache writes, QA checks, and CSV exports stay identical across surfaces.
     """
+    run_started = time.time()
     event_id = event
     db = store.init_db()
     checks: list[qa.SourceCheck] = []
@@ -329,6 +331,13 @@ def run_refresh(
         model.save_params(params)
         provider_rows["model_fit_rounds"] = params.get("fitted_rounds", 0)
 
+    # Freshness guard: once a round is in the books, any odds board that wasn't
+    # re-pulled this cycle is older than the leaderboard and gets excluded from
+    # live pricing (see engine._board_fresh). Surface that as a warning with the
+    # exact command to re-pull, so a stale board is visible rather than silent.
+    checks.extend(_board_freshness_checks(
+        run_started, rounds_done, event.event_id if event else ""))
+
     summary = qa.summarize(checks)
     manifest = {
         "event": event.as_store_row() if event else None,
@@ -394,6 +403,41 @@ def _write_live_scores(espn, event, *, use_cache: bool = False) -> int:
         "updated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
     }, indent=2))
     return rounds_done
+
+
+def _board_freshness_checks(run_started: float, rounds_done: int,
+                            event_id: str) -> list[qa.SourceCheck]:
+    """Warn when an odds board wasn't re-pulled this cycle while a round is live.
+
+    A board file older than this refresh run is, by definition, older than the
+    leaderboard snapshot we just wrote — so it's excluded from live pricing. Each
+    warning carries the exact command to bring the board back in sync.
+    """
+    if rounds_done < 1:
+        return []  # pre-tournament: no leaderboard for a board to lag behind
+    cmd = f"python3 -m golf.refresh --event {event_id}" if event_id \
+        else "python3 -m golf.refresh"
+    boards = {
+        "odds.csv": "outright/place",
+        "matchups.csv": "tournament matchup",
+        "threeballs.csv": "group",
+    }
+    checks: list[qa.SourceCheck] = []
+    for fname, label in boards.items():
+        p = DATA_DIR / fname
+        if not p.exists():
+            continue
+        # 60s slack so files written moments apart in the same run count as fresh.
+        if p.stat().st_mtime < run_started - 60:
+            age_h = max(0.0, (run_started - p.stat().st_mtime) / 3600.0)
+            checks.append(qa.SourceCheck(
+                f"freshness.{fname}", False, "warning",
+                f"{fname} is older than the live leaderboard ({age_h:.1f}h) — "
+                f"{label} odds were not re-pulled this cycle and are excluded "
+                f"from live pricing. Bring it back with:  {cmd}   "
+                f"(if the book dropped this market after the cut it's simply "
+                f"unavailable, and the round card covers live play).", 0))
+    return checks
 
 
 def _print_summary(manifest: dict, path: Path) -> None:
