@@ -1,8 +1,8 @@
 # World Cup 2026 — Best Bets
 
-_Generated 2026-07-03 00:33 · blend model · fitted Elo + Poisson_
+_Generated 2026-07-04 12:44 · blend model · fitted Elo + Poisson_
 
-The model rates every nation on its full international history, turns each fixture into an expected scoreline, and then weighs its own probabilities against every price it can find. It makes **Argentina** the tournament favourite at 24% to lift the trophy. This week it backs **5 bets** (total stake £20.00) — each explained below, with the model's number, the price, and exactly where the edge comes from. Stakes are fractional-Kelly on a £111 bankroll.
+The model rates every nation on its full international history, turns each fixture into an expected scoreline, and then weighs its own probabilities against every price it can find. It makes **Argentina** the tournament favourite at 23% to lift the trophy. This week it backs **4 bets** (total stake £3.40) — each explained below, with the model's number, the price, and exactly where the edge comes from. Stakes are fractional-Kelly on a £107 bankroll.
 
 ## How the model thinks
 
@@ -15,64 +15,58 @@ Every number below comes from one pipeline, so it's worth knowing what drives it
 
 ## Match bets
 
-Each bet pits the model's probability against the bookmaker's price on an upcoming match; it only fires when its own number is the bigger one. **5 bets cleared the threshold** (total stake £20.00), strongest edge first.
+Each bet pits the model's probability against the bookmaker's price on an upcoming match; it only fires when its own number is the bigger one. **4 bets cleared the threshold** (total stake £3.40), strongest edge first.
 
-### Over 2.5 goals — Colombia v Ghana
-**2.12** · model 57.8% vs market 44.9% · **+12.9pp edge** · stake **£6.09**
+### Over 2.5 goals — United States v Belgium
+**1.77** · model 56.9% vs market 53.7% · **+3.2pp edge** · stake **£0.86**
 
-The model rates Colombia at Elo 2075 against Ghana's 1693, a 382-point edge to Colombia. The two attacks project to **2.52 + 0.57 = 3.09** expected goals, comfortably above the 2.5 line. That makes Over a **58%** shot, where the price only allows 45% — the market is pricing a tighter game than the model sees.
+The model rates Belgium at Elo 1976 against United States's 1916, a 60-point edge to Belgium. The two attacks project to **1.21 + 1.18 = 2.39** expected goals, just below the 2.5 line. That makes Over a **57%** shot, where the price only allows 54% — the market is pricing a tighter game than the model sees.
 
-### Over 2.5 goals — Portugal v Croatia
-**2.32** · model 50.7% vs market 40.1% · **+10.6pp edge** · stake **£4.03**
+### Under 2.5 goals — Canada v Morocco
+**1.68** · model 58.8% vs market 56.8% · **+2.1pp edge** · stake **£0.89**
 
-The model rates Portugal at Elo 2046 against Croatia's 1965, a 81-point edge to Portugal. The two attacks project to **1.40 + 1.02 = 2.42** expected goals, just below the 2.5 line. That makes Over a **51%** shot, where the price only allows 40% — the market is pricing a tighter game than the model sees.
+The model rates Morocco at Elo 2025 against Canada's 1877, a 148-point edge to Morocco. Between them the sides project to only **0.90 + 1.59 = 2.49** expected goals, just below the 2.5 line, so the model leans Under at **59%** against the 57% the price implies — it expects a cagier match than the bookmaker.
 
-### Over 2.5 goals — Switzerland v Algeria
-**2.21** · model 53.0% vs market 43.4% · **+9.6pp edge** · stake **£4.22**
+### Over 2.5 goals — Brazil v Norway
+**1.75** · model 56.4% vs market 54.4% · **+2.0pp edge** · stake **£0.84**
 
-The model rates Switzerland at Elo 1983 against Algeria's 1879, a 104-point edge to Switzerland. The two attacks project to **1.46 + 0.98 = 2.44** expected goals, just below the 2.5 line. That makes Over a **53%** shot, where the price only allows 43% — the market is pricing a tighter game than the model sees.
+The model rates Brazil at Elo 2104 against Norway's 1999, a 105-point edge to Brazil. The two attacks project to **1.47 + 0.97 = 2.44** expected goals, just below the 2.5 line. That makes Over a **56%** shot, where the price only allows 54% — the market is pricing a tighter game than the model sees.
 
-### Colombia win — Colombia v Ghana
-**1.43** · model 73.5% vs market 66.8% · **+6.7pp edge** · stake **£3.62**
+### Brazil win — Brazil v Norway
+**1.82** · model 53.2% vs market 52.7% · **+0.5pp edge** · stake **£0.81**
 
-The model rates Colombia at Elo 2075 against Ghana's 1693, a 382-point edge to Colombia. Run through the goal model that comes out as an expected **2.52–0.57** in Colombia's favour, and once every scoreline is added up Colombia win it **74%** of the time. The 67% price baked into the odds is too generous for a side the model likes this much over Ghana.
-
-### Over 2.5 goals — Argentina v Cape Verde
-**1.62** · model 64.3% vs market 58.5% · **+5.9pp edge** · stake **£2.04**
-
-The model rates Argentina at Elo 2211 against Cape Verde's 1704, a 507-point edge to Argentina. The two attacks project to **3.21 + 0.44 = 3.65** expected goals, comfortably above the 2.5 line. That makes Over a **64%** shot, where the price only allows 58% — the market is pricing a tighter game than the model sees.
+The model rates Brazil at Elo 2104 against Norway's 1999, a 105-point edge to Brazil. Run through the goal model that comes out as an expected **1.47–0.97** in Brazil's favour, and once every scoreline is added up Brazil win it **53%** of the time. The 53% price baked into the odds is too generous for a side the model likes this much over Norway.
 
 ## Title outlook
 
-**Argentina** head the field: highest Elo in the draw (2211) and champions in **24%** of simulated tournaments. Spain are the closest challenger at 13%, with France, Brazil heading the chasing pack.
+**Argentina** head the field: highest Elo in the draw (2214) and champions in **23%** of simulated tournaments. Spain are the closest challenger at 15%, with France, England heading the chasing pack.
 
 These aren't bets — they're the model's read on the title race, straight from the tournament simulation. Each side's chance to lift the trophy already folds in its group draw and likely knockout path, which is why raw Elo order and these numbers don't match exactly.
 
 | Team | Grp | Champion | Reach final |
 |---|---|--:|--:|
-| Argentina | J | 23.6% | 36% |
-| Spain | H | 13.3% | 24% |
-| France | I | 12.3% | 23% |
-| Brazil | C | 7.4% | 13% |
-| England | L | 6.9% | 13% |
-| Colombia | K | 6.4% | 13% |
+| Argentina | J | 23.2% | 36% |
+| Spain | H | 15.4% | 26% |
+| France | I | 12.4% | 23% |
+| England | L | 7.0% | 13% |
+| Colombia | K | 6.6% | 13% |
+| Brazil | C | 5.3% | 10% |
+| Portugal | K | 4.9% | 10% |
 | Mexico | A | 4.4% | 9% |
-| Portugal | K | 3.9% | 9% |
-| Morocco | C | 3.2% | 7% |
-| Netherlands | F | 3.0% | 7% |
-| Belgium | G | 2.4% | 6% |
-| United States | D | 2.1% | 6% |
+| Netherlands | F | 2.8% | 7% |
+| Morocco | C | 2.8% | 7% |
+| Belgium | G | 2.2% | 6% |
+| Germany | E | 1.8% | 5% |
 
 ## Fixtures forecast
 
-Not bets — the model's read on the next matchday (2026-07-03). For each game: the expected scoreline that falls out of the Elo gap, and where the probability lands.
+Not bets — the model's read on the next matchday (2026-07-04). For each game: the expected scoreline that falls out of the Elo gap, and where the probability lands.
 
-- **Australia v Egypt** (Elo 1904 v 1852): expected **1.32–1.08**, most likely 1-1 — Australia favoured at 41%.
-- **Argentina v Cape Verde** (Elo 2211 v 1704): expected **3.21–0.44**, most likely 3-0 — Argentina favoured at 89%.
-- **Colombia v Ghana** (Elo 2075 v 1693): expected **2.52–0.57**, most likely 2-0 — Colombia favoured at 79%.
+- **Canada v Morocco** (Elo 1877 v 2025): expected **0.90–1.59**, most likely 1-1 — Morocco favoured at 53%.
+- **Paraguay v France** (Elo 1898 v 2187): expected **0.68–2.10**, most likely 0-2 — France favoured at 70%.
 
 ## Notes
 
-- Bankroll £110.61. Settled 70 bets (40 won), net £+12.57 on a £100 start.
+- Bankroll £106.66. Settled 76 bets (42 won), net £+2.34 on a £100 start.
 - Model adjustments active this run: totals-calib(lam x1.09).
 - Same numbers as charts: `dashboard.html` (`python3 scripts/worldcup/report.py`).
