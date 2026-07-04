@@ -381,7 +381,14 @@ def _notes_section(manifest: dict, notes: list[str]) -> str:
     if errors:
         lines.append(f"- ⚠ {len(errors)} data error(s) — see free_source_manifest.json")
     if warnings:
-        lines.append(f"- {len(warnings)} data warning(s)")
+        # Freshness/staleness warnings carry an actionable fix command, so show
+        # the messages, not just a count. Others stay summarised.
+        fresh = [w for w in warnings if str(w.get("source", "")).startswith("freshness.")]
+        other = [w for w in warnings if w not in fresh]
+        for w in fresh:
+            lines.append(f"- ⚠ {w.get('message')}")
+        if other:
+            lines.append(f"- {len(other)} other data warning(s) — see free_source_manifest.json")
     if not lines:
         lines.append("- Clean run, no data warnings.")
     return "\n".join(lines)
