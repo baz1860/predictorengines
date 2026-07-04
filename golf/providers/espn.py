@@ -208,7 +208,8 @@ class EspnGolfProvider:
         return out
 
     def completed_round_scores(
-        self, event_id: str | None = None, use_cache: bool = False
+        self, event_id: str | None = None, use_cache: bool = False,
+        cut_size: int = 65,
     ) -> tuple[list[dict], int]:
         """Build a between-rounds scores snapshot from the live leaderboard.
 
@@ -227,6 +228,13 @@ class EspnGolfProvider:
         18 holes are present, so an in-progress round is never double-counted.
         This is intentionally a *between-rounds* view: run it after a round
         completes and before the next tees off.
+
+        Cut handling: ESPN's scoreboard feed does NOT flag the 36-hole cut — the
+        competitor ``status`` is null even for players well outside the line. So
+        once round 2 is complete we apply the standard PGA rule ourselves: keep
+        the lowest ``cut_size`` 36-hole scores plus ties, mark the rest
+        ``made_cut = 0``. From round 3 on, cut players simply have fewer completed
+        rounds than the field and are excluded on that basis.
         """
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         players: list[dict] = []
@@ -260,11 +268,24 @@ class EspnGolfProvider:
                     rounds_done = r
                     break
 
+        # After the cut round (R2), derive the cut line from the 36-hole scores,
+        # since the feed won't tell us. Top `cut_size` and ties survive.
+        cut_line = None
+        if rounds_done == 2:
+            r36 = sorted(p["score"] for p in players
+                         if p["completed"] >= 2 and not p["_cut_flag"])
+            if len(r36) > cut_size:
+                cut_line = r36[cut_size - 1]
+
         rows = []
         for p in players:
-            made_cut = 1
-            if p["_cut_flag"] or (rounds_done and p["completed"] < rounds_done):
-                made_cut = 0
+            missed = (
+                p["_cut_flag"]
+                or (rounds_done and p["completed"] < rounds_done)
+                or (cut_line is not None and p["completed"] >= 2
+                    and p["score"] > cut_line)
+            )
+            made_cut = 0 if missed else 1
             rows.append({
                 "name": p["name"],
                 "score": int(p["score"]) if float(p["score"]).is_integer() else p["score"],

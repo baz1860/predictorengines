@@ -68,6 +68,30 @@ def _rated_field(course="", major=False):
                            course_history=ch, recent_form=load_recent_form()), False
 
 
+def _refresh_mtime() -> float | None:
+    """Modification time of the last refresh (its manifest), or None if unknown."""
+    try:
+        return (DATA_DIR / "free_source_manifest.json").stat().st_mtime
+    except OSError:
+        return None
+
+
+def _board_fresh(path: Path, ref: float | None, tol: float = 1800) -> bool:
+    """True if the odds board was (re)written in the latest refresh cycle.
+
+    A board written by the current refresh lands within seconds of the manifest,
+    so anything older than `ref - tol` (default 30 min) is from a previous cycle
+    and must not be priced against a live leaderboard. Unknown ref ⇒ treat as
+    fresh (pre-tournament / no refresh marker to compare against).
+    """
+    if ref is None:
+        return True
+    try:
+        return path.stat().st_mtime >= ref - tol
+    except OSError:
+        return False
+
+
 def _live_state(p) -> dict | None:
     """Resolve the in-play state for the current event, or None for pre-tournament.
 
@@ -339,9 +363,39 @@ def cmd_edge(p):
     major = bool(p.get("major", False))
     rated, _ = _rated_field(course, major)
     odds_data = GE.load_odds_csv()
-    matchup_odds = GE.load_matchup_odds()
-    threeball_odds = GE.load_threeball_odds()
+    # Tournament edge prices 72-hole markets only. Single-round boards
+    # (group_id tagged -r1/-r2/-r3) settle on one round and are priced by the
+    # round card (cmd_round_3balls), so exclude them here.
+    matchup_odds = GE.load_matchup_odds(tournament_only=True)
+    threeball_odds = GE.load_threeball_odds(tournament_only=True)
+
+    # Live staleness guard: once we're pricing off the leaderboard, an odds board
+    # that wasn't refreshed this cycle is dangerous — comparing yesterday's
+    # even-money matchup line to a score-aware model manufactures huge fake
+    # edges (e.g. backing a player who now leads by 10). Drop any board older
+    # than the latest refresh so we never bet a stale price.
+    state = _live_state(p)
+    stale_note = ""
+    if state is not None:
+        ref = _refresh_mtime()
+        stale = []
+        if odds_data and not _board_fresh(DATA_DIR / "odds.csv", ref):
+            odds_data = {}
+            stale.append("outright")
+        if matchup_odds and not _board_fresh(DATA_DIR / "matchups.csv", ref):
+            matchup_odds = {}
+            stale.append("matchup")
+        if threeball_odds and not _board_fresh(DATA_DIR / "threeballs.csv", ref):
+            threeball_odds = {}
+            stale.append("3-ball")
+        if stale:
+            stale_note = " · ⚠ stale board(s) skipped: " + ", ".join(stale)
+
     if not (odds_data or matchup_odds or threeball_odds):
+        if state is not None and stale_note:
+            return {"note": "No fresh odds to price" + stale_note
+                    + " — re-run refresh to pull the current board.",
+                    "columns": [], "rows": []}
         raise ValueError("No odds. Add golf/data/odds.csv (name, odds_win, "
                          "odds_top5, odds_top10, odds_top20, odds_cut) and/or "
                          "matchups.csv / threeballs.csv.")
@@ -355,7 +409,6 @@ def cmd_edge(p):
     pairs = [(a, b) for (a, b) in matchup_odds]
     trios = [t for t in threeball_odds]
     n = _sims_arg(p)
-    state = _live_state(p)
     inplay_note = ""
     if state is not None:
         # Live: every market — outrights, places, and tournament-long
@@ -408,7 +461,7 @@ def cmd_edge(p):
     note = (f"{len([r for r in rows if r['recommended']])} staked / {len(rows)} "
             f"priced · {GPORT.summary(staked, bankroll, peak)}"
             f"{' · calibrated' if calibrated else ''}"
-            f"{' · market-blend' if blended else ''}{inplay_note}")
+            f"{' · market-blend' if blended else ''}{inplay_note}{stale_note}")
     if not results.get("__cut_binds__", True) and state is None:
         note += (f" · ⚠ cut does not bind (field {len(rated)} ≤ cut rule): "
                  "make-cut suppressed")
