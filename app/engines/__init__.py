@@ -10,6 +10,7 @@ from .golf import GolfAdapter
 from .club_soccer import ClubSoccerAdapter
 from .tennis import TennisAdapter
 from .nhl import NHLAdapter
+from .nfl import NFLAdapter
 
 registry.register(WorldCupAdapter())
 registry.register(CFBAdapter())
@@ -17,5 +18,6 @@ registry.register(GolfAdapter())
 registry.register(ClubSoccerAdapter())
 registry.register(TennisAdapter())
 registry.register(NHLAdapter())
+registry.register(NFLAdapter())
 
 __all__ = ["registry"]

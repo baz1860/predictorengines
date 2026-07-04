@@ -87,16 +87,25 @@ ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
         ("results", "nhl/data/results.csv", "results", "manual / future fetcher"),
         ("odds", "nhl/data/odds.csv", "odds", "manual"),
     ],
+    "nfl": [
+        ("games", "nfl/data/games.csv", "games", "fetch_data.py / nflverse/nfldata"),
+        ("epa_team_week", "nfl/data/epa_team_week.csv", "model", "fetch_data.py / nflverse-data stats_team"),
+        ("qb_week", "nfl/data/qb_week.csv", "model", "fetch_data.py / nflverse-data player_stats"),
+        ("odds", "nfl/odds.csv", "odds", "manual"),
+        ("model", "nfl/data/power_params.json", "model", "power.py --fit"),
+        ("margin_pmf", "nfl/data/margin_pmf.json", "model", "margin_dist.py --fit"),
+    ],
 }
 
 # Where each engine's manifest lives (co-located with its data dir).
 MANIFEST_DIRS = {"worldcup": "data", "club_soccer": "club_soccer/data",
                  "cfb": "cfb/data", "golf": "golf/data", "tennis": "tennis/data",
-                 "nhl": "nhl/data"}
+                 "nhl": "nhl/data", "nfl": "nfl/data"}
 
 ODDS_FILES = {"worldcup": "odds.csv", "club_soccer": "club_soccer/data/odds.csv",
               "cfb": "cfb/odds.csv", "golf": "golf/data/odds.csv",
-              "tennis": "tennis/data/odds.csv", "nhl": "nhl/data/odds.csv"}
+              "tennis": "tennis/data/odds.csv", "nhl": "nhl/data/odds.csv",
+              "nfl": "nfl/odds.csv"}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -215,10 +224,13 @@ _LONG_SIDES = {
             "total": {"over", "under"}},
     "nhl": {"ml": {"home", "away"}, "spread": {"home", "away"},
             "puck_line": {"home", "away"}, "total": {"over", "under"}},
+    "nfl": {"ml": {"home", "away"}, "spread": {"home", "away"},
+            "total": {"over", "under"}},
 }
 _LONG_COLUMNS = {
     "club_soccer": ["date", "competition", "home", "away", "market", "side", "line", "odds"],
     "cfb": ["date", "home", "away", "neutral", "market", "side", "line", "odds"],
+    "nfl": ["season", "week", "date", "home", "away", "neutral", "market", "side", "line", "odds"],
     "nhl": ["date", "home", "away", "market", "side", "line", "odds"],
 }
 _WIDE_ODDS_COLS = {
@@ -282,11 +294,11 @@ def validate_odds_file(engine: str, path: str | Path | None = None) -> list[dict
                     float(line)
                 except ValueError:
                     errors.append(_err(i, "line", line, "blank or a number"))
-            if engine == "cfb":
+            if engine in ("cfb", "nfl"):
                 neu = (r.get("neutral") or "").strip()
                 if neu and neu not in ("0", "1"):
                     errors.append(_err(i, "neutral", neu, "0 or 1"))
-            if engine in ("cfb", "nhl"):
+            if engine in ("cfb", "nhl", "nfl"):
                 line_markets = ("spread", "total", "puck_line") if engine == "nhl" else ("spread", "total")
                 if market in line_markets and not line and _check_odds_value(r.get("odds")) \
                         and str(r.get("odds") or "").strip():
