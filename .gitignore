@@ -72,3 +72,83 @@ club_soccer/data/clubelo_cache/
 # per player), and rebuildable via `python3 -m club_soccer.player_features
 # --refresh` or `--from-cache`. Not meant to be versioned either.
 club_soccer/data/player_stats_cache.json
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Per-instance run artifacts. The line: code, curated/reference data, seed
+# datasets and fitted model params stay in git; anything a run FETCHES from a
+# provider, ACCUMULATES as local state, or RENDERS as output stays local.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Raw provider payloads — live_data._save_raw() writes every fetch as
+# {provider}_{kind}_{timestamp}.json here (bsd_event_*, bsd_events_*,
+# the-odds-api_markets_*, and any future provider). Local audit trail only.
+data/worldcup/raw/
+
+# Provider/API response caches, current and future engines alike.
+**/api_cache/
+data/validation_cache/
+*_cache.json
+golf/data/golf.db
+
+# Live state fetched or refreshed by the daily pipelines.
+data/worldcup/fixtures_live.csv
+data/worldcup/lineups.csv
+data/worldcup/market_snapshots.csv
+data/worldcup/match_stats.csv
+data/worldcup/player_availability.csv
+data/worldcup/forward_predictions.csv
+data/odds_live.csv
+data/odds_history.csv
+data/title_history.csv
+data/update_runs.json
+data/v5_recommendations.csv
+tennis/data/draw.csv
+club_soccer/data/odds_history_club.csv
+club_soccer/data/weather.csv
+club_soccer/data/absences_club.csv
+club_soccer/data/transfers_detected.csv
+club_soccer/data/backtest_market.json
+club_soccer/data/market_blend_report.json
+nfl/data/upcoming.csv
+golf/data/field.csv
+golf/data/pgatour_stats.csv
+golf/data/free_source_manifest.json
+golf/data/live_state.json
+golf/data/scores_live.csv
+golf/data/round_edges.csv
+# Round-scoped scratch boards follow *_r{N} naming (scores_r2.csv,
+# odds_r3.csv, threeballs_r1_raw.txt, threeballs_r1_edges.csv, …).
+golf/data/scores_r*.*
+golf/data/odds_r*.*
+golf/data/threeballs_r*.*
+
+# Manual odds boards are filled in locally per betting day; every engine can
+# regenerate its blank template. (Matches odds.csv in any directory.)
+odds.csv
+threeballs.csv
+matchups.csv
+
+# Personal betting records — one bankroll per install, never shared.
+# (Match anywhere: covers data/, nfl/data/, and any future engine.)
+ledger.csv
+bankroll.json
+data/suite_ledger.csv
+data/suite_bankroll.json
+
+# Rendered outputs, rebuilt by every run (per-engine cards + the combined one).
+card.md
+daily_card.md
+golf/data/weekly_report.md
+predictions_worldcup_2026.csv
+tournament_odds.csv
+validation_predictions.csv
+wc2022_backtest.csv
+wc2022_replay.csv
+
+# Stray tool artifacts and scratch files.
+simtime.txt
+*.tmp
+*.tmp.csv
+.fuse_hidden*
+_wtest*
+*_backup.csv
