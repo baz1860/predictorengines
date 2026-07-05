@@ -55,6 +55,16 @@ uvicorn app.server:app --port 8765
 
 Then open `http://127.0.0.1:8765`.
 
+For the day's betting in one document — refresh every engine, then write one
+combined narrative card (`daily_card.md`) with every recommended bet explained
+in plain English:
+
+```bash
+./daily_card.sh              # full refresh of every engine, then the card
+./daily_card.sh --fast       # skip the slower refits and NFL/CFB data pulls
+./daily_card.sh --card-only  # just re-render the card from current data
+```
+
 On macOS, the included `Sports Predictor.app` launcher can start the app without
 opening a terminal, provided it remains inside the project folder and your
 Python environment has the dependencies installed.

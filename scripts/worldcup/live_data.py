@@ -46,6 +46,13 @@ DATA_DIR = ROOT / "data" / "worldcup"
 RAW_DIR = DATA_DIR / "raw"
 FIXTURES_CSV = DATA_DIR / "fixtures_live.csv"
 AVAILABILITY_CSV = DATA_DIR / "player_availability.csv"
+# Schema written by parse_availability_bsd(); used to (re)create the CSV header
+# when a successful check finds zero unavailable players.
+AVAILABILITY_COLUMNS = [
+    "team", "player", "status", "reason", "certainty", "affects_availability",
+    "source", "fetched_at", "provider_fixture_id", "provider_team_id",
+    "provider_player_id",
+]
 LINEUPS_CSV = DATA_DIR / "lineups.csv"
 MATCH_STATS_CSV = DATA_DIR / "match_stats.csv"
 MARKET_SNAPSHOTS_CSV = DATA_DIR / "market_snapshots.csv"
@@ -671,6 +678,18 @@ def fetch_bsd(mode: str, api_key: str) -> None:
                 _upsert_csv(AVAILABILITY_CSV, df,
                             ["team", "player", "provider_fixture_id", "source"])
                 print(f"live-data: availability -> {len(df)} row(s)")
+            else:
+                # BSD answered but listed nobody unavailable. Touch the CSV so
+                # its mtime means "last successfully checked" — provenance
+                # freshness is mtime-based, and without this a daily update
+                # that keeps finding zero absences is flagged stale forever.
+                if AVAILABILITY_CSV.exists():
+                    AVAILABILITY_CSV.touch()
+                else:
+                    AVAILABILITY_CSV.parent.mkdir(parents=True, exist_ok=True)
+                    AVAILABILITY_CSV.write_text(",".join(AVAILABILITY_COLUMNS) + "\n")
+                print("live-data: availability -> 0 unavailable players "
+                      "(checked; file freshness updated)")
             # Auto-sync confirmed absences into data/absences_api.csv so that
             # engines/worldcup/squads.py picks them up without manual editing.
             n_abs = sync_bsd_absences(wc_events)

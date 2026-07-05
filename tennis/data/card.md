@@ -1,6 +1,6 @@
 # Wimbledon — Best Bets
 
-_Generated 2026-07-03 00:58 · ATP · grass · best-of-5 · fitted model_
+_Generated 2026-07-04 13:05 · ATP · grass · best-of-5 · fitted model_
 
 ## Qualifying R1
 
@@ -239,26 +239,35 @@ _Generated 2026-07-03 00:58 · ATP · grass · best-of-5 · fitted model_
 
 | Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |
 |---|---|---|--:|--:|--:|--:|--:|
-| Hubert Hurkacz v Tommy Paul | To play | **Hubert Hurkacz** | 52% | 2.62 | 36% | +15.2% | £2.34 |
-| Frances Tiafoe v Alexander Bublik | To play | **Alexander Bublik** | 62% | 2.10 | 45% | +12.2% | £2.78 |
-| Grigor Dimitrov v Matteo Berrettini | To play | **Grigor Dimitrov** | 59% | 2.15 | 44% | +10.3% | £2.23 |
-| Zizou Bergs v Arthur Fery | To play | **Zizou Bergs** | 73% | 1.66 | 57% | +8.0% | £3.03 |
-| Karen Khachanov v Flavio Cobolli | To play | Karen Khachanov | 56% | 1.79 | 52% | -2.9% | — |
-| Felix Auger-Aliassime v Michael Zheng | To play | Felix Auger-Aliassime | 83% | 1.18 | 81% | -3.3% | — |
-| Jannik Sinner v Jenson Brooksby | To play | Jannik Sinner | 95% | 1.02 | 94% | -3.5% | — |
-| Alex de Minaur v Zachary Svajda | To play | Alex de Minaur | 83% | 1.17 | 81% | -3.9% | — |
-| Jan-Lennard Struff v Daniil Medvedev | To play | Daniil Medvedev | 82% | 1.17 | 81% | -4.7% | — |
-| Arthur Rinderknech v Novak Djokovic | To play | Novak Djokovic | 86% | 1.10 | 86% | -5.4% | — |
-| Jiri Lehecka v Jaume Munar | To play | Jiri Lehecka | 73% | 1.30 | 72% | -5.6% | — |
-| Roman Safiullin v Joao Fonseca | To play | Joao Fonseca | 72% | 1.30 | 73% | -5.9% | — |
-| Taylor Fritz v Lorenzo Sonego | To play | Taylor Fritz | 81% | 1.14 | 83% | -6.5% | — |
-| Marcos Giron v Alexander Zverev | To play | Alexander Zverev | 80% | 1.05 | 90% | -9.8% | — |
-| Rafael Jodar v Shintaro Mochizuki | To play | Rafael Jodar | 63% | 1.30 | 73% | -11.4% | — |
-| Alejandro Davidovich Fokina v Marton Fucsovics | To play | Alejandro Davidovich Fokina | 59% | 1.30 | 73% | -13.5% | — |
+| Grigor Dimitrov v Matteo Berrettini | To play | **Grigor Dimitrov** | 59% | 2.20 | 43% | +12.3% | £2.55 |
+| Zizou Bergs v Arthur Fery | To play | **Zizou Bergs** | 73% | 1.73 | 55% | +11.1% | £3.80 |
+| Frances Tiafoe v Alexander Bublik | To play | **Alexander Bublik** | 62% | 2.00 | 48% | +9.7% | £2.43 |
+| Jiri Lehecka v Jaume Munar | To play | Jiri Lehecka | 73% | 1.30 | 73% | -5.0% | — |
+| Taylor Fritz v Lorenzo Sonego | To play | Taylor Fritz | 81% | 1.13 | 84% | -6.6% | — |
+| Karen Khachanov v Flavio Cobolli | To play | Karen Khachanov | 56% | 1.62 | 58% | -7.3% | — |
+| Marcos Giron v Alexander Zverev | To play | Alexander Zverev | 80% | 1.06 | 90% | -9.2% | — |
+| Alex de Minaur v Zachary Svajda | Live | Alex de Minaur | 83% | 1.05 | 88% | -9.5% | — |
+| Roman Safiullin v Joao Fonseca | Complete | Roman Safiullin | — | — | — | — | — |
+| Arthur Rinderknech v Novak Djokovic | Complete | Novak Djokovic | — | — | — | — | — |
+| Rafael Jodar v Shintaro Mochizuki | Complete | Shintaro Mochizuki | — | — | — | — | — |
+| Jan-Lennard Struff v Daniil Medvedev | Complete | Jan-Lennard Struff | — | — | — | — | — |
+| Jannik Sinner v Jenson Brooksby | Complete | Jannik Sinner | — | — | — | — | — |
+| Hubert Hurkacz v Tommy Paul | Complete | Hubert Hurkacz | — | — | — | — | — |
+| Alejandro Davidovich Fokina v Marton Fucsovics | Complete | Alejandro Davidovich Fokina | — | — | — | — | — |
+| Felix Auger-Aliassime v Michael Zheng | Complete | Felix Auger-Aliassime | — | — | — | — | — |
+
+## Round of 16
+
+| Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |
+|---|---|---|--:|--:|--:|--:|--:|
+| Roman Safiullin v Novak Djokovic | To play | **Novak Djokovic** | 92% | 1.19 | 79% | +3.1% | £4.04 |
+| Jannik Sinner v Shintaro Mochizuki | To play | **Jannik Sinner** | 100% | 1.01 | 94% | +1.0% | £24.98 |
+| Hubert Hurkacz v Jan-Lennard Struff | To play | Hubert Hurkacz | 75% | 1.30 | 73% | -4.2% | — |
+| Felix Auger-Aliassime v Alejandro Davidovich Fokina | To play | Felix Auger-Aliassime | 59% | 1.49 | 64% | -8.7% | — |
 
 ## Notes
 
 - 4 bet(s) backed (model edge over the book, staked).
 - Bold pick = staked bet. Add prices to `tennis/data/odds.csv` to price more matches.
 - draw: Wimbledon (ESPN) → draw.csv
-- odds: 16 h2h rows (The Odds API → odds.csv)
+- odds: 12 h2h rows (The Odds API → odds.csv)
