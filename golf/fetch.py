@@ -61,6 +61,11 @@ def fetch_espn_field() -> list[dict]:
     """
     Pull current PGA Tour event field from ESPN scoreboard API.
     Returns list of dicts with keys: name, world_rank, status.
+
+    Only considers events that are upcoming or in progress. On Mondays the
+    scoreboard still shows last week's finished event; writing that field
+    would poison downstream name checks (season.py validates matchups
+    against field.csv), so completed events return an empty field instead.
     """
     print("Fetching ESPN field...")
     data = _get(ESPN_SCOREBOARD)
@@ -71,7 +76,15 @@ def fetch_espn_field() -> list[dict]:
         print("  No active event found on ESPN.")
         return players
 
-    event = events[0]
+    live = [e for e in events
+            if not e.get("status", {}).get("type", {}).get("completed", False)]
+    if not live:
+        done = ", ".join(e.get("name", "?") for e in events)
+        print(f"  Scoreboard only shows completed event(s): {done}.")
+        print("  Next field not yet published — field.csv left unchanged.")
+        return players
+
+    event = live[0]
     event_name = event.get("name", "Unknown")
     print(f"  Event: {event_name}")
 
@@ -177,8 +190,9 @@ ODDS_BASE = "https://api.the-odds-api.com/v4"
 #   golf_masters_tournament_winner, golf_us_open_winner,
 #   golf_the_open_championship_winner, golf_pga_championship,
 #   golf_fedex_cup_winner, golf_rbc_canadian_open, etc.
+# Keys only exist while the event has an open market, so the right key is
+# discovered per run (find_golf_sport_key) rather than hardcoded.
 # Run: python -m golf.fetch --list-sports --odds-key KEY  to see all available keys.
-GOLF_SPORT_DEFAULT = "golf_rbc_canadian_open"
 
 
 def list_sports(api_key: str, filter_golf: bool = True) -> list[dict]:
@@ -190,18 +204,64 @@ def list_sports(api_key: str, filter_golf: bool = True) -> list[dict]:
     return data
 
 
-def fetch_odds(api_key: str, market: str = "outrights", sport: str = GOLF_SPORT_DEFAULT) -> list[dict]:
+# Words that carry no identity: "Masters Tournament Winner" ≡ "Masters".
+_SPORT_KEY_STOPWORDS = {"the", "a", "winner", "tournament", "championship", "golf"}
+
+
+def _name_tokens(text: str) -> set[str]:
+    text = text.lower().replace(".", "").replace("'", "")  # "U.S." → "us"
+    words = "".join(c if c.isalnum() else " " for c in text).split()
+    return {w for w in words if w not in _SPORT_KEY_STOPWORDS}
+
+
+def find_golf_sport_key(api_key: str, event_name: str) -> str | None:
+    """
+    Pick The Odds API sport key for the current event by name-matching the
+    active golf keys against the ESPN event name. Returns None when no key
+    matches — e.g. the API doesn't carry this week's event, or the only
+    active keys belong to other tournaments (fetching those would silently
+    price the wrong event, which is worse than no odds).
+
+    Raises on network failure so the caller can tell "confirmed no market"
+    (None) apart from "couldn't check" (exception).
+    """
+    sports = list_sports(api_key)
+
+    want = _name_tokens(event_name)
+    if not want:
+        return None
+
+    best_key, best_score = None, 0.0
+    for s in sports:
+        for label in (s.get("title", ""), s.get("key", "")):
+            have = _name_tokens(label)
+            if not have:
+                continue
+            # Jaccard keeps "US Open" from matching "The Open" (both share
+            # only "open") while exact-identity names score 1.0.
+            score = len(want & have) / len(want | have)
+            if score > best_score:
+                best_key, best_score = s.get("key"), score
+
+    # Strictly above 0.5: "US Open" vs "The Open Winner" scores exactly 0.5
+    # and must not match (The Open's market opens weeks early).
+    if best_score > 0.5:
+        return best_key
+    if sports:
+        keys = ", ".join(s.get("key", "?") for s in sports)
+        print(f"  No Odds API market matches '{event_name}' (active golf keys: {keys}).")
+    else:
+        print(f"  No active golf markets on The Odds API for '{event_name}'.")
+    return None
+
+
+def fetch_odds(api_key: str, market: str = "outrights", sport: str = "") -> list[dict]:
     """
     Fetch current outright odds for a golf event from The Odds API.
 
     market: 'outrights' for tournament winner (most golf events use this)
-    sport:  The Odds API sport key — use --list-sports to find the right one.
-            Common golf keys:
-              golf_rbc_canadian_open
-              golf_us_open_winner
-              golf_masters_tournament_winner
-              golf_the_open_championship_winner
-              golf_pga_championship
+    sport:  The Odds API sport key — normally discovered via
+            find_golf_sport_key(); use --list-sports to inspect manually.
     """
     print(f"Fetching odds (sport={sport}, market={market})...")
     url = f"{ODDS_BASE}/sports/{sport}/odds"
@@ -361,8 +421,8 @@ def main():
                     help="compatibility only: use DataGolf field/prediction endpoints when keyed")
     ap.add_argument("--odds-key", default=get_key("the-odds-api", env="THE_ODDS_API_KEY"), help="The Odds API key")
     ap.add_argument("--tournament-id", type=int, default=None, help="DataGolf tournament ID")
-    ap.add_argument("--sport", default=GOLF_SPORT_DEFAULT,
-                    help="The Odds API sport key (default: %(default)s)")
+    ap.add_argument("--sport", default=None,
+                    help="The Odds API sport key (default: auto-detect from the current event name)")
     ap.add_argument("--list-sports", action="store_true",
                     help="Print available golf sport keys from The Odds API and exit")
     ap.add_argument("--no-odds", action="store_true", help="Skip odds fetch")
@@ -438,8 +498,23 @@ def main():
     # ── Odds ──
     if not args.no_odds and args.odds_key:
         try:
-            odds_data = fetch_odds(args.odds_key, market="outrights", sport=args.sport)
-            write_odds_csv(odds_data)
+            sport = args.sport
+            event_name = next(
+                (p.get("event") for p in fetched_field if p.get("event")), "")
+            if not sport and event_name:
+                sport = find_golf_sport_key(args.odds_key, event_name)
+            if sport:
+                odds_data = fetch_odds(args.odds_key, market="outrights", sport=sport)
+                write_odds_csv(odds_data)
+            elif event_name:
+                # Confirmed: no market for this event. Any existing odds.csv
+                # belongs to an earlier event, and edge.py matches odds to
+                # predictions by player name alone — the same pros play every
+                # week, so stale odds would silently price the wrong event.
+                write_odds_csv([])
+                print(f"  Cleared odds.csv — no market for '{event_name}' yet.")
+            else:
+                print("  No current event to match odds against — odds.csv left unchanged.")
         except Exception as exc:
             print(f"Odds API error: {exc}")
     elif not args.no_odds:
