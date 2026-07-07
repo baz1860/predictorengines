@@ -64,10 +64,15 @@ JASON DAY
 
 Prices land in `data/round_edges.csv` and the card's "Round N matchups" section.
 
-> **Stale-board guard.** Before pricing, every player on the board is checked
-> against the current `data/field.csv`. If names don't match (the usual cause is
-> last week's board left in place), the round is skipped with a loud note rather
-> than pricing the wrong event — so always re-paste the current week's groups.
+> **Stale-board guard.** Boards are tagged with the event they were captured
+> for (an `event` column in `threeballs.csv` / `matchups.csv`, written
+> automatically by refresh), and a board whose tag doesn't match the current
+> `data/field.csv` event is refused rather than priced — name overlap alone
+> can't tell consecutive events apart when fields overlap (co-sanctioned
+> weeks). A paste older than the current event week is likewise ignored.
+> Player names are still checked against the field as a second line of
+> defence. If you hand-edit a board CSV, set its `event` column to the value
+> in `field.csv`.
 
 Outright / place / matchup prices go in `data/odds.csv` and `data/matchups.csv`.
 

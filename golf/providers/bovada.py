@@ -176,7 +176,8 @@ def write_outrights_csv(quotes: Iterable[OddsQuote], path: Path | None = None) -
     return path
 
 
-def write_matchups_csv(quotes: Iterable[OddsQuote], path: Path | None = None) -> Path | None:
+def write_matchups_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
+                       event: str = "") -> Path | None:
     """Tournament-matchup pairs → matchups.csv. Round match-ups are deliberately
     excluded — they settle on one round, not 72 holes, so they must not flow into
     the tournament-matchup pricer."""
@@ -189,27 +190,30 @@ def write_matchups_csv(quotes: Iterable[OddsQuote], path: Path | None = None) ->
     if not pairs:
         return None
     with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["group_id", "player_a", "player_b", "odds_a", "odds_b"])
+        w = csv.DictWriter(f, fieldnames=["group_id", "player_a", "player_b",
+                                          "odds_a", "odds_b", "event"])
         w.writeheader()
         for gid, qs in pairs.items():
             w.writerow({"group_id": gid,
                         "player_a": qs[0].player_name, "player_b": qs[1].player_name,
                         "odds_a": round(qs[0].decimal_odds, 3),
-                        "odds_b": round(qs[1].decimal_odds, 3)})
+                        "odds_b": round(qs[1].decimal_odds, 3),
+                        "event": event})
     return path
 
 
-def export_csvs(quotes: list[OddsQuote]) -> dict[str, int]:
+def export_csvs(quotes: list[OddsQuote], event: str = "") -> dict[str, int]:
     """Write the win / matchup / round-group CSVs and return rows written per
     file. Only writes a file when that market is present, so a partial coupon
-    never blanks an existing board."""
+    never blanks an existing board. Boards are tagged with the event so the
+    pricers can refuse them once the tour moves on."""
     written = {}
     if write_outrights_csv(quotes):
         written["odds.csv"] = sum(1 for q in quotes if q.market == "win")
-    if write_matchups_csv(quotes):
+    if write_matchups_csv(quotes, event=event):
         written["matchups.csv"] = sum(1 for q in quotes if q.market == "tournament_matchup") // 2
     groups = [q for q in quotes if q.market in ("2ball", "3ball")]
     if groups:
-        write_threeballs_csv(groups)
+        write_threeballs_csv(groups, event=event)
         written["threeballs.csv"] = len({q.group_id for q in groups})
     return written

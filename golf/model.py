@@ -176,6 +176,21 @@ def load_field(
     return field_players
 
 
+def load_field_event(path: Path | None = None) -> str:
+    """Event name recorded in field.csv ('' when absent). This is the
+    ESPN-resolved name of the current tournament — odds boards are tagged
+    with the same string, so pricers compare the two to reject stale boards."""
+    path = path or DATA_DIR / "field.csv"
+    if not path.exists():
+        return ""
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            ev = (row.get("event") or "").strip()
+            if ev:
+                return ev
+    return ""
+
+
 def load_course_history(
     course: str,
     path: Path | None = None,
