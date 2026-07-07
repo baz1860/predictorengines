@@ -266,7 +266,7 @@ def run_refresh(
             b_quotes = provider.event_quotes(
                 coupon, event.name, event_id=event.event_id, round_no=round_no)
             if b_quotes:
-                written = bovada_export_csvs(b_quotes)
+                written = bovada_export_csvs(b_quotes, event=event.name)
                 checks.extend(provider.qa_checks(b_quotes))
                 with store.connect() as con:
                     store.upsert_odds_quotes(con, [q.as_dict() for q in b_quotes])
@@ -291,15 +291,34 @@ def run_refresh(
         quotes.extend(manual.load_threeballs(event_id=event.event_id, round_no=round_no))
     raw_path = Path(manual_raw)
     if raw_path.exists():
-        raw_quotes = manual.parse_threeball_text(
-            raw_path.read_text(errors="replace"),
-            event_id=event.event_id if event else "",
-            round_no=round_no,
-            book="manual_paste",
-        )
-        if raw_quotes:
-            quotes.extend(raw_quotes)
-            write_threeballs_csv(raw_quotes)
+        # A paste last touched before this event's week is last week's board:
+        # re-parsing it would tag stale groups with the current event and the
+        # pricers would trust them. Tee groups/odds appear Mon–Wed of event
+        # week at the earliest, so start-of-event minus 3 days is a safe line.
+        stale_paste = ""
+        if event and getattr(event, "start_date", ""):
+            try:
+                start = dt.date.fromisoformat(str(event.start_date)[:10])
+                touched = dt.date.fromtimestamp(raw_path.stat().st_mtime)
+                if touched < start - dt.timedelta(days=3):
+                    stale_paste = (
+                        f"manual 3-ball paste ignored: {raw_path.name} last modified "
+                        f"{touched}, before the {event.name} event week (starts {start}) "
+                        "— re-paste this event's tee groups to price round groups")
+            except (ValueError, OSError):
+                pass
+        if stale_paste:
+            checks.append(qa.SourceCheck("manual_paste", True, "warning", stale_paste, 0))
+        else:
+            raw_quotes = manual.parse_threeball_text(
+                raw_path.read_text(errors="replace"),
+                event_id=event.event_id if event else "",
+                round_no=round_no,
+                book="manual_paste",
+            )
+            if raw_quotes:
+                quotes.extend(raw_quotes)
+                write_threeballs_csv(raw_quotes, event=event.name if event else "")
     quotes = _dedupe_quotes(quotes)
     if quotes:
         checks.extend(manual.qa_checks(quotes))
