@@ -39,6 +39,50 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
 
 
+# Tokens that name a market type rather than a tournament: Bovada appends them
+# to the tournament path segment ('scottish-open-2-3-balls', '…-match-ups',
+# '…-specials'), and they also appear as their own segments ('cut-lines').
+_MARKET_TOKENS = {
+    "tournament", "match", "ups", "up", "round", "rounds", "ball", "balls",
+    "cut", "lines", "specials", "main", "markets", "six", "shooter", "group",
+    "1st", "2nd", "3rd", "4th", "final",
+}
+_STOP_TOKENS = {"the", "a"}
+
+
+def _name_core(text: str) -> set[str]:
+    """Identity tokens of a tournament name / link segment: slug words minus
+    articles, market-type words and numbers (years, group sizes)."""
+    return {t for t in _slug(text).split("-")
+            if t and not t.isdigit()
+            and t not in _STOP_TOKENS and t not in _MARKET_TOKENS}
+
+
+def _link_matches_event(link: str, slug: str, event_core: set[str]) -> bool:
+    """Does a coupon event link belong to `event_name`'s tournament?
+
+    Exact slug substring first (historical behaviour), then a token test that
+    tolerates sponsor-name drift: ESPN says 'Genesis Scottish Open' where
+    Bovada files everything under 'scottish-open'. A link's tournament path
+    segment matches when its identity tokens are a subset of the event's and
+    cover at least half of them — subset rejects other tournaments outright
+    ('isco-championship', 'the-open-championship' ⊄ {genesis, scottish,
+    open}), and the half-coverage floor stops a bare shared word like 'open'
+    from matching. The final path segment (player names + timestamp) is
+    excluded from the test.
+    """
+    if slug and slug in (link or ""):
+        return True
+    if not event_core:
+        return False
+    parts = [p for p in str(link or "").split("/") if p]
+    for seg in parts[1:-1]:  # skip the 'golf' root and the per-event leaf
+        core = _name_core(seg)
+        if core and core <= event_core and len(core) >= len(event_core) / 2:
+            return True
+    return False
+
+
 _ROUND_WORDS = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "final": 4}
 
 
@@ -99,10 +143,11 @@ class BovadaGolfProvider:
         slug = _slug(event_name)
         if not slug:
             return []
+        event_core = _name_core(event_name)
         quotes: list[OddsQuote] = []
         for grp in coupon or []:
             for ev in grp.get("events", []):
-                if slug not in (ev.get("link") or ""):
+                if not _link_matches_event(ev.get("link") or "", slug, event_core):
                     continue
                 for dg in ev.get("displayGroups", []):
                     for market in dg.get("markets", []):
