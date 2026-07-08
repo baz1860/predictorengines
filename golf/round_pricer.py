@@ -16,7 +16,8 @@ import numpy as np
 from . import edge as E
 from . import market as MK
 from . import model as M
-from .providers.odds_manual import ManualOddsProvider, OddsQuote
+from .providers.odds_manual import (ManualOddsProvider, OddsQuote,
+                                    THREEBALLS_CSV, board_event, norm_event)
 
 DATA_DIR = Path(__file__).parent / "data"
 OUT_CSV = DATA_DIR / "round_edges.csv"
@@ -234,6 +235,17 @@ def main() -> None:
         field_names = [p.name for p in M.load_field(players=M.load_players())]
     except FileNotFoundError:
         field_names = []
+    current_event = M.load_field_event()
+    # Same event-tag guard as engine.cmd_round_3balls: name overlap alone
+    # cannot catch a stale board when consecutive events share players.
+    if current_event:
+        tag = board_event(THREEBALLS_CSV)
+        if norm_event(tag) != norm_event(current_event):
+            raise SystemExit(
+                f"Round-group board is from '{tag or 'an untagged capture'}' but the "
+                f"current event is '{current_event}' — stale board. Re-paste this "
+                "event's tee groups into golf/data/threeballs_r1_raw.txt and rerun "
+                "golf.refresh.")
     missing = field_mismatch(quotes, field_names, params)
     if missing:
         raise SystemExit(
