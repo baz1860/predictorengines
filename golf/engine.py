@@ -24,9 +24,16 @@ from . import refresh as GREF
 from . import round_pricer as GRP
 from . import simulate as GSIM
 from . import simulate_inplay as GSIP
-from .providers.odds_manual import ManualOddsProvider
+from .providers.odds_manual import ManualOddsProvider, board_event, norm_event
 
 DATA_DIR = Path(__file__).parent / "data"
+
+
+def _current_event_name() -> str:
+    """Event name from field.csv ('' when unknown). Both field.csv and the
+    board tags come from the same ESPN-resolved event name, so an exact
+    (normalized) comparison is the staleness test."""
+    return model.load_field_event()
 
 
 def _field_names() -> list[str]:
@@ -369,13 +376,36 @@ def cmd_edge(p):
     matchup_odds = GE.load_matchup_odds(tournament_only=True)
     threeball_odds = GE.load_threeball_odds(tournament_only=True)
 
+    # Event-tag staleness guard: a matchup/3-ball board captured for another
+    # event must not be priced against this one — field name-overlap can't
+    # tell consecutive events apart (co-sanctioned weeks share most players),
+    # so only a board tagged with the current event is trusted.
+    stale_note = ""
+    current_event = _current_event_name()
+    if current_event:
+        wrong = []
+        for label, path in (("matchup", DATA_DIR / "matchups.csv"),
+                            ("3-ball", DATA_DIR / "threeballs.csv")):
+            odds_ref = matchup_odds if label == "matchup" else threeball_odds
+            if not odds_ref:
+                continue
+            tag = board_event(path)
+            if norm_event(tag) != norm_event(current_event):
+                wrong.append(f"{label} ({tag or 'untagged'})")
+                if label == "matchup":
+                    matchup_odds = {}
+                else:
+                    threeball_odds = {}
+        if wrong:
+            stale_note = (" · ⚠ board(s) not from '" + current_event + "' skipped: "
+                          + ", ".join(wrong))
+
     # Live staleness guard: once we're pricing off the leaderboard, an odds board
     # that wasn't refreshed this cycle is dangerous — comparing yesterday's
     # even-money matchup line to a score-aware model manufactures huge fake
     # edges (e.g. backing a player who now leads by 10). Drop any board older
     # than the latest refresh so we never bet a stale price.
     state = _live_state(p)
-    stale_note = ""
     if state is not None:
         ref = _refresh_mtime()
         stale = []
@@ -389,10 +419,12 @@ def cmd_edge(p):
             threeball_odds = {}
             stale.append("3-ball")
         if stale:
-            stale_note = " · ⚠ stale board(s) skipped: " + ", ".join(stale)
+            stale_note += " · ⚠ stale board(s) skipped: " + ", ".join(stale)
 
     if not (odds_data or matchup_odds or threeball_odds):
-        if state is not None and stale_note:
+        if stale_note:
+            # Return an empty priced board (not an error) so callers persist
+            # it and overwrite any previously written edge report.
             return {"note": "No fresh odds to price" + stale_note
                     + " — re-run refresh to pull the current board.",
                     "columns": [], "rows": []}
@@ -477,6 +509,28 @@ def cmd_round_3balls(p):
     quotes = ManualOddsProvider().load_threeballs(event_id=event_id, round_no=round_no)
     if not quotes:
         raise ValueError("No 3-ball odds found in golf/data/threeballs.csv.")
+    # Event-tag staleness guard. The name-overlap check below cannot tell
+    # consecutive events apart when their fields overlap (a co-sanctioned week
+    # shares most of the tour), so the board must carry the event it was
+    # captured for and it must be this one.
+    current_event = _current_event_name()
+    if current_event:
+        tag = board_event(DATA_DIR / "threeballs.csv")
+        if norm_event(tag) != norm_event(current_event):
+            try:
+                GRP.OUT_CSV.unlink(missing_ok=True)
+            except OSError:
+                pass
+            if tag:
+                raise ValueError(
+                    f"Round-group board is from '{tag}' but the current event is "
+                    f"'{current_event}' — stale board. Re-paste this event's tee "
+                    "groups into golf/data/threeballs_r1_raw.txt and rerun refresh.")
+            raise ValueError(
+                "Round-group board has no event tag, so it can't be verified "
+                f"against the current event ('{current_event}'). Rerun refresh "
+                "(boards it writes are tagged), or add an 'event' column to "
+                f"golf/data/threeballs.csv with the value '{current_event}'.")
     missing = set(GRP.field_mismatch(quotes, _field_names(), params))
     if missing:
         board_players = {q.player_name for q in quotes

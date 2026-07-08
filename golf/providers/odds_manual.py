@@ -238,7 +238,8 @@ def parse_skybet_threeball_text(text: str) -> list[dict]:
     return [g for g in groups if len(g["players"]) in (2, 3)]
 
 
-def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None) -> Path:
+def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
+                         event: str = "") -> Path:
     path = path or THREEBALLS_CSV
     path.parent.mkdir(parents=True, exist_ok=True)
     by_group: dict[str, list[OddsQuote]] = {}
@@ -248,7 +249,7 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None) 
     with path.open("w", newline="") as f:
         cols = [
             "group_id", "player_a", "player_b", "player_c",
-            "odds_a", "odds_b", "odds_c", "settlement_rule",
+            "odds_a", "odds_b", "odds_c", "settlement_rule", "event",
         ]
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
@@ -256,12 +257,36 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None) 
             if len(qs) not in (2, 3):
                 continue
             row = {"group_id": gid,
-                   "settlement_rule": qs[0].settlement_rule or "dead_heat"}
+                   "settlement_rule": qs[0].settlement_rule or "dead_heat",
+                   "event": event}
             for slot, q in zip("abc", qs):  # player_c/odds_c stay blank for 2-balls
                 row[f"player_{slot}"] = q.player_name
                 row[f"odds_{slot}"] = q.decimal_odds
             w.writerow(row)
     return path
+
+
+def board_event(path: Path) -> str:
+    """The event tag a board CSV was written under ('' when untagged).
+
+    Boards are only priceable against the event they were captured for —
+    player-name overlap cannot tell consecutive events apart when fields
+    overlap (e.g. co-sanctioned weeks), so pricers compare this tag to the
+    current event instead.
+    """
+    if not path.exists():
+        return ""
+    with path.open() as f:
+        for row in csv.DictReader(f):
+            ev = (row.get("event") or "").strip()
+            if ev:
+                return ev
+    return ""
+
+
+def norm_event(name: str) -> str:
+    """Case/spacing-insensitive event-name key for staleness comparisons."""
+    return " ".join(str(name or "").split()).casefold()
 
 
 def _safe_float(value) -> float | None:
