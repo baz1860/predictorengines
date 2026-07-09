@@ -114,9 +114,11 @@ def load_slate(days: int = 7) -> pd.DataFrame:
             raise SystemExit("no upcoming fixtures — run `python3 -m cfb.fetch_data` "
                              "(in season) or drop a CFBD schedule_<year>.json in cfb/data/")
         print(f"note: upcoming.csv empty — slate taken from schedule JSON")
-    up = up[(up["home_div"] == "fbs") & (up["away_div"] == "fbs")].copy()
+    # At least one FBS side: FCS teams carry their own ratings now, so
+    # FBS-vs-FCS games are priceable too (unrated teams get skipped later).
+    up = up[(up["home_div"] == "fbs") | (up["away_div"] == "fbs")].copy()
     if up.empty:
-        raise SystemExit("no upcoming FBS-vs-FBS fixtures")
+        raise SystemExit("no upcoming fixtures with an FBS side")
     start = up["date"].min()
     up = up[up["date"] <= start + pd.Timedelta(days=days)]
     return up.sort_values("date").reset_index(drop=True)
@@ -229,7 +231,9 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
     market = load_market(slate)
     eparams = E.build()
     pparams = P.load_params()
-    known = set(pparams["teams"]) & set(eparams[1])
+    # Elo rates FBS and FCS teams; blend_predict substitutes the pooled FCS
+    # power entity for FCS sides, so Elo membership is the requirement.
+    known = set(eparams[1])
     off_model = ~(slate["home_team"].isin(known) & slate["away_team"].isin(known))
     if off_model.any():
         print(f"note: skipped {int(off_model.sum())} game(s) with teams unknown to "

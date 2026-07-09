@@ -101,7 +101,7 @@ def tune(since=2016, until=2024):
     games = E.load_games()
     feats = load_features()
     early = (games["season"].between(since, until)) & (games["week"] <= 4) \
-        & (games["home"] != E.FCS) & (games["away"] != E.FCS)
+        & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")
     actual = (games["home_points"] > games["away_points"]).astype(float).values
 
     best = None

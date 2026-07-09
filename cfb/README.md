@@ -6,7 +6,7 @@ Sibling of the World Cup engine, adapted for CFB: no draws, point-based scoring,
 
 Two models, blended 50/50 by default (the blend beats either alone out-of-sample):
 
-1. **Elo** (`elo.py`) — margin-of-victory-scaled K over ~19,800 FBS games (2001–present), home-field advantage (~62 Elo ≈ 2.5 pts), all non-FBS opponents pooled into one self-calibrating 'FCS' pseudo-team. Spread mapping (Elo points per point of margin) and margin sigma fitted from data. Between seasons, ratings regress 35% to the mean and get a **preseason prior** from the 247 talent composite and returning production (`priors.py`, data via CFBD API into `data/cfbd/`; coefficients tuned on weeks 1–4 of 2016–2024 with `priors.py --tune`). This cut the model's early-season deficit to the closing line from 1.8 to 1.1 points; if `data/cfbd/` is absent everything falls back to plain regression.
+1. **Elo** (`elo.py`) — margin-of-victory-scaled K over ~19,800 FBS games (2001–present), home-field advantage (~62 Elo ≈ 2.5 pts). Two ledgers: the **champion FBS ledger** pools all non-FBS opponents into one self-calibrating 'FCS' pseudo-team (so FBS-vs-FBS predictions are unaffected by FCS data), and a parallel **FCS ledger** rates each FCS team individually from full FCS schedules — one-sided against frozen FBS ratings, two-sided against each other, sub-FCS opponents pooled — anchored at 850 Elo. FBS-vs-FCS games are priced against the actual opponent with a separately fitted cross-division spread map (blowout compression makes the champion slope overshoot; held-out 2019–25 the individual ratings + cross slope cut FBS-vs-FCS margin MAE 14.8 → 13.4 and Brier 0.0477 → 0.0461 vs the pooled pseudo-team). Spread mapping (Elo points per point of margin) and margin sigma fitted from data. Between seasons, ratings regress 35% to the mean and get a **preseason prior** from the 247 talent composite and returning production (`priors.py`, data via CFBD API into `data/cfbd/`; coefficients tuned on weeks 1–4 of 2016–2024 with `priors.py --tune`). This cut the model's early-season deficit to the closing line from 1.8 to 1.1 points; if `data/cfbd/` is absent everything falls back to plain regression.
 2. **Offense/defense power ratings** (`power.py`) — the Dixon-Coles analogue. Per-team offense and defense ratings in points, fitted by weighted ridge regression (exponential time decay, 1.5-season half-life, 4-season window), with fitted home-field advantage and L2 shrinkage. Predicts expected points per side, hence margin *and* total. Separates how teams are strong — e.g. 2025 Ohio State: +8 offense but +14 defense, invisible to a single Elo number.
 
 Win probabilities for spreads/totals come from a normal margin distribution with fitted sigma (~16 pts for margin, similar for totals).
@@ -44,6 +44,8 @@ Lines come from The Odds API (key `the-odds-api` in `data/api_keys.json`, US
 regions, consensus line = modal point, median price) or manually via
 `python3 -m cfb.edge --template` + filling `cfb/odds.csv`. Without lines the
 card still shows model picks for every matchup — just no ATS pick or edges.
+The card covers every game with an FBS side, including FBS-vs-FCS (FCS teams
+carry their own Elo; the power side substitutes the pooled FCS entity).
 Preseason, when `data/upcoming.csv` is empty, the slate falls back to
 `data/schedule_<year>.json`. All modules run package-qualified from the repo
 root (`python3 -m cfb.X`).

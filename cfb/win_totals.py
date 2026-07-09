@@ -85,8 +85,8 @@ def main():
     team_probs, team_conf = {}, {}
     skipped = 0
     for r in sched.itertuples():
-        h = r.home_team if r.home_fbs else E.FCS
-        a = r.away_team if r.away_fbs else E.FCS
+        h = r.home_team if (r.home_fbs or r.home_team in pre) else E.FCS
+        a = r.away_team if (r.away_fbs or r.away_team in pre) else E.FCS
         if h not in pre or a not in pre:
             skipped += 1
             continue
