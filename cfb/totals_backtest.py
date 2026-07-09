@@ -26,7 +26,7 @@ TOTALS_CSV = os.path.join(HERE, "data", "closing_totals.csv")
 
 def model_totals(games, since, until):
     ev = games[(games["season"] >= since) & (games["season"] <= until)
-               & (games["home"] != E.FCS) & (games["away"] != E.FCS)]
+               & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     out = {}
     for (_, _, _), wk in ev.groupby(["season", "week", "season_type"], sort=False):
         try:

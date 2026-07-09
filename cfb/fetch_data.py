@@ -27,7 +27,11 @@ def main():
     for f in sorted(glob.glob(os.path.join(TMP, "schedules/csv/cfb_schedules_*.csv"))):
         frames.append(pd.read_csv(f, low_memory=False))
     g = pd.concat(frames, ignore_index=True)
-    g = g[(g["home_division"] == "fbs") | (g["away_division"] == "fbs")].copy()
+    # Division-I games: FBS *and* full FCS schedules, so FCS teams can carry
+    # their own Elo/power ratings (sub-FCS opponents get pooled in
+    # elo.load_games).
+    d1 = ("fbs", "fcs")
+    g = g[g["home_division"].isin(d1) | g["away_division"].isin(d1)].copy()
     g["date"] = pd.to_datetime(g["start_date"]).dt.date
 
     cols = ["game_id", "season", "week", "season_type", "date", "neutral_site", "home_team",
