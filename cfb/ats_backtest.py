@@ -57,7 +57,7 @@ def model_margins(games, since, until):
     slope = float((diffs[pre] * m_all[pre]).sum() / (diffs[pre] ** 2).sum())
 
     ev = games[(games["season"] >= since) & (games["season"] <= until)
-               & (games["home"] != E.FCS) & (games["away"] != E.FCS)]
+               & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     out = {}
     for (_, _, _), wk in ev.groupby(["season", "week", "season_type"], sort=False):
         pparams = P.fit(games, asof=wk["date"].min())
