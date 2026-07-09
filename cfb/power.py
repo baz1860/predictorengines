@@ -46,6 +46,9 @@ def fit(games, asof=None):
         asof = games["date"].max() + pd.Timedelta(days=1)
     asof = pd.Timestamp(asof)
     g = games[(games["date"] < asof) & (games["date"] >= asof - pd.Timedelta(days=WINDOW_DAYS))]
+    # champion data: rows with an FBS side (FCS-vs-FCS rows would be pooled
+    # pseudo-team self-games and are handled by the Elo FCS ledger instead)
+    g = g[(g["home_div"] == "fbs") | (g["away_div"] == "fbs")]
     if len(g) < 200:
         raise ValueError(f"only {len(g)} games before {asof.date()}")
 

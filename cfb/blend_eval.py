@@ -28,7 +28,7 @@ def collect(since, until):
 
     data = X.load_ppa()
     ev = games[(games["season"] >= since) & (games["season"] <= until)
-               & (games["home"] != E.FCS) & (games["away"] != E.FCS)]
+               & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     rows = []
     for (_, _, _), wk in ev.groupby(["season", "week", "season_type"], sort=False):
         asof = wk["date"].min()

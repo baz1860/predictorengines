@@ -84,7 +84,18 @@ def blend_predict(eparams, pparams, t1, t2, neutral=False, model="blend",
                   w_elo=None, xparams=None, weights=None):
     games, ratings, slope, sigma_e = eparams
     pe = E.predict(ratings, slope, sigma_e, t1, t2, neutral)
-    pp = P.predict(pparams, t1, t2, neutral)
+    # FCS teams carry their own Elo but no power rating — substitute the pooled
+    # FCS entity on the power side (generic FCS strength for the total) and let
+    # Elo, which knows the actual opponent, carry win prob and margin alone.
+    pteams = (pparams or {}).get("teams") or {}
+    pt1 = t1 if not pteams or t1 in pteams else E.FCS
+    pt2 = t2 if not pteams or t2 in pteams else E.FCS
+    pp = P.predict(pparams, pt1, pt2, neutral)
+    if pt1 != t1 or pt2 != t2:
+        # cross-division spread map: blowout margins compress, so the champion
+        # slope overshoots on FBS-vs-FCS Elo gaps (see elo.fit_cross_slope)
+        margin = pe["margin"] * E.cross_slope(slope) / slope
+        return {"p1": pe["p1"], "margin": margin, "total": pp["total"]}
     px = None
     if model in ("epa", "blend3") or (weights and weights.get("epa", 0.0) > 0):
         if xparams is None:
@@ -115,13 +126,15 @@ def backtest(since=2023):
     carry, offs = E.season_priors()
     _, history = E.run_elo(games, record_pregame=True, carry=carry, prior_offsets=offs)
     diffs = np.array([h[2] for h in history])
-    # spread map fitted only on pre-`since` data (no leakage)
-    pre = games["season"] < since
+    # spread map fitted only on pre-`since` data (no leakage); champion rows
+    # only — FCS-vs-FCS rows carry FCS-ledger diffs, not champion diffs
+    pre = ((games["season"] < since)
+           & ((games["home_div"] == "fbs") | (games["away_div"] == "fbs")))
     m_all = (games["home_points"] - games["away_points"]).values
     x, y = diffs[pre.values], m_all[pre.values]
     slope = float((x * y).sum() / (x * x).sum())
 
-    ev = games[(games["season"] >= since) & (games["home"] != E.FCS) & (games["away"] != E.FCS)]
+    ev = games[(games["season"] >= since) & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     print(f"Backtest: {len(ev)} FBS-vs-FBS games, seasons {since}-{int(games['season'].max())}")
     print("Power ratings refit before each week (walk-forward)...")
 

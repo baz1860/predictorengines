@@ -71,7 +71,7 @@ def walk_forward(games: pd.DataFrame, since: int, quiet: bool = False,
 
     epa_data = X.load_ppa() if include_epa else None
     ev = games[(games["season"] >= since)
-               & (games["home"] != E.FCS) & (games["away"] != E.FCS)]
+               & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     rows, idx = [], []
     for (season, week, _stype), wk in ev.groupby(["season", "week", "season_type"],
                                                  sort=False):
@@ -267,7 +267,7 @@ def split_ppa_walk_forward(games: pd.DataFrame, since: int,
     slope = float((diffs[pre] * m_all[pre]).sum() / (diffs[pre] ** 2).sum())
     epa_data = X.load_ppa()
     ev = games[(games["season"] >= since)
-               & (games["home"] != E.FCS) & (games["away"] != E.FCS)]
+               & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     rows, idx = [], []
     for (season, week, _stype), wk in ev.groupby(["season", "week", "season_type"],
                                                  sort=False):
