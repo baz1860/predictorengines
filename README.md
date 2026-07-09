@@ -19,7 +19,8 @@ for research, paper trading, and model evaluation rather than blind wagering.
 - **Club soccer engine**: goals/Elo/shot-form ensemble for domestic and European
   club competitions.
 - **College football engine**: Elo + power-rating blend for win probability,
-  spreads, totals, and win-total projections.
+  spreads, totals, and win-total projections; weekly card (`cfb.season`) with
+  ATS picks and value bets against The Odds API lines.
 - **Golf engine**: PGA/majors round-history model, Monte Carlo tournament
   simulation, calibrated/market-anchored edge pricing, matchup and placement
   markets.
@@ -148,11 +149,13 @@ python3 club_soccer/edge.py --template
 python3 club_soccer/validate.py --gate
 ```
 
-College football:
+College football (front door: `cfb.season`, like tennis/golf):
 
 ```bash
-python3 -m cfb.predictor "Ohio State" "Michigan"
-python3 -m cfb.predictor "Georgia" "Texas" --neutral --model blend
+bash cfb/update.sh                  # weekly refresh: data + CFBD roster inputs + power refit + gate
+python3 -m cfb.season --odds-api    # weekly card -> cfb/data/card.md: ATS pick per game + value bets
+python3 -m cfb.season               # reprice with whatever is in cfb/odds.csv
+python3 -m cfb.predictor "Ohio State" "Michigan"   # single-game plumbing
 python3 -m cfb.validate --quiet --gate
 ```
 

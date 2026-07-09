@@ -23,6 +23,33 @@ After refreshing `data/games.csv`, rerun `power.py --fit`.
 
 ## Usage
 
+### The front door (weekly card — same pattern as tennis/golf)
+
+`season.py` is the one entry point for a normal week; everything else below is
+plumbing it drives. It prices the upcoming week's FBS slate with the blend,
+writes `cfb/data/card.md` with the model's straight-up pick, spread, and total
+for every game, the **ATS pick** against each market spread with cover
+probability, a total lean, and a value-bets table (edge ≥ 3%, quarter-Kelly).
+
+```bash
+bash cfb/update.sh                    # weekly refresh: data + CFBD roster inputs + power refit + gate
+python3 -m cfb.fetch_cfbd [year]      # just the CFBD pulls (talent, returning production, schedule)
+python3 -m cfb.season --odds-api      # pull NCAAF ml/spread/total lines, price the card
+python3 -m cfb.season                 # reprice with whatever is in cfb/odds.csv
+python3 -m cfb.season --days 3        # narrower slate window
+python3 -m cfb.season --min-edge 0.05 --model elo|power|blend
+```
+
+Lines come from The Odds API (key `the-odds-api` in `data/api_keys.json`, US
+regions, consensus line = modal point, median price) or manually via
+`python3 -m cfb.edge --template` + filling `cfb/odds.csv`. Without lines the
+card still shows model picks for every matchup — just no ATS pick or edges.
+Preseason, when `data/upcoming.csv` is empty, the slate falls back to
+`data/schedule_<year>.json`. All modules run package-qualified from the repo
+root (`python3 -m cfb.X`).
+
+### Single-game plumbing
+
 ```bash
 python3 predictor.py "Ohio State" "Michigan"        # team 1 at home
 python3 predictor.py "Georgia" "Texas" --neutral
