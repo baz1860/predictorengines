@@ -319,7 +319,8 @@ def load_coef() -> dict:
 def context_features_asof(home: str, away: str, match_date: str, is_domestic: bool,
                           competition: str | None = None, season: int | None = None,
                           is_cup: bool = False, fixture_id=None,
-                          store: PlayerFeatureStore | None = None) -> dict:
+                          store: PlayerFeatureStore | None = None,
+                          include_motivation: bool = True) -> dict:
     """Point-in-time context features for a concrete upcoming fixture, using
     only data dated strictly before match_date."""
     fx = M.load_fixtures()
@@ -392,7 +393,7 @@ def context_features_asof(home: str, away: str, match_date: str, is_domestic: bo
            "xi_load14_diff": xid, "ppg_diff": 0.0, "fight_diff": 0.0, "dead_diff": 0.0,
            "tier_gap": tg, "wind_high": wind_high, "precip": precip,
            "temp_cold": temp_cold, "temp_hot": temp_hot}
-    if is_domestic and competition and season is not None:
+    if include_motivation and is_domestic and competition and season is not None:
         out.update(MOT.live_features(home, away, competition, season, match_date))
     return out
 
@@ -407,8 +408,13 @@ def context_adj_for_match(home: str, away: str, match_date: str, is_domestic: bo
     coef = load_coef() if coef is None else coef
     if not coef:
         return {}
-    f = context_features_asof(home, away, match_date, is_domestic, competition, season,
-                              is_cup, fixture_id, store)
+    needs_motivation = any(k in coef for k in ("ppg_diff", "fight_diff", "dead_diff"))
+    needs_weather = any(k in coef for k in ("wind_high", "precip", "temp_cold", "temp_hot"))
+    f = context_features_asof(
+        home, away, match_date, is_domestic, competition, season, is_cup,
+        fixture_id if needs_weather else None, store,
+        include_motivation=needs_motivation,
+    )
     br, bc, be, bx, bp, bf, bd, bt, bw, bpr, btc, bth = (
         coef.get("rest_diff", 0.0), coef.get("cong14_diff", 0.0),
         coef.get("euro_hangover", 0.0), coef.get("xi_load14_diff", 0.0),
@@ -454,6 +460,8 @@ def validate(verbose: bool = True) -> bool:
     has_weather_coef = any([bw, bpr, btc, bth])
 
     lb = lc = 0.0
+    ens_lb = ens_lc = 0.0
+    ens_bb = ens_bc = 0.0
     ou_b = ou_c = 0.0
     n = n_ou = 0
     for i, r in enumerate(df.itertuples(index=False)):
@@ -486,6 +494,20 @@ def validate(verbose: bool = True) -> bool:
                               + bp * ppg + bf * fight + bd * dead + bt * tg + weather_term))
         mult_a = float(np.exp(br * (-rd) + bc * (-cd) + be * r.euro_hangover_a + bx * (-xid)
                               + bp * (-ppg) + bf * (-fight) + bd * (-dead) + bt * (-tg) + weather_term))
+        # Evaluate the correction on the production ensemble as well as the
+        # historical goals-only diagnostic above. Context coefficients were
+        # originally fitted against the goals component, but predict() applies
+        # them to the blended score matrix; the ensemble gate must test that
+        # actual production path before activation.
+        ensemble = M.predict(r.home, r.away, r.competition, "ensemble",
+                             bool(r.neutral), params=params)
+        ensemble_base = M.probs_from_matrix(ensemble["matrix"])
+        ensemble_context = M.probs_from_matrix(
+            M.apply_context_adj(
+                ensemble["matrix"],
+                {"home": {"mult": mult_h}, "away": {"mult": mult_a}},
+            )
+        )
         y = 0 if r.home_goals > r.away_goals else (1 if r.home_goals == r.away_goals else 2)
         y_over = 1.0 if (r.home_goals + r.away_goals) > 2.5 else 0.0
         has_weather_data = pd.notna(r.wind_high)  # a real (non-default) weather row exists
@@ -504,6 +526,13 @@ def validate(verbose: bool = True) -> bool:
                     ou_b += brier
                 else:
                     ou_c += brier
+        base_probs = [ensemble_base["home"], ensemble_base["draw"], ensemble_base["away"]]
+        context_probs = [ensemble_context["home"], ensemble_context["draw"], ensemble_context["away"]]
+        one = np.eye(3)[y]
+        ens_lb += -np.log(max(base_probs[y], 1e-9))
+        ens_lc += -np.log(max(context_probs[y], 1e-9))
+        ens_bb += float(np.sum((np.asarray(base_probs) - one) ** 2))
+        ens_bc += float(np.sum((np.asarray(context_probs) - one) ** 2))
         n += 1
         if has_weather_coef and has_weather_data:
             n_ou += 1
@@ -513,25 +542,34 @@ def validate(verbose: bool = True) -> bool:
                        # 1X2 is allowed to move up to this much
     b_avg = lb / n if n else float("nan")
     c_avg = lc / n if n else float("nan")
+    ens_b_avg = ens_lb / n if n else float("nan")
+    ens_c_avg = ens_lc / n if n else float("nan")
+    ens_bb_avg = ens_bb / n if n else float("nan")
+    ens_bc_avg = ens_bc / n if n else float("nan")
     ou_b_avg = ou_b / n_ou if n_ou else float("nan")
     ou_c_avg = ou_c / n_ou if n_ou else float("nan")
 
-    if has_weather_coef and n_ou:
-        ok = (ou_c_avg < ou_b_avg) and ((c_avg - b_avg) <= OU_TOL)
-    else:
-        ok = n > 0 and (c_avg - b_avg) <= TOL
+    goals_ok = ((ou_c_avg < ou_b_avg) and ((c_avg - b_avg) <= OU_TOL)
+                if has_weather_coef and n_ou
+                else n > 0 and (c_avg - b_avg) <= TOL)
+    ensemble_ok = (n > 0 and ens_c_avg < ens_b_avg and ens_bc_avg < ens_bb_avg)
+    ok = bool(goals_ok and ensemble_ok)
 
     if verbose:
         print(f"\nHeld-out after {SPLIT}. fitted coef (pre-{SPLIT}): {coef}")
         print(f"  n={n}: mean log-loss  base(goals-only) {b_avg:.4f}  "
               f"+context {c_avg:.4f}  (delta {c_avg - b_avg:+.4f})")
+        print(f"  n={n}: ensemble Brier {ens_bb_avg:.4f} -> {ens_bc_avg:.4f} "
+              f"(delta {ens_bc_avg - ens_bb_avg:+.4f}); "
+              f"log-loss {ens_b_avg:.4f} -> {ens_c_avg:.4f} "
+              f"(delta {ens_c_avg - ens_b_avg:+.4f})")
         if has_weather_coef:
             print(f"  n_ou={n_ou} (rows with real weather data): OU2.5 Brier "
                   f"base {ou_b_avg:.4f}  +context {ou_c_avg:.4f}  "
                   f"(delta {ou_c_avg - ou_b_avg:+.4f})")
-            print(f"  gate (OU2.5 Brier improves, 1X2 log-loss moves <= {OU_TOL}): {ok}")
+            print(f"  gate goals/OU={goals_ok}, ensemble Brier+log-loss={ensemble_ok}: {ok}")
         else:
-            print(f"  context not worse than baseline (tol {TOL}): {ok}")
+            print(f"  gate goals={goals_ok}, ensemble Brier+log-loss={ensemble_ok}: {ok}")
     return ok
 
 

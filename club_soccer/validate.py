@@ -14,12 +14,14 @@ import numpy as np
 import pandas as pd
 
 from . import model as M
+from . import calibrate as CAL
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 BASELINE = DATA / "validation_baseline.json"
 CALIB_FILE = DATA / "calibration.json"
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
+CALIBRATION_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
 GATE_TOL = 0.01
 ENSEMBLE_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
 ENSEMBLE_REGRESS_TOL = 0.0015
@@ -57,6 +59,20 @@ def metrics(rows: list[dict]) -> dict:
             "brier_ou25": brier_ou25 / n, "brier_btts": brier_btts / n}
 
 
+def metrics_by_group(rows: list[dict], key: str = "competition") -> dict[str, dict]:
+    """Return the same scoring metrics split by a prediction-row field."""
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        value = row.get(key)
+        try:
+            missing = value is None or bool(pd.isna(value))
+        except (TypeError, ValueError):
+            missing = value is None
+        group = "missing" if missing or not str(value).strip() else str(value)
+        groups.setdefault(group, []).append(row)
+    return {group: metrics(group_rows) for group, group_rows in sorted(groups.items())}
+
+
 def _metrics_arr(P: np.ndarray, A: np.ndarray) -> tuple[float, float, float]:
     n = len(A)
     acc = float((P.argmax(1) == A).mean())
@@ -66,7 +82,8 @@ def _metrics_arr(P: np.ndarray, A: np.ndarray) -> tuple[float, float, float]:
     return acc, brier, ll
 
 
-def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict], dict]:
+def walk_forward(min_train: int = 200, verbose: bool = False,
+                 league_adjustments: bool = False) -> tuple[list[dict], dict]:
     """Monthly-refit walk-forward: refit once per calendar month on all prior
     matches, then predict that month. O(months) fits, not O(matches) — required
     once fixtures.csv holds real (thousands of rows) data rather than the seed.
@@ -82,7 +99,7 @@ def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict
         if len(train) < min_train:
             continue
         try:
-            params = M.fit(train)
+            params = M.fit(train, league_adjustments=league_adjustments)
         except Exception:
             continue
         seen = set(params["teams"])
@@ -92,8 +109,15 @@ def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict
                 skipped += 1
                 continue
             try:
-                pred = M.predict(r.home, r.away, r.competition, "ensemble",
-                                 bool(r.neutral), params)
+                # Validate the same date-aware path used by the card and edge
+                # layers. At present context coefficients are gated off, but
+                # this prevents validation silently diverging when one is
+                # promoted later.
+                pred = M.predict_match(
+                    r.home, r.away, r.competition, str(r.date.date()), "ensemble",
+                    bool(r.neutral), params=params,
+                    fixture_id=getattr(r, "fixture_id", None),
+                )
             except Exception:
                 skipped += 1
                 continue
@@ -103,7 +127,11 @@ def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict
             total_goals = float(r.home_goals) + float(r.away_goals)
             btts_actual = 1.0 if (r.home_goals > 0 and r.away_goals > 0) else 0.0
             rows.append({"date": str(r.date.date()), "home": r.home,
-                         "away": r.away, "actual": actual,
+                         "away": r.away, "competition": r.competition,
+                         "type": r.type,
+                         "fixture_id": getattr(r, "fixture_id", None),
+                         "xg_source": getattr(r, "xg_source", ""),
+                         "actual": actual,
                          "p_home": p["home"], "p_draw": p["draw"], "p_away": p["away"],
                          "p_over25": p["over25"], "p_btts": p["btts_yes"],
                          "total_goals": total_goals, "btts_actual": btts_actual})
@@ -115,7 +143,8 @@ def walk_forward(min_train: int = 200, verbose: bool = False) -> tuple[list[dict
     return rows, metrics(rows)
 
 
-def component_walk_forward(min_train: int = 200, verbose: bool = False) -> pd.DataFrame:
+def component_walk_forward(min_train: int = 200, verbose: bool = False,
+                           league_adjustments: bool = False) -> pd.DataFrame:
     """Walk-forward component probabilities for ensemble tuning.
 
     No model is fit on or after the tested month. The returned frame is pure
@@ -132,7 +161,7 @@ def component_walk_forward(min_train: int = 200, verbose: bool = False) -> pd.Da
         if len(train) < min_train:
             continue
         try:
-            params = M.fit(train)
+            params = M.fit(train, league_adjustments=league_adjustments)
         except Exception:
             continue
         seen = set(params["teams"])
@@ -143,13 +172,17 @@ def component_walk_forward(min_train: int = 200, verbose: bool = False) -> pd.Da
                 continue
             try:
                 parts = M.component_matrices(params, r.home, r.away,
-                                             r.competition, bool(r.neutral))
+                                             r.competition, bool(r.neutral),
+                                             match_date=r.date)
             except Exception:
                 skipped += 1
                 continue
             actual = 0 if r.home_goals > r.away_goals else (
                 1 if r.home_goals == r.away_goals else 2)
             row = {"date": str(r.date.date()), "home": r.home, "away": r.away,
+                   "competition": r.competition, "type": r.type,
+                   "fixture_id": getattr(r, "fixture_id", None),
+                   "xg_source": getattr(r, "xg_source", ""),
                    "actual": actual}
             for name, mat in parts.items():
                 p = M.probs_from_matrix(mat)
@@ -267,6 +300,59 @@ def tune_ensemble(write: bool = False, verbose: bool = True) -> dict:
             BASELINE.write_text(json.dumps({"brier": chosen["brier"], "gate_tol": GATE_TOL}, indent=2))
             print(f"  wrote {M.ENSEMBLE_WEIGHTS}")
             print(f"  baseline updated -> {BASELINE}")
+    return out
+
+
+def compare_league_adjustments(verbose: bool = True, write: bool = False) -> dict:
+    """Compare incumbent and league-season candidate on identical walk-forward
+    fixtures. The candidate is diagnostic-only; this function never changes
+    production parameters or ensemble weights."""
+    baseline_rows, baseline = walk_forward(verbose=False, league_adjustments=False)
+    candidate_rows, candidate = walk_forward(verbose=False, league_adjustments=True)
+    baseline_by_comp = metrics_by_group(baseline_rows)
+    candidate_by_comp = metrics_by_group(candidate_rows)
+    groups = sorted(set(baseline_by_comp) | set(candidate_by_comp))
+    by_comp = {}
+    for group in groups:
+        b = baseline_by_comp.get(group, metrics([]))
+        c = candidate_by_comp.get(group, metrics([]))
+        by_comp[group] = {
+            "baseline": b, "candidate": c,
+            "delta_brier": round(c["brier"] - b["brier"], 6),
+            "delta_log_loss": round(c["log_loss"] - b["log_loss"], 6),
+        }
+    source = metrics_by_group(candidate_rows, "xg_source")
+    out = {
+        "baseline": baseline, "candidate": candidate,
+        "delta_brier": round(candidate["brier"] - baseline["brier"], 6),
+        "delta_log_loss": round(candidate["log_loss"] - baseline["log_loss"], 6),
+        "by_competition": by_comp, "candidate_by_xg_source": source,
+        "promote": bool(candidate["brier"] < baseline["brier"]
+                         and candidate["log_loss"] <= baseline["log_loss"]),
+    }
+    if verbose:
+        print(f"\nLeague-season adjustment experiment · baseline n={baseline['n']} "
+              f"candidate n={candidate['n']}")
+        print(f"  baseline Brier {baseline['brier']:.6f} log-loss {baseline['log_loss']:.6f}")
+        print(f"  candidate Brier {candidate['brier']:.6f} log-loss {candidate['log_loss']:.6f}")
+        print(f"  overall ΔBrier {out['delta_brier']:+.6f} "
+              f"Δlog-loss {out['delta_log_loss']:+.6f}")
+        print("\n  By competition (positive deltas are worse):")
+        for group, row in by_comp.items():
+            if row["candidate"]["n"]:
+                print(f"    {group:24} n={row['candidate']['n']:>5} "
+                      f"ΔBrier {row['delta_brier']:+.6f} "
+                      f"ΔLL {row['delta_log_loss']:+.6f}")
+        print("\n  Candidate by xG source:")
+        for group, row in source.items():
+            print(f"    {group:12} n={row['n']:>5} Brier {row['brier']:.6f} "
+                  f"LL {row['log_loss']:.6f}")
+        print(f"\n  verdict: {'PROMOTE' if out['promote'] else 'keep incumbent'}")
+    if write:
+        path = DATA / "validation_league_adjustments.json"
+        path.write_text(json.dumps(out, indent=2))
+        if verbose:
+            print(f"  wrote diagnostic -> {path.name}")
     return out
 
 
@@ -442,25 +528,63 @@ def cmd_calibrate(verbose=True):
     if not rows:
         sys.exit("No walk-forward predictions to calibrate. Seed real fixtures first.")
     P, A, dates = _arrays_from_rows(rows)
-    split = np.datetime64(CALIB_SPLIT)
-    tr, te = dates < split, dates >= split
-    print(f"\nCalibration (isotonic per outcome) on {len(A)} walk-forward predictions")
-    if tr.sum() == 0 or te.sum() == 0:
-        print(f"  Not enough data to split at {CALIB_SPLIT}; fitting on all and saving.")
-    else:
-        maps_tr = fit_calibration(P[tr], A[tr])
-        P_cal = apply_maps(P[te], maps_tr)
-        ar, br, lr = _metrics_arr(P[te], A[te])
-        ac, bc, lc = _metrics_arr(P_cal, A[te])
-        print(f"  Held-out test (fit < {CALIB_SPLIT}, test >=), n={int(te.sum())}:")
-        print(f"    {'':12}{'accuracy':>10}{'Brier':>10}{'log-loss':>11}")
-        print(f"    {'raw':12}{ar:>9.1%}{br:>10.4f}{lr:>11.4f}")
-        print(f"    {'calibrated':12}{ac:>9.1%}{bc:>10.4f}{lc:>11.4f}")
-        print(f"    Brier {'improved' if bc <= br else 'WORSE'} ({bc - br:+.4f}); "
-              f"log-loss {'improved' if lc <= lr else 'WORSE'} ({lc - lr:+.4f})")
-    maps_all = fit_calibration(P, A)     # production map: fit on all data
-    CALIB_FILE.write_text(json.dumps(maps_all))
-    print(f"\nSaved production calibration (fit on all {len(A)}) -> {CALIB_FILE.name}")
+    print(f"\nCalibration (temperature scaling) on {len(A)} walk-forward predictions")
+    split_results = []
+    for split_name in CALIBRATION_SPLITS:
+        split = np.datetime64(split_name)
+        tr, te = dates < split, dates >= split
+        if tr.sum() < 1000 or te.sum() < 100:
+            continue
+        temperature = CAL.fit_temperature(P[tr], A[tr])
+        raw = _metrics_arr(P[te], A[te])
+        calibrated = _metrics_arr(CAL.temperature_probs(P[te], temperature), A[te])
+        split_results.append({
+            "split": split_name, "train_n": int(tr.sum()), "test_n": int(te.sum()),
+            "temperature": round(float(temperature), 3),
+            "raw": {"accuracy": raw[0], "brier": raw[1], "log_loss": raw[2]},
+            "calibrated": {"accuracy": calibrated[0], "brier": calibrated[1],
+                           "log_loss": calibrated[2]},
+            "delta_brier": calibrated[1] - raw[1],
+            "delta_log_loss": calibrated[2] - raw[2],
+        })
+        if verbose:
+            print(f"  split {split_name}: T={temperature:.3f}, n={int(te.sum())}, "
+                  f"ΔBrier {calibrated[1] - raw[1]:+.6f}, "
+                  f"Δlog-loss {calibrated[2] - raw[2]:+.6f}")
+
+    promotes = bool(split_results) and all(
+        row["calibrated"]["brier"] < row["raw"]["brier"]
+        and row["calibrated"]["log_loss"] < row["raw"]["log_loss"]
+        for row in split_results
+    )
+    temperature_all = CAL.fit_temperature(P, A)
+    raw_all = _metrics_arr(P, A)
+    cal_all = _metrics_arr(CAL.temperature_probs(P, temperature_all), A)
+    print(f"  all-data temperature: {temperature_all:.3f}; "
+          f"Brier {raw_all[1]:.6f} -> {cal_all[1]:.6f}; "
+          f"log-loss {raw_all[2]:.6f} -> {cal_all[2]:.6f}")
+    print(f"  gate: {'PROMOTE' if promotes else 'keep inactive'} "
+          f"(both Brier and log-loss must improve on every split)")
+    payload = {
+        "active": promotes,
+        "method": "temperature",
+        "temperature": round(float(temperature_all), 3),
+        "heldout": {
+            "splits": split_results,
+            "promote": promotes,
+            "all_data": {
+                "n": int(len(A)),
+                "raw": {"accuracy": raw_all[0], "brier": raw_all[1], "log_loss": raw_all[2]},
+                "calibrated": {"accuracy": cal_all[0], "brier": cal_all[1],
+                               "log_loss": cal_all[2]},
+            },
+        },
+        "note": "Temperature scaling is active only when both Brier and log-loss "
+                "improve on every fixed held-out split.",
+    }
+    CALIB_FILE.write_text(json.dumps(payload, indent=2))
+    print(f"\nSaved temperature calibration (active={promotes}, T={temperature_all:.3f}) "
+          f"-> {CALIB_FILE.name}")
 
 
 def main() -> None:
@@ -472,6 +596,9 @@ def main() -> None:
                          "and write data/calibration.json")
     ap.add_argument("--tune-ensemble", action="store_true",
                     help="tune goals/elo/xg/xgf/xpress ensemble weights")
+    ap.add_argument("--compare-league-adjustments", action="store_true",
+                    help="compare the incumbent model with the gated "
+                         "league-season environment/HFA candidate")
     ap.add_argument("--write", action="store_true",
                     help="with --tune-ensemble, write promoted weights and baseline")
     ap.add_argument("--benchmark-clubelo", action="store_true",
@@ -480,6 +607,9 @@ def main() -> None:
     args = ap.parse_args()
     if args.tune_ensemble:
         tune_ensemble(write=args.write)
+        return
+    if args.compare_league_adjustments:
+        compare_league_adjustments(write=args.write)
         return
     if args.calibrate:
         cmd_calibrate()
@@ -495,8 +625,10 @@ def main() -> None:
     pd.DataFrame(rows).to_csv(DATA / "validation_predictions.csv", index=False)
     if args.update_baseline or not BASELINE.exists():
         base = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
-        base.update({"brier": m["brier"], "gate_tol": base.get("gate_tol", GATE_TOL),
-                     "brier_ou25": m["brier_ou25"], "brier_btts": m["brier_btts"]})
+        base.update({"brier": m["brier"], "log_loss": m["log_loss"], "n": m["n"],
+                     "gate_tol": base.get("gate_tol", GATE_TOL),
+                     "brier_ou25": m["brier_ou25"], "brier_btts": m["brier_btts"],
+                     "source": "deduplicated canonical match identities"})
         BASELINE.write_text(json.dumps(base, indent=2))
         print(f"Baseline written -> {BASELINE}")
     elif BASELINE.exists():

@@ -1,14 +1,15 @@
 {
   "coef": {
-    "rest_diff": -0.010561969755173341,
-    "euro_hangover": -0.13334847814391887
+    "rest_diff": -0.009235862025886001,
+    "euro_hangover": -0.12847288570064475,
+    "tier_gap": 0.35193888587254124
   },
-  "n": 33946,
-  "xi_load_coverage": 0.0068,
+  "n": 38690,
+  "xi_load_coverage": 0.0498,
   "rest_cap": 14,
   "rest_diff_clip": 7,
   "cong14_clip": 4,
   "xi_load14_clip": 3.0,
-  "active": false,
-  "note": "lambda *= exp(sum b_i*feature_i); intercept not applied; promote per plan Sec 12 before setting active=true"
+  "active": true,
+  "note": "Activated after held-out ensemble gate: Brier 0.6076 -> 0.6068 and log-loss 1.0149 -> 1.0139 on 2025-12 onward. xi_load14_diff remains excluded at 5.0% coverage."
 }

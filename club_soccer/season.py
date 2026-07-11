@@ -173,7 +173,8 @@ def _ordinal(n: int) -> str:
     return f"{n}{suf}"
 
 
-def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None) -> list[str]:
+def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None,
+                      calib_maps: dict | None = None) -> list[str]:
     fx = M.load_fixtures()
     up = M.upcoming(fx)
     horizon = today_ts + pd.Timedelta(days=CARD_HORIZON_DAYS)
@@ -192,8 +193,21 @@ def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None) -> li
             for r in comp_grp.itertuples(index=False):
                 if r.home not in set(params["teams"]) or r.away not in set(params["teams"]):
                     continue
+                p_adj = None
+                if player_adj_map:
+                    p_adj = player_adj_map.get((str(r.home).lower(), str(r.away).lower(), comp))
                 try:
-                    pred = M.predict(r.home, r.away, comp, "ensemble", bool(r.neutral), params)
+                    pred = M.predict_match(
+                        r.home, r.away, comp, str(r.date.date()), "ensemble",
+                        bool(r.neutral), params=params, player_adj=p_adj,
+                        fixture_id=getattr(r, "fixture_id", None),
+                    )
+                    if calib_maps is not None:
+                        from .calibrate import apply as apply_calibration
+                        ph, pdr, pa = apply_calibration(
+                            pred["probs"]["home"], pred["probs"]["draw"],
+                            pred["probs"]["away"], calib_maps)
+                        pred["probs"].update({"home": ph, "draw": pdr, "away": pa})
                 except ValueError:
                     continue
                 p = pred["probs"]
@@ -202,11 +216,10 @@ def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None) -> li
                        f"H {p['home']:.0%} D {p['draw']:.0%} A {p['away']:.0%} "
                        f"(fair {fair['home']}/{fair['draw']}/{fair['away']})"]
 
-                if player_adj_map:
-                    adj = player_adj_map.get((str(r.home).lower(), str(r.away).lower(), comp))
-                    if adj:
-                        h_a, a_a = adj.get("home", {}), adj.get("away", {})
-                        conf = adj.get("lineup_confidence", 1.0)
+                if p_adj:
+                    h_a, a_a = p_adj.get("home", {}), p_adj.get("away", {})
+                    conf = p_adj.get("lineup_confidence", 1.0)
+                    if h_a or a_a:
                         n_out = int(h_a.get("n_missing", 0)) + int(a_a.get("n_missing", 0))
                         if n_out:
                             arrow_h = "▼" if h_a.get("attack_mult", 1.0) < 1.0 else "▲"
@@ -304,12 +317,13 @@ def _weekly_footer() -> list[str]:
     return lines
 
 
-def write_card(edge_rows: list[dict], player_adj_map: dict | None) -> None:
+def write_card(edge_rows: list[dict], player_adj_map: dict | None,
+               calib_maps: dict | None = None) -> None:
     today = datetime.now(timezone.utc)
     today_str = str(today.date())
     lines: list[str] = []
     lines += _freshness_header(today_str)
-    lines += _upcoming_section(pd.Timestamp(today.date()), player_adj_map)
+    lines += _upcoming_section(pd.Timestamp(today.date()), player_adj_map, calib_maps)
     lines += _backed_bets_section(edge_rows)
     lines += _transfers_absences_section()
     if today.weekday() == 0:   # Monday
@@ -340,6 +354,8 @@ def run(fast: bool = False, no_network: bool = False) -> None:
         print("\n== Refit skipped (--fast) ==")
 
     player_adj_map = None
+    from .calibrate import load_active_maps
+    calib_maps = load_active_maps()
     if not no_network and api_key:
         player_adj_map = _step("Player availability adjustments", E.fetch_player_adjustments, api_key)
 
@@ -349,16 +365,17 @@ def run(fast: bool = False, no_network: bool = False) -> None:
         if odds is not None:
             history_days = MM.history_age_days()
             edge_rows = _step("Price the card", E.rows_from_odds, odds, "ensemble", 100.0,
-                             None, player_adj_map, history_days >= MM.WARMUP_DAYS) or []
+                             calib_maps, player_adj_map, history_days >= MM.WARMUP_DAYS) or []
     if not edge_rows:
         try:
             odds = E.load_odds()
-            edge_rows = E.rows_from_odds(odds, "ensemble", 100.0)
+            edge_rows = E.rows_from_odds(odds, "ensemble", 100.0,
+                                         calib_maps=calib_maps)
             print("\n== Priced from manual odds.csv (no live BSD odds available) ==")
         except FileNotFoundError:
             print("\n== No odds available (live or manual) — card has no bets ==")
 
-    write_card(edge_rows, player_adj_map)
+    write_card(edge_rows, player_adj_map, calib_maps)
 
 
 def main() -> None:

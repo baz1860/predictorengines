@@ -15,7 +15,7 @@ from . import model as M
 def cmd_schema(_p: dict | None = None) -> dict:
     df = M.load_fixtures()
     return {"kind": "match", "names": M.team_names(df),
-            "models": ["ensemble", "goals", "elo"],
+            "models": ["ensemble", "goals", "elo", "xg", "xpress"],
             "supports_home": False, "neutral_toggle": True,
             "team_label": "Club",
             "filters": [
@@ -36,7 +36,21 @@ def cmd_predict(p: dict) -> dict:
     comp = (p.get("competition") or "").strip()
     neutral = bool(p.get("neutral", False))
     model_name = p.get("model") or "ensemble"
-    pred = M.predict(home, away, comp, model_name, neutral)
+    match_date = (p.get("match_date") or p.get("date") or "").strip()
+    fixture_id = p.get("fixture_id")
+    player_adj = p.get("player_adj") if isinstance(p.get("player_adj"), dict) else None
+    if match_date:
+        pred = M.predict_match(home, away, comp, match_date, model_name, neutral,
+                               player_adj=player_adj, fixture_id=fixture_id)
+    else:
+        pred = M.predict(home, away, comp, model_name, neutral, player_adj=player_adj)
+    from .calibrate import load_active_maps, apply as apply_calibration
+    calib_maps = load_active_maps()
+    if calib_maps is not None:
+        ph, pdr, pa = apply_calibration(
+            pred["probs"]["home"], pred["probs"]["draw"],
+            pred["probs"]["away"], calib_maps)
+        pred["probs"].update({"home": ph, "draw": pdr, "away": pa})
     probs = pred["probs"]
     venue = "neutral venue" if neutral else f"{home} home"
     return {

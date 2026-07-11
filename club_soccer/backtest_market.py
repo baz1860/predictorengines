@@ -58,8 +58,8 @@ def _joined_rows() -> pd.DataFrame:
     mh = pd.read_csv(MARKET_HISTORY)
     if mh.empty:
         return pd.DataFrame()
-    j = pred.merge(mh, left_on=["date", "home", "away"],
-                   right_on=["match_date", "home", "away"], how="inner",
+    j = pred.merge(mh, left_on=["date", "home", "away", "competition"],
+                   right_on=["match_date", "home", "away", "competition"], how="inner",
                    suffixes=("", "_mkt"))
     if j.empty:
         return j

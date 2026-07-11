@@ -310,3 +310,84 @@ in case it's reverted.
 
 ### Files
 - none changed for this phase
+
+## Club Soccer Phase 8 — canonical identities and league environment experiment (2026-07-11)
+
+Added canonical match reconciliation on date + competition + home + away. This
+fixed duplicate provider records where football-data and BSD assigned different
+IDs to the same match; the richer BSD detail row is retained and conflicting
+scores remain a health failure rather than being averaged. The clean fixture
+file now contains 17,830 played matches and the health check reports zero
+duplicate identities.
+
+Added a gated hierarchical league-season scoring environment and home-advantage
+candidate. League-only estimates use recency-weighted empirical-Bayes shrinkage
+to both season-level and competition-level fallbacks; cup and European fixtures
+retain the existing competition-strength path.
+
+**Result:** on 16,879 identical walk-forward predictions, the candidate was
+rejected. Incumbent Brier was **0.612495** and log-loss **1.021347**; candidate
+Brier was **0.612744** (+0.000250) and log-loss **1.021674** (+0.000327).
+OU2.5 Brier improved slightly (0.245318 → 0.245214), but the primary 1X2
+metrics worsened. The fitted tables are stored with
+`league_adjustments_active=false` for future re-testing; live probabilities
+remain on the incumbent model.
+
+### Files
+- `club_soccer/identities.py`
+- `club_soccer/model.py`, `club_soccer/validate.py`
+- `club_soccer/data/validation_league_adjustments.json`
+
+## Club Soccer Phase 9 — temperature calibration promoted (2026-07-11)
+
+The prior isotonic calibration candidate improved Brier on one held-out slice
+but worsened log-loss, so it stayed inactive. Replaced it with a single
+multiclass temperature parameter fitted on prior walk-forward predictions.
+
+The fixed time-split gate improved both primary metrics on every split:
+
+- 2025-01: ΔBrier **−0.000178**, Δlog-loss **−0.000344**
+- 2025-07: ΔBrier **−0.000275**, Δlog-loss **−0.000466**
+- 2025-12: ΔBrier **−0.000411**, Δlog-loss **−0.000629**
+
+The all-data fitted temperature is **0.925**. Across 16,879 walk-forward
+predictions, Brier improved **0.612495 → 0.612271** and log-loss improved
+**1.021347 → 1.020937**. The calibration is now active for the displayed
+1X2 probabilities and pricing paths; the underlying score model remains
+unchanged.
+
+### Files
+- `club_soccer/calibrate.py`, `club_soccer/validate.py`
+- `club_soccer/data/calibration.json`
+
+## Club Soccer Phase 10 — BSD historical backfill and context promotion (2026-07-11)
+
+Backfilled BSD event details for tracked fixtures from 2025-08-01 through
+2026-05-31. The fixture history grew to **20,348 played matches**, real xG
+coverage rose from **3.1% to 16.5%** (3,366 matches), and player cache
+coverage now spans **2025-08-05 to 2026-07-09** with 27,690 applications.
+Canonical identity and score-conflict checks remain clean.
+
+On the same clean walk-forward framework, the raw model improved from the
+pre-backfill **0.612495 / 1.021347** (Brier / log-loss) to **0.611685 /
+1.020271** after the data backfill. BSD-detail rows are also materially more
+predictive in the diagnostic split: xG component Brier **0.610338** versus
+**0.618763** for rows without BSD xG. This is a source diagnostic, not a
+separate promotion claim.
+
+The context fit was re-run with the expanded cup and European history. The
+minutes-load player term remains inactive because point-in-time coverage is
+only 5%. Rest differential, European hangover and cup tier gap passed an
+ensemble held-out gate: Brier **0.6076 → 0.6068** and log-loss
+**1.0149 → 1.0139** on 2025-12 onward. Those coefficients are now active.
+
+Combined production walk-forward performance is **0.611244 / 1.019665**
+before calibration and **0.611079 / 1.019382** after the re-gated
+temperature calibration. Ensemble weight re-tuning was still rejected by
+the time-split gate.
+
+### Files
+- `club_soccer/data/fixtures.csv`, `club_soccer/data/bsd_cache/`
+- `club_soccer/data/player_stats_cache.json`
+- `club_soccer/data/context_coef_club.json`
+- `club_soccer/context.py`, `test_club_soccer.py`

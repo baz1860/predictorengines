@@ -276,6 +276,80 @@ def test_global_player_priors_loader():
               str(rated[0]))
 
 
+def _bovada_coupon(markets):
+    """Minimal Bovada coupon payload: one event under one group."""
+    return [{
+        "events": [{
+            "id": "e1",
+            "link": "/golf/pga-tour/genesis-scottish-open-2026",
+            "displayGroups": [{"markets": markets}],
+        }],
+    }]
+
+
+def _bovada_market(desc, names_odds):
+    return {"description": desc,
+            "outcomes": [{"description": n, "price": {"decimal": str(o)}}
+                         for n, o in names_odds]}
+
+
+def test_bovada_live_coupon():
+    from golf.providers.bovada import (BovadaGolfProvider, COUPON_URL,
+                                       LIVE_COUPON_URL)
+    check("live coupon URL asks for in-play markets only",
+          "liveOnly=true" in LIVE_COUPON_URL and "preMatchOnly" not in LIVE_COUPON_URL,
+          LIVE_COUPON_URL)
+    check("pre-match coupon URL unchanged",
+          "preMatchOnly=true" in COUPON_URL, COUPON_URL)
+
+    # Separate cache files per feed, so a cached pre-match board can never be
+    # served when the live board is requested (and vice versa).
+    with tempfile.TemporaryDirectory() as td:
+        cache_dir = Path(td)
+        provider = BovadaGolfProvider(cache_dir=cache_dir, ttl_seconds=3600)
+        (cache_dir / "coupon_golf.json").write_text('[{"pre": true}]')
+        (cache_dir / "coupon_golf_live.json").write_text('[{"live": true}]')
+        pre = provider.fetch_coupon(use_cache=True)
+        live = provider.fetch_coupon(use_cache=True, live=True)
+        check("pre-match and live coupons cached separately",
+              pre == [{"pre": True}] and live == [{"live": True}],
+              f"pre={pre} live={live}")
+
+    # live_event_quotes keeps only tournament-level markets: in-play round
+    # 2/3-ball prices reflect holes already played and must not reach the
+    # pre-round group pricer.
+    provider = BovadaGolfProvider()
+    coupon = _bovada_coupon([
+        _bovada_market("winner", [("Rory McIlroy", 4.5), ("Jon Rahm", 6.0)]),
+        _bovada_market("tournament match-ups", [("A One", 1.8), ("B Two", 2.0)]),
+        _bovada_market("3rd round 2-balls", [("C Three", 1.9), ("D Four", 1.9)]),
+        _bovada_market("3rd round match-ups", [("E Five", 1.8), ("F Six", 2.0)]),
+    ])
+    quotes = provider.live_event_quotes(coupon, "Genesis Scottish Open", event_id="401")
+    markets = sorted({q.market for q in quotes})
+    check("live quotes keep win + tournament matchup only",
+          markets == ["tournament_matchup", "win"], str(markets))
+    check("live quotes drop in-play round groups",
+          not any(q.market in ("2ball", "3ball", "round_matchup") for q in quotes),
+          str([q.market for q in quotes]))
+    check("live quote count", len(quotes) == 4, str(len(quotes)))
+
+
+def test_bovada_live_merge_prefers_live_price():
+    from golf.providers.bovada import BovadaGolfProvider, _dedupe
+    provider = BovadaGolfProvider()
+    pre = provider.event_quotes(
+        _bovada_coupon([_bovada_market("winner", [("Rory McIlroy", 8.0)])]),
+        "Genesis Scottish Open", event_id="401")
+    live = provider.live_event_quotes(
+        _bovada_coupon([_bovada_market("winner", [("Rory McIlroy", 4.5)])]),
+        "Genesis Scottish Open", event_id="401")
+    merged = _dedupe(live + pre)  # refresh puts live first: fresher price wins
+    check("live price wins the merge dedupe",
+          len(merged) == 1 and merged[0].decimal_odds == 4.5,
+          str([(q.player_name, q.decimal_odds) for q in merged]))
+
+
 def main():
     print("Golf free-source tests")
     test_provider_paths()
@@ -287,6 +361,8 @@ def main():
     test_weather_resolution_and_tee_overrides()
     test_tee_sheet_parser_and_weather_shift()
     test_global_player_priors_loader()
+    test_bovada_live_coupon()
+    test_bovada_live_merge_prefers_live_price()
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)
 

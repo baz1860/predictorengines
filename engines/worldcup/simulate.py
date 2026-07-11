@@ -26,6 +26,8 @@ from .squads import adjusted_sources
 
 HOSTS = {"United States", "Mexico", "Canada"}
 
+SHOOTOUTS_FILE = Path(__file__).resolve().parents[2] / "data" / "shootouts.csv"
+
 # Official FIFA Annex C third-place allocation table (optional, v2 M4).
 # FIFA 2026 regulations Annex C predefine, for each of the C(12,8)=495 possible
 # combinations of which eight groups supply a qualifying third-placed team, the
@@ -105,8 +107,16 @@ class MatchModel:
         idx = int(np.searchsorted(cum, rng.random()))
         return divmod(idx, MAX_GOALS + 1)
 
-    def knockout_winner(self, t1, t2, rng):
-        """90 min -> extra time (1/3 intensity) -> penalties (50/50)."""
+    def knockout_winner(self, t1, t2, rng, known=None):
+        """90 min -> extra time (1/3 intensity) -> penalties (50/50).
+
+        If `known` (a frozenset({team1, team2}) -> winner map of already-played
+        knockout results) has this pairing, return the real winner instead of
+        simulating -- an eliminated team must not keep advancing in every run."""
+        if known:
+            w = known.get(frozenset((t1, t2)))
+            if w is not None:
+                return w
         h1 = 1.0 if (t1 in HOSTS and t2 not in HOSTS) else 0.0
         h2 = 1.0 if (t2 in HOSTS and t1 not in HOSTS) else 0.0
         g1, g2 = self.sample(t1, t2, h1, h2, rng)
@@ -138,6 +148,46 @@ def load_group_matches():
                 "as": int(r.away_score) if fixed else None})
     assert len(matches) == 72, f"expected 72 group matches, got {len(matches)}"
     return matches
+
+
+def load_actual_knockout_winners():
+    """Already-played knockout-stage results (R32 onward), keyed by
+    frozenset({team1, team2}) -> winner.
+
+    Without this, simulate_once() re-simulates every knockout match from
+    scratch on every run -- including ones that have already been played --
+    so teams already eliminated in reality keep showing up with a nonzero
+    chance to reach the next round, the final, or win it all. Cross-check
+    against data/results.csv (final score, i.e. after extra time) and fall
+    back to data/shootouts.csv when full time was still level (penalties)."""
+    played, _ = load_matches()
+    wc = played[(played["tournament"] == "FIFA World Cup") &
+                (played["date"] >= "2026-06-01")]
+
+    so_winner = {}
+    if SHOOTOUTS_FILE.exists():
+        so = pd.read_csv(SHOOTOUTS_FILE)
+        for r in so.itertuples(index=False):
+            so_winner[frozenset((r.home_team, r.away_team))] = r.winner
+
+    winners = {}
+    for r in wc.itertuples(index=False):
+        g1, g2 = TEAM_GROUP.get(r.home_team), TEAM_GROUP.get(r.away_team)
+        if g1 is None or g2 is None or g1 == g2:
+            continue  # group-stage match, not knockout
+        key = frozenset((r.home_team, r.away_team))
+        if r.home_score > r.away_score:
+            winners[key] = r.home_team
+        elif r.away_score > r.home_score:
+            winners[key] = r.away_team
+        else:
+            w = so_winner.get(key)
+            if w is not None:
+                winners[key] = w
+            # else: level after 90' with no shootout record yet (data lag) --
+            # leave unresolved so the match still simulates rather than
+            # dropping a decided-by-penalties result on the floor.
+    return winners
 
 
 def rank_group(teams, results, rng):
@@ -231,7 +281,7 @@ def allocate_thirds(thirds_by_group, rng):
     return {s: thirds_by_group[g] for s, g in assign.items()}
 
 
-def simulate_once(model, group_matches, rng):
+def simulate_once(model, group_matches, rng, known_knockouts=None):
     # --- group stage ---
     by_group = defaultdict(list)
     for m in group_matches:
@@ -263,9 +313,9 @@ def simulate_once(model, group_matches, rng):
         for match, s1, s2 in rnd:
             t1 = slot_team.get(s1) or winners[s1]
             t2 = slot_team.get(s2) or winners[s2]
-            winners[match] = model.knockout_winner(t1, t2, rng)
+            winners[match] = model.knockout_winner(t1, t2, rng, known_knockouts)
     finalists = (winners["M101"], winners["M102"])
-    champion = model.knockout_winner(*finalists, rng)
+    champion = model.knockout_winner(*finalists, rng, known_knockouts)
 
     r16 = {winners[m] for m, _, _ in R32}
     qf = {winners[m] for m, _, _ in R16}
@@ -295,6 +345,7 @@ def main():
         adj = {}
     model = MatchModel(sources)
     group_matches = load_group_matches()
+    known_knockouts = load_actual_knockout_winners()
     rng = np.random.default_rng(args.seed)
 
     stages = ["win_group", "reach_R32", "reach_R16", "reach_QF",
@@ -302,7 +353,8 @@ def main():
     counts = {t: dict.fromkeys(stages, 0) for ts in GROUPS.values() for t in ts}
 
     for _ in range(args.sims):
-        gw, adv, r16, qf, sf, fin, champ = simulate_once(model, group_matches, rng)
+        gw, adv, r16, qf, sf, fin, champ = simulate_once(
+            model, group_matches, rng, known_knockouts)
         for t in gw: counts[t]["win_group"] += 1
         for t in adv: counts[t]["reach_R32"] += 1
         for t in r16: counts[t]["reach_R16"] += 1

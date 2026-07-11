@@ -191,6 +191,31 @@ def test_health_and_repair():
           and C.comp_from_bsd_league("Championship").name == "Championship")
 
 
+def test_match_identity_reconciliation():
+    print("6b. canonical match identity reconciliation")
+    from club_soccer.identities import (
+        conflicting_score_identity_count,
+        dedupe_fixtures,
+        duplicate_identity_count,
+    )
+
+    rows = pd.DataFrame([
+        {"fixture_id": "fd-1", "date": "2026-08-15", "competition": "Premier League",
+         "home": "Arsenal", "away": "Chelsea", "home_goals": 2, "away_goals": 1,
+         "home_xg": np.nan, "away_xg": np.nan, "xg_source": "", "source": "football-data"},
+        {"fixture_id": "bsd-1", "date": "2026-08-15", "competition": "Premier League",
+         "home": " Arsenal ", "away": "Chelsea", "home_goals": 2, "away_goals": 1,
+         "home_xg": 1.9, "away_xg": 0.8, "xg_source": "bsd", "source": "bsd"},
+    ])
+    check("duplicate identity is detected", duplicate_identity_count(rows) == 1)
+    check("duplicate scores are not conflicting", conflicting_score_identity_count(rows) == 0)
+    clean = dedupe_fixtures(rows)
+    check("provider duplicates collapse to one match", len(clean) == 1)
+    check("rich BSD row survives reconciliation",
+          clean.iloc[0]["fixture_id"] == "bsd-1"
+          and float(clean.iloc[0]["home_xg"]) == 1.9)
+
+
 def test_feature_store_pit():
     print("7. feature store point-in-time")
     from club_soccer import feature_store as FS
@@ -236,8 +261,12 @@ def test_fdcouk_alias_coverage():
         p = played[played["competition"] == comp]
         if p.empty:
             continue
-        merged = p.merge(grp, left_on=["date", "home", "away"],
-                         right_on=["match_date", "home", "away"],
+        # BSD now contains additional matches beyond the football-data.co.uk
+        # market universe. Test that every market row still joins to our
+        # canonical fixture table; do not fail merely because BSD has a
+        # legitimate fixture for which fd.co.uk has no odds row.
+        merged = grp.merge(p, left_on=["match_date", "home", "away"],
+                           right_on=["date", "home", "away"],
                          how="left", indicator=True)
         cov = float((merged["_merge"] == "both").mean())
         if cov < 0.95:
@@ -512,6 +541,101 @@ def test_card_written():
         check("card.md reports upcoming fixture count", "Upcoming fixtures:" in text)
 
 
+def test_bsd_detail_and_player_contracts():
+    print("17. BSD detail, cup metadata, and player-stat contracts")
+    import json as _json
+    from bsd_client import (fixture_detail_fields, normalized_match_statistics,
+                            _STATUS_ALIASES)
+    from club_soccer import fetch as F
+    from club_soccer import seed_real as SR
+    from club_soccer.player_features import _players_from_event, _extract_player_entry
+
+    check("upcoming status alias maps to BSD notstarted",
+          _STATUS_ALIASES["upcoming"] == "notstarted")
+    detail = _json.loads((ROOT / "club_soccer/data/bsd_cache/event_205762.json").read_text())
+    stats = normalized_match_statistics(detail)
+    check("BSD live_stats maps shots, SoT, corners, and xG",
+          stats["home"]["shots"] == 16.0 and stats["home"]["sot"] == 8.0
+          and stats["home"]["corners"] == 4.0 and stats["home"]["xg"] == 4.88)
+    extracted = SR._extract_stats(detail)
+    check("seed_real uses the same normalized statistic contract",
+          extracted["home"]["shots"] == 16 and extracted["home"]["xg"] == 4.88)
+
+    shootout = _json.loads((ROOT / "club_soccer/data/bsd_cache/event_207339.json").read_text())
+    fields = fixture_detail_fields(shootout)
+    check("cup shootout metadata records scope and winner",
+          fields["result_scope"] == "penalties" and fields["shootout_home"] == 4.0
+          and fields["shootout_away"] == 5.0 and fields["shootout_winner"] == "away")
+    check("BSD xG carries explicit source provenance",
+          fixture_detail_fields(detail).get("xg_source") == "bsd")
+    lineup_rows = _players_from_event(detail)
+    positive = [r for r, _ in lineup_rows if r["mins"] > 0]
+    unused = [r for r, _ in lineup_rows if r["mins"] == 0]
+    ids = {r["player_id"] for r, _ in lineup_rows if r["player_id"] is not None}
+    check("current BSD lineups separate appearances from unused substitutes",
+          len(positive) >= 20 and len(unused) >= 1 and len(ids) >= 20)
+    canonical = _extract_player_entry({
+        "event": {"id": 1},
+        "player": {"id": 99, "name": "Test Striker", "position": "FW"},
+        "minutes_played": 72, "expected_goals": 0.42,
+        "expected_assists": 0.11, "goal_assist": 1,
+    })
+    check("canonical player-stat row keeps provider ID/minutes/xG/xA",
+          canonical["player_id"] == 99 and canonical["mins"] == 72.0
+          and canonical["xg"] == 0.42 and canonical["xa"] == 0.11)
+
+    old = pd.DataFrame([{"fixture_id": 1, "home_shots": 10, "home_xg": 1.2}])
+    incoming = pd.DataFrame([{"fixture_id": 1, "home_shots": "", "home_xg": 2.0},
+                             {"fixture_id": 2, "home_shots": 4, "home_xg": 0.5}])
+    merged = F._merge_fixture_rows(old, incoming)
+    row = merged[merged["fixture_id"].astype(str) == "1"].iloc[0]
+    check("fixture merge preserves rich observations while filling new fields",
+          float(row["home_shots"]) == 10.0 and float(row["home_xg"]) == 2.0
+          and len(merged) == 2)
+
+
+def test_real_xg_and_date_aware_prediction():
+    print("18. real xG fit and date-aware prediction path")
+    fx = M.load_fixtures()
+    sample = M.played(fx).head(300).copy()
+    sample["home_xg"] = sample["home_goals"].astype(float) + 0.2
+    sample["away_xg"] = sample["away_goals"].astype(float) + 0.2
+    params = M.fit(sample)
+    check("fit records complete real-xG coverage", params.get("real_xg_coverage") == 1.0)
+    teams = params["teams"]
+    if len(teams) >= 2:
+        comp = str(sample.iloc[0]["competition"])
+        pred = M.predict_match(teams[0], teams[1], comp, "2026-07-20", params=params)
+        check("predict_match returns a normalized date-aware forecast",
+              abs(sum(pred["probs"][k] for k in ("home", "draw", "away")) - 1.0) < 0.002)
+    else:
+        check("predict_match returns a normalized date-aware forecast", False)
+
+
+def test_gated_production_layers():
+    print("19. gated calibration, market blend, and immutable adjustments")
+    from club_soccer import calibrate as CAL
+    from app import market_blend as MB
+
+    active_calibration = CAL.load_active_maps()
+    check("temperature calibration passes the multi-split gate",
+          isinstance(active_calibration, dict)
+          and active_calibration.get("method") == "temperature"
+          and 0.5 < float(active_calibration.get("temperature", 0.0)) < 1.5)
+    check("market blend remains off until an explicit promotion",
+          not MB.is_default_on("club_soccer"))
+
+    params = M.load_params()
+    adj = {"home": {"attack_mult": 0.5, "defense_mult": 1.5},
+           "away": {"attack_mult": 1.1, "defense_mult": 0.9}}
+    original = json.loads(json.dumps(adj))
+    M.predict("Arsenal", "Chelsea", "Premier League", params=params, player_adj=adj)
+    check("prediction does not mutate caller-owned player adjustments", adj == original)
+
+    from club_soccer import schema as S
+    check("fixture schema includes xG provenance", "xg_source" in S.FIXTURE_COLUMNS)
+
+
 if __name__ == "__main__":
     test_registry()
     test_api_key_lookup()
@@ -519,6 +643,7 @@ if __name__ == "__main__":
     test_edge_and_settlement()
     test_runner_and_adapter()
     test_health_and_repair()
+    test_match_identity_reconciliation()
     test_feature_store_pit()
     test_fdcouk_alias_coverage()
     test_minutes_windows()
@@ -529,6 +654,9 @@ if __name__ == "__main__":
     test_snapshot_odds_dedupe()
     test_do_not_bet()
     test_card_written()
+    test_bsd_detail_and_player_contracts()
+    test_real_xg_and_date_aware_prediction()
+    test_gated_production_layers()
     print()
     if _fails:
         print(f"{len(_fails)} FAILURE(S): " + ", ".join(_fails))
