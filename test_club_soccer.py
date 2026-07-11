@@ -327,6 +327,34 @@ def test_transfer_reattribution():
           and hit.iloc[0]["to_team"] == "Club B")
 
 
+def test_player_quality_pit():
+    print("10b. point-in-time player quality")
+    from club_soccer import player_quality as PQ
+
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "player_stats_cache.json"
+        apps = [
+            {"date": "2026-01-01", "team": "Club A", "mins": 450,
+             "xg": 2.25, "metrics": {"total_pass": 200, "accurate_pass": 160}},
+            {"date": "2026-04-01", "team": "Club A", "mins": 450,
+             "xg": 9.0, "metrics": {"total_pass": 200, "accurate_pass": 200}},
+        ]
+        path.write_text(json.dumps({"v": 3, "id:1": {
+            "name": "Test Forward", "player_id": 1, "pos": "FW", "apps": apps}}))
+        store = PQ.PlayerQualityStore(path).load()
+        before = store.team_quality("Club A", "2026-03-01")
+        after = store.team_quality("Club A", "2026-06-01")
+        check("quality snapshot excludes future appearances",
+              before["n_players"] == 1 and after["n_players"] == 1
+              and after["attack_xg90"] > before["attack_xg90"])
+        check("quality match features require sufficient XI coverage",
+              not store.match_features("Club A", "Club B", "2026-06-01")["usable"])
+
+    p = PQ.quality_probs(np.array([0.45, 0.25, 0.30]), 0.5, 0.03,
+                         {"attack_xg90": 0.2, "pass_pct": 1.0})
+    check("quality probability correction stays normalized", abs(float(p.sum()) - 1.0) < 1e-12)
+
+
 def test_context_apply():
     print("11. context GLM application")
     lam_h, lam_a = 1.4, 1.1
@@ -617,11 +645,13 @@ def test_gated_production_layers():
     from club_soccer import calibrate as CAL
     from app import market_blend as MB
 
-    active_calibration = CAL.load_active_maps()
-    check("temperature calibration passes the multi-split gate",
-          isinstance(active_calibration, dict)
-          and active_calibration.get("method") == "temperature"
-          and 0.5 < float(active_calibration.get("temperature", 0.0)) < 1.5)
+    stored_calibration = CAL.load_maps()
+    check("temperature calibration is explicitly gated",
+          isinstance(stored_calibration, dict)
+          and stored_calibration.get("method") == "temperature"
+          and 0.5 < float(stored_calibration.get("temperature", 0.0)) < 1.5
+          and (CAL.load_active_maps() is not None) == bool(
+              json.loads(CAL.CALIB_FILE.read_text()).get("active", False)))
     check("market blend remains off until an explicit promotion",
           not MB.is_default_on("club_soccer"))
 
@@ -631,6 +661,16 @@ def test_gated_production_layers():
     original = json.loads(json.dumps(adj))
     M.predict("Arsenal", "Chelsea", "Premier League", params=params, player_adj=adj)
     check("prediction does not mutate caller-owned player adjustments", adj == original)
+    base = M.predict("Arsenal", "Chelsea", "Premier League", params=params)
+    inactive = M.predict("Arsenal", "Chelsea", "Premier League", params=params,
+                         quality_adj={"active": False, "shift": 0.2})
+    check("inactive player quality is an exact no-op",
+          np.allclose([base["probs"][k] for k in ("home", "draw", "away")],
+                      [inactive["probs"][k] for k in ("home", "draw", "away")]))
+    active = M.predict("Arsenal", "Chelsea", "Premier League", params=params,
+                       quality_adj={"active": True, "shift": 0.1, "coverage": 1.0})
+    check("active quality adjustment remains normalized",
+          abs(sum(active["probs"][k] for k in ("home", "draw", "away")) - 1.0) < 0.002)
 
     from club_soccer import schema as S
     check("fixture schema includes xG provenance", "xg_source" in S.FIXTURE_COLUMNS)
@@ -648,6 +688,7 @@ if __name__ == "__main__":
     test_fdcouk_alias_coverage()
     test_minutes_windows()
     test_transfer_reattribution()
+    test_player_quality_pit()
     test_context_apply()
     test_standings_asof()
     test_weather_features()

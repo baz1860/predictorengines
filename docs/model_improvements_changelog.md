@@ -391,3 +391,46 @@ the time-split gate.
 - `club_soccer/data/player_stats_cache.json`
 - `club_soccer/data/context_coef_club.json`
 - `club_soccer/context.py`, `test_club_soccer.py`
+
+## Club Soccer Phase 11 — 2024–25 historical backfill (2026-07-11)
+
+Pulled the previous season from BSD with a 2,500-detail request budget. The
+canonical fixture history now contains **22,377 played matches** and
+**24,997 total fixtures**. The pull added score history and 11 additional
+real-xG rows, but older BSD detail coverage is materially thinner: overall
+real-xG coverage is now **15.1%**, while SoT coverage is **86.9%**.
+
+The expanded raw production path is **0.611198 Brier / 1.019589 log-loss**
+over 21,062 walk-forward predictions. This is a small raw improvement versus
+the previous backfill, but the temperature calibration candidate failed the
+early fixed splits (it improved only the recent split), so calibration is
+held inactive. This is intentional: the extra history stays in the model,
+but no calibration lift is claimed until the next rolling data refresh
+re-establishes the gate.
+
+Player cache history now reaches 2025-07-08, but minutes-load coverage remains
+below 5% and is not activated.
+
+## Club Soccer Phase 12 — paper-informed player-quality layer (2026-07-11)
+
+The metric-stability preprint was converted into a point-in-time feature layer,
+not a direct match-model assumption. `player_quality.py` builds recent top-XI
+snapshots from pre-match appearances, shrinks xG/90 by position, shrinks pass
+completion by pass count, and returns neutral output for low-coverage teams.
+The model now has an optional `quality_adj` path, but it is gated separately
+from availability and cannot affect production while inactive.
+
+The fixed-split gate currently has **0 usable rows out of 21,062**: BSD's
+historical event details contain match-level information but no player rows,
+and the player-stat endpoint returned empty responses for the older cached
+events. The artifact is therefore written with `active: false`; this is a
+coverage failure rather than evidence that player quality has no predictive
+value. Current-season BSD player data remains useful for lineups and
+availability, but a historical player backfill is required before this signal
+can be judged fairly.
+
+### Files
+- `club_soccer/player_quality.py`
+- `club_soccer/data/player_quality.json`
+- `club_soccer/model.py`, `club_soccer/player_features.py`
+- `test_club_soccer.py`, `club_soccer/README.md`

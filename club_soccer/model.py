@@ -1176,12 +1176,24 @@ def apply_context_adj(M: np.ndarray, context_adj: dict) -> np.ndarray:
     return score_matrix(lam_h, lam_a)
 
 
+def apply_quality_adj(M: np.ndarray, quality_adj: dict) -> np.ndarray:
+    """Apply a gated point-in-time player-quality home/away shift."""
+    if not quality_adj or not quality_adj.get("active"):
+        return M
+    shift = float(np.clip(float(quality_adj.get("shift", 0.0)), -0.20, 0.20))
+    xg_h = float(sum(i * float(M[i, :].sum()) for i in range(M.shape[0])))
+    xg_a = float(sum(j * float(M[:, j].sum()) for j in range(M.shape[1])))
+    return score_matrix(max(0.05, xg_h * np.exp(shift)),
+                        max(0.05, xg_a * np.exp(-shift)))
+
+
 def predict(home: str, away: str, competition: str | None = None,
             model: str = "ensemble", neutral: bool = False,
             params: dict | None = None,
             player_adj: dict | None = None,
             context_adj: dict | None = None,
-            match_date=None) -> dict:
+            match_date=None,
+            quality_adj: dict | None = None) -> dict:
     """Predict match outcome probabilities.
 
     Parameters
@@ -1199,6 +1211,9 @@ def predict(home: str, away: str, competition: str | None = None,
     context_adj:   Optional rest/congestion/minutes-load correction from
                    club_soccer.context (report-only/gated — see context.py).
                    Format: {"home": {"mult": float}, "away": {"mult": float}}
+    quality_adj:   Optional point-in-time player-quality correction from
+                   club_soccer.player_quality; inactive unless its fixed
+                   walk-forward gate passes.
     match_date:     Optional fixture date used by league-season adjustments.
     """
     params = load_params() if params is None else params
@@ -1242,6 +1257,9 @@ def predict(home: str, away: str, competition: str | None = None,
                 }
         M = apply_player_adj(M, applied_player_adj)
 
+    if quality_adj:
+        M = apply_quality_adj(M, quality_adj)
+
     if context_adj:
         M = apply_context_adj(M, context_adj)
 
@@ -1263,6 +1281,11 @@ def predict(home: str, away: str, competition: str | None = None,
             side: round(float((context_adj.get(side) or {}).get("mult", 1.0)), 4)
             for side in ("home", "away")
         }
+    if quality_adj and quality_adj.get("active"):
+        out["quality_adj"] = {
+            "shift": round(float(quality_adj.get("shift", 0.0)), 4),
+            "coverage": round(float(quality_adj.get("coverage", 0.0)), 4),
+        }
     return out
 
 
@@ -1270,7 +1293,8 @@ def predict_match(home: str, away: str, competition: str | None,
                   match_date: str, model: str = "ensemble",
                   neutral: bool = False, params: dict | None = None,
                   player_adj: dict | None = None, fixture_id=None,
-                  apply_context: bool = True) -> dict:
+                  apply_context: bool = True,
+                  quality_adj: dict | None = None) -> dict:
     """Point-in-time prediction wrapper used by cards and edge pricing.
 
     This keeps the live paths aligned: if a context coefficient is promoted,
@@ -1292,7 +1316,8 @@ def predict_match(home: str, away: str, competition: str | None,
             fixture_id=fixture_id,
         )
     return predict(home, away, competition, model, neutral, params=params,
-                   player_adj=player_adj, context_adj=context_adj, match_date=match_date)
+                   player_adj=player_adj, context_adj=context_adj,
+                   match_date=match_date, quality_adj=quality_adj)
 
 
 def main() -> None:

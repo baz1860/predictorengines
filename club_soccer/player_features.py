@@ -500,6 +500,86 @@ class PlayerFeatureStore:
             self.save()
         return processed
 
+    def refresh_player_stats_from_cached_events(
+        self, api_key: str, max_events: int = 500,
+        pause: float = 0.1, newest_first: bool = False,
+    ) -> int:
+        """Fetch player-stat rows for event details already in ``bsd_cache``.
+
+        This is deliberately separate from :meth:`refresh`: a wide BSD
+        ``/events/`` historical query can be slow or paginate unexpectedly,
+        while the local event-detail cache already gives us an exact,
+        bounded set of event IDs.  Each response is written before it is
+        ingested, so an interrupted run can resume without repeating calls.
+        Events are ingested chronologically regardless of request order so
+        the per-player rolling cache retains the correct latest appearances.
+        """
+        if not self._loaded:
+            self.load()
+        STATS_CACHE.mkdir(parents=True, exist_ok=True)
+        cached: list[tuple[str, Path, dict]] = []
+        for cache_file in STATS_CACHE.glob("event_*.json"):
+            try:
+                detail = json.loads(cache_file.read_text())
+                date = event_date_utc(detail)
+            except Exception:
+                continue
+            if date:
+                cached.append((date, cache_file, detail))
+        cached.sort(key=lambda row: row[0], reverse=newest_first)
+        selected = cached[:max(0, int(max_events))]
+        fetched = 0
+        stat_rows = 0
+        for date, cache_file, detail in selected:
+            eid = str(detail.get("id") or cache_file.stem.removeprefix("event_"))
+            stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+            if stats_cache.exists():
+                continue
+            try:
+                rows = get_all_player_stats(api_key, event=eid)
+                stats_cache.write_text(json.dumps(rows, indent=2, ensure_ascii=False))
+                fetched += 1
+                stat_rows += len(rows)
+                if pause:
+                    time.sleep(pause)
+            except Exception as exc:
+                print(f"  ! player stats event {eid}: {exc}")
+                continue
+
+        # Rebuild from all local player-stat responses, including older ones
+        # fetched in prior runs.  This avoids order-dependent results when a
+        # run is interrupted between request and checkpoint.
+        # Empty historical responses are still cached to avoid retry storms,
+        # but they are not evidence that the existing player cache should be
+        # discarded.  Rebuild only when at least one non-empty player-stat
+        # payload was received.
+        if stat_rows:
+            self._data = {"v": CACHE_SCHEMA_VERSION}
+            for _, cache_file, detail in sorted(cached, key=lambda row: row[0]):
+                eid = str(detail.get("id") or cache_file.stem.removeprefix("event_"))
+                stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+                if not stats_cache.exists():
+                    self._ingest_event_players(
+                        detail, str(detail.get("home_team") or ""),
+                        str(detail.get("away_team") or ""),
+                        event_date_utc(detail)[:10], eid)
+                    continue
+                try:
+                    rows = json.loads(stats_cache.read_text())
+                except Exception:
+                    continue
+                home = str(detail.get("home_team") or "")
+                away = str(detail.get("away_team") or "")
+                detail_date = event_date_utc(detail)
+                if rows:
+                    self._ingest_player_stats(rows, home, away, detail_date[:10], eid)
+                else:
+                    self._ingest_event_players(detail, home, away,
+                                               detail_date[:10], eid)
+            self.save()
+        print(f"  Player-stat responses fetched: {fetched}, rows: {stat_rows}.")
+        return fetched
+
     def _ingest_event_players(self, detail: dict, home: str, away: str, date: str,
                               event_id: str | int | None = None) -> None:
         """Update the cache from one event's player list, using the side each
@@ -979,6 +1059,9 @@ def main() -> None:
     ap.add_argument("--from-cache", action="store_true",
                     help="Rebuild player stats from already-downloaded bsd_cache/ "
                          "files (no API calls)")
+    ap.add_argument("--refresh-cached", action="store_true",
+                    help="Fetch player stats for locally cached event details "
+                         "(requires --api-key or BSD_API_KEY)")
     ap.add_argument("--summary", action="store_true",
                     help="Print cache summary")
     ap.add_argument("--player", metavar="NAME",
@@ -992,6 +1075,8 @@ def main() -> None:
                     help="Player names missing from the away side")
     ap.add_argument("--max-events", type=int, default=500,
                     help="Max BSD events to process (default 500)")
+    ap.add_argument("--oldest-first", action="store_true",
+                    help="With --refresh-cached, prioritise the oldest local events")
     ap.add_argument("--days-back", type=int, default=60,
                     help="With --refresh, how many days of finished matches "
                          "to pull (default 60)")
@@ -1014,13 +1099,18 @@ def main() -> None:
         if not (args.refresh or args.from_cache or args.summary or args.player or args.match):
             return
 
-    if args.refresh:
+    if args.refresh or args.refresh_cached:
         key = args.api_key or get_key("bsd", env="BSD_API_KEY")
         if not key:
             sys.exit("No BSD key — set BSD_API_KEY or use --api-key.")
         store.load()
-        store.refresh(key, max_events=args.max_events, pause=args.pause,
-                      days_back=args.days_back)
+        if args.refresh:
+            store.refresh(key, max_events=args.max_events, pause=args.pause,
+                          days_back=args.days_back)
+        if args.refresh_cached:
+            store.refresh_player_stats_from_cached_events(
+                key, max_events=args.max_events, pause=args.pause,
+                newest_first=not args.oldest_first)
     elif args.from_cache:
         store.load()
         n = store.refresh_from_cache()

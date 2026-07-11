@@ -106,6 +106,7 @@ fixed time splits, with the result recorded in
 | Promoted/relegated shrinkage prior | `python3 -m club_soccer.model --tune-promo-prior --write` | `promo_prior.active` in `model_params.json` |
 | Season-boundary Elo regression + half-life | `python3 -m club_soccer.model --tune-season-boundary --write` | `season_regress_rho.active` / `half_life_days.active` |
 | Context GLM (rest/congestion/motivation/tier-gap/weather) | `python3 -m club_soccer.context --fit` | `active` in `data/context_coef_club.json` |
+| Point-in-time player quality (shrunk xG/90 + pass completion) | `python3 -m club_soccer.player_quality --validate` | `active` in `data/player_quality.json`; currently inactive until coverage and fixed-split scores pass |
 | Market blend (1X2 / OU2.5) | `python3 -m club_soccer.fit_market_blend --write` | `app/market_blend.DEFAULT_BLEND_ON` (code change) |
 
 ### Player layer
@@ -132,6 +133,19 @@ that widens on doubtful absences or a missing GK) are computed by
 `club_soccer/availability.py` and applied via `edge.py --player-adj`
 (alias `--availability`) — haircuts the Kelly stake by lineup confidence,
 never the point estimate.
+
+The paper-informed quality layer is separate from availability. It uses only
+appearances before the match date, selects the recent top XI by recency-
+weighted minutes, shrinks xG/90 by position and pass completion by a pass-count
+prior, and reports coverage/uncertainty. It is validated by fixed walk-forward
+splits and remains neutral unless every split improves both Brier score and
+log-loss. BSD currently supplies enough player history for availability and
+lineup work, but not enough historical team coverage to activate this layer.
+
+```bash
+python3 -m club_soccer.player_quality --validate          # report + gated artifact
+python3 -m club_soccer.player_features --refresh-cached --oldest-first --max-events 500  # BSD backfill for cached events
+```
 
 ### League structure
 
@@ -200,6 +214,6 @@ python3 test_club_soccer.py
 ```
 
 Calibration and market anchoring are explicit promotion gates. Temperature
-calibration is currently active because it improved both primary metrics on
-all fixed splits; market anchoring remains off because it has not beaten the
-market benchmark under the stricter gate.
+calibration is currently held inactive after the 2024–25 backfill because it
+failed the early fixed splits; market anchoring remains off because it has not
+beaten the market benchmark under the stricter gate.

@@ -1,15 +1,15 @@
 {
   "coef": {
-    "rest_diff": -0.009235862025886001,
-    "euro_hangover": -0.12847288570064475,
-    "tier_gap": 0.35193888587254124
+    "rest_diff": -0.0068849990188833525,
+    "euro_hangover": -0.1341849744444394,
+    "tier_gap": 0.304510897957094
   },
-  "n": 38690,
-  "xi_load_coverage": 0.0498,
+  "n": 42646,
+  "xi_load_coverage": 0.0487,
   "rest_cap": 14,
   "rest_diff_clip": 7,
   "cong14_clip": 4,
   "xi_load14_clip": 3.0,
   "active": true,
-  "note": "Activated after held-out ensemble gate: Brier 0.6076 -> 0.6068 and log-loss 1.0149 -> 1.0139 on 2025-12 onward. xi_load14_diff remains excluded at 5.0% coverage."
+  "note": "Activated after expanded-data held-out ensemble gate: Brier 0.6068 -> 0.6063 and log-loss 1.0140 -> 1.0133 on 2025-12 onward. Minutes-load and precipitation terms excluded from active production because their point-in-time gates were insufficient."
 }
