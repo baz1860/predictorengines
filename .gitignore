@@ -10,6 +10,10 @@ __pycache__/
 .venv/
 venv/
 
+# Local command-center/runtime state: SQLite databases, WAL files, caches,
+# and backups are generated on launch and must not be versioned.
+config/
+
 # Local app settings may contain API keys.
 data/app_settings.json
 data/api_keys.json
