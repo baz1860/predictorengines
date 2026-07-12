@@ -8,7 +8,7 @@ const ALL_CAPS = [
   { id: "refresh", label: "Refresh" },
   { id: "round_3balls", label: "Round 3-Balls" },
 ];
-const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "draw", "refresh", "round_3balls", "bankroll", "settings", "ops", "placeholder"];
+const PANELS = ["dashboard", "fixtures", "outrights", "history", "predict", "simulate", "edge", "draw", "refresh", "round_3balls", "bankroll", "settings", "ops", "console", "placeholder"];
 
 const state = { engines: [], current: null, activeCap: "predict", view: "engine" };
 
@@ -77,6 +77,7 @@ async function init() {
   $("nav-bankroll").onclick = openBankroll;
   $("nav-settings").onclick = openSettings;
   $("nav-ops").onclick = openOps;
+  $("nav-console").onclick = openConsole;
   try {
     const { engines } = await api("/api/engines");
     state.engines = engines;
@@ -100,7 +101,8 @@ function renderSidebar() {
     list.appendChild(btn);
   });
   [["dashboard", "nav-dashboard"], ["fixtures", "nav-fixtures"], ["outrights", "nav-outrights"],
-   ["history", "nav-history"], ["bankroll", "nav-bankroll"], ["settings", "nav-settings"], ["ops", "nav-ops"]]
+   ["history", "nav-history"], ["bankroll", "nav-bankroll"], ["settings", "nav-settings"], ["ops", "nav-ops"],
+   ["console", "nav-console"]]
     .forEach(([v, id]) => $(id).classList.toggle("active", state.view === v));
 }
 
@@ -1142,6 +1144,168 @@ async function loadRunHistory() {
   } catch (e) {
     $("ops-run-history").innerHTML = `<div class="empty-mini">Could not load run history: ${esc(e.message)}</div>`;
   }
+}
+
+// ---------- CONSOLE (suite) ----------
+// A real terminal inside the app: any command runs in the persistent shell
+// session (app/console.py), streaming output into its own card. Mirrors the
+// Ops run-log incremental polling (since / next_offset).
+const consoleState = { active: null, timer: null, history: [], hidx: -1, wired: false };
+
+async function openConsole() {
+  setSuiteView("console", "Console");
+  const input = $("console-input");
+  if (!consoleState.wired) {
+    consoleState.wired = true;
+    $("console-run").onclick = () => { runConsole(input.value); input.value = ""; };
+    $("console-stop").onclick = stopConsole;
+    $("console-clear").onclick = () => { $("console-cards").innerHTML = ""; };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); runConsole(input.value); input.value = ""; }
+      else if (e.key === "ArrowUp") {
+        if (!consoleState.history.length) return;
+        e.preventDefault();
+        consoleState.hidx = Math.max(0, consoleState.hidx - 1);
+        input.value = consoleState.history[consoleState.hidx] || "";
+        input.setSelectionRange(input.value.length, input.value.length);
+      } else if (e.key === "ArrowDown") {
+        if (!consoleState.history.length) return;
+        e.preventDefault();
+        consoleState.hidx = Math.min(consoleState.history.length, consoleState.hidx + 1);
+        input.value = consoleState.history[consoleState.hidx] || "";
+      }
+    });
+  }
+  await loadConsoleHistory();
+  input.focus();
+}
+
+async function loadConsoleHistory() {
+  const host = $("console-cards");
+  try {
+    const data = await api("/api/console/history");
+    if (data.cwd) $("console-cwd").textContent = "cwd: " + data.cwd;
+    host.innerHTML = "";
+    (data.commands || []).forEach((c) => {
+      const card = buildConsoleCard(c.cmd);
+      card.pre.textContent = c.output || "";
+      if (c.running) {
+        setConsoleBadge(card, "running");
+      } else {
+        finishConsoleCard(card, c.status, c.exit_code, null);
+        // If a command was still running when the panel was reopened, resume it.
+      }
+      host.appendChild(card.el);
+      if (c.running && !consoleState.active) {
+        consoleState.active = { id: c.id, offset: 0, card, t0: Date.now() };
+        setConsoleRunning(true);
+        pollConsole();
+      }
+    });
+  } catch (e) {
+    host.innerHTML = `<div class="empty-mini">Could not load console: ${esc(e.message)}</div>`;
+  }
+}
+
+function buildConsoleCard(cmd) {
+  const el = document.createElement("section");
+  el.className = "console-card";
+  el.innerHTML = `
+    <div class="console-chead">
+      <span class="console-cmd"><b>$</b> ${esc(cmd)}</span>
+      <span class="console-time"></span>
+      <span class="console-badge">running</span>
+      <button class="icon-btn console-copy" title="Copy output">⧉</button>
+      <button class="icon-btn console-close" title="Remove">✕</button>
+    </div>
+    <pre class="console-out run-log"></pre>`;
+  const pre = el.querySelector(".console-out");
+  const card = { el, pre, badge: el.querySelector(".console-badge"), time: el.querySelector(".console-time") };
+  el.querySelector(".console-close").onclick = () => el.remove();
+  el.querySelector(".console-copy").onclick = () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(pre.textContent);
+    toast("Output copied", "pos");
+  };
+  return card;
+}
+
+function setConsoleBadge(card, kind, text) {
+  card.badge.className = "console-badge " + kind;
+  card.badge.textContent = text || kind;
+}
+
+function setConsoleRunning(on) {
+  $("console-run").disabled = on;
+  $("console-stop").disabled = !on;
+}
+
+function finishConsoleCard(card, status, exitCode, seconds) {
+  if (seconds != null) card.time.textContent = seconds + "s";
+  if (status === "done") {
+    if (exitCode === 0) setConsoleBadge(card, "ok", "exit 0");
+    else setConsoleBadge(card, "fail", "exit " + (exitCode == null ? "?" : exitCode));
+  } else if (status === "stopped") {
+    setConsoleBadge(card, "warn", "stopped");
+  } else {
+    setConsoleBadge(card, "fail", status || "error");
+  }
+}
+
+async function runConsole(cmd) {
+  cmd = (cmd || "").trim();
+  if (!cmd) return;
+  if (consoleState.active) { toast("A command is already running", "neg"); return; }
+  if (consoleState.history[consoleState.history.length - 1] !== cmd) consoleState.history.push(cmd);
+  consoleState.hidx = consoleState.history.length;
+
+  const card = buildConsoleCard(cmd);
+  $("console-cards").prepend(card.el);
+  setConsoleRunning(true);
+  const t0 = Date.now();
+  try {
+    const st = await post("/api/console/run", { cmd });
+    consoleState.active = { id: st.id, offset: st.next_offset || 0, card, t0 };
+    pollConsole();
+  } catch (e) {
+    finishConsoleCard(card, "error", null, ((Date.now() - t0) / 1000).toFixed(1));
+    setConsoleRunning(false);
+    consoleState.active = null;
+    toast(e.message, "neg");
+  }
+}
+
+async function pollConsole() {
+  if (consoleState.timer) { clearTimeout(consoleState.timer); consoleState.timer = null; }
+  const a = consoleState.active;
+  if (!a) return;
+  let st;
+  try {
+    st = await api(`/api/console?id=${encodeURIComponent(a.id)}&since=${a.offset}`);
+  } catch (e) {
+    return; // transient; try again next tick if still on panel
+  }
+  if (st.lines && st.lines.length) {
+    const pre = a.card.pre;
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 6;
+    pre.textContent += st.lines.join("");
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  }
+  if (typeof st.next_offset === "number") a.offset = st.next_offset;
+  if (st.cwd) $("console-cwd").textContent = "cwd: " + st.cwd;
+  a.card.time.textContent = ((Date.now() - a.t0) / 1000).toFixed(1) + "s";
+
+  if (st.running) {
+    if (!$("panel-console").hidden) consoleState.timer = setTimeout(pollConsole, 500);
+    else { consoleState.timer = setTimeout(pollConsole, 500); } // keep following even off-panel
+  } else {
+    finishConsoleCard(a.card, st.status, st.exit_code, ((Date.now() - a.t0) / 1000).toFixed(1));
+    setConsoleRunning(false);
+    consoleState.active = null;
+  }
+}
+
+async function stopConsole() {
+  try { await post("/api/console/stop", {}); } catch (e) { /* ignore */ }
 }
 
 // -- scheduler ----------------------------------------------------------------
