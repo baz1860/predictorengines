@@ -622,6 +622,68 @@ def test_bsd_detail_and_player_contracts():
           and len(merged) == 2)
 
 
+def test_bsd_enrichment_flattening():
+    print("17b. BSD v2 enrichment flattening")
+    from club_soccer.bsd_enrichment import flatten_record
+
+    record = {
+        "event": {"id": 379, "event_date": "2026-05-24T15:00:00Z",
+                  "season_id": 1, "league_id": 1, "league_name": "Premier League",
+                  "home_team": "Home FC", "away_team": "Away FC",
+                  "home_team_id": 10, "away_team_id": 20,
+                  "home_score": 2, "away_score": 1},
+        "stats": {"stats": {"home": {"expected_goals": 1.7, "total_shots": 12,
+                                         "pass_accuracy_pct": 82},
+                               "away": {"expected_goals": 0.8, "total_shots": 8}},
+                  "shotmap": [{"home": True, "xg": 0.4, "xgot": 0.2,
+                               "type": "goal", "sit": "assisted", "pos": {"x": 12}},
+                              {"home": False, "xg": 0.1, "type": "miss",
+                               "sit": "set-piece", "pos": {"x": 30}}]},
+        "lineups": {"lineup_status": "confirmed",
+                     "lineups": {"home": {"starters": [{"id": 1}] * 11,
+                                            "substitutes": [{"id": 2}] * 5},
+                                  "away": {"starters": [{"id": 3}] * 10,
+                                            "substitutes": []}}},
+        "incidents": {"incidents": [{"type": "goal"}, {"type": "yellow_card"},
+                                      {"type": "substitution"}]},
+        "player_stats": {"player_stats": [
+            {"team_id": 10, "minutes_played": 90, "expected_goals": 0.4,
+             "goals": 1, "total_pass": 20, "accurate_pass": 16, "rating": 7.2},
+            {"team_id": 20, "minutes_played": 90, "expected_goals": 0.1,
+             "goals": 0, "total_pass": 10, "accurate_pass": 7, "rating": 6.5},
+        ]},
+    }
+    row = flatten_record(record)
+    check("v2 flatten keeps team xG and shotmap totals",
+          row["home_bsd_xg"] == 1.7 and row["home_shotmap_shots"] == 1
+          and row["away_shotmap_xg"] == 0.1)
+    check("v2 flatten keeps confirmed XI and player aggregates",
+          row["lineup_status"] == "confirmed" and row["home_lineup_starters"] == 11
+          and row["home_player_goals"] == 1.0 and row["away_player_count"] == 1)
+    check("v2 flatten counts incidents", row["incident_goals"] == 1
+          and row["incident_yellow_cards"] == 1 and row["incident_substitutions"] == 1)
+
+
+def test_bsd_enrichment_candidate_join():
+    print("17c. BSD xG candidate join is isolated and fill-only")
+    from club_soccer.bsd_enrichment import candidate_fixtures
+
+    base = pd.DataFrame({
+        "fixture_id": [1, 2], "home_xg": [np.nan, 1.0],
+        "away_xg": [np.nan, 0.8], "xg_source": ["", "existing"],
+    })
+    enriched = pd.DataFrame({
+        "fixture_id": [1, 2], "fixture_joined": [True, True],
+        "home_shotmap_xg": [1.4, 1.8], "away_shotmap_xg": [0.7, 0.9],
+    })
+    candidate, report = candidate_fixtures(base, enriched)
+    check("candidate fills only missing xG pairs",
+          report == {"eligible": 2, "filled": 1, "skipped_existing": 1}
+          and float(candidate.loc[0, "home_xg"]) == 1.4
+          and float(candidate.loc[1, "home_xg"]) == 1.0
+          and candidate.loc[0, "xg_source"] == "bzzoiro_v2")
+
+
 def test_real_xg_and_date_aware_prediction():
     print("18. real xG fit and date-aware prediction path")
     fx = M.load_fixtures()
@@ -696,6 +758,8 @@ if __name__ == "__main__":
     test_do_not_bet()
     test_card_written()
     test_bsd_detail_and_player_contracts()
+    test_bsd_enrichment_flattening()
+    test_bsd_enrichment_candidate_join()
     test_real_xg_and_date_aware_prediction()
     test_gated_production_layers()
     print()

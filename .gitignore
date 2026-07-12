@@ -68,6 +68,11 @@ club_soccer/data/bsd_cache/
 club_soccer/data/weather_cache/
 club_soccer/data/fdcouk_cache/
 club_soccer/data/clubelo_cache/
+# Bzzoiro v2 shotmaps/lineups/player payloads and flattened joins are
+# provider-fetched local state; rebuild with club_soccer.bsd_enrichment.
+club_soccer/data/bsd_enrichment/
+club_soccer/data/bsd_enriched_matches.csv
+club_soccer/data/bsd_enrichment_manifest.csv
 # Player-appearance cache: derived from bsd_cache, huge (pretty-printed JSON
 # per player), and rebuildable via `python3 -m club_soccer.player_features
 # --refresh` or `--from-cache`. Not meant to be versioned either.

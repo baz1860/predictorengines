@@ -83,17 +83,26 @@ def _metrics_arr(P: np.ndarray, A: np.ndarray) -> tuple[float, float, float]:
 
 
 def walk_forward(min_train: int = 200, verbose: bool = False,
-                 league_adjustments: bool = False) -> tuple[list[dict], dict]:
+                 league_adjustments: bool = False,
+                 fixtures: pd.DataFrame | None = None,
+                 test_from: str | None = None,
+                 test_to: str | None = None) -> tuple[list[dict], dict]:
     """Monthly-refit walk-forward: refit once per calendar month on all prior
     matches, then predict that month. O(months) fits, not O(matches) — required
     once fixtures.csv holds real (thousands of rows) data rather than the seed.
     """
-    df = M.played(M.load_fixtures()).sort_values("date").reset_index(drop=True)
+    df = M.played(M.load_fixtures() if fixtures is None else fixtures).sort_values("date").reset_index(drop=True)
     df["_ym"] = df["date"].dt.to_period("M")
     months = sorted(df["_ym"].unique())
+    first_test = pd.Timestamp(test_from).to_period("M") if test_from else None
+    last_test = pd.Timestamp(test_to).to_period("M") if test_to else None
     rows: list[dict] = []
     skipped = 0
     for k, ym in enumerate(months, 1):
+        if first_test is not None and ym < first_test:
+            continue
+        if last_test is not None and ym >= last_test:
+            continue
         test = df[df["_ym"] == ym]
         train = df[df["date"] < test["date"].min()]
         if len(train) < min_train:

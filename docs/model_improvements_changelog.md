@@ -434,3 +434,35 @@ can be judged fairly.
 - `club_soccer/data/player_quality.json`
 - `club_soccer/model.py`, `club_soccer/player_features.py`
 - `test_club_soccer.py`, `club_soccer/README.md`
+
+## Club Soccer Phase 13 — Bzzoiro v2 spatial/player enrichment (2026-07-11)
+
+Added a resumable Bzzoiro-compatible v2 collector for match shotmaps, team
+stats, confirmed lineups, incidents and per-match player statistics. The
+completed cache contains **712 league matches**: all 380 Premier League
+matches in the requested window plus 332 matches from La Liga, Serie A,
+Bundesliga and Ligue 1 before the provider rate-limited the remaining bulk
+backfill. Every cached match has a shotmap and confirmed lineup, and all 712
+have player rows: **29,511 player-match observations**, with zero endpoint
+failures. All rows joined to canonical fixtures (699 exact, 13 same-pair/date
+fallback joins).
+
+The first model challenger was deliberately conservative: fill only missing
+complete xG pairs from the Bzzoiro shotmap and preserve existing xG. It filled
+158 pairs. On the 2025/26 point-in-time window (7,003 predictions), Brier moved
+from **0.610597 to 0.610642** and log-loss from **1.019031 to 1.019091**. The
+small regression fails the 1X2 promotion gate, so the production fixture file
+and model remain unchanged. OU2.5 and BTTS diagnostics moved slightly better,
+but that is not sufficient to promote a 1X2 training change.
+
+The raw cache is retained for a second experiment using pre-match rolling
+shot quality and player availability. The collector supports resumable
+low-rate continuation after the provider throttle; no data is discarded when
+an endpoint is unavailable.
+
+### Files
+- `club_soccer/bsd_enrichment.py`, `bsd_client.py`
+- `club_soccer/data/bsd_enrichment/`
+- `club_soccer/data/bsd_enriched_matches.csv`
+- `club_soccer/data/bsd_enrichment_manifest.csv`
+- `club_soccer/validate.py`, `test_club_soccer.py`

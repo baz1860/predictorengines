@@ -105,6 +105,85 @@ def get_all_events(api_key: str, **filters) -> list[dict]:
     return results
 
 
+# ── BSD v2 spatial/event feed ────────────────────────────────────────────────
+
+def get_v2_events_page(api_key: str, **params) -> dict:
+    """Return one page from BSD's v2 event index.
+
+    The v2 feed uses ``league_id`` and carries stable numeric event IDs for
+    the richer shotmap/lineup endpoints.  It is kept separate from the older
+    ``/api/events/`` client because the two feeds use different filter names.
+    """
+    return _get("/api/v2/events/", api_key, **params)
+
+
+def get_all_v2_events(api_key: str, **filters) -> list[dict]:
+    """Fetch all pages of the v2 event index, deduplicated by event ID."""
+    results: list[dict] = []
+    limit = int(filters.pop("limit", _DEFAULT_LIMIT))
+    offset = 0
+    seen: set[int | str] = set()
+    while True:
+        page = get_v2_events_page(api_key, limit=limit, offset=offset, **filters)
+        batch = page.get("results") or page.get("events") or []
+        for item in batch:
+            eid = item.get("id")
+            if eid not in seen:
+                seen.add(eid)
+                results.append(item)
+        if not page.get("next") or not batch:
+            break
+        offset += limit
+    return results
+
+
+def get_v2_event(api_key: str, event_id: int | str) -> dict:
+    """Return v2 event metadata for one event."""
+    return _get(f"/api/v2/events/{event_id}/", api_key)
+
+
+def get_v2_event_stats(api_key: str, event_id: int | str) -> dict:
+    """Return team stats, shotmap, momentum and average positions."""
+    return _get(f"/api/v2/events/{event_id}/stats/", api_key)
+
+
+def get_v2_event_lineups(api_key: str, event_id: int | str) -> dict:
+    """Return confirmed or predicted lineups for one v2 event."""
+    return _get(f"/api/v2/events/{event_id}/lineups/", api_key)
+
+
+def get_v2_event_incidents(api_key: str, event_id: int | str) -> dict:
+    """Return goals, cards, substitutions and other event incidents."""
+    return _get(f"/api/v2/events/{event_id}/incidents/", api_key)
+
+
+def get_v2_event_player_stats(api_key: str, event_id: int | str) -> dict:
+    """Return the v2 per-match player-stat payload.
+
+    Unlike the legacy paginated ``/api/player-stats/`` feed, this endpoint is
+    keyed directly by the v2 event id and returns ``player_stats`` plus a
+    count.  It is the endpoint exposed by Bzzoiro's MCP ``get_player_stats``
+    tool for current v2 fixtures.
+    """
+    return _get(f"/api/v2/events/{event_id}/player-stats/", api_key)
+
+
+def get_all_v2_leagues(api_key: str) -> list[dict]:
+    """Fetch the complete v2 league catalogue for provenance labels."""
+    results: list[dict] = []
+    limit = _DEFAULT_LIMIT
+    offset = 0
+    while True:
+        page = _get("/api/v2/leagues/", api_key,
+                    limit=limit, offset=offset)
+        batch = page.get("results") or []
+        results.extend(batch)
+        if not page.get("next") or not batch:
+            break
+        offset += limit
+    return results
+
+
 def get_event(api_key: str, event_id: int | str) -> dict:
     """Single event by BSD id — includes full lineups and stats when available."""
     return _get(f"/api/events/{event_id}/", api_key)

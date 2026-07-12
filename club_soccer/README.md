@@ -147,6 +147,29 @@ python3 -m club_soccer.player_quality --validate          # report + gated artif
 python3 -m club_soccer.player_features --refresh-cached --oldest-first --max-events 500  # BSD backfill for cached events
 ```
 
+### Bzzoiro v2 enrichment
+
+The Bzzoiro-compatible v2 collector keeps raw, resumable match payloads for
+shotmaps, team stats, confirmed lineups, incidents and per-match player stats.
+It is an experimental cache and does not alter `fixtures.csv` or production
+predictions by itself. The default pull is the 2025/26 league season for the
+Premier League and the other four major European leagues:
+
+```bash
+python3 -m club_soccer.bsd_enrichment --collect \
+  --league-ids 1,3,4,5,6 --date-from 2025-08-01 --date-to 2026-05-31 \
+  --oldest-first --workers 12
+python3 -m club_soccer.bsd_enrichment --refresh-players --workers 12
+python3 -m club_soccer.bsd_enrichment --summary --join
+```
+
+Raw records are stored under `data/bsd_enrichment/`; the flattened join is
+`data/bsd_enriched_matches.csv`. `candidate_fixtures()` can fill missing
+historical xG pairs from shotmaps for a gated walk-forward experiment while
+preserving existing xG observations. Current-season player rows are available
+through the v2 event player-stats endpoint; older historical matches may have
+shotmaps without player-level coverage.
+
 ### League structure
 
 ```bash
