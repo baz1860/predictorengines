@@ -15,13 +15,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .competitions import strength
+from .competitions import get as comp_get, strength
+from . import schema
+from .identities import dedupe_fixtures
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
 PARAMS = DATA / "model_params.json"
 ENSEMBLE_WEIGHTS = DATA / "ensemble_weights.json"
+_FIXTURE_CACHE: dict[tuple[str, int, int], pd.DataFrame] = {}
 MAX_GOALS = 10
 BASE_ELO = 1500.0
 HOME_ADV_ELO = 55.0
@@ -34,6 +37,11 @@ RECENT_K = 6        # matches in the shots-on-target recency window
 # fixtures before its own number dominates.
 HFA_SHRINK_K = 300.0
 RHO_SHRINK_K = 400.0
+# League-season environment estimates are deliberately more strongly shrunk
+# than the existing competition diagnostics. A season has only a few hundred
+# matches, and the estimate must survive early-season walk-forward windows.
+LEAGUE_ENV_SHRINK_K = 200.0
+LEAGUE_HFA_SHRINK_K = 200.0
 
 
 def _fit_comp_rho(home_goals, away_goals, lam_h: float, lam_a: float) -> float:
@@ -92,13 +100,23 @@ def load_ensemble_weights(path: Path = ENSEMBLE_WEIGHTS) -> dict[str, float]:
 def load_fixtures(path: Path = FIXTURES) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"{path} not found. Run club_soccer/fetch.py or add fixtures.csv.")
-    df = pd.read_csv(path, parse_dates=["date"])
-    for c in ("home_goals", "away_goals", "home_shots", "away_shots",
-              "home_sot", "away_sot", "home_corners", "away_corners"):
+    stat = path.stat()
+    cache_key = (str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size))
+    cached = _FIXTURE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.copy(deep=True)
+    df = pd.read_csv(path, parse_dates=["date"], low_memory=False)
+    for c in schema.FIXTURE_NUMERIC_COLUMNS:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     df["neutral"] = pd.to_numeric(df.get("neutral", 0), errors="coerce").fillna(0).astype(int)
-    return df
+    clean = dedupe_fixtures(df)
+    # Keep one file-stat keyed cache entry for the card and context paths,
+    # which otherwise reload/reconcile the same 20k-row file once per
+    # upcoming fixture. A changed fetch naturally invalidates it.
+    _FIXTURE_CACHE.clear()
+    _FIXTURE_CACHE[cache_key] = clean.copy(deep=True)
+    return clean
 
 
 def played(df: pd.DataFrame) -> pd.DataFrame:
@@ -219,7 +237,8 @@ def _promo_relegation_priors(df: pd.DataFrame, teams: list[str]) -> dict[str, di
 
 def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         season_regress_rho: float = 0.0, half_life_days: float = HALF_LIFE_DAYS,
-        elo_decay_half_life_days: float | None = None) -> dict:
+        elo_decay_half_life_days: float | None = None,
+        league_adjustments: bool = False) -> dict:
     """
     promo_prior: optional {"pi": float, "active": bool} (P4.5). When active,
     a promoted/relegated team's attack/defence shrinkage prior (see the gf/ga
@@ -242,6 +261,11 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
     time since that team's PREVIOUS match (any competition), applied once
     right before each of its matches. None (default) = incumbent behaviour
     (undecayed, standard sequential Elo).
+    league_adjustments: when true, use shrunk league-season scoring-rate and
+    home-advantage estimates for league matches. Cups and European matches
+    continue to use the existing competition-strength fallback. This is an
+    experiment flag so the incumbent production model remains unchanged until
+    a walk-forward gate promotes it.
     """
     df = played(load_fixtures() if df is None else df).sort_values("date")
     if df.empty:
@@ -268,8 +292,8 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         stats[t][key] += float(goals) * wt
         stats[t][wk] += wt
 
-    # SoT-based expected goals: conv = league goals per shot-on-target; a team's
-    # xG-for/against is its SoT scaled by conv. Cleaner strength signal than goals.
+    # Expected-goals signal: use BSD's real team xG wherever available and
+    # retain the established SoT conversion as a fallback for older sources.
     has_sot = "home_sot" in df.columns and "away_sot" in df.columns
     if has_sot:
         sot_sum = float(np.average(df["home_sot"].fillna(0) + df["away_sot"].fillna(0), weights=w))
@@ -277,15 +301,38 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         conv = goal_sum / sot_sum if sot_sum > 0 else 0.0
     else:
         conv = 0.0
-    if conv > 0:
+    has_real_xg = all(c in df.columns for c in ("home_xg", "away_xg"))
+    raw_xg_mask = ((df["home_xg"].notna() & df["away_xg"].notna())
+                   if has_real_xg else pd.Series(False, index=df.index))
+    # Empty source values are treated as observed for backwards compatibility
+    # with pre-v4 fixture files. New fetches explicitly mark BSD xG; `proxy`
+    # is reserved for rows deliberately materialised from SoT conversion.
+    if "xg_source" in df.columns:
+        source = df["xg_source"].fillna("").astype(str).str.strip().str.lower()
+        source = source.where(~source.isin({"", "nan", "none"}),
+                              np.where(raw_xg_mask, "observed", "none"))
+    else:
+        source = pd.Series(np.where(raw_xg_mask, "observed", "none"), index=df.index)
+    real_xg_mask = raw_xg_mask & source.ne("proxy")
+    proxy_xg_mask = (~real_xg_mask) & df["home_sot"].notna() & df["away_sot"].notna() \
+        if has_sot else pd.Series(False, index=df.index)
+    real_xg_coverage = float(real_xg_mask.mean()) if len(df) else 0.0
+    proxy_xg_coverage = float(proxy_xg_mask.mean()) if len(df) else 0.0
+    if conv > 0 or bool(real_xg_mask.any()):
         for r, wt in zip(df.itertuples(index=False), w):
             hs, as_ = getattr(r, "home_sot", np.nan), getattr(r, "away_sot", np.nan)
-            if pd.isna(hs) or pd.isna(as_):
+            hxg, axg = getattr(r, "home_xg", np.nan), getattr(r, "away_xg", np.nan)
+            xg_src = str(getattr(r, "xg_source", "")).strip().lower()
+            if not pd.isna(hxg) and not pd.isna(axg) and xg_src != "proxy":
+                xf_h, xf_a = float(hxg), float(axg)
+            elif conv > 0 and not pd.isna(hs) and not pd.isna(as_):
+                xf_h, xf_a = float(hs) * conv, float(as_) * conv
+            else:
                 continue
-            stats[r.home]["xf"] += float(hs) * conv * wt
-            stats[r.home]["xa"] += float(as_) * conv * wt
-            stats[r.away]["xf"] += float(as_) * conv * wt
-            stats[r.away]["xa"] += float(hs) * conv * wt
+            stats[r.home]["xf"] += xf_h * wt
+            stats[r.home]["xa"] += xf_a * wt
+            stats[r.away]["xf"] += xf_a * wt
+            stats[r.away]["xa"] += xf_h * wt
             stats[r.home]["wx"] += wt
             stats[r.away]["wx"] += wt
 
@@ -374,16 +421,24 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         defence_xpress[t] = float(math.log(max(0.25, xpa) / global_avg))
         base_xf[t], base_xa[t] = xf, xa
 
-    # recency form: last RECENT_K matches' SoT-xG vs the team's season baseline,
-    # as a log-ratio attack/defence nudge (the part long-run rates miss).
+    # recency form: last RECENT_K matches' xG signal vs the team's season
+    # baseline, as a log-ratio attack/defence nudge (the part long-run rates
+    # miss). Prefer BSD's observed xG and fall back to the SoT conversion for
+    # older sources/competitions where xG is absent.
     recent = {t: [] for t in teams}
     if conv > 0:
         for r in df.sort_values("date").itertuples(index=False):
             hs, as_ = getattr(r, "home_sot", np.nan), getattr(r, "away_sot", np.nan)
-            if pd.isna(hs) or pd.isna(as_):
+            hxg, axg = getattr(r, "home_xg", np.nan), getattr(r, "away_xg", np.nan)
+            xg_src = str(getattr(r, "xg_source", "")).strip().lower()
+            if not pd.isna(hxg) and not pd.isna(axg) and xg_src != "proxy":
+                xf_h, xf_a = float(hxg), float(axg)
+            elif not pd.isna(hs) and not pd.isna(as_):
+                xf_h, xf_a = float(hs) * conv, float(as_) * conv
+            else:
                 continue
-            recent[r.home].append((float(hs) * conv, float(as_) * conv))
-            recent[r.away].append((float(as_) * conv, float(hs) * conv))
+            recent[r.home].append((xf_h, xf_a))
+            recent[r.away].append((xf_a, xf_h))
     fatk, fdef = {}, {}
     for t in teams:
         last = recent[t][-RECENT_K:]
@@ -451,15 +506,87 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         comp_adj[str(comp)] = {"hfa_mult": round(mult, 4), "rho": round(rho_shr, 4),
                                "n": int(n_c)}
 
+    # ── hierarchical league-season scoring environment (experimental) ──────
+    # The environment is separate from team attack/defence. This prevents a
+    # high-scoring league or season from being absorbed into every team's
+    # strength, and lets a newly promoted team retain a sensible absolute
+    # scoring baseline. Only league rows are included; cup/European fixtures
+    # retain the existing static competition-strength treatment.
+    league_env: dict[str, dict[str, float]] = {}
+    league_env_by_comp: dict[str, dict[str, float]] = {}
+    league_hfa: dict[str, dict[str, float]] = {}
+    league_hfa_by_comp: dict[str, dict[str, float]] = {}
+    if "type" in df.columns:
+        league = df[df["type"].astype(str).str.lower().eq("league")].copy()
+    else:
+        league = df.iloc[0:0].copy()
+    league_hfa_prior = global_hfa
+    if not league.empty:
+        # Align the recency weights to the sorted training frame's original
+        # positions. This avoids accidental reindexing after groupby operations.
+        weighted = df.copy()
+        weighted["_wt"] = w
+        weighted["_season"] = weighted["date"].map(_season_year)
+        weighted = weighted[weighted["type"].astype(str).str.lower().eq("league")]
+        weighted["_goals_per_match"] = weighted["home_goals"] + weighted["away_goals"]
+        weighted["_hfa"] = weighted["home_goals"] - weighted["away_goals"]
+
+        league_hfa_prior = float(np.average(weighted["_hfa"], weights=weighted["_wt"]))
+        for (comp, season), grp in weighted.groupby(["competition", "_season"]):
+            n_eff = float(grp["_wt"].sum())
+            if n_eff <= 0:
+                continue
+            raw_rate = float(np.average(grp["_goals_per_match"], weights=grp["_wt"]) / 2.0)
+            rate = (n_eff * raw_rate + LEAGUE_ENV_SHRINK_K * global_avg) / (n_eff + LEAGUE_ENV_SHRINK_K)
+            raw_hfa = float(np.average(grp["_hfa"], weights=grp["_wt"]))
+            hfa = (n_eff * raw_hfa + LEAGUE_HFA_SHRINK_K * league_hfa_prior) / (n_eff + LEAGUE_HFA_SHRINK_K)
+            key = f"{comp}|{int(season)}"
+            league_env[key] = {
+                "rate": round(float(rate), 6),
+                "mult": round(float(np.clip(rate / max(global_avg, 0.1), 0.75, 1.30)), 6),
+                "n": int(len(grp)), "n_eff": round(n_eff, 3),
+            }
+            league_hfa[key] = {
+                "hfa": round(float(np.clip(hfa, 0.05, 0.60)), 6),
+                "n": int(len(grp)), "n_eff": round(n_eff, 3),
+            }
+
+        for comp, grp in weighted.groupby("competition"):
+            n_eff = float(grp["_wt"].sum())
+            if n_eff <= 0:
+                continue
+            raw_rate = float(np.average(grp["_goals_per_match"], weights=grp["_wt"]) / 2.0)
+            rate = (n_eff * raw_rate + LEAGUE_ENV_SHRINK_K * global_avg) / (n_eff + LEAGUE_ENV_SHRINK_K)
+            raw_hfa = float(np.average(grp["_hfa"], weights=grp["_wt"]))
+            hfa = (n_eff * raw_hfa + LEAGUE_HFA_SHRINK_K * league_hfa_prior) / (n_eff + LEAGUE_HFA_SHRINK_K)
+            league_env_by_comp[str(comp)] = {
+                "rate": round(float(rate), 6),
+                "mult": round(float(np.clip(rate / max(global_avg, 0.1), 0.75, 1.30)), 6),
+                "n": int(len(grp)), "n_eff": round(n_eff, 3),
+            }
+            league_hfa_by_comp[str(comp)] = {
+                "hfa": round(float(np.clip(hfa, 0.05, 0.60)), 6),
+                "n": int(len(grp)), "n_eff": round(n_eff, 3),
+            }
+
     params = {"teams": teams, "global_avg": global_avg,
               "home_goal_adv": global_hfa,
               "global_hfa": global_hfa, "comp_adj": comp_adj,
               "comp_adj_active": False,
+              "league_adjustments_active": bool(league_adjustments),
+              "league_env": league_env,
+              "league_env_by_comp": league_env_by_comp,
+              "league_hfa": league_hfa,
+              "league_hfa_by_comp": league_hfa_by_comp,
+              "league_hfa_prior": round(float(league_hfa_prior), 6),
               "attack": attack, "defence": defence,
               "attack_xg": attack_xg, "defence_xg": defence_xg,
               "attack_xpress": attack_xpress, "defence_xpress": defence_xpress,
               "fatk": fatk, "fdef": fdef, "conv": float(conv),
               "xpress_coef": xp_coef,
+              "real_xg_coverage": round(real_xg_coverage, 6),
+              "proxy_xg_coverage": round(proxy_xg_coverage, 6),
+              "xg_source_counts": {str(k): int(v) for k, v in source.value_counts().items()},
               "elo": {k: float(v) for k, v in elo.items()},
               "fitted_matches": int(len(df))}
     return params
@@ -856,10 +983,64 @@ def _comp_rho(params: dict, competition: str | None) -> float:
     return float(params.get("comp_adj", {}).get(str(competition), {}).get("rho", DC_RHO))
 
 
-def _lambdas_goals(params: dict, home: str, away: str, competition: str | None, neutral: bool) -> tuple[float, float]:
-    base = float(params["global_avg"])
-    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2 * _home_mult(params, competition)
-    comp_adj = (strength(competition) - 0.75) * 0.12
+def _is_league(competition: str | None) -> bool:
+    comp = comp_get(competition)
+    return bool(comp and comp.kind == "league")
+
+
+def _season_key(competition: str | None, match_date=None) -> str | None:
+    if not competition or match_date is None:
+        return None
+    try:
+        return f"{competition}|{int(_season_year(match_date))}"
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _league_env_mult(params: dict, competition: str | None, match_date=None) -> float:
+    """Return a shrunk league-season scoring-environment multiplier.
+
+    The feature is opt-in via the fitted params flag. If a season has no
+    observations yet, the competition-level hierarchy is used; if the
+    competition is not a registered league, the incumbent multiplier is 1.
+    """
+    if not params.get("league_adjustments_active", False) or not _is_league(competition):
+        return 1.0
+    by_season = params.get("league_env", {})
+    row = by_season.get(_season_key(competition, match_date)) if match_date is not None else None
+    if row is None:
+        row = params.get("league_env_by_comp", {}).get(str(competition))
+    return float(np.clip((row or {}).get("mult", 1.0), 0.75, 1.30))
+
+
+def _effective_hfa(params: dict, competition: str | None, match_date=None) -> float:
+    """Point-in-time home-goal advantage for the requested competition."""
+    base = float(params.get("home_goal_adv", 0.25))
+    if not params.get("league_adjustments_active", False) or not _is_league(competition):
+        return base * _home_mult(params, competition)
+    by_season = params.get("league_hfa", {})
+    row = by_season.get(_season_key(competition, match_date)) if match_date is not None else None
+    if row is None:
+        row = params.get("league_hfa_by_comp", {}).get(str(competition))
+    return float(np.clip((row or {}).get("hfa", base), 0.05, 0.60))
+
+
+def _effective_elo_home_adv(params: dict, competition: str | None,
+                            match_date=None) -> float:
+    """Map league goal HFA onto Elo's rating-point home advantage."""
+    if not params.get("league_adjustments_active", False) or not _is_league(competition):
+        return HOME_ADV_ELO * _home_mult(params, competition)
+    base_hfa = max(float(params.get("global_hfa", params.get("home_goal_adv", 0.25))), 0.05)
+    ratio = _effective_hfa(params, competition, match_date) / base_hfa
+    return HOME_ADV_ELO * float(np.clip(ratio, 0.70, 1.30))
+
+
+def _lambdas_goals(params: dict, home: str, away: str, competition: str | None,
+                   neutral: bool, match_date=None) -> tuple[float, float]:
+    base = float(params["global_avg"]) * _league_env_mult(params, competition, match_date)
+    home_adv = 0.0 if neutral else _effective_hfa(params, competition, match_date) / 2
+    comp_adj = 0.0 if (params.get("league_adjustments_active", False) and _is_league(competition)) \
+        else (strength(competition) - 0.75) * 0.12
     ah = params["attack"].get(home, 0.0); da = params["defence"].get(away, 0.0)
     aa = params["attack"].get(away, 0.0); dh = params["defence"].get(home, 0.0)
     # defence[t] = log(goals_conceded / global_avg): POSITIVE means a team concedes
@@ -871,10 +1052,10 @@ def _lambdas_goals(params: dict, home: str, away: str, competition: str | None, 
 
 
 def _lambdas_elo(params: dict, home: str, away: str, neutral: bool,
-                 competition: str | None = None) -> tuple[float, float]:
+                 competition: str | None = None, match_date=None) -> tuple[float, float]:
     eh = params["elo"].get(home, BASE_ELO)
     ea = params["elo"].get(away, BASE_ELO)
-    home_elo = 0.0 if neutral else HOME_ADV_ELO * _home_mult(params, competition)
+    home_elo = 0.0 if neutral else _effective_elo_home_adv(params, competition, match_date)
     diff = (eh + home_elo - ea) / 400.0
     total = 2.55 + 0.20 * abs(diff)
     share = 1.0 / (1.0 + math.exp(-1.2 * diff))
@@ -882,13 +1063,14 @@ def _lambdas_elo(params: dict, home: str, away: str, neutral: bool,
 
 
 def _lambdas_xg(params: dict, home: str, away: str, competition: str | None,
-                neutral: bool, form: bool = False) -> tuple[float, float]:
+                neutral: bool, form: bool = False, match_date=None) -> tuple[float, float]:
     """SoT-based expected-goals lambdas. With form=True, add the recent-SoT
     attack/defence nudge. Falls back to the goals attack/defence maps if a
     cached params dict predates the xg fields."""
-    base = float(params["global_avg"])
-    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2 * _home_mult(params, competition)
-    comp_adj = (strength(competition) - 0.75) * 0.12
+    base = float(params["global_avg"]) * _league_env_mult(params, competition, match_date)
+    home_adv = 0.0 if neutral else _effective_hfa(params, competition, match_date) / 2
+    comp_adj = 0.0 if (params.get("league_adjustments_active", False) and _is_league(competition)) \
+        else (strength(competition) - 0.75) * 0.12
     ax = params.get("attack_xg", params["attack"])
     dx = params.get("defence_xg", params["defence"])
     ah = ax.get(home, 0.0); da = dx.get(away, 0.0)
@@ -902,15 +1084,16 @@ def _lambdas_xg(params: dict, home: str, away: str, competition: str | None,
 
 
 def _lambdas_xpress(params: dict, home: str, away: str, competition: str | None,
-                    neutral: bool) -> tuple[float, float]:
+                    neutral: bool, match_date=None) -> tuple[float, float]:
     """Shot-pressure lambdas from SoT, non-SoT shots and corners.
 
     Falls back to the existing SoT-xG maps for cached params that predate the
     shot-pressure fields.
     """
-    base = float(params["global_avg"])
-    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2 * _home_mult(params, competition)
-    comp_adj = (strength(competition) - 0.75) * 0.12
+    base = float(params["global_avg"]) * _league_env_mult(params, competition, match_date)
+    home_adv = 0.0 if neutral else _effective_hfa(params, competition, match_date) / 2
+    comp_adj = 0.0 if (params.get("league_adjustments_active", False) and _is_league(competition)) \
+        else (strength(competition) - 0.75) * 0.12
     ax = params.get("attack_xpress", params.get("attack_xg", params["attack"]))
     dx = params.get("defence_xpress", params.get("defence_xg", params["defence"]))
     ah = ax.get(home, 0.0); da = dx.get(away, 0.0)
@@ -920,14 +1103,16 @@ def _lambdas_xpress(params: dict, home: str, away: str, competition: str | None,
 
 
 def component_matrices(params: dict, home: str, away: str,
-                       competition: str | None, neutral: bool) -> dict[str, np.ndarray]:
+                       competition: str | None, neutral: bool,
+                       match_date=None) -> dict[str, np.ndarray]:
     rho = _comp_rho(params, competition)
     return {
-        "goals": score_matrix(*_lambdas_goals(params, home, away, competition, neutral), rho),
-        "elo": score_matrix(*_lambdas_elo(params, home, away, neutral, competition), rho),
-        "xg": score_matrix(*_lambdas_xg(params, home, away, competition, neutral), rho),
-        "xgf": score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True), rho),
-        "xpress": score_matrix(*_lambdas_xpress(params, home, away, competition, neutral), rho),
+        "goals": score_matrix(*_lambdas_goals(params, home, away, competition, neutral, match_date), rho),
+        "elo": score_matrix(*_lambdas_elo(params, home, away, neutral, competition, match_date), rho),
+        "xg": score_matrix(*_lambdas_xg(params, home, away, competition, neutral, match_date=match_date), rho),
+        "xgf": score_matrix(*_lambdas_xg(params, home, away, competition, neutral,
+                                         form=True, match_date=match_date), rho),
+        "xpress": score_matrix(*_lambdas_xpress(params, home, away, competition, neutral, match_date), rho),
     }
 
 
@@ -991,11 +1176,24 @@ def apply_context_adj(M: np.ndarray, context_adj: dict) -> np.ndarray:
     return score_matrix(lam_h, lam_a)
 
 
+def apply_quality_adj(M: np.ndarray, quality_adj: dict) -> np.ndarray:
+    """Apply a gated point-in-time player-quality home/away shift."""
+    if not quality_adj or not quality_adj.get("active"):
+        return M
+    shift = float(np.clip(float(quality_adj.get("shift", 0.0)), -0.20, 0.20))
+    xg_h = float(sum(i * float(M[i, :].sum()) for i in range(M.shape[0])))
+    xg_a = float(sum(j * float(M[:, j].sum()) for j in range(M.shape[1])))
+    return score_matrix(max(0.05, xg_h * np.exp(shift)),
+                        max(0.05, xg_a * np.exp(-shift)))
+
+
 def predict(home: str, away: str, competition: str | None = None,
             model: str = "ensemble", neutral: bool = False,
             params: dict | None = None,
             player_adj: dict | None = None,
-            context_adj: dict | None = None) -> dict:
+            context_adj: dict | None = None,
+            match_date=None,
+            quality_adj: dict | None = None) -> dict:
     """Predict match outcome probabilities.
 
     Parameters
@@ -1013,6 +1211,10 @@ def predict(home: str, away: str, competition: str | None = None,
     context_adj:   Optional rest/congestion/minutes-load correction from
                    club_soccer.context (report-only/gated — see context.py).
                    Format: {"home": {"mult": float}, "away": {"mult": float}}
+    quality_adj:   Optional point-in-time player-quality correction from
+                   club_soccer.player_quality; inactive unless its fixed
+                   walk-forward gate passes.
+    match_date:     Optional fixture date used by league-season adjustments.
     """
     params = load_params() if params is None else params
     teams = set(params["teams"])
@@ -1024,30 +1226,39 @@ def predict(home: str, away: str, competition: str | None = None,
         raise ValueError("Pick two different teams.")
     rho = _comp_rho(params, competition)
     if model == "ensemble":
-        parts = component_matrices(params, home, away, competition, neutral)
+        parts = component_matrices(params, home, away, competition, neutral, match_date)
         weights = load_ensemble_weights()
         M = sum(weights[k] * parts[k] for k in ENSEMBLE_COMPONENTS)
         M = M / M.sum()
     elif model == "goals":
-        M = score_matrix(*_lambdas_goals(params, home, away, competition, neutral), rho)
+        M = score_matrix(*_lambdas_goals(params, home, away, competition, neutral, match_date), rho)
     elif model == "elo":
-        M = score_matrix(*_lambdas_elo(params, home, away, neutral, competition), rho)
+        M = score_matrix(*_lambdas_elo(params, home, away, neutral, competition, match_date), rho)
     elif model == "xg":
-        M = score_matrix(*_lambdas_xg(params, home, away, competition, neutral, form=True), rho)
+        M = score_matrix(*_lambdas_xg(params, home, away, competition, neutral,
+                                      form=True, match_date=match_date), rho)
     elif model == "xpress":
-        M = score_matrix(*_lambdas_xpress(params, home, away, competition, neutral), rho)
+        M = score_matrix(*_lambdas_xpress(params, home, away, competition, neutral, match_date), rho)
     else:
         raise ValueError("Unknown model: use ensemble, goals, elo, xg, or xpress.")
 
     # Apply player availability adjustment (if provided)
     player_adj_applied = bool(player_adj)
+    applied_player_adj = {}
     if player_adj:
         # Clamp multipliers to [0.80, 1.25] to prevent overcorrection
         for side in ("home", "away"):
             if side in player_adj:
-                player_adj[side]["attack_mult"]  = max(0.80, min(1.25, float(player_adj[side].get("attack_mult", 1.0))))
-                player_adj[side]["defense_mult"] = max(0.80, min(1.25, float(player_adj[side].get("defense_mult", 1.0))))
-        M = apply_player_adj(M, player_adj)
+                src = player_adj[side] or {}
+                applied_player_adj[side] = {
+                    **src,
+                    "attack_mult": max(0.80, min(1.25, float(src.get("attack_mult", 1.0)))),
+                    "defense_mult": max(0.80, min(1.25, float(src.get("defense_mult", 1.0)))),
+                }
+        M = apply_player_adj(M, applied_player_adj)
+
+    if quality_adj:
+        M = apply_quality_adj(M, quality_adj)
 
     if context_adj:
         M = apply_context_adj(M, context_adj)
@@ -1061,7 +1272,7 @@ def predict(home: str, away: str, competition: str | None = None,
            "scorelines": top_scorelines(M), "matrix": M}
     if player_adj_applied:
         out["player_adj"] = {
-            side: {k: v for k, v in player_adj.get(side, {}).items()
+            side: {k: v for k, v in applied_player_adj.get(side, {}).items()
                    if k in ("attack_mult", "defense_mult", "n_missing")}
             for side in ("home", "away")
         }
@@ -1070,7 +1281,43 @@ def predict(home: str, away: str, competition: str | None = None,
             side: round(float((context_adj.get(side) or {}).get("mult", 1.0)), 4)
             for side in ("home", "away")
         }
+    if quality_adj and quality_adj.get("active"):
+        out["quality_adj"] = {
+            "shift": round(float(quality_adj.get("shift", 0.0)), 4),
+            "coverage": round(float(quality_adj.get("coverage", 0.0)), 4),
+        }
     return out
+
+
+def predict_match(home: str, away: str, competition: str | None,
+                  match_date: str, model: str = "ensemble",
+                  neutral: bool = False, params: dict | None = None,
+                  player_adj: dict | None = None, fixture_id=None,
+                  apply_context: bool = True,
+                  quality_adj: dict | None = None) -> dict:
+    """Point-in-time prediction wrapper used by cards and edge pricing.
+
+    This keeps the live paths aligned: if a context coefficient is promoted,
+    rest/congestion/motivation/weather/minutes corrections are applied to both
+    the displayed prediction and the priced prediction. With inactive context
+    coefficients this is exactly the legacy model plus any supplied player
+    availability adjustment.
+    """
+    context_adj = {}
+    if apply_context and match_date:
+        from . import context as CTX
+        comp = CTX.comp_get(competition) if competition else None
+        context_adj = CTX.context_adj_for_match(
+            home, away, str(match_date),
+            is_domestic=bool(comp and comp.kind in ("league", "cup")),
+            competition=competition,
+            season=_season_year(match_date),
+            is_cup=bool(comp and comp.kind == "cup"),
+            fixture_id=fixture_id,
+        )
+    return predict(home, away, competition, model, neutral, params=params,
+                   player_adj=player_adj, context_adj=context_adj,
+                   match_date=match_date, quality_adj=quality_adj)
 
 
 def main() -> None:

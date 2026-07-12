@@ -1,14 +1,15 @@
 {
   "coef": {
-    "rest_diff": -0.010561969755173341,
-    "euro_hangover": -0.13334847814391887
+    "rest_diff": -0.0068849990188833525,
+    "euro_hangover": -0.1341849744444394,
+    "tier_gap": 0.304510897957094
   },
-  "n": 33946,
-  "xi_load_coverage": 0.0068,
+  "n": 42646,
+  "xi_load_coverage": 0.0487,
   "rest_cap": 14,
   "rest_diff_clip": 7,
   "cong14_clip": 4,
   "xi_load14_clip": 3.0,
-  "active": false,
-  "note": "lambda *= exp(sum b_i*feature_i); intercept not applied; promote per plan Sec 12 before setting active=true"
+  "active": true,
+  "note": "Activated after expanded-data held-out ensemble gate: Brier 0.6068 -> 0.6063 and log-loss 1.0140 -> 1.0133 on 2025-12 onward. Minutes-load and precipitation terms excluded from active production because their point-in-time gates were insufficient."
 }

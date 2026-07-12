@@ -43,10 +43,16 @@ if [[ "$CARD_ONLY" -eq 0 ]]; then
   if [[ -z "$FAST" ]]; then
     python3 -m nfl.fetch_data || echo "  NFL data refresh skipped (offline / offseason)"
     python3 -m nfl.power --fit || echo "  NFL refit skipped"
+    python3 -m nfl.validate --gate \
+      || echo "  ##### NFL VALIDATION GATE FAILED — review before betting #####"
     python3 -m cfb.fetch_data || echo "  CFB data refresh skipped (offline / offseason)"
     python3 -m cfb.power --fit || echo "  CFB refit skipped"
+    python3 -m cfb.validate --gate --quiet 2>/dev/null \
+      || echo "  ##### CFB VALIDATION GATE FAILED — review before betting #####"
+    python3 -m nhl.validate --quiet --gate \
+      || echo "  ##### NHL VALIDATION GATE FAILED — review before betting #####"
   else
-    echo "  --fast: skipping NFL/CFB data pulls and refits"
+    echo "  --fast: skipping NFL/CFB data pulls, refits, and validation gates"
   fi
   python3 -m app.provenance --write --engine nfl >/dev/null 2>&1 || true
   python3 -m app.provenance --write --engine cfb >/dev/null 2>&1 || true

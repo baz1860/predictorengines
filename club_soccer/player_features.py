@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 import unicodedata
@@ -61,14 +62,14 @@ for p in (str(ROOT), str(HERE)):
         sys.path.insert(0, p)
 
 from bsd_client import (
-    get_all_events, get_event, event_date_utc,
+    get_all_events, get_all_player_stats, get_event, event_date_utc,
     league_name as bsd_league_name,
     unavailable_players as bsd_unavailable,
     lineups as bsd_lineups,
 )
 from api_keys import get_key
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
 
 DATA = HERE / "data"
 PLAYER_CACHE = DATA / "player_stats_cache.json"
@@ -99,11 +100,18 @@ _POS_XA_DEFAULT: dict[str, float] = {
     "GK": 0.00, "DF": 0.02, "MF": 0.08, "FW": 0.08,
 }
 
+# Player xG is sparse even in a large cache. Use a recency-weighted empirical
+# rate with a positional prior equivalent to six 90-minute appearances. This
+# keeps one 12-minute cameo from creating an extreme absence adjustment.
+PLAYER_XG_HALF_LIFE_DAYS = 180.0
+PLAYER_XG_PRIOR_MINUTES = 540.0
+
 # BSD stat field names in event detail (player level)
 _PLAYER_XG_FIELDS  = ("xg", "expected_goals", "xGoal", "xgoal")
 _PLAYER_XA_FIELDS  = ("xa", "expected_assists", "xAssist", "xassist", "key_passes")
 _PLAYER_MIN_FIELDS = ("minutes", "minutes_played", "time", "minutesPlayed")
-_PLAYER_POS_FIELDS = ("position", "pos", "positionId")
+_PLAYER_POS_FIELDS = ("position", "pos", "positionId", "specific_position")
+_PLAYER_ID_FIELDS = ("player_id", "id", "api_id", "provider_player_id")
 
 
 # ── name normalisation ────────────────────────────────────────────────────────
@@ -140,18 +148,21 @@ def _safe_float(v, default: float = 0.0) -> float:
         return default
 
 
-def _extract_player_entry(player_dict: dict) -> dict:
+def _extract_player_entry(player_dict: dict, default_mins: float = 0.0) -> dict:
     """Pull (name, position, xg, xa, minutes) from a BSD player dict.
 
     BSD returns player stats in one of two shapes:
       A) flat dict with keys like "xg", "position", "minutes"
       B) nested "stats" sub-dict
     """
-    base   = player_dict if isinstance(player_dict, dict) else {}
-    stats  = base.get("stats") or base.get("player_stats") or base
+    base = player_dict if isinstance(player_dict, dict) else {}
+    nested_player = base.get("player") if isinstance(base.get("player"), dict) else {}
+    stats = base.get("stats") or base.get("player_stats") or base
 
-    name = str(base.get("name") or base.get("player_name") or base.get("player") or "")
+    name = str(base.get("name") or base.get("player_name") or
+               nested_player.get("name") or nested_player.get("short_name") or "")
     pos_raw = str(_get_first(base, _PLAYER_POS_FIELDS, "") or
+                  _get_first(nested_player, _PLAYER_POS_FIELDS, "") or
                   _get_first(stats, _PLAYER_POS_FIELDS, "")).upper().strip()
 
     # Normalise position to GK/DF/MF/FW
@@ -159,9 +170,46 @@ def _extract_player_entry(player_dict: dict) -> dict:
 
     xg  = _safe_float(_get_first(stats, _PLAYER_XG_FIELDS, 0.0))
     xa  = _safe_float(_get_first(stats, _PLAYER_XA_FIELDS, 0.0))
-    mins = _safe_float(_get_first(stats, _PLAYER_MIN_FIELDS, 90.0))
+    mins_raw = _get_first(stats, _PLAYER_MIN_FIELDS, None)
+    if mins_raw is not None:
+        mins = _safe_float(mins_raw)
+    elif "sub_in" in base or "sub_out" in base:
+        # Current BSD lineup rows carry substitution minutes rather than
+        # minutes_played. Unused substitutes are passed with default_mins=0.
+        sub_in = _safe_float(base.get("sub_in"), -1.0)
+        sub_out = _safe_float(base.get("sub_out"), -1.0)
+        if sub_in >= 0:
+            mins = max(0.0, 90.0 - sub_in)
+        elif sub_out >= 0:
+            mins = max(0.0, sub_out)
+        else:
+            mins = float(default_mins)
+    else:
+        mins = float(default_mins)
 
-    return {"name": name, "pos": pos, "xg": xg, "xa": xa, "mins": mins}
+    player_id = _get_first(base, _PLAYER_ID_FIELDS, None)
+    if player_id is None:
+        player_id = _get_first(nested_player, _PLAYER_ID_FIELDS, None)
+    try:
+        player_id = int(player_id) if player_id is not None else None
+    except (TypeError, ValueError):
+        player_id = None
+
+    metrics = {}
+    for key in ("rating", "goals", "goal_assist", "total_shots", "shots_on_target",
+                "key_pass", "total_pass", "accurate_pass", "duel_won", "duel_lost",
+                "total_tackle", "won_tackle", "total_clearance", "interception",
+                "ball_recovery", "possession_lost", "yellow_card", "red_card",
+                "saves", "goals_conceded"):
+        if key in base:
+            value = base[key]
+            try:
+                metrics[key] = float(value) if value is not None else None
+            except (TypeError, ValueError):
+                metrics[key] = None
+
+    return {"name": name, "player_id": player_id, "pos": pos, "xg": xg,
+            "xa": xa, "mins": mins, "metrics": metrics}
 
 
 def _normalise_pos(raw: str) -> str:
@@ -194,19 +242,29 @@ def _players_from_event(event_detail: dict) -> list[tuple[dict, str | None]]:
     """
     out: list[tuple[dict, str | None]] = []
 
-    def _drain(lst, side: str | None):
+    seen: set[tuple[str, str]] = set()
+
+    def _drain(lst, side: str | None, default_mins: float = 0.0):
         if isinstance(lst, list):
             for p in lst:
-                entry = _extract_player_entry(p)
+                entry = _extract_player_entry(p, default_mins=default_mins)
                 if entry["name"]:
+                    identity = (str(entry.get("player_id") or ""), _norm(entry["name"]))
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
                     out.append((entry, side))
 
     # Shape 1: lineups
     lineups = event_detail.get("lineups") or {}
     for side in ("home", "away"):
         grp = lineups.get(side) or {}
-        _drain(grp.get("starters") or grp.get("starting_xi") or [], side)
-        _drain(grp.get("bench") or grp.get("substitutes") or [], side)
+        # Current BSD shape is players + substitutes. Older payloads used
+        # starters/bench; accept both without treating unused substitutes as
+        # 90-minute appearances.
+        _drain(grp.get("players") or grp.get("starters") or grp.get("starting_xi") or [],
+               side, default_mins=90.0)
+        _drain(grp.get("substitutes") or grp.get("bench") or [], side, default_mins=0.0)
 
     # Shape 2: players dict keyed by side
     if not out:
@@ -234,10 +292,11 @@ def _players_from_event(event_detail: dict) -> list[tuple[dict, str | None]]:
 class PlayerFeatureStore:
     """Builds and queries the per-player rolling stats cache.
 
-    Cache schema v2 — a JSON file:
+    Cache schema v3 — a JSON file:
         {
-          "v": 2,
-          "player_name_norm": {
+          "v": 3,
+          "id:123": {
+            "player_id": 123,
             "name": "original name",
             "pos": "FW",
             "apps": [{"date": "2026-01-01", "team": "Arsenal", "mins": 90.0,
@@ -247,9 +306,9 @@ class PlayerFeatureStore:
           },
           ...
         }
-    v1 caches (no "v" key, "matches"/"teams" instead of dated "apps") are
-    discarded on load — rebuild with `--from-cache` (bsd_cache event files
-    carry their own dates via event_date_utc, no API calls needed).
+    Older caches are discarded on load — rebuild with `--from-cache` or
+    `--refresh`. Stable provider IDs are preferred; name keys remain a
+    deliberate fallback for sources without IDs.
     """
 
     ROLLING_N = 60   # appearances kept per player
@@ -341,8 +400,16 @@ class PlayerFeatureStore:
             print(f"  ! BSD fetch failed: {exc}")
             return 0
 
+        # BSD's pagination order is not guaranteed to be chronological. Pick
+        # the newest window first, then ingest that selected window oldest to
+        # newest so the rolling-appearance truncation really keeps the latest
+        # 60 apps rather than whichever IDs happen to sort last.
+        events = sorted(events, key=lambda ev: event_date_utc(ev), reverse=True)
+        selected_events = sorted(events[:max_events], key=lambda ev: event_date_utc(ev))
+
         processed = 0
-        for ev in events[:max_events]:
+        stats_rows = 0
+        for ev in selected_events:
             eid = str(ev.get("id") or "")
             if not eid:
                 continue
@@ -364,14 +431,38 @@ class PlayerFeatureStore:
             date = (event_date_utc(ev) or event_date_utc(detail))[:10]
             home = str(ev.get("home_team") or "")
             away = str(ev.get("away_team") or "")
-            self._ingest_event_players(detail, home, away, date)
+            stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+            rows = None
+            if stats_cache.exists():
+                try:
+                    rows = json.loads(stats_cache.read_text())
+                except Exception:
+                    rows = None
+            if rows is None:
+                try:
+                    rows = get_all_player_stats(api_key, event=eid)
+                    stats_cache.write_text(json.dumps(rows, indent=2, ensure_ascii=False))
+                    time.sleep(pause)
+                except Exception as exc:
+                    print(f"  ! player stats event {eid}: {exc}")
+                    rows = []
+            if rows:
+                self._ingest_player_stats(rows, home, away, date, eid)
+                stats_rows += len(rows)
+            else:
+                self._ingest_event_players(detail, home, away, date, eid)
             processed += 1
             if processed % 50 == 0:
-                print(f"  ...{processed}/{min(max_events, len(events))}")
+                print(f"  ...{processed}/{len(selected_events)}")
+            # A provider timeout should not discard a long refresh. Persist a
+            # checkpoint after each modest batch; the per-event JSON caches are
+            # already written independently, so a later run can resume safely.
+            if processed % 25 == 0:
+                self.save()
 
         self.save()
         print(f"  Player cache: {len(self._player_records())} players, "
-              f"{processed} events processed.")
+              f"{processed} events processed, {stats_rows} player-stat rows.")
         return processed
 
     def refresh_from_cache(self) -> int:
@@ -380,22 +471,117 @@ class PlayerFeatureStore:
             self.load()
         if not STATS_CACHE.exists():
             return 0
-        processed = 0
-        for cache_file in sorted(STATS_CACHE.glob("event_*.json")):
+        cached = []
+        for cache_file in STATS_CACHE.glob("event_*.json"):
             try:
                 detail = json.loads(cache_file.read_text())
             except Exception:
                 continue
+            cached.append((event_date_utc(detail), cache_file, detail))
+        processed = 0
+        for _, cache_file, detail in sorted(cached, key=lambda item: item[0]):
             date = event_date_utc(detail)[:10]
             home = str(detail.get("home_team") or "")
             away = str(detail.get("away_team") or "")
-            self._ingest_event_players(detail, home, away, date)
+            eid = str(detail.get("id") or cache_file.stem.removeprefix("event_"))
+            stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+            rows = None
+            if stats_cache.exists():
+                try:
+                    rows = json.loads(stats_cache.read_text())
+                except Exception:
+                    rows = None
+            if rows:
+                self._ingest_player_stats(rows, home, away, date, eid)
+            else:
+                self._ingest_event_players(detail, home, away, date, eid)
             processed += 1
         if processed:
             self.save()
         return processed
 
-    def _ingest_event_players(self, detail: dict, home: str, away: str, date: str) -> None:
+    def refresh_player_stats_from_cached_events(
+        self, api_key: str, max_events: int = 500,
+        pause: float = 0.1, newest_first: bool = False,
+    ) -> int:
+        """Fetch player-stat rows for event details already in ``bsd_cache``.
+
+        This is deliberately separate from :meth:`refresh`: a wide BSD
+        ``/events/`` historical query can be slow or paginate unexpectedly,
+        while the local event-detail cache already gives us an exact,
+        bounded set of event IDs.  Each response is written before it is
+        ingested, so an interrupted run can resume without repeating calls.
+        Events are ingested chronologically regardless of request order so
+        the per-player rolling cache retains the correct latest appearances.
+        """
+        if not self._loaded:
+            self.load()
+        STATS_CACHE.mkdir(parents=True, exist_ok=True)
+        cached: list[tuple[str, Path, dict]] = []
+        for cache_file in STATS_CACHE.glob("event_*.json"):
+            try:
+                detail = json.loads(cache_file.read_text())
+                date = event_date_utc(detail)
+            except Exception:
+                continue
+            if date:
+                cached.append((date, cache_file, detail))
+        cached.sort(key=lambda row: row[0], reverse=newest_first)
+        selected = cached[:max(0, int(max_events))]
+        fetched = 0
+        stat_rows = 0
+        for date, cache_file, detail in selected:
+            eid = str(detail.get("id") or cache_file.stem.removeprefix("event_"))
+            stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+            if stats_cache.exists():
+                continue
+            try:
+                rows = get_all_player_stats(api_key, event=eid)
+                stats_cache.write_text(json.dumps(rows, indent=2, ensure_ascii=False))
+                fetched += 1
+                stat_rows += len(rows)
+                if pause:
+                    time.sleep(pause)
+            except Exception as exc:
+                print(f"  ! player stats event {eid}: {exc}")
+                continue
+
+        # Rebuild from all local player-stat responses, including older ones
+        # fetched in prior runs.  This avoids order-dependent results when a
+        # run is interrupted between request and checkpoint.
+        # Empty historical responses are still cached to avoid retry storms,
+        # but they are not evidence that the existing player cache should be
+        # discarded.  Rebuild only when at least one non-empty player-stat
+        # payload was received.
+        if stat_rows:
+            self._data = {"v": CACHE_SCHEMA_VERSION}
+            for _, cache_file, detail in sorted(cached, key=lambda row: row[0]):
+                eid = str(detail.get("id") or cache_file.stem.removeprefix("event_"))
+                stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+                if not stats_cache.exists():
+                    self._ingest_event_players(
+                        detail, str(detail.get("home_team") or ""),
+                        str(detail.get("away_team") or ""),
+                        event_date_utc(detail)[:10], eid)
+                    continue
+                try:
+                    rows = json.loads(stats_cache.read_text())
+                except Exception:
+                    continue
+                home = str(detail.get("home_team") or "")
+                away = str(detail.get("away_team") or "")
+                detail_date = event_date_utc(detail)
+                if rows:
+                    self._ingest_player_stats(rows, home, away, detail_date[:10], eid)
+                else:
+                    self._ingest_event_players(detail, home, away,
+                                               detail_date[:10], eid)
+            self.save()
+        print(f"  Player-stat responses fetched: {fetched}, rows: {stat_rows}.")
+        return fetched
+
+    def _ingest_event_players(self, detail: dict, home: str, away: str, date: str,
+                              event_id: str | int | None = None) -> None:
         """Update the cache from one event's player list, using the side each
         BSD response shape already provides. Only entries with no side at all
         (an unstructured flat list — shape 4 in `_players_from_event`) fall
@@ -409,26 +595,47 @@ class PlayerFeatureStore:
                 team, confident = away, True
             else:
                 team, confident = (home if i < n // 2 else away), False
-            self._update_player(entry, team, date, confident)
+            self._update_player(entry, team, date, confident, event_id=event_id)
+
+    def _ingest_player_stats(self, rows: list[dict], home: str, away: str,
+                             date: str, event_id: str | int) -> None:
+        """Ingest canonical rows from GET /api/player-stats/."""
+        for row in rows:
+            player = row.get("player") if isinstance(row.get("player"), dict) else {}
+            team = str(player.get("team") or row.get("team") or "")
+            if not team:
+                team = home
+            entry = _extract_player_entry(row, default_mins=0.0)
+            if entry["name"] and entry["mins"] > 0:
+                self._update_player(entry, team, date, True, event_id=event_id)
 
     def _update_player(self, entry: dict, team: str, date: str,
-                       side_confident: bool = True) -> None:
-        key = _norm(entry["name"])
+                       side_confident: bool = True,
+                       event_id: str | int | None = None) -> None:
+        player_id = entry.get("player_id")
+        key = f"id:{player_id}" if player_id is not None else _norm(entry["name"])
         if not key:
             return
         if key not in self._data:
             self._data[key] = {
                 "name": entry["name"],
+                "player_id": player_id,
                 "pos": entry["pos"],
                 "apps": [],
             }
         rec = self._data[key]
         if entry["mins"] > 0:
-            rec["apps"].append({
+            app = {
+                "event_id": str(event_id) if event_id is not None else "",
                 "date": date, "team": team,
                 "mins": entry["mins"], "xg": entry["xg"], "xa": entry["xa"],
                 "side_confident": side_confident,
-            })
+                "metrics": entry.get("metrics", {}),
+            }
+            if event_id is not None:
+                rec["apps"] = [a for a in rec["apps"]
+                               if str(a.get("event_id", "")) != str(event_id)]
+            rec["apps"].append(app)
             rec["apps"] = rec["apps"][-self.ROLLING_N:]
         # Update position if we now have a better signal
         if entry["pos"] != "MF" or rec["pos"] == "MF":
@@ -436,8 +643,15 @@ class PlayerFeatureStore:
 
     # ── Lookup ──────────────────────────────────────────────────────────────
 
-    def _find_player(self, name: str) -> dict | None:
+    def _find_player(self, name: str, player_id: int | str | None = None) -> dict | None:
         """Return the cache entry for name, using fuzzy token matching."""
+        if player_id is not None:
+            try:
+                exact = self._data.get(f"id:{int(player_id)}")
+                if isinstance(exact, dict):
+                    return exact
+            except (TypeError, ValueError):
+                pass
         key = _norm(name)
         if isinstance(self._data.get(key), dict):
             return self._data[key]
@@ -450,21 +664,40 @@ class PlayerFeatureStore:
                 best, best_score = rec, shared
         return best if best_score >= 1 else None
 
-    def player_xg_per90(self, name: str) -> float | None:
-        """Rolling avg xG per 90 minutes for a player; None if unknown."""
-        rec = self._find_player(name)
+    def player_xg_per90(self, name: str, player_id: int | str | None = None) -> float | None:
+        """Recency-weighted, position-shrunk xG per 90; None if unknown.
+
+        The prior is deliberately weak enough to preserve real signal after a
+        handful of full appearances, while preventing short substitute spells
+        from dominating an availability adjustment.
+        """
+        rec = self._find_player(name, player_id)
         if rec is None or not rec["apps"]:
             return None
         apps = rec["apps"]
-        total_xg = sum(m["xg"] for m in apps)
-        total_mins = sum(m["mins"] for m in apps)
+        total_mins = sum(float(m.get("mins", 0.0)) for m in apps)
         if total_mins < 10:
             return None
-        return total_xg / total_mins * 90.0
+        dates = [pd.Timestamp(m["date"]) for m in apps if m.get("date")]
+        anchor = max(dates) if dates else pd.Timestamp.now(tz="UTC").tz_localize(None)
+        decay = math.log(2.0) / PLAYER_XG_HALF_LIFE_DAYS
+        weighted_xg = weighted_mins = 0.0
+        for app in apps:
+            mins = float(app.get("mins", 0.0))
+            try:
+                age = max(0.0, float((anchor - pd.Timestamp(app["date"])).days))
+            except Exception:
+                age = 0.0
+            wt = math.exp(-decay * age)
+            weighted_xg += float(app.get("xg", 0.0) or 0.0) * wt
+            weighted_mins += mins * wt
+        prior_rate = _POS_XG_DEFAULT.get(rec.get("pos", "MF"), _POS_XG_DEFAULT["MF"])
+        prior90 = PLAYER_XG_PRIOR_MINUTES / 90.0
+        return (weighted_xg + prior_rate * prior90) / (weighted_mins / 90.0 + prior90) * 1.0
 
-    def player_position(self, name: str) -> str:
+    def player_position(self, name: str, player_id: int | str | None = None) -> str:
         """Returns GK/DF/MF/FW; defaults to MF."""
-        rec = self._find_player(name)
+        rec = self._find_player(name, player_id)
         return rec["pos"] if rec else "MF"
 
     # ── Team baseline ───────────────────────────────────────────────────────
@@ -641,16 +874,17 @@ class PlayerFeatureStore:
         away_team = str(event.get("away_team") or "")
         for side, team in (("home", home_team), ("away", away_team)):
             grp = lu.get(side, {})
-            starters = grp.get("starters") or []
+            starters = grp.get("players") or grp.get("starters") or grp.get("starting_xi") or []
             if not starters:
                 result[side] = None
                 continue
             # Sum xG of confirmed starters
             xi_xg = sum(
                 self.player_xg_per90(
-                    p.get("name") or p.get("player") or ""
+                    p.get("name") or p.get("player") or "",
+                    p.get("player_id") or p.get("id") or p.get("api_id")
                 ) or _POS_XG_DEFAULT.get(
-                    _normalise_pos(str(p.get("position") or "")), 0.07
+                    _normalise_pos(str(p.get("specific_position") or p.get("position") or "")), 0.07
                 )
                 for p in starters
             )
@@ -825,6 +1059,9 @@ def main() -> None:
     ap.add_argument("--from-cache", action="store_true",
                     help="Rebuild player stats from already-downloaded bsd_cache/ "
                          "files (no API calls)")
+    ap.add_argument("--refresh-cached", action="store_true",
+                    help="Fetch player stats for locally cached event details "
+                         "(requires --api-key or BSD_API_KEY)")
     ap.add_argument("--summary", action="store_true",
                     help="Print cache summary")
     ap.add_argument("--player", metavar="NAME",
@@ -838,6 +1075,8 @@ def main() -> None:
                     help="Player names missing from the away side")
     ap.add_argument("--max-events", type=int, default=500,
                     help="Max BSD events to process (default 500)")
+    ap.add_argument("--oldest-first", action="store_true",
+                    help="With --refresh-cached, prioritise the oldest local events")
     ap.add_argument("--days-back", type=int, default=60,
                     help="With --refresh, how many days of finished matches "
                          "to pull (default 60)")
@@ -860,13 +1099,18 @@ def main() -> None:
         if not (args.refresh or args.from_cache or args.summary or args.player or args.match):
             return
 
-    if args.refresh:
+    if args.refresh or args.refresh_cached:
         key = args.api_key or get_key("bsd", env="BSD_API_KEY")
         if not key:
             sys.exit("No BSD key — set BSD_API_KEY or use --api-key.")
         store.load()
-        store.refresh(key, max_events=args.max_events, pause=args.pause,
-                      days_back=args.days_back)
+        if args.refresh:
+            store.refresh(key, max_events=args.max_events, pause=args.pause,
+                          days_back=args.days_back)
+        if args.refresh_cached:
+            store.refresh_player_stats_from_cached_events(
+                key, max_events=args.max_events, pause=args.pause,
+                newest_first=not args.oldest_first)
     elif args.from_cache:
         store.load()
         n = store.refresh_from_cache()

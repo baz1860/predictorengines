@@ -40,29 +40,26 @@ just drops the serve columns when writing `matches.csv`.
 
 ---
 
-## 2. Club soccer — real xG (replaces the SoT proxy)
+## 2. Club soccer — real xG (BSD landed; optional historical backfill remains)
 
-The `xg`/`xgf` ensemble components currently approximate xG as `SoT ×
-league_conversion`. Real shot-quality xG is the single biggest signal upgrade.
+The production path now reads real team xG from BSD event detail when both
+sides are present, and falls back explicitly to `SoT × league_conversion` for
+older or uncovered competitions. `club_soccer/model.py::fit()` records the
+coverage in `model_params.json`; `club_soccer.health` reports it by type and
+domestic cup.
 
-- **Source:** **Understat** (free; top-5 European leagues only — EPL, La Liga,
-  Serie A, Bundesliga, Ligue 1). Serves data as JSON inside `<script>` tags, no
-  aggressive bot protection. **Avoid FBref for current xG** — it lost its Opta
-  licence in Jan 2026, so its advanced stats no longer update (historical only).
-  For history/back-test, **StatsBomb open data** (free, CC) is an option but covers
-  limited competitions.
-- **Access:** scrape Understat match JSON directly in Python (e.g. an
-  `understat` provider), or the `understatapi` package. No key.
-- **Plug in:**
-  1. `club_soccer/fetch.py`: add an Understat fetch that writes `home_xg`,
-     `away_xg` columns onto `data/fixtures.csv` (match on date + team, via
-     `names.py` aliasing).
-  2. `club_soccer/model.py fit()`: when `home_xg/away_xg` are present, build the
-     `attack_xg/defence_xg` maps from **real xG** instead of `SoT × conv`; keep the
-     SoT proxy as the fallback for leagues Understat doesn't cover.
-- **Caveat:** Understat does **not** cover the Championship, League One/Two, or the
-  Scottish leagues — those keep the SoT proxy. So this lifts the top-5-league
-  subset only. **Effort:** medium. **Cost:** free.
+- **Source in use:** BSD/Bzzoiro event detail, via `live_stats.expected_goals`
+  and direct `actual_home_xg` / `actual_away_xg` variants. The fetcher caches
+  detail payloads, preserves them during fixture merges, and writes
+  `home_xg`/`away_xg` to `fixtures.csv`.
+- **Model path:** real xG feeds `attack_xg`/`defence_xg` and the recency xG-form
+  signal; SoT remains the fallback. The same detail pass also stores possession,
+  cards, half-time/full-time scores, round metadata, venue, and shootout
+  information.
+- **Optional future backfill:** Understat or StatsBomb could increase historical
+  xG coverage for top-five leagues, but is not required by the production path.
+  Any such source must be joined point-in-time and re-run through the
+  walk-forward gate before promotion.
 
 ---
 

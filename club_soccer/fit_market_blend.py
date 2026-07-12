@@ -63,8 +63,8 @@ def _joined() -> pd.DataFrame:
     mh = pd.read_csv(MARKET_HISTORY)
     if mh.empty:
         return pd.DataFrame()
-    j = pred.merge(mh, left_on=["date", "home", "away"],
-                   right_on=["match_date", "home", "away"], how="inner")
+    j = pred.merge(mh, left_on=["date", "home", "away", "competition"],
+                   right_on=["match_date", "home", "away", "competition"], how="inner")
     if j.empty:
         return j
     has_1x2 = j[["b365_h", "b365_d", "b365_a"]].notna().all(axis=1)

@@ -17,7 +17,8 @@ from pathlib import Path
 
 from . import provider_qa as qa
 from . import store
-from .providers.bovada import BovadaGolfProvider, export_csvs as bovada_export_csvs
+from .providers.bovada import (BovadaGolfProvider, _dedupe as _bovada_dedupe,
+                               export_csvs as bovada_export_csvs)
 from .providers.espn import EspnGolfProvider
 from .providers.odds_manual import ManualOddsProvider, THREEBALLS_RAW, write_threeballs_csv
 from .providers.odds_theoddsapi import MAJOR_SPORT_KEYS, TheOddsApiGolfProvider
@@ -265,6 +266,23 @@ def run_refresh(
             coupon = provider.fetch_coupon(use_cache=use_cache)
             b_quotes = provider.event_quotes(
                 coupon, event.name, event_id=event.event_id, round_no=round_no)
+            # In-play, outrights and tournament match-ups leave the pre-match
+            # coupon for the live one, which would strand odds.csv/matchups.csv
+            # at their pre-tournament state. Merge the live coupon's
+            # tournament-level quotes back in (live prices win the dedupe, as
+            # they are fresher). Best-effort: a live-feed failure only warns.
+            try:
+                live_quotes = provider.live_event_quotes(
+                    provider.fetch_coupon(use_cache=use_cache, live=True),
+                    event.name, event_id=event.event_id)
+                if live_quotes:
+                    b_quotes = _bovada_dedupe(live_quotes + b_quotes)
+                    checks.append(qa.SourceCheck(
+                        "bovada.live", True, "info",
+                        f"merged {len(live_quotes)} in-play tournament quote(s) "
+                        "from the live coupon", len(live_quotes)))
+            except Exception as exc:  # noqa: BLE001 — live feed is a bonus, not a gate
+                checks.append(qa.SourceCheck("bovada.live", False, "warning", str(exc), 0))
             if b_quotes:
                 written = bovada_export_csvs(b_quotes, event=event.name)
                 checks.extend(provider.qa_checks(b_quotes))
