@@ -49,6 +49,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 7h12l-1 4 1 4H4"/><path d="M20 19v-6"/><path d="M20 9V5"/></svg>
           Ops
         </button>
+        <button class="nav-item" id="nav-console">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 9l3 3-3 3"/><path d="M12 15h5"/></svg>
+          Console
+        </button>
       </nav>
     </aside>
 
@@ -406,6 +410,39 @@
             <span class="spacer"></span>
             <button id="draw-save-btn" class="primary">Save draw &amp; odds</button>
           </div>
+        </div>
+
+        <!-- CONSOLE (suite) -->
+        <div id="panel-console" class="panel full" hidden>
+          <div class="form-card console-bar">
+            <span class="console-prompt">$</span>
+            <input id="console-input" list="console-examples" autocomplete="off" spellcheck="false"
+                   placeholder="type any command and press Enter…  (↑ / ↓ for history)" />
+            <datalist id="console-examples">
+              <option value="./daily_card.sh --card-only"></option>
+              <option value="./daily_card.sh --fast"></option>
+              <option value="python3 predictor.py &quot;Brazil&quot; &quot;Morocco&quot;"></option>
+              <option value="python3 predictor.py --worldcup"></option>
+              <option value="python3 simulate.py -n 50000"></option>
+              <option value="python3 edge.py --calibrated --market-blend --context"></option>
+              <option value="python3 -m golf.simulate --sims 50000"></option>
+              <option value="python3 -m nhl.predictor &quot;Toronto Maple Leafs&quot; &quot;Boston Bruins&quot;"></option>
+              <option value="python3 run_checks.py"></option>
+              <option value="python3 preflight.py"></option>
+              <option value="python3 validate_all.py --gate --sims 4000"></option>
+              <option value="git status"></option>
+              <option value="ls -la"></option>
+            </datalist>
+            <button id="console-run" class="primary">Run</button>
+            <button id="console-stop" class="ghost danger" disabled>Stop</button>
+            <button id="console-clear" class="ghost">Clear</button>
+          </div>
+          <div class="console-meta">
+            <span id="console-cwd" class="mono"></span>
+            <span class="spacer"></span>
+            <span class="console-hint">Runs any command in a live shell rooted at the project folder. Output appears in cards below.</span>
+          </div>
+          <div id="console-cards" class="console-cards"></div>
         </div>
 
         <!-- placeholder -->

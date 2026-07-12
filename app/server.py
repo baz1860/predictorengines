@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from . import bankroll_store, dashboard_data, model_audit, settings_store
+from . import bankroll_store, console, dashboard_data, model_audit, settings_store
 from .engines import registry
 from v5 import drift as v5_drift
 from v5 import live as v5_live
@@ -159,6 +159,11 @@ class V6ScheduleEntry(BaseModel):
 
 class V6Schedule(BaseModel):
     entries: list[V6ScheduleEntry] = Field(default_factory=list)
+
+
+class ConsoleRun(BaseModel):
+    # The console runs whatever is typed; only the size is bounded here.
+    cmd: str = Field(default="", max_length=8000)
 
 
 class TennisMatch(BaseModel):
@@ -426,6 +431,41 @@ def v6_get_schedule():
 @app.post("/api/v6/schedule")
 def v6_save_schedule(req: V6Schedule):
     return v6_scheduler.save_schedule([e.model_dump() for e in req.entries])
+
+
+@app.post("/api/console/run")
+def console_run(req: ConsoleRun):
+    """Run any command in the persistent shell session. Returns the new
+    command's id and initial snapshot; poll /api/console for output."""
+    if not console.ENABLED:
+        raise HTTPException(403, "Console is disabled (SP_CONSOLE=0)")
+    return console.start(req.cmd)
+
+
+@app.get("/api/console")
+def console_status(id: str = "", since: int = 0):
+    """Incremental output for a command (or the most recent one if id omitted).
+    Use the returned next_offset as `since` on the next poll."""
+    if not console.ENABLED:
+        raise HTTPException(403, "Console is disabled (SP_CONSOLE=0)")
+    return console.poll(id, max(since, 0))
+
+
+@app.post("/api/console/stop")
+def console_stop():
+    """Kill the running command (and its whole process tree). The shell is
+    recreated on the next command."""
+    if not console.ENABLED:
+        raise HTTPException(403, "Console is disabled (SP_CONSOLE=0)")
+    return console.stop()
+
+
+@app.get("/api/console/history")
+def console_history():
+    """Recent commands with full output, so the UI can restore cards on load."""
+    if not console.ENABLED:
+        raise HTTPException(403, "Console is disabled (SP_CONSOLE=0)")
+    return console.history()
 
 
 @app.get("/api/tennis/tournaments")
