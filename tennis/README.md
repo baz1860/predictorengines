@@ -1,33 +1,39 @@
 # Tennis Prediction Engine (ATP + WTA)
 
 A tennis betting engine. It does the same four things the World Cup engine does,
-on a week-by-week, draw-by-draw basis:
+on a week-by-week, event-by-event basis:
 
-1. **pulls the week's tournament list** (ESPN ATP/WTA scoreboards),
-2. **gets the draw** for a tournament,
+1. **pulls all active tournaments** (ESPN ATP/WTA scoreboards),
+2. **gets every draw** for the selected tour,
 3. **prices every match with a fitted model** (surface-split Bradley–Terry, with
    an exact Markov-chain set/games simulator and a bracket Monte-Carlo), and
 4. **prints the best bets — round by round** (R128 → … → final).
 
 ## Use it
 
-See what's on this week, then price one tournament's draw:
+See what's on this week, then price every active event for a tour:
 
 ```bash
 python3 -m tennis.season --schedule                 # live ATP tournaments + draws
 python3 -m tennis.season --schedule --tour wta
 
-python3 -m tennis.season                            # price the current ATP draw
-python3 -m tennis.season --tour wta --event Berlin  # pick a tournament by name
+python3 -m tennis.season                            # all active ATP events
+python3 -m tennis.season --tour wta                 # all active WTA events
+python3 -m tennis.season --tour both                # both tours, all active events
+python3 -m tennis.season --tour wta --event Berlin  # narrow to one event
 python3 -m tennis.season --event Wimbledon --odds-api # also pull book prices
 ```
 
-That pulls the draw from ESPN, including completed matches and their winners,
-saves it to `data/draw.csv`, and writes
+That pulls all matching draws from ESPN, including completed matches and their
+winners, saves them to `data/draw.csv`, and writes
 [`data/card.md`](data/card.md) — the only file you normally read. For every match
 in every round it shows the model's pick and win probability; where you've added
 book prices it also shows the de-vigged market, the edge, and a staked bet
 (**bold** = backed).
+
+With `--tour both`, the index links to separate [`data/card_atp.md`](data/card_atp.md)
+and [`data/card_wta.md`](data/card_wta.md) cards so one tour cannot overwrite the
+other.
 
 ```bash
 python3 -m tennis.season --no-fetch                 # reprice the saved draw offline
@@ -56,19 +62,21 @@ For manual entry, write a skeleton and fill it in:
 python3 -m tennis.fetch --odds-template             # → data/odds.csv
 ```
 
-`draw.csv` columns: `tour, tourney_name, surface, best_of, round, player_a,
-player_b, state, winner, score, match_id`. `state=post` plus `winner` locks a
-completed result; future rounds are simulated from the surviving players.
+`draw.csv` columns: `tour, tourney_name, event_id, surface, best_of, round,
+player_a, player_b, state, winner, score, match_id`. `tourney_name` and
+`event_id` keep simultaneous events separate. `state=post` plus `winner` locks
+a completed result; future rounds are simulated from the surviving players.
 
-`odds.csv` columns: `tour, surface, best_of, player_a, player_b, odds_a, odds_b`.
+`odds.csv` columns: `tour, tourney_name, event_id, surface, best_of, player_a,
+player_b, odds_a, odds_b`. Event names are used when matching prices, with a
+blank event retained as a backwards-compatible fallback.
 Any match in the draw whose names match a row gets priced, blended toward the
 market, and staked with fractional Kelly. Rerun `python3 -m tennis.season` and
 the backed bets appear in the card.
 
 ### First-time setup
 
-Once, to build the match history the model learns from (no API key — Jeff
-Sackmann's free archives):
+Once, to build the match history the model learns from:
 
 ```bash
 python3 -m tennis.fetch --seed 2019 2020 2021 2022 2023 2024 2025
@@ -76,8 +84,15 @@ python3 -m tennis.model --fit --tour atp
 python3 -m tennis.model --fit --tour wta
 ```
 
+ATP history uses TML's free season archives. WTA history uses the public WTA
+results JSON feed (completed singles, winners, scores, rounds and surfaces),
+cached under `data/api_cache/`; Sackmann and MatchCharting remain offline
+fallbacks. The WTA fit is therefore trained on real tour results rather than
+the old heuristic-only seed.
+
 Day to day, `bash tennis/update.sh` accumulates new results and refits both
-tours; then `python3 -m tennis.season` is all you run.
+tours; then run `python3 -m tennis.season --tour atp` or
+`python3 -m tennis.season --tour wta` to refresh and price all active events.
 
 ## In the app
 
@@ -96,7 +111,7 @@ quality lives:
 | File | Role |
 |---|---|
 | `season.py` | **the front door**: schedule → draw → model → round-by-round card |
-| `providers.py` | Sackmann/TML/MatchCharting history → `matches.csv`; ESPN draw scraper |
+| `providers.py` | TML/WTA official history → `matches.csv`; ESPN multi-event draw scraper |
 | `fetch.py` | `--seed` / `--accumulate` history; `--odds-template` |
 | `model.py` | surface-split Bradley–Terry fit (ridge logistic, time-decay) + `predict_match` |
 | `simulate.py` | Markov chain (game/set/match, tiebreak) + draw / bracket Monte-Carlo |

@@ -38,6 +38,8 @@ tennis/data/edge_report.csv
 tennis/data/predictions*.csv
 tennis/data/validation_predictions.csv
 tennis/data/odds_history.csv
+horse_racing/data/model_params.json
+horse_racing/data/validation_report.json
 
 # Data provenance manifests (written by update scripts; carry local mtimes).
 data_manifest.json
@@ -129,6 +131,7 @@ golf/data/threeballs_r*.*
 # Manual odds boards are filled in locally per betting day; every engine can
 # regenerate its blank template. (Matches odds.csv in any directory.)
 odds.csv
+!horse_racing/data/odds.csv
 threeballs.csv
 matchups.csv
 
@@ -141,6 +144,8 @@ data/suite_bankroll.json
 
 # Rendered outputs, rebuilt by every run (per-engine cards + the combined one).
 card.md
+card_atp.md
+card_wta.md
 daily_card.md
 golf/data/weekly_report.md
 predictions_worldcup_2026.csv

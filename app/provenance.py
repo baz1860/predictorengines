@@ -95,17 +95,26 @@ ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
         ("model", "nfl/data/power_params.json", "model", "power.py --fit"),
         ("margin_pmf", "nfl/data/margin_pmf.json", "model", "margin_dist.py --fit"),
     ],
+    "horse_racing": [
+        ("races", "horse_racing/data/races.csv", "fixtures", "provider-neutral canonical input"),
+        ("runners", "horse_racing/data/runners.csv", "fixtures", "provider-neutral declarations"),
+        ("results", "horse_racing/data/results.csv", "results", "provider-neutral results"),
+        ("odds", "horse_racing/data/odds.csv", "odds", "manual timestamped win board"),
+        ("model", "horse_racing/data/model_params.json", "model", "python -m horse_racing fit"),
+    ],
 }
 
 # Where each engine's manifest lives (co-located with its data dir).
 MANIFEST_DIRS = {"worldcup": "data", "club_soccer": "club_soccer/data",
                  "cfb": "cfb/data", "golf": "golf/data", "tennis": "tennis/data",
                  "nhl": "nhl/data", "nfl": "nfl/data"}
+MANIFEST_DIRS["horse_racing"] = "horse_racing/data"
 
 ODDS_FILES = {"worldcup": "odds.csv", "club_soccer": "club_soccer/data/odds.csv",
               "cfb": "cfb/odds.csv", "golf": "golf/data/odds.csv",
               "tennis": "tennis/data/odds.csv", "nhl": "nhl/data/odds.csv",
               "nfl": "nfl/odds.csv"}
+ODDS_FILES["horse_racing"] = "horse_racing/data/odds.csv"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -226,12 +235,15 @@ _LONG_SIDES = {
             "puck_line": {"home", "away"}, "total": {"over", "under"}},
     "nfl": {"ml": {"home", "away"}, "spread": {"home", "away"},
             "total": {"over", "under"}},
+    "horse_racing": {"win": {"win"}},
 }
 _LONG_COLUMNS = {
     "club_soccer": ["date", "competition", "home", "away", "market", "side", "line", "odds"],
     "cfb": ["date", "home", "away", "neutral", "market", "side", "line", "odds"],
     "nfl": ["season", "week", "date", "home", "away", "neutral", "market", "side", "line", "odds"],
     "nhl": ["date", "home", "away", "market", "side", "line", "odds"],
+    "horse_racing": ["race_id", "runner_id", "market_id", "source", "decimal_odds",
+                     "captured_at", "market_status"],
 }
 _WIDE_ODDS_COLS = {
     "worldcup": ["odds_home", "odds_draw", "odds_away", "odds_over25",
@@ -279,15 +291,17 @@ def validate_odds_file(engine: str, path: str | Path | None = None) -> list[dict
                 errors.append(_err(0, col, "<missing>", "this column in the header"))
         sides = _LONG_SIDES[engine]
         for i, r in enumerate(rows, start=1):
-            market = (r.get("market") or "").strip().lower()
-            side = (r.get("side") or "").strip().lower()
+            market = (r.get("market") or r.get("market_id") or "").strip().lower()
+            side = (r.get("side") or ("win" if engine == "horse_racing" else "")).strip().lower()
             if market and market not in sides:
                 errors.append(_err(i, "market", market, f"one of {sorted(sides)}"))
             elif market and side and side not in sides[market]:
                 errors.append(_err(i, "side", side,
                                    f"one of {sorted(sides[market])} for market '{market}'"))
-            if not _check_odds_value(r.get("odds")):
-                errors.append(_err(i, "odds", r.get("odds"), "blank or a decimal > 1.0"))
+            odds_value = r.get("odds") if engine != "horse_racing" else r.get("decimal_odds")
+            odds_column = "odds" if engine != "horse_racing" else "decimal_odds"
+            if not _check_odds_value(odds_value):
+                errors.append(_err(i, odds_column, odds_value, "blank or a decimal > 1.0"))
             line = (r.get("line") or "").strip()
             if line:
                 try:

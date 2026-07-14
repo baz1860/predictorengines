@@ -1,0 +1,4451 @@
+{
+  "schema": 1,
+  "source": "bzzoiro_v2",
+  "retrieved_at": "2026-07-11T22:09:30.176912+00:00",
+  "event": {
+    "id": 132,
+    "league_id": 1,
+    "season_id": 337,
+    "home_team_id": 6,
+    "home_team": "Fulham",
+    "away_team_id": 12,
+    "away_team": "Manchester City",
+    "home_coach_id": 553,
+    "away_coach_id": 559,
+    "referee_id": 1754,
+    "venue_id": 6,
+    "event_date": "2025-12-02T19:30:00+00:00",
+    "status": "finished",
+    "replaced_by": null,
+    "round_number": 14,
+    "round_name": "",
+    "group_name": null,
+    "period": "",
+    "current_minute": 98,
+    "home_score": 4,
+    "away_score": 5,
+    "home_score_ht": 1,
+    "away_score_ht": 3,
+    "penalty_shootout": null,
+    "extra_time_score": null,
+    "is_local_derby": false,
+    "is_neutral_ground": false,
+    "travel_distance_km": null,
+    "weather": {
+      "code": null,
+      "description": null,
+      "wind_speed": null,
+      "temperature_c": null
+    },
+    "pitch_condition": null,
+    "attendance": null,
+    "live_websocket": false,
+    "websocket_plus": false,
+    "highlights": [],
+    "head_to_head": {
+      "total_matches": 26,
+      "home_wins": 0,
+      "draws": 0,
+      "away_wins": 10,
+      "home_goals": 9,
+      "away_goals": 31,
+      "avg_total_goals": 1.5384615384615385,
+      "home_win_rate": 0.0,
+      "away_win_rate": 0.38461538461538464,
+      "recent_matches": [
+        {
+          "away": "Fulham",
+          "date": "2026-02-11T19:30:00+00:00",
+          "home": "Manchester City",
+          "score": "3-0"
+        },
+        {
+          "away": "Manchester City",
+          "date": "2025-12-02T19:30:00+00:00",
+          "home": "Fulham",
+          "score": "4-5"
+        },
+        {
+          "away": "Manchester City",
+          "date": "2025-05-25T12:00:00+00:00",
+          "home": "Fulham",
+          "score": "0-2"
+        },
+        {
+          "away": "Fulham",
+          "date": "2024-10-05T11:00:00+00:00",
+          "home": "Manchester City",
+          "score": "3-2"
+        },
+        {
+          "away": "Manchester City",
+          "date": "2024-05-11T08:30:00+00:00",
+          "home": "Fulham",
+          "score": "0-4"
+        },
+        {
+          "away": "Fulham",
+          "date": "2023-09-02T11:00:00+00:00",
+          "home": "Manchester City",
+          "score": "5-1"
+        },
+        {
+          "away": "Manchester City",
+          "date": "2023-04-30T10:00:00+00:00",
+          "home": "Fulham",
+          "score": "1-2"
+        },
+        {
+          "away": "Fulham",
+          "date": "2022-11-05T11:00:00+00:00",
+          "home": "Manchester City",
+          "score": "2-1"
+        },
+        {
+          "away": "Manchester City",
+          "date": "2021-03-13T16:00:00+00:00",
+          "home": "Fulham",
+          "score": "0-3"
+        },
+        {
+          "away": "Fulham",
+          "date": "2020-12-05T11:00:00+00:00",
+          "home": "Manchester City",
+          "score": "2-0"
+        }
+      ]
+    }
+  },
+  "errors": {},
+  "stats": {
+    "event_id": 132,
+    "stats": {
+      "home": {
+        "duels": 45,
+        "fouls": 9,
+        "passes": 612,
+        "crosses": {
+          "value": 5,
+          "total": 21,
+          "pct": 24
+        },
+        "punches": 1,
+        "tackles": 18,
+        "dribbles": {
+          "value": 8,
+          "total": 12,
+          "pct": 67
+        },
+        "offsides": 4,
+        "throw_ins": 18,
+        "clearances": 19,
+        "free_kicks": 7,
+        "goal_kicks": 4,
+        "long_balls": {
+          "value": 25,
+          "total": 40,
+          "pct": 63
+        },
+        "recoveries": 49,
+        "big_chances": 1,
+        "tackles_won": 61,
+        "total_saves": 0,
+        "total_shots": 12,
+        "aerial_duels": {
+          "value": 6,
+          "total": 20,
+          "pct": 30
+        },
+        "corner_kicks": 7,
+        "dispossessed": 12,
+        "ground_duels": {
+          "value": 33,
+          "total": 66,
+          "pct": 50
+        },
+        "hit_woodwork": 0,
+        "yellow_cards": 0,
+        "blocked_shots": 3,
+        "interceptions": 11,
+        "through_balls": 1,
+        "total_tackles": 18,
+        "expected_goals": 0.91,
+        "accurate_passes": 538,
+        "ball_possession": 57,
+        "goals_prevented": -2.99,
+        "shots_on_target": 6,
+        "goalkeeper_saves": 0,
+        "shots_inside_box": 9,
+        "shots_off_target": 3,
+        "final_third_phase": {
+          "value": 103,
+          "total": 138,
+          "pct": 75
+        },
+        "shots_outside_box": 3,
+        "big_chances_missed": 1,
+        "big_chances_scored": 0,
+        "final_third_entries": 47,
+        "errors_lead_to_a_goal": 1,
+        "touches_in_penalty_area": 23,
+        "pass_accuracy_pct": 87.9,
+        "xg": {
+          "actual": 0.91
+        }
+      },
+      "away": {
+        "duels": 55,
+        "fouls": 7,
+        "passes": 467,
+        "crosses": {
+          "value": 4,
+          "total": 7,
+          "pct": 57
+        },
+        "punches": 1,
+        "tackles": 16,
+        "dribbles": {
+          "value": 8,
+          "total": 18,
+          "pct": 44
+        },
+        "offsides": 1,
+        "throw_ins": 18,
+        "clearances": 27,
+        "free_kicks": 9,
+        "goal_kicks": 7,
+        "long_balls": {
+          "value": 23,
+          "total": 51,
+          "pct": 45
+        },
+        "recoveries": 42,
+        "big_chances": 3,
+        "tackles_won": 44,
+        "total_saves": 1,
+        "total_shots": 11,
+        "aerial_duels": {
+          "value": 14,
+          "total": 20,
+          "pct": 70
+        },
+        "corner_kicks": 2,
+        "dispossessed": 8,
+        "ground_duels": {
+          "value": 33,
+          "total": 66,
+          "pct": 50
+        },
+        "hit_woodwork": 2,
+        "yellow_cards": 1,
+        "blocked_shots": 4,
+        "interceptions": 16,
+        "through_balls": 4,
+        "total_tackles": 16,
+        "expected_goals": 2.22,
+        "accurate_passes": 392,
+        "ball_possession": 43,
+        "goals_prevented": -2.09,
+        "shots_on_target": 4,
+        "goalkeeper_saves": 1,
+        "shots_inside_box": 9,
+        "shots_off_target": 3,
+        "final_third_phase": {
+          "value": 77,
+          "total": 107,
+          "pct": 72
+        },
+        "shots_outside_box": 2,
+        "big_chances_missed": 1,
+        "big_chances_scored": 2,
+        "final_third_entries": 41,
+        "errors_lead_to_a_goal": 0,
+        "touches_in_penalty_area": 23,
+        "pass_accuracy_pct": 83.9,
+        "xg": {
+          "actual": 2.17
+        }
+      },
+      "first_half": {
+        "home": {
+          "duels": 39,
+          "fouls": 4,
+          "passes": 277,
+          "crosses": {
+            "value": 2,
+            "total": 8,
+            "pct": 25
+          },
+          "tackles": 9,
+          "dribbles": {
+            "value": 1,
+            "total": 3,
+            "pct": 33
+          },
+          "offsides": 1,
+          "throw_ins": 8,
+          "clearances": 10,
+          "free_kicks": 5,
+          "goal_kicks": 2,
+          "long_balls": {
+            "value": 7,
+            "total": 17,
+            "pct": 41
+          },
+          "recoveries": 21,
+          "big_chances": 0,
+          "tackles_won": 56,
+          "total_saves": 0,
+          "total_shots": 3,
+          "aerial_duels": {
+            "value": 0,
+            "total": 7,
+            "pct": 0
+          },
+          "corner_kicks": 3,
+          "dispossessed": 6,
+          "ground_duels": {
+            "value": 15,
+            "total": 31,
+            "pct": 48
+          },
+          "hit_woodwork": 0,
+          "yellow_cards": 0,
+          "blocked_shots": 0,
+          "interceptions": 4,
+          "through_balls": 0,
+          "total_tackles": 9,
+          "expected_goals": 0.12,
+          "accurate_passes": 243,
+          "ball_possession": 49,
+          "shots_on_target": 2,
+          "goalkeeper_saves": 0,
+          "shots_inside_box": 3,
+          "shots_off_target": 1,
+          "shots_outside_box": 0,
+          "big_chances_missed": 0,
+          "big_chances_scored": 0,
+          "final_third_entries": 19,
+          "pass_accuracy_pct": 87.7,
+          "xg": {
+            "actual": 0.123
+          }
+        },
+        "away": {
+          "duels": 61,
+          "fouls": 5,
+          "passes": 291,
+          "crosses": {
+            "value": 3,
+            "total": 6,
+            "pct": 50
+          },
+          "tackles": 8,
+          "dribbles": {
+            "value": 4,
+            "total": 9,
+            "pct": 44
+          },
+          "offsides": 1,
+          "throw_ins": 9,
+          "clearances": 12,
+          "free_kicks": 4,
+          "goal_kicks": 2,
+          "long_balls": {
+            "value": 15,
+            "total": 25,
+            "pct": 60
+          },
+          "recoveries": 19,
+          "big_chances": 2,
+          "tackles_won": 25,
+          "total_saves": 1,
+          "total_shots": 8,
+          "aerial_duels": {
+            "value": 7,
+            "total": 7,
+            "pct": 100
+          },
+          "corner_kicks": 2,
+          "dispossessed": 4,
+          "ground_duels": {
+            "value": 16,
+            "total": 31,
+            "pct": 52
+          },
+          "hit_woodwork": 1,
+          "yellow_cards": 0,
+          "blocked_shots": 4,
+          "interceptions": 5,
+          "through_balls": 3,
+          "total_tackles": 8,
+          "expected_goals": 1.34,
+          "accurate_passes": 259,
+          "ball_possession": 51,
+          "shots_on_target": 3,
+          "goalkeeper_saves": 1,
+          "shots_inside_box": 6,
+          "shots_off_target": 1,
+          "shots_outside_box": 2,
+          "big_chances_missed": 1,
+          "big_chances_scored": 1,
+          "final_third_entries": 28,
+          "pass_accuracy_pct": 89.0,
+          "xg": {
+            "actual": 1.827
+          }
+        }
+      },
+      "second_half": {
+        "home": {
+          "duels": 50,
+          "fouls": 5,
+          "passes": 335,
+          "crosses": {
+            "value": 3,
+            "total": 13,
+            "pct": 23
+          },
+          "tackles": 9,
+          "dribbles": {
+            "value": 7,
+            "total": 9,
+            "pct": 78
+          },
+          "offsides": 3,
+          "throw_ins": 10,
+          "clearances": 9,
+          "free_kicks": 2,
+          "goal_kicks": 2,
+          "long_balls": {
+            "value": 18,
+            "total": 23,
+            "pct": 78
+          },
+          "recoveries": 28,
+          "big_chances": 1,
+          "tackles_won": 67,
+          "total_saves": 0,
+          "total_shots": 9,
+          "aerial_duels": {
+            "value": 6,
+            "total": 13,
+            "pct": 46
+          },
+          "corner_kicks": 4,
+          "dispossessed": 6,
+          "ground_duels": {
+            "value": 18,
+            "total": 35,
+            "pct": 51
+          },
+          "hit_woodwork": 0,
+          "yellow_cards": 0,
+          "blocked_shots": 3,
+          "interceptions": 7,
+          "through_balls": 1,
+          "total_tackles": 9,
+          "expected_goals": 0.79,
+          "accurate_passes": 295,
+          "ball_possession": 66,
+          "shots_on_target": 4,
+          "goalkeeper_saves": 0,
+          "shots_inside_box": 6,
+          "shots_off_target": 2,
+          "shots_outside_box": 3,
+          "big_chances_missed": 1,
+          "big_chances_scored": 0,
+          "final_third_entries": 28,
+          "pass_accuracy_pct": 88.1,
+          "xg": {
+            "actual": 0.787
+          }
+        },
+        "away": {
+          "duels": 50,
+          "fouls": 2,
+          "passes": 176,
+          "crosses": {
+            "value": 1,
+            "total": 1,
+            "pct": 100
+          },
+          "tackles": 8,
+          "dribbles": {
+            "value": 4,
+            "total": 9,
+            "pct": 44
+          },
+          "offsides": 0,
+          "throw_ins": 9,
+          "clearances": 15,
+          "free_kicks": 5,
+          "goal_kicks": 5,
+          "long_balls": {
+            "value": 8,
+            "total": 26,
+            "pct": 31
+          },
+          "recoveries": 23,
+          "big_chances": 1,
+          "tackles_won": 63,
+          "total_saves": 0,
+          "total_shots": 3,
+          "aerial_duels": {
+            "value": 7,
+            "total": 13,
+            "pct": 54
+          },
+          "corner_kicks": 0,
+          "dispossessed": 4,
+          "ground_duels": {
+            "value": 17,
+            "total": 35,
+            "pct": 49
+          },
+          "hit_woodwork": 1,
+          "yellow_cards": 1,
+          "blocked_shots": 0,
+          "interceptions": 11,
+          "through_balls": 1,
+          "total_tackles": 8,
+          "expected_goals": 0.88,
+          "accurate_passes": 133,
+          "ball_possession": 34,
+          "shots_on_target": 1,
+          "goalkeeper_saves": 0,
+          "shots_inside_box": 3,
+          "shots_off_target": 2,
+          "shots_outside_box": 0,
+          "big_chances_missed": 0,
+          "big_chances_scored": 1,
+          "final_third_entries": 13,
+          "pass_accuracy_pct": 75.6,
+          "xg": {
+            "actual": 0.732
+          }
+        }
+      }
+    },
+    "shotmap": [
+      {
+        "gm": {
+          "x": 0,
+          "y": 52.8,
+          "z": 19
+        },
+        "xg": 0.0405,
+        "gml": "low-left",
+        "min": 90,
+        "pos": {
+          "x": 5.5,
+          "y": 34.2,
+          "z": 0
+        },
+        "sit": "regular",
+        "body": "left-foot",
+        "home": true,
+        "type": "block",
+        "xgot": null,
+        "added": 9,
+        "block": {
+          "x": 4.4,
+          "y": 36.8,
+          "z": 0
+        },
+        "player_id": 827
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 45.9,
+          "z": 4.2
+        },
+        "xg": 0.1865,
+        "gml": "low-right",
+        "min": 90,
+        "pos": {
+          "x": 3.5,
+          "y": 42.1,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "right-foot",
+        "home": true,
+        "type": "save",
+        "xgot": null,
+        "added": 8,
+        "block": {
+          "x": 0.90000000000001,
+          "y": 50.4,
+          "z": 0
+        },
+        "player_id": 837
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 72.6,
+          "z": 59.7
+        },
+        "xg": 0.0431,
+        "gml": "high-left",
+        "min": 87,
+        "pos": {
+          "x": 11.3,
+          "y": 67.7,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "left-foot",
+        "home": true,
+        "type": "miss",
+        "xgot": null,
+        "player_id": 835
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 47,
+          "z": 12.7
+        },
+        "xg": 0.046,
+        "gml": "low-right",
+        "min": 78,
+        "pos": {
+          "x": 14,
+          "y": 37.3,
+          "z": 0
+        },
+        "sit": "corner",
+        "body": "left-foot",
+        "home": true,
+        "type": "goal",
+        "xgot": 0.168,
+        "gtype": "regular",
+        "player_id": 835
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 53.6,
+          "z": 8.9
+        },
+        "xg": 0.1582,
+        "gml": "low-left",
+        "min": 72,
+        "pos": {
+          "x": 14,
+          "y": 57.5,
+          "z": 0
+        },
+        "sit": "regular",
+        "body": "left-foot",
+        "home": true,
+        "type": "goal",
+        "xgot": 0.837,
+        "gtype": "regular",
+        "player_id": 835
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 44.9,
+          "z": 29.7
+        },
+        "xg": 0.2148,
+        "gml": "right",
+        "min": 70,
+        "pos": {
+          "x": 5.1,
+          "y": 53,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "head",
+        "home": false,
+        "type": "post",
+        "xgot": null,
+        "player_id": 852
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 50.8,
+          "z": 19
+        },
+        "xg": 0.0372,
+        "gml": "low-centre",
+        "min": 62,
+        "pos": {
+          "x": 18.8,
+          "y": 32.4,
+          "z": 0
+        },
+        "sit": "corner",
+        "body": "left-foot",
+        "home": true,
+        "type": "block",
+        "xgot": null,
+        "block": {
+          "x": 9.8,
+          "y": 40.4,
+          "z": 0
+        },
+        "player_id": 835
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 47.1,
+          "z": 10.1
+        },
+        "xg": 0.0529,
+        "gml": "low-right",
+        "min": 57,
+        "pos": {
+          "x": 23.3,
+          "y": 51,
+          "z": 0
+        },
+        "sit": "regular",
+        "body": "right-foot",
+        "home": true,
+        "type": "goal",
+        "xgot": 0.1677,
+        "gtype": "regular",
+        "player_id": 832
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 47.2,
+          "z": 22.8
+        },
+        "xg": 0.0835,
+        "gml": "high-right",
+        "min": 54,
+        "pos": {
+          "x": 12.6,
+          "y": 35.6,
+          "z": 0
+        },
+        "sit": "regular",
+        "body": "right-foot",
+        "home": false,
+        "type": "goal",
+        "xgot": null,
+        "gtype": "own",
+        "player_id": 829
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 32.9,
+          "z": 34.7
+        },
+        "xg": 0.0421,
+        "gml": "right",
+        "min": 54,
+        "pos": {
+          "x": 12,
+          "y": 31.5,
+          "z": 0
+        },
+        "sit": "regular",
+        "body": "right-foot",
+        "home": false,
+        "type": "miss",
+        "xgot": null,
+        "block": {
+          "x": 11.8,
+          "y": 33.3,
+          "z": 0
+        },
+        "player_id": 853
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 45.9,
+          "z": 76.4
+        },
+        "xg": 0.0595,
+        "gml": "high",
+        "min": 52,
+        "pos": {
+          "x": 20.3,
+          "y": 49.3,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "right-foot",
+        "home": true,
+        "type": "miss",
+        "xgot": null,
+        "player_id": 831
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 51.8,
+          "z": 19
+        },
+        "xg": 0.1636,
+        "gml": "low-left",
+        "min": 52,
+        "pos": {
+          "x": 13.9,
+          "y": 55.2,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "right-foot",
+        "home": true,
+        "type": "block",
+        "xgot": null,
+        "block": {
+          "x": 6.8,
+          "y": 51.6,
+          "z": 0
+        },
+        "player_id": 833
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 46.1,
+          "z": 19
+        },
+        "xg": 0.3913,
+        "gml": "low-right",
+        "min": 48,
+        "pos": {
+          "x": 4.9,
+          "y": 59.5,
+          "z": 0
+        },
+        "sit": "fast-break",
+        "body": "right-foot",
+        "home": false,
+        "type": "goal",
+        "xgot": 0.8055,
+        "gtype": "regular",
+        "player_id": 851
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 53.6,
+          "z": 20.3
+        },
+        "xg": 0.0255,
+        "gml": "high-left",
+        "min": 45,
+        "pos": {
+          "x": 10.5,
+          "y": 57.7,
+          "z": 0
+        },
+        "sit": "corner",
+        "body": "head",
+        "home": true,
+        "type": "goal",
+        "xgot": 0.3148,
+        "added": 2,
+        "gtype": "regular",
+        "player_id": 831
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 53.6,
+          "z": 24.1
+        },
+        "xg": 0.0571,
+        "gml": "high-left",
+        "min": 44,
+        "pos": {
+          "x": 20.1,
+          "y": 58.3,
+          "z": 0
+        },
+        "sit": "corner",
+        "body": "left-foot",
+        "home": false,
+        "type": "goal",
+        "xgot": 0.7209,
+        "gtype": "regular",
+        "player_id": 851
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 51.8,
+          "z": 16.5
+        },
+        "xg": 0.6166,
+        "gml": "low-centre",
+        "min": 37,
+        "pos": {
+          "x": 14.1,
+          "y": 50.6,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "right-foot",
+        "home": false,
+        "type": "goal",
+        "xgot": 0.3664,
+        "gtype": "regular",
+        "player_id": 850
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 51.8,
+          "z": 19
+        },
+        "xg": 0.1663,
+        "gml": "low-left",
+        "min": 37,
+        "pos": {
+          "x": 7.3,
+          "y": 47,
+          "z": 0
+        },
+        "sit": "regular",
+        "body": "left-foot",
+        "home": false,
+        "type": "block",
+        "xgot": null,
+        "block": {
+          "x": 5.7,
+          "y": 47.3,
+          "z": 0
+        },
+        "player_id": 852
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 51,
+          "z": 19
+        },
+        "xg": 0.1146,
+        "gml": "low-centre",
+        "min": 37,
+        "pos": {
+          "x": 7.6,
+          "y": 41.5,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "right-foot",
+        "home": false,
+        "type": "block",
+        "xgot": null,
+        "block": {
+          "x": 5.9,
+          "y": 43.2,
+          "z": 0
+        },
+        "player_id": 853
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 45.7,
+          "z": 62.5
+        },
+        "xg": 0.0354,
+        "gml": "high",
+        "min": 32,
+        "pos": {
+          "x": 15.1,
+          "y": 50.1,
+          "z": 0
+        },
+        "sit": "corner",
+        "body": "right-foot",
+        "home": true,
+        "type": "miss",
+        "xgot": null,
+        "player_id": 831
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 48.3,
+          "z": 19
+        },
+        "xg": 0.0547,
+        "gml": "low-centre",
+        "min": 26,
+        "pos": {
+          "x": 9.2,
+          "y": 45.4,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "head",
+        "home": false,
+        "type": "block",
+        "xgot": null,
+        "block": {
+          "x": 7.9,
+          "y": 46.3,
+          "z": 0
+        },
+        "player_id": 852
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 53.1,
+          "z": 3.2
+        },
+        "xg": 0.0625,
+        "gml": "low-left",
+        "min": 24,
+        "pos": {
+          "x": 9.7,
+          "y": 36.6,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "right-foot",
+        "home": true,
+        "type": "save",
+        "xgot": 0.4212,
+        "block": {
+          "x": 2,
+          "y": 47.5,
+          "z": 0
+        },
+        "player_id": 831
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 51.7,
+          "z": 25.9
+        },
+        "xg": 0.15,
+        "gml": "high-centre",
+        "min": 17,
+        "pos": {
+          "x": 11.4,
+          "y": 47.7,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "left-foot",
+        "home": false,
+        "type": "goal",
+        "xgot": 0.3906,
+        "gtype": "regular",
+        "player_id": 852
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 55.5,
+          "z": 5.1
+        },
+        "xg": 0.6314,
+        "gml": "left",
+        "min": 6,
+        "pos": {
+          "x": 12.9,
+          "y": 46.2,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "left-foot",
+        "home": false,
+        "type": "post",
+        "xgot": null,
+        "player_id": 852
+      },
+      {
+        "gm": {
+          "x": 0,
+          "y": 50.7,
+          "z": 19
+        },
+        "xg": 0.0366,
+        "gml": "low-centre",
+        "min": 5,
+        "pos": {
+          "x": 22.8,
+          "y": 45.4,
+          "z": 0
+        },
+        "sit": "assisted",
+        "body": "right-foot",
+        "home": false,
+        "type": "block",
+        "xgot": null,
+        "block": {
+          "x": 19.3,
+          "y": 46,
+          "z": 0
+        },
+        "player_id": 853
+      }
+    ],
+    "momentum": [
+      {
+        "m": 1,
+        "v": -7
+      },
+      {
+        "m": 2,
+        "v": -11
+      },
+      {
+        "m": 3,
+        "v": -20
+      },
+      {
+        "m": 4,
+        "v": -19
+      },
+      {
+        "m": 5,
+        "v": -36
+      },
+      {
+        "m": 6,
+        "v": -77
+      },
+      {
+        "m": 7,
+        "v": -54
+      },
+      {
+        "m": 8,
+        "v": -43
+      },
+      {
+        "m": 9,
+        "v": -34
+      },
+      {
+        "m": 10,
+        "v": -3
+      },
+      {
+        "m": 11,
+        "v": 8
+      },
+      {
+        "m": 12,
+        "v": 17
+      },
+      {
+        "m": 13,
+        "v": 29
+      },
+      {
+        "m": 14,
+        "v": 13
+      },
+      {
+        "m": 15,
+        "v": 2
+      },
+      {
+        "m": 16,
+        "v": -5
+      },
+      {
+        "m": 17,
+        "v": -64
+      },
+      {
+        "m": 18,
+        "v": -42
+      },
+      {
+        "m": 19,
+        "v": -25
+      },
+      {
+        "m": 20,
+        "v": -27
+      },
+      {
+        "m": 21,
+        "v": -11
+      },
+      {
+        "m": 22,
+        "v": 23
+      },
+      {
+        "m": 23,
+        "v": 10
+      },
+      {
+        "m": 24,
+        "v": 13
+      },
+      {
+        "m": 25,
+        "v": 47
+      },
+      {
+        "m": 26,
+        "v": 9
+      },
+      {
+        "m": 27,
+        "v": -30
+      },
+      {
+        "m": 28,
+        "v": -38
+      },
+      {
+        "m": 29,
+        "v": -20
+      },
+      {
+        "m": 30,
+        "v": -11
+      },
+      {
+        "m": 31,
+        "v": -2
+      },
+      {
+        "m": 32,
+        "v": 24
+      },
+      {
+        "m": 33,
+        "v": 69
+      },
+      {
+        "m": 34,
+        "v": 41
+      },
+      {
+        "m": 35,
+        "v": 31
+      },
+      {
+        "m": 36,
+        "v": 19
+      },
+      {
+        "m": 37,
+        "v": -20
+      },
+      {
+        "m": 38,
+        "v": -32
+      },
+      {
+        "m": 39,
+        "v": -17
+      },
+      {
+        "m": 40,
+        "v": -19
+      },
+      {
+        "m": 41,
+        "v": -6
+      },
+      {
+        "m": 42,
+        "v": -14
+      },
+      {
+        "m": 43,
+        "v": -14
+      },
+      {
+        "m": 44,
+        "v": -71
+      },
+      {
+        "m": 45,
+        "v": -40
+      },
+      {
+        "m": 45.5,
+        "v": 26
+      },
+      {
+        "m": 46,
+        "v": 6
+      },
+      {
+        "m": 47,
+        "v": 6
+      },
+      {
+        "m": 48,
+        "v": 9
+      },
+      {
+        "m": 49,
+        "v": -23
+      },
+      {
+        "m": 50,
+        "v": -6
+      },
+      {
+        "m": 51,
+        "v": -22
+      },
+      {
+        "m": 52,
+        "v": 25
+      },
+      {
+        "m": 53,
+        "v": 28
+      },
+      {
+        "m": 54,
+        "v": 15
+      },
+      {
+        "m": 55,
+        "v": -38
+      },
+      {
+        "m": 56,
+        "v": -10
+      },
+      {
+        "m": 57,
+        "v": 22
+      },
+      {
+        "m": 58,
+        "v": 11
+      },
+      {
+        "m": 59,
+        "v": 7
+      },
+      {
+        "m": 60,
+        "v": 12
+      },
+      {
+        "m": 61,
+        "v": -7
+      },
+      {
+        "m": 62,
+        "v": 5
+      },
+      {
+        "m": 63,
+        "v": 24
+      },
+      {
+        "m": 64,
+        "v": 37
+      },
+      {
+        "m": 65,
+        "v": 26
+      },
+      {
+        "m": 66,
+        "v": 28
+      },
+      {
+        "m": 67,
+        "v": 42
+      },
+      {
+        "m": 68,
+        "v": 25
+      },
+      {
+        "m": 69,
+        "v": 24
+      },
+      {
+        "m": 70,
+        "v": 18
+      },
+      {
+        "m": 71,
+        "v": -42
+      },
+      {
+        "m": 72,
+        "v": -18
+      },
+      {
+        "m": 73,
+        "v": 32
+      },
+      {
+        "m": 74,
+        "v": 12
+      },
+      {
+        "m": 75,
+        "v": 32
+      },
+      {
+        "m": 76,
+        "v": 22
+      },
+      {
+        "m": 77,
+        "v": 12
+      },
+      {
+        "m": 78,
+        "v": 66
+      },
+      {
+        "m": 79,
+        "v": 39
+      },
+      {
+        "m": 80,
+        "v": 21
+      },
+      {
+        "m": 81,
+        "v": 11
+      },
+      {
+        "m": 82,
+        "v": 39
+      },
+      {
+        "m": 83,
+        "v": 26
+      },
+      {
+        "m": 84,
+        "v": 4
+      },
+      {
+        "m": 85,
+        "v": 20
+      },
+      {
+        "m": 86,
+        "v": 27
+      },
+      {
+        "m": 87,
+        "v": 9
+      },
+      {
+        "m": 88,
+        "v": -26
+      },
+      {
+        "m": 89,
+        "v": 17
+      },
+      {
+        "m": 90,
+        "v": -5
+      },
+      {
+        "m": 90.5,
+        "v": 70
+      }
+    ],
+    "average_positions": {
+      "away": [
+        {
+          "n": 20,
+          "x": 43.1,
+          "y": 74.9,
+          "pos": "M",
+          "name": "Savinho",
+          "player_id": 855
+        },
+        {
+          "n": 18,
+          "x": 33.9,
+          "y": 61.2,
+          "pos": "D",
+          "name": "J. Stones",
+          "player_id": 854
+        },
+        {
+          "n": 17,
+          "x": 59.8,
+          "y": 24.4,
+          "pos": "M",
+          "name": "R. Cherki",
+          "player_id": 856
+        },
+        {
+          "n": 44,
+          "x": 69.0,
+          "y": 49.6,
+          "pos": "F",
+          "name": "E. Haaland",
+          "player_id": 852
+        },
+        {
+          "n": 42,
+          "x": 10.8,
+          "y": 50.7,
+          "pos": "G",
+          "name": "G. Donnarumma",
+          "player_id": 843
+        },
+        {
+          "n": 47,
+          "x": 54.7,
+          "y": 62.3,
+          "pos": "M",
+          "name": "T. Reijnders",
+          "player_id": 850
+        },
+        {
+          "n": 54,
+          "x": 67.3,
+          "y": 80.3,
+          "pos": "M",
+          "name": "J. Doku",
+          "player_id": 853
+        },
+        {
+          "n": 75,
+          "x": 45.5,
+          "y": 31.8,
+          "pos": "M",
+          "name": "B. Silva",
+          "player_id": 848
+        },
+        {
+          "n": 53,
+          "x": 41.2,
+          "y": 54.4,
+          "pos": "M",
+          "name": "N. González",
+          "player_id": 849
+        },
+        {
+          "n": 72,
+          "x": 38.0,
+          "y": 74.7,
+          "pos": "D",
+          "name": "J. Gvardiol",
+          "player_id": 846
+        },
+        {
+          "n": 67,
+          "x": 54.6,
+          "y": 82.2,
+          "pos": "D",
+          "name": "N. O’Reilly",
+          "player_id": 847
+        },
+        {
+          "n": 75,
+          "x": 50.6,
+          "y": 38.9,
+          "pos": "M",
+          "name": "P. Foden",
+          "player_id": 851
+        },
+        {
+          "n": 92,
+          "x": 32.7,
+          "y": 36.6,
+          "pos": "D",
+          "name": "R. Dias",
+          "player_id": 845
+        },
+        {
+          "n": 90,
+          "x": 44.6,
+          "y": 15.0,
+          "pos": "D",
+          "name": "M. Nunes",
+          "player_id": 844
+        }
+      ],
+      "home": [
+        {
+          "n": 8,
+          "x": 81.9,
+          "y": 39.0,
+          "pos": "M",
+          "name": "J. King",
+          "player_id": 837
+        },
+        {
+          "n": 64,
+          "x": 57.6,
+          "y": 17.5,
+          "pos": "M",
+          "name": "H. Wilson",
+          "player_id": 830
+        },
+        {
+          "n": 108,
+          "x": 42.5,
+          "y": 44.0,
+          "pos": "M",
+          "name": "S. Berge",
+          "player_id": 829
+        },
+        {
+          "n": 36,
+          "x": 8.1,
+          "y": 52.0,
+          "pos": "G",
+          "name": "B. Leno",
+          "player_id": 823
+        },
+        {
+          "n": 11,
+          "x": 72.9,
+          "y": 53.4,
+          "pos": "F",
+          "name": "J. Kusi-Asare",
+          "player_id": 836
+        },
+        {
+          "n": 37,
+          "x": 61.3,
+          "y": 43.8,
+          "pos": "F",
+          "name": "R. Jiménez",
+          "player_id": 833
+        },
+        {
+          "n": 23,
+          "x": 77.4,
+          "y": 86.5,
+          "pos": "M",
+          "name": "Kevin",
+          "player_id": 838
+        },
+        {
+          "n": 56,
+          "x": 44.4,
+          "y": 15.7,
+          "pos": "D",
+          "name": "K. Tete",
+          "player_id": 824
+        },
+        {
+          "n": 42,
+          "x": 49.5,
+          "y": 31.7,
+          "pos": "M",
+          "name": "S. Lukić",
+          "player_id": 828
+        },
+        {
+          "n": 56,
+          "x": 60.1,
+          "y": 43.1,
+          "pos": "M",
+          "name": "E. Smith Rowe",
+          "player_id": 831
+        },
+        {
+          "n": 60,
+          "x": 47.7,
+          "y": 12.3,
+          "pos": "D",
+          "name": "T. Castagne",
+          "player_id": 834
+        },
+        {
+          "n": 144,
+          "x": 32.5,
+          "y": 36.4,
+          "pos": "D",
+          "name": "J. Andersen",
+          "player_id": 825
+        },
+        {
+          "n": 75,
+          "x": 35.3,
+          "y": 64.4,
+          "pos": "D",
+          "name": "C. Bassey",
+          "player_id": 826
+        },
+        {
+          "n": 84,
+          "x": 55.2,
+          "y": 67.9,
+          "pos": "M",
+          "name": "A. Iwobi",
+          "player_id": 832
+        },
+        {
+          "n": 70,
+          "x": 49.9,
+          "y": 82.3,
+          "pos": "D",
+          "name": "R. Sessegnon",
+          "player_id": 827
+        },
+        {
+          "n": 46,
+          "x": 63.3,
+          "y": 52.2,
+          "pos": "F",
+          "name": "S. Chukwueze",
+          "player_id": 835
+        }
+      ]
+    },
+    "xg_per_minute": [
+      {
+        "m": 5,
+        "xg_home": 0.0,
+        "xg_away": 0.037,
+        "cum_home": 0.0,
+        "cum_away": 0.037
+      },
+      {
+        "m": 6,
+        "xg_home": 0.0,
+        "xg_away": 0.631,
+        "cum_home": 0.0,
+        "cum_away": 0.668
+      },
+      {
+        "m": 17,
+        "xg_home": 0.0,
+        "xg_away": 0.15,
+        "cum_home": 0.0,
+        "cum_away": 0.818
+      },
+      {
+        "m": 24,
+        "xg_home": 0.062,
+        "xg_away": 0.0,
+        "cum_home": 0.062,
+        "cum_away": 0.818
+      },
+      {
+        "m": 26,
+        "xg_home": 0.0,
+        "xg_away": 0.055,
+        "cum_home": 0.062,
+        "cum_away": 0.873
+      },
+      {
+        "m": 32,
+        "xg_home": 0.035,
+        "xg_away": 0.0,
+        "cum_home": 0.098,
+        "cum_away": 0.873
+      },
+      {
+        "m": 37,
+        "xg_home": 0.0,
+        "xg_away": 0.898,
+        "cum_home": 0.098,
+        "cum_away": 1.77
+      },
+      {
+        "m": 44,
+        "xg_home": 0.0,
+        "xg_away": 0.057,
+        "cum_home": 0.098,
+        "cum_away": 1.827
+      },
+      {
+        "m": 45,
+        "xg_home": 0.025,
+        "xg_away": 0.0,
+        "cum_home": 0.123,
+        "cum_away": 1.827
+      },
+      {
+        "m": 48,
+        "xg_home": 0.0,
+        "xg_away": 0.391,
+        "cum_home": 0.123,
+        "cum_away": 2.219
+      },
+      {
+        "m": 52,
+        "xg_home": 0.223,
+        "xg_away": 0.0,
+        "cum_home": 0.346,
+        "cum_away": 2.219
+      },
+      {
+        "m": 54,
+        "xg_home": 0.0,
+        "xg_away": 0.126,
+        "cum_home": 0.346,
+        "cum_away": 2.344
+      },
+      {
+        "m": 57,
+        "xg_home": 0.053,
+        "xg_away": 0.0,
+        "cum_home": 0.399,
+        "cum_away": 2.344
+      },
+      {
+        "m": 62,
+        "xg_home": 0.037,
+        "xg_away": 0.0,
+        "cum_home": 0.437,
+        "cum_away": 2.344
+      },
+      {
+        "m": 70,
+        "xg_home": 0.0,
+        "xg_away": 0.215,
+        "cum_home": 0.437,
+        "cum_away": 2.559
+      },
+      {
+        "m": 72,
+        "xg_home": 0.158,
+        "xg_away": 0.0,
+        "cum_home": 0.595,
+        "cum_away": 2.559
+      },
+      {
+        "m": 78,
+        "xg_home": 0.046,
+        "xg_away": 0.0,
+        "cum_home": 0.641,
+        "cum_away": 2.559
+      },
+      {
+        "m": 87,
+        "xg_home": 0.043,
+        "xg_away": 0.0,
+        "cum_home": 0.684,
+        "cum_away": 2.559
+      },
+      {
+        "m": 90,
+        "xg_home": 0.227,
+        "xg_away": 0.0,
+        "cum_home": 0.911,
+        "cum_away": 2.559
+      }
+    ]
+  },
+  "lineups": {
+    "event_id": 132,
+    "lineup_status": "confirmed",
+    "beta": false,
+    "lineups": {
+      "home": {
+        "team_id": 6,
+        "team_name": "Fulham",
+        "formation": "4-2-3-1",
+        "confidence": null,
+        "players": [
+          {
+            "id": null,
+            "name": "B. Leno",
+            "short_name": "B. Leno",
+            "position": "G",
+            "jersey_number": 1,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "K. Tete",
+            "short_name": "K. Tete",
+            "position": "D",
+            "jersey_number": 2,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "J. Andersen",
+            "short_name": "J. Andersen",
+            "position": "D",
+            "jersey_number": 5,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "C. Bassey",
+            "short_name": "C. Bassey",
+            "position": "D",
+            "jersey_number": 3,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "R. Sessegnon",
+            "short_name": "R. Sessegnon",
+            "position": "D",
+            "jersey_number": 30,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "S. Lukić",
+            "short_name": "S. Lukić",
+            "position": "M",
+            "jersey_number": 20,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "S. Berge",
+            "short_name": "S. Berge",
+            "position": "M",
+            "jersey_number": 16,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "H. Wilson",
+            "short_name": "H. Wilson",
+            "position": "M",
+            "jersey_number": 8,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "E. Smith Rowe",
+            "short_name": "E. Smith Rowe",
+            "position": "M",
+            "jersey_number": 32,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "A. Iwobi",
+            "short_name": "A. Iwobi",
+            "position": "M",
+            "jersey_number": 17,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "R. Jiménez",
+            "short_name": "R. Jiménez",
+            "position": "F",
+            "jersey_number": 7,
+            "ai_score": null
+          }
+        ],
+        "substitutes": [
+          {
+            "id": null,
+            "name": "T. Castagne",
+            "short_name": "T. Castagne",
+            "position": "D",
+            "jersey_number": 21,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "S. Chukwueze",
+            "short_name": "S. Chukwueze",
+            "position": "F",
+            "jersey_number": 19,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "J. Kusi-Asare",
+            "short_name": "J. Kusi-Asare",
+            "position": "F",
+            "jersey_number": 18,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "J. King",
+            "short_name": "J. King",
+            "position": "M",
+            "jersey_number": 24,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "Kevin",
+            "short_name": "Kevin",
+            "position": "F",
+            "jersey_number": 22,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "B. Lecomte",
+            "short_name": "B. Lecomte",
+            "position": "G",
+            "jersey_number": 23,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "J. Cuenca",
+            "short_name": "J. Cuenca",
+            "position": "D",
+            "jersey_number": 15,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "H. Reed",
+            "short_name": "H. Reed",
+            "position": "M",
+            "jersey_number": 6,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "T. Cairney",
+            "short_name": "T. Cairney",
+            "position": "M",
+            "jersey_number": 10,
+            "ai_score": null
+          }
+        ]
+      },
+      "away": {
+        "team_id": 12,
+        "team_name": "Manchester City",
+        "formation": "4-3-3",
+        "confidence": null,
+        "players": [
+          {
+            "id": null,
+            "name": "G. Donnarumma",
+            "short_name": "G. Donnarumma",
+            "position": "G",
+            "jersey_number": 25,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "M. Nunes",
+            "short_name": "M. Nunes",
+            "position": "D",
+            "jersey_number": 27,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "R. Dias",
+            "short_name": "R. Dias",
+            "position": "D",
+            "jersey_number": 3,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "J. Gvardiol",
+            "short_name": "J. Gvardiol",
+            "position": "D",
+            "jersey_number": 24,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "N. O’Reilly",
+            "short_name": "N. O’Reilly",
+            "position": "D",
+            "jersey_number": 33,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "B. Silva",
+            "short_name": "B. Silva",
+            "position": "M",
+            "jersey_number": 20,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "N. González",
+            "short_name": "N. González",
+            "position": "M",
+            "jersey_number": 14,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "T. Reijnders",
+            "short_name": "T. Reijnders",
+            "position": "M",
+            "jersey_number": 4,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "P. Foden",
+            "short_name": "P. Foden",
+            "position": "F",
+            "jersey_number": 47,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "E. Haaland",
+            "short_name": "E. Haaland",
+            "position": "F",
+            "jersey_number": 9,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "J. Doku",
+            "short_name": "J. Doku",
+            "position": "F",
+            "jersey_number": 11,
+            "ai_score": null
+          }
+        ],
+        "substitutes": [
+          {
+            "id": null,
+            "name": "J. Stones",
+            "short_name": "J. Stones",
+            "position": "D",
+            "jersey_number": 5,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "Savinho",
+            "short_name": "Savinho",
+            "position": "F",
+            "jersey_number": 26,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "R. Cherki",
+            "short_name": "R. Cherki",
+            "position": "M",
+            "jersey_number": 10,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "N. Aké",
+            "short_name": "N. Aké",
+            "position": "D",
+            "jersey_number": 6,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "J. Trafford",
+            "short_name": "J. Trafford",
+            "position": "G",
+            "jersey_number": 1,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "O. Marmoush",
+            "short_name": "O. Marmoush",
+            "position": "F",
+            "jersey_number": 7,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "R. Lewis",
+            "short_name": "R. Lewis",
+            "position": "D",
+            "jersey_number": 82,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "R. Aït-Nouri",
+            "short_name": "R. Aït-Nouri",
+            "position": "D",
+            "jersey_number": 21,
+            "ai_score": null
+          },
+          {
+            "id": null,
+            "name": "A. Khusanov",
+            "short_name": "A. Khusanov",
+            "position": "D",
+            "jersey_number": 45,
+            "ai_score": null
+          }
+        ]
+      }
+    },
+    "unavailable_players": {
+      "home": [],
+      "away": []
+    },
+    "updated_at": "2026-06-19T01:01:06Z"
+  },
+  "incidents": {
+    "event_id": 132,
+    "incidents": [
+      {
+        "type": "substitution",
+        "minute": 90,
+        "is_home": false,
+        "player_in": "N. Aké",
+        "player_out": "P. Foden"
+      },
+      {
+        "type": "card",
+        "minute": 90,
+        "player": "R. Cherki",
+        "is_home": false,
+        "card_type": "yellow",
+        "player_id": 856
+      },
+      {
+        "type": "substitution",
+        "minute": 82,
+        "is_home": false,
+        "player_in": "R. Cherki",
+        "player_out": "T. Reijnders"
+      },
+      {
+        "type": "substitution",
+        "minute": 82,
+        "is_home": true,
+        "player_in": "Kevin",
+        "player_out": "H. Wilson"
+      },
+      {
+        "type": "goal",
+        "minute": 78,
+        "player": "S. Chukwueze",
+        "is_home": true,
+        "sequence": [
+          {
+            "gk": {
+              "x": 98,
+              "y": 52
+            },
+            "gm": {
+              "x": 66.13,
+              "y": 78.83
+            },
+            "pid": 835,
+            "pos": {
+              "x": 86,
+              "y": 62.7
+            },
+            "body": "left-foot",
+            "event": "goal",
+            "player": "S. Chukwueze"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 835,
+        "away_score": 5,
+        "home_score": 4
+      },
+      {
+        "type": "substitution",
+        "minute": 74,
+        "is_home": true,
+        "player_in": "J. King",
+        "player_out": "E. Smith Rowe"
+      },
+      {
+        "type": "substitution",
+        "minute": 73,
+        "is_home": true,
+        "player_in": "J. Kusi-Asare",
+        "player_out": "R. Jiménez"
+      },
+      {
+        "type": "goal",
+        "minute": 72,
+        "player": "S. Chukwueze",
+        "is_home": true,
+        "sequence": [
+          {
+            "gk": {
+              "x": 98.2,
+              "y": 47.5
+            },
+            "gm": {
+              "x": 30.65,
+              "y": 85.17
+            },
+            "pid": 835,
+            "pos": {
+              "x": 86,
+              "y": 42.5
+            },
+            "body": "left-foot",
+            "event": "goal",
+            "player": "S. Chukwueze"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 835,
+        "away_score": 5,
+        "home_score": 3
+      },
+      {
+        "type": "substitution",
+        "minute": 64,
+        "is_home": false,
+        "player_in": "J. Stones",
+        "player_out": "N. González"
+      },
+      {
+        "type": "substitution",
+        "minute": 64,
+        "is_home": false,
+        "player_in": "Savinho",
+        "player_out": "J. Doku"
+      },
+      {
+        "type": "goal",
+        "minute": 57,
+        "player": "A. Iwobi",
+        "is_home": true,
+        "sequence": [
+          {
+            "gk": {
+              "x": 98,
+              "y": 50.9
+            },
+            "gm": {
+              "x": 65.59,
+              "y": 83.17
+            },
+            "pid": 832,
+            "pos": {
+              "x": 76.7,
+              "y": 49
+            },
+            "body": "right-foot",
+            "event": "goal",
+            "player": "A. Iwobi"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 832,
+        "away_score": 5,
+        "home_score": 2
+      },
+      {
+        "type": "goal",
+        "minute": 54,
+        "player": "S. Berge",
+        "is_home": false,
+        "sequence": [
+          {
+            "gk": {
+              "x": 98.4,
+              "y": 53.8
+            },
+            "gm": {
+              "x": 65.05,
+              "y": 62
+            },
+            "pid": 829,
+            "pos": {
+              "x": 12.6,
+              "y": 35.6
+            },
+            "body": "right-foot",
+            "event": "goal",
+            "player": "S. Berge"
+          }
+        ],
+        "goal_type": "ownGoal",
+        "player_id": 829,
+        "away_score": 5,
+        "home_score": 1
+      },
+      {
+        "type": "goal",
+        "assist": "E. Haaland",
+        "minute": 48,
+        "player": "P. Foden",
+        "is_home": false,
+        "sequence": [
+          {
+            "gk": {
+              "x": 3.1,
+              "y": 56.1
+            },
+            "gm": {
+              "x": 70.97,
+              "y": 68.33
+            },
+            "pid": 851,
+            "pos": {
+              "x": 4.9,
+              "y": 59.5
+            },
+            "body": "right-foot",
+            "event": "goal",
+            "player": "P. Foden"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 851,
+        "away_score": 4,
+        "home_score": 1
+      },
+      {
+        "type": "substitution",
+        "minute": 46,
+        "is_home": true,
+        "player_in": "S. Chukwueze",
+        "player_out": "S. Lukić"
+      },
+      {
+        "type": "substitution",
+        "minute": 46,
+        "is_home": true,
+        "player_in": "T. Castagne",
+        "player_out": "K. Tete"
+      },
+      {
+        "type": "goal",
+        "assist": "H. Wilson",
+        "minute": 45,
+        "player": "E. Smith Rowe",
+        "is_home": true,
+        "sequence": [
+          {
+            "end": {
+              "x": 91.5,
+              "y": 20.6
+            },
+            "pid": 832,
+            "pos": {
+              "x": 68.5,
+              "y": 19.6
+            },
+            "event": "pass",
+            "player": "A. Iwobi"
+          },
+          {
+            "end": {
+              "x": 89.5,
+              "y": 42.3
+            },
+            "pid": 830,
+            "pos": {
+              "x": 92,
+              "y": 19.7
+            },
+            "event": "cross",
+            "assist": true,
+            "player": "H. Wilson"
+          },
+          {
+            "gk": {
+              "x": 98.6,
+              "y": 48.2
+            },
+            "gm": {
+              "x": 30.65,
+              "y": 66.17
+            },
+            "pid": 831,
+            "pos": {
+              "x": 89.5,
+              "y": 42.3
+            },
+            "body": "head",
+            "event": "goal",
+            "player": "E. Smith Rowe"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 831,
+        "away_score": 3,
+        "home_score": 1
+      },
+      {
+        "type": "goal",
+        "minute": 44,
+        "player": "P. Foden",
+        "is_home": false,
+        "sequence": [
+          {
+            "gk": {
+              "x": 1.6,
+              "y": 51.8
+            },
+            "gm": {
+              "x": 30.65,
+              "y": 59.83
+            },
+            "pid": 851,
+            "pos": {
+              "x": 20.1,
+              "y": 58.3
+            },
+            "body": "left-foot",
+            "event": "goal",
+            "player": "P. Foden"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 851,
+        "away_score": 3,
+        "home_score": 0
+      },
+      {
+        "type": "goal",
+        "assist": "E. Haaland",
+        "minute": 37,
+        "player": "T. Reijnders",
+        "is_home": false,
+        "sequence": [
+          {
+            "end": {
+              "x": 10.3,
+              "y": 4.5
+            },
+            "pid": 853,
+            "pos": {
+              "x": 4.6,
+              "y": 16.6
+            },
+            "event": "pass",
+            "player": "J. Doku"
+          },
+          {
+            "end": {
+              "x": 43.7,
+              "y": 7.7
+            },
+            "pid": 847,
+            "pos": {
+              "x": 10.3,
+              "y": 4.5
+            },
+            "event": "ball-movement",
+            "player": "N. O’Reilly"
+          },
+          {
+            "end": {
+              "x": 43.7,
+              "y": 7.7
+            },
+            "pid": 847,
+            "pos": {
+              "x": 27.9,
+              "y": 13.2
+            },
+            "event": "pass",
+            "player": "N. O’Reilly"
+          },
+          {
+            "end": {
+              "x": 55.7,
+              "y": 44.5
+            },
+            "pid": 846,
+            "pos": {
+              "x": 45.9,
+              "y": 9.7
+            },
+            "event": "pass",
+            "player": "J. Gvardiol"
+          },
+          {
+            "end": {
+              "x": 31.7,
+              "y": 49
+            },
+            "pid": 845,
+            "pos": {
+              "x": 46.1,
+              "y": 57.3
+            },
+            "event": "pass",
+            "player": "R. Dias"
+          },
+          {
+            "end": {
+              "x": 14.1,
+              "y": 48.8
+            },
+            "pid": 852,
+            "pos": {
+              "x": 31.1,
+              "y": 48.2
+            },
+            "event": "pass",
+            "assist": true,
+            "player": "E. Haaland"
+          },
+          {
+            "gk": {
+              "x": 9.3,
+              "y": 49.8
+            },
+            "gm": {
+              "x": 40.32,
+              "y": 72.5
+            },
+            "pid": 850,
+            "pos": {
+              "x": 14.1,
+              "y": 50.6
+            },
+            "body": "right-foot",
+            "event": "goal",
+            "player": "T. Reijnders"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 850,
+        "away_score": 2,
+        "home_score": 0
+      },
+      {
+        "type": "goal",
+        "assist": "J. Doku",
+        "minute": 17,
+        "player": "E. Haaland",
+        "is_home": false,
+        "sequence": [
+          {
+            "end": {
+              "x": 34.7,
+              "y": 22.2
+            },
+            "pid": 847,
+            "pos": {
+              "x": 27.3,
+              "y": 18.3
+            },
+            "event": "pass",
+            "player": "N. O’Reilly"
+          },
+          {
+            "end": {
+              "x": 28.4,
+              "y": 15.2
+            },
+            "pid": 849,
+            "pos": {
+              "x": 35,
+              "y": 22.2
+            },
+            "event": "pass",
+            "player": "N. González"
+          },
+          {
+            "end": {
+              "x": 24.7,
+              "y": 25.2
+            },
+            "pid": 847,
+            "pos": {
+              "x": 28.7,
+              "y": 15.3
+            },
+            "event": "pass",
+            "player": "N. O’Reilly"
+          },
+          {
+            "end": {
+              "x": 16,
+              "y": 8.8
+            },
+            "pid": 851,
+            "pos": {
+              "x": 24.8,
+              "y": 24.9
+            },
+            "event": "pass",
+            "player": "P. Foden"
+          },
+          {
+            "end": {
+              "x": 11.4,
+              "y": 47.7
+            },
+            "pid": 853,
+            "pos": {
+              "x": 10.8,
+              "y": 12.7
+            },
+            "event": "cross",
+            "assist": true,
+            "player": "J. Doku"
+          },
+          {
+            "gk": {
+              "x": 1,
+              "y": 49.5
+            },
+            "gm": {
+              "x": 40.86,
+              "y": 56.83
+            },
+            "pid": 852,
+            "pos": {
+              "x": 11.4,
+              "y": 47.7
+            },
+            "body": "left-foot",
+            "event": "goal",
+            "player": "E. Haaland"
+          }
+        ],
+        "goal_type": "regular",
+        "player_id": 852,
+        "away_score": 1,
+        "home_score": 0
+      }
+    ]
+  },
+  "player_stats": {
+    "event_id": 132,
+    "count": 40,
+    "player_stats": [
+      {
+        "id": 825,
+        "player_id": 825,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 90,
+        "rating": 5.6,
+        "touches": 129,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.0131095,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 112,
+        "accurate_pass": 103,
+        "total_long_balls": 13,
+        "accurate_long_balls": 8,
+        "total_cross": 1,
+        "accurate_cross": 1,
+        "total_contest": 1,
+        "won_contest": 1,
+        "duel_won": 2,
+        "duel_lost": 3,
+        "aerial_won": 0,
+        "aerial_lost": 1,
+        "total_tackle": 1,
+        "won_tackle": 0,
+        "total_clearance": 3,
+        "interception": 3,
+        "ball_recovery": 8,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 11,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 823,
+        "player_id": 823,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 90,
+        "rating": 5.1,
+        "touches": 29,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.00010844,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 25,
+        "accurate_pass": 21,
+        "total_long_balls": 6,
+        "accurate_long_balls": 2,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 1,
+        "interception": 0,
+        "ball_recovery": 7,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 5,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 5,
+        "punches": 1
+      },
+      {
+        "id": 827,
+        "player_id": 827,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 90,
+        "rating": 4.8,
+        "touches": 55,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": 0.0405,
+        "expected_assists": 0.0120678,
+        "total_shots": 1,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 39,
+        "accurate_pass": 31,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 1,
+        "won_contest": 0,
+        "duel_won": 2,
+        "duel_lost": 6,
+        "aerial_won": 0,
+        "aerial_lost": 2,
+        "total_tackle": 2,
+        "won_tackle": 2,
+        "total_clearance": 1,
+        "interception": 1,
+        "ball_recovery": 7,
+        "blocked_scoring_attempt": 1,
+        "dispossessed": 0,
+        "possession_lost": 12,
+        "was_fouled": 0,
+        "fouls": 2,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 832,
+        "player_id": 832,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 90,
+        "rating": 8.0,
+        "touches": 78,
+        "goals": 1,
+        "goal_assist": 0,
+        "expected_goals": 0.0529,
+        "expected_assists": 0.138771,
+        "total_shots": 1,
+        "shots_on_target": 1,
+        "key_pass": 1,
+        "total_pass": 67,
+        "accurate_pass": 60,
+        "total_long_balls": 4,
+        "accurate_long_balls": 3,
+        "total_cross": 4,
+        "accurate_cross": 0,
+        "total_contest": 2,
+        "won_contest": 1,
+        "duel_won": 1,
+        "duel_lost": 2,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 5,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 14,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 826,
+        "player_id": 826,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 90,
+        "rating": 5.9,
+        "touches": 65,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.0136249,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 49,
+        "accurate_pass": 44,
+        "total_long_balls": 1,
+        "accurate_long_balls": 1,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 1,
+        "won_contest": 1,
+        "duel_won": 5,
+        "duel_lost": 6,
+        "aerial_won": 2,
+        "aerial_lost": 3,
+        "total_tackle": 2,
+        "won_tackle": 1,
+        "total_clearance": 9,
+        "interception": 1,
+        "ball_recovery": 3,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 6,
+        "was_fouled": 0,
+        "fouls": 2,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 829,
+        "player_id": 829,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 90,
+        "rating": 6.4,
+        "touches": 99,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.0243444,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 88,
+        "accurate_pass": 83,
+        "total_long_balls": 4,
+        "accurate_long_balls": 4,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 6,
+        "duel_lost": 3,
+        "aerial_won": 1,
+        "aerial_lost": 0,
+        "total_tackle": 4,
+        "won_tackle": 3,
+        "total_clearance": 1,
+        "interception": 0,
+        "ball_recovery": 4,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 6,
+        "was_fouled": 1,
+        "fouls": 2,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 830,
+        "player_id": 830,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 82,
+        "rating": 6.3,
+        "touches": 57,
+        "goals": 0,
+        "goal_assist": 1,
+        "expected_goals": null,
+        "expected_assists": 0.24512,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 2,
+        "total_pass": 43,
+        "accurate_pass": 33,
+        "total_long_balls": 1,
+        "accurate_long_balls": 1,
+        "total_cross": 5,
+        "accurate_cross": 1,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 1,
+        "duel_lost": 3,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 2,
+        "interception": 1,
+        "ball_recovery": 3,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 17,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 831,
+        "player_id": 831,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 74,
+        "rating": 7.0,
+        "touches": 55,
+        "goals": 1,
+        "goal_assist": 0,
+        "expected_goals": 0.183,
+        "expected_assists": 0.016376,
+        "total_shots": 4,
+        "shots_on_target": 2,
+        "key_pass": 0,
+        "total_pass": 41,
+        "accurate_pass": 39,
+        "total_long_balls": 1,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 2,
+        "won_contest": 1,
+        "duel_won": 1,
+        "duel_lost": 3,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 2,
+        "ball_recovery": 1,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 2,
+        "possession_lost": 6,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 833,
+        "player_id": 833,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 73,
+        "rating": 6.7,
+        "touches": 24,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": 0.1636,
+        "expected_assists": 0.0148863,
+        "total_shots": 1,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 15,
+        "accurate_pass": 13,
+        "total_long_balls": 1,
+        "accurate_long_balls": 1,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 4,
+        "duel_lost": 4,
+        "aerial_won": 2,
+        "aerial_lost": 3,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 1,
+        "ball_recovery": 3,
+        "blocked_scoring_attempt": 1,
+        "dispossessed": 0,
+        "possession_lost": 5,
+        "was_fouled": 2,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 828,
+        "player_id": 828,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 45,
+        "rating": 6.5,
+        "touches": 34,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.0121971,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 1,
+        "total_pass": 22,
+        "accurate_pass": 16,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 3,
+        "accurate_cross": 1,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 4,
+        "duel_lost": 2,
+        "aerial_won": 0,
+        "aerial_lost": 1,
+        "total_tackle": 2,
+        "won_tackle": 1,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 2,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 11,
+        "was_fouled": 2,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 835,
+        "player_id": 835,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 45,
+        "rating": 8.9,
+        "touches": 39,
+        "goals": 2,
+        "goal_assist": 0,
+        "expected_goals": 0.2845,
+        "expected_assists": 0.0193608,
+        "total_shots": 4,
+        "shots_on_target": 2,
+        "key_pass": 1,
+        "total_pass": 22,
+        "accurate_pass": 18,
+        "total_long_balls": 4,
+        "accurate_long_balls": 3,
+        "total_cross": 1,
+        "accurate_cross": 0,
+        "total_contest": 2,
+        "won_contest": 2,
+        "duel_won": 2,
+        "duel_lost": 5,
+        "aerial_won": 0,
+        "aerial_lost": 1,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 3,
+        "blocked_scoring_attempt": 1,
+        "dispossessed": 4,
+        "possession_lost": 12,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 824,
+        "player_id": 824,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 45,
+        "rating": 6.1,
+        "touches": 48,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.00486505,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 37,
+        "accurate_pass": 32,
+        "total_long_balls": 2,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 5,
+        "duel_lost": 2,
+        "aerial_won": 0,
+        "aerial_lost": 1,
+        "total_tackle": 4,
+        "won_tackle": 2,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 2,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 5,
+        "was_fouled": 1,
+        "fouls": 1,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 834,
+        "player_id": 834,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 45,
+        "rating": 6.5,
+        "touches": 56,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.0202624,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 36,
+        "accurate_pass": 33,
+        "total_long_balls": 3,
+        "accurate_long_balls": 2,
+        "total_cross": 4,
+        "accurate_cross": 1,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 3,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 3,
+        "won_tackle": 2,
+        "total_clearance": 2,
+        "interception": 2,
+        "ball_recovery": 1,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 8,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 836,
+        "player_id": 836,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 17,
+        "rating": 6.4,
+        "touches": 7,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.00685699,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 1,
+        "total_pass": 3,
+        "accurate_pass": 3,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 1,
+        "duel_lost": 3,
+        "aerial_won": 1,
+        "aerial_lost": 2,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 1,
+        "was_fouled": 0,
+        "fouls": 1,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 837,
+        "player_id": 837,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 16,
+        "rating": 6.5,
+        "touches": 4,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": 0.1865,
+        "expected_assists": 1.56e-05,
+        "total_shots": 1,
+        "shots_on_target": 1,
+        "key_pass": 0,
+        "total_pass": 2,
+        "accurate_pass": 1,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 1,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 1,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 2,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 838,
+        "player_id": 838,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 8,
+        "rating": 6.9,
+        "touches": 21,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.330709,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 1,
+        "total_pass": 11,
+        "accurate_pass": 8,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 2,
+        "accurate_cross": 1,
+        "total_contest": 3,
+        "won_contest": 2,
+        "duel_won": 2,
+        "duel_lost": 4,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 7,
+        "was_fouled": 0,
+        "fouls": 1,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 839,
+        "player_id": 839,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 840,
+        "player_id": 840,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 842,
+        "player_id": 842,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 841,
+        "player_id": 841,
+        "event_id": 132,
+        "team_id": 6,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 852,
+        "player_id": 852,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 90,
+        "rating": 8.6,
+        "touches": 33,
+        "goals": 1,
+        "goal_assist": 2,
+        "expected_goals": 0.9066,
+        "expected_assists": 0.304291,
+        "total_shots": 5,
+        "shots_on_target": 1,
+        "key_pass": 2,
+        "total_pass": 18,
+        "accurate_pass": 12,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 1,
+        "won_contest": 0,
+        "duel_won": 6,
+        "duel_lost": 5,
+        "aerial_won": 5,
+        "aerial_lost": 3,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 1,
+        "ball_recovery": 1,
+        "blocked_scoring_attempt": 2,
+        "dispossessed": 0,
+        "possession_lost": 9,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 848,
+        "player_id": 848,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 90,
+        "rating": 6.8,
+        "touches": 69,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.0146898,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 50,
+        "accurate_pass": 42,
+        "total_long_balls": 4,
+        "accurate_long_balls": 1,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 3,
+        "won_contest": 2,
+        "duel_won": 6,
+        "duel_lost": 3,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 3,
+        "won_tackle": 1,
+        "total_clearance": 2,
+        "interception": 3,
+        "ball_recovery": 2,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 10,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 847,
+        "player_id": 847,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 90,
+        "rating": 5.4,
+        "touches": 59,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.0069376,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 26,
+        "accurate_pass": 21,
+        "total_long_balls": 2,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 4,
+        "won_contest": 1,
+        "duel_won": 5,
+        "duel_lost": 9,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 4,
+        "won_tackle": 3,
+        "total_clearance": 3,
+        "interception": 1,
+        "ball_recovery": 1,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 2,
+        "possession_lost": 15,
+        "was_fouled": 0,
+        "fouls": 3,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 844,
+        "player_id": 844,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 90,
+        "rating": 6.4,
+        "touches": 77,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.113789,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 1,
+        "total_pass": 47,
+        "accurate_pass": 39,
+        "total_long_balls": 5,
+        "accurate_long_balls": 2,
+        "total_cross": 2,
+        "accurate_cross": 1,
+        "total_contest": 1,
+        "won_contest": 1,
+        "duel_won": 9,
+        "duel_lost": 3,
+        "aerial_won": 3,
+        "aerial_lost": 0,
+        "total_tackle": 4,
+        "won_tackle": 2,
+        "total_clearance": 5,
+        "interception": 2,
+        "ball_recovery": 3,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 13,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 843,
+        "player_id": 843,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 90,
+        "rating": 6.4,
+        "touches": 35,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.00337597,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 29,
+        "accurate_pass": 25,
+        "total_long_balls": 12,
+        "accurate_long_balls": 8,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 1,
+        "won_contest": 1,
+        "duel_won": 3,
+        "duel_lost": 0,
+        "aerial_won": 1,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 1,
+        "interception": 0,
+        "ball_recovery": 5,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 4,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 1,
+        "goals_conceded": 4,
+        "punches": 1
+      },
+      {
+        "id": 845,
+        "player_id": 845,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 90,
+        "rating": 6.0,
+        "touches": 77,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.011366,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 63,
+        "accurate_pass": 56,
+        "total_long_balls": 6,
+        "accurate_long_balls": 1,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 4,
+        "duel_lost": 1,
+        "aerial_won": 3,
+        "aerial_lost": 1,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 6,
+        "interception": 2,
+        "ball_recovery": 6,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 7,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 846,
+        "player_id": 846,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 90,
+        "rating": 6.7,
+        "touches": 64,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.00718757,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 52,
+        "accurate_pass": 43,
+        "total_long_balls": 8,
+        "accurate_long_balls": 4,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 2,
+        "duel_lost": 0,
+        "aerial_won": 1,
+        "aerial_lost": 0,
+        "total_tackle": 1,
+        "won_tackle": 0,
+        "total_clearance": 5,
+        "interception": 1,
+        "ball_recovery": 4,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 9,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 851,
+        "player_id": 851,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 89,
+        "rating": 9.3,
+        "touches": 67,
+        "goals": 2,
+        "goal_assist": 0,
+        "expected_goals": 0.4495,
+        "expected_assists": 0.188557,
+        "total_shots": 2,
+        "shots_on_target": 2,
+        "key_pass": 2,
+        "total_pass": 51,
+        "accurate_pass": 46,
+        "total_long_balls": 2,
+        "accurate_long_balls": 1,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 6,
+        "duel_lost": 3,
+        "aerial_won": 1,
+        "aerial_lost": 1,
+        "total_tackle": 3,
+        "won_tackle": 1,
+        "total_clearance": 1,
+        "interception": 3,
+        "ball_recovery": 5,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 8,
+        "was_fouled": 2,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 850,
+        "player_id": 850,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 82,
+        "rating": 7.4,
+        "touches": 42,
+        "goals": 1,
+        "goal_assist": 0,
+        "expected_goals": 0.6166,
+        "expected_assists": 0.384345,
+        "total_shots": 1,
+        "shots_on_target": 1,
+        "key_pass": 1,
+        "total_pass": 31,
+        "accurate_pass": 27,
+        "total_long_balls": 3,
+        "accurate_long_balls": 1,
+        "total_cross": 2,
+        "accurate_cross": 1,
+        "total_contest": 2,
+        "won_contest": 1,
+        "duel_won": 2,
+        "duel_lost": 1,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 4,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 10,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 849,
+        "player_id": 849,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 64,
+        "rating": 6.8,
+        "touches": 48,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.011286,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 41,
+        "accurate_pass": 37,
+        "total_long_balls": 5,
+        "accurate_long_balls": 3,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 1,
+        "won_contest": 0,
+        "duel_won": 1,
+        "duel_lost": 4,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 1,
+        "won_tackle": 0,
+        "total_clearance": 2,
+        "interception": 1,
+        "ball_recovery": 2,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 5,
+        "was_fouled": 0,
+        "fouls": 2,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 853,
+        "player_id": 853,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 64,
+        "rating": 6.6,
+        "touches": 46,
+        "goals": 0,
+        "goal_assist": 1,
+        "expected_goals": 0.1985,
+        "expected_assists": 0.172963,
+        "total_shots": 3,
+        "shots_on_target": 0,
+        "key_pass": 2,
+        "total_pass": 28,
+        "accurate_pass": 20,
+        "total_long_balls": 1,
+        "accurate_long_balls": 1,
+        "total_cross": 2,
+        "accurate_cross": 1,
+        "total_contest": 4,
+        "won_contest": 2,
+        "duel_won": 2,
+        "duel_lost": 6,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 2,
+        "ball_recovery": 3,
+        "blocked_scoring_attempt": 2,
+        "dispossessed": 2,
+        "possession_lost": 16,
+        "was_fouled": 0,
+        "fouls": 2,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 855,
+        "player_id": 855,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 26,
+        "rating": 6.8,
+        "touches": 15,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.313307,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 1,
+        "total_pass": 8,
+        "accurate_pass": 6,
+        "total_long_balls": 1,
+        "accurate_long_balls": 0,
+        "total_cross": 1,
+        "accurate_cross": 1,
+        "total_contest": 1,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 3,
+        "aerial_won": 0,
+        "aerial_lost": 1,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 3,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 1,
+        "possession_lost": 5,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 854,
+        "player_id": 854,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 26,
+        "rating": 6.3,
+        "touches": 16,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.00045497,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 13,
+        "accurate_pass": 11,
+        "total_long_balls": 2,
+        "accurate_long_balls": 1,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 1,
+        "interception": 0,
+        "ball_recovery": 1,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 2,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 856,
+        "player_id": 856,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 8,
+        "rating": 6.7,
+        "touches": 14,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": 0.238233,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 10,
+        "accurate_pass": 7,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 1,
+        "duel_lost": 1,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 1,
+        "interception": 0,
+        "ball_recovery": 2,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 3,
+        "was_fouled": 1,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 857,
+        "player_id": 857,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 1,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 860,
+        "player_id": 860,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 862,
+        "player_id": 862,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 858,
+        "player_id": 858,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 861,
+        "player_id": 861,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      },
+      {
+        "id": 859,
+        "player_id": 859,
+        "event_id": 132,
+        "team_id": 12,
+        "minutes_played": 0,
+        "rating": null,
+        "touches": 0,
+        "goals": 0,
+        "goal_assist": 0,
+        "expected_goals": null,
+        "expected_assists": null,
+        "total_shots": 0,
+        "shots_on_target": 0,
+        "key_pass": 0,
+        "total_pass": 0,
+        "accurate_pass": 0,
+        "total_long_balls": 0,
+        "accurate_long_balls": 0,
+        "total_cross": 0,
+        "accurate_cross": 0,
+        "total_contest": 0,
+        "won_contest": 0,
+        "duel_won": 0,
+        "duel_lost": 0,
+        "aerial_won": 0,
+        "aerial_lost": 0,
+        "total_tackle": 0,
+        "won_tackle": 0,
+        "total_clearance": 0,
+        "interception": 0,
+        "ball_recovery": 0,
+        "blocked_scoring_attempt": 0,
+        "dispossessed": 0,
+        "possession_lost": 0,
+        "was_fouled": 0,
+        "fouls": 0,
+        "yellow_card": 0,
+        "red_card": 0,
+        "saves": 0,
+        "goals_conceded": 0,
+        "punches": 0
+      }
+    ]
+  },
+  "player_stats_retrieved_at": "2026-07-11T22:34:53.951475+00:00"
+}

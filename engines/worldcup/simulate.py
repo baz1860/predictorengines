@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -38,6 +39,7 @@ HOSTS = {"United States", "Mexico", "Canada"}
 # slot to the source group. Regenerate/verify against the FIFA regulations PDF:
 #   https://publications.fifa.com/  (FIFA World Cup 2026 Regulations, Annex C)
 ANNEXC_FILE = Path(__file__).resolve().parents[2] / "data" / "annexc_thirds.json"
+KO_OVERRIDES_FILE = Path(__file__).resolve().parents[2] / "data" / "ko_overrides.csv"
 
 GROUPS = {
     "A": ["Mexico", "South Africa", "South Korea", "Czech Republic"],
@@ -75,6 +77,55 @@ R16 = [("M89", "M74", "M77"), ("M90", "M73", "M75"), ("M91", "M76", "M78"),
 QF = [("M97", "M89", "M90"), ("M98", "M93", "M94"),
       ("M99", "M91", "M92"), ("M100", "M95", "M96")]
 SF = [("M101", "M97", "M98"), ("M102", "M99", "M100")]
+FINAL = ("M103", "M101", "M102")
+
+
+@dataclass
+class LiveBracket:
+    """The part of the tournament that is already known.
+
+    ``slot_team`` is populated once the group stage is complete.  The
+    ``locked_winners`` map contains only knockout matches with a confirmed
+    result; all other matches remain model simulations.  Keeping this state
+    separate from a simulation run prevents a completed match from being
+    re-played differently on every Monte Carlo iteration.
+    """
+
+    slot_team: dict[str, str] = field(default_factory=dict)
+    locked_winners: dict[str, str] = field(default_factory=dict)
+    eliminated: set[str] = field(default_factory=set)
+
+
+def _date_key(value) -> str:
+    """Return the results/override date in one canonical form."""
+    return pd.Timestamp(value).strftime("%Y-%m-%d")
+
+
+def _load_ko_winner_overrides(path: Path = KO_OVERRIDES_FILE) -> dict:
+    """Load optional shootout winners from ``ko_overrides.csv``.
+
+    The original file only carried ``score90`` for bet settlement.  The
+    optional ``winner`` column adds the information needed to settle a
+    knockout bracket when the stored full-time score is tied.  Old four-column
+    files remain valid and simply provide no shootout winner.
+    """
+    if not path.exists():
+        return {}
+    try:
+        df = pd.read_csv(path, dtype=str).fillna("")
+    except Exception:
+        return {}
+    if "winner" not in df.columns:
+        return {}
+    out = {}
+    for r in df.itertuples(index=False):
+        winner = str(getattr(r, "winner", "")).strip()
+        home = str(getattr(r, "home", "")).strip()
+        away = str(getattr(r, "away", "")).strip()
+        if not winner or not home or not away:
+            continue
+        out[(_date_key(getattr(r, "date")), frozenset((home, away)))] = winner
+    return out
 
 
 class MatchModel:
@@ -231,17 +282,20 @@ def allocate_thirds(thirds_by_group, rng):
     return {s: thirds_by_group[g] for s, g in assign.items()}
 
 
-def simulate_once(model, group_matches, rng):
-    # --- group stage ---
+def _fixed_group_slots(group_matches):
+    """Rank a completed group stage once and return its R32 slot assignment."""
+    if not group_matches or not all(m["fixed"] for m in group_matches):
+        return {}
+
     by_group = defaultdict(list)
     for m in group_matches:
-        if m["fixed"]:
-            hs, as_ = m["hs"], m["as"]
-        else:
-            h1 = 0.0 if m["neutral"] else 1.0
-            hs, as_ = model.sample(m["home"], m["away"], h1, 0.0, rng)
-        by_group[m["group"]].append((m["home"], m["away"], hs, as_))
+        by_group[m["group"]].append((m["home"], m["away"], m["hs"], m["as"]))
 
+    # The tournament has an external tie-break decision (drawing of lots) in
+    # the rare case where all football tiebreakers remain level.  A fixed RNG
+    # makes the stored bracket assignment stable between runs; normal live
+    # simulations still use their per-run RNG for unresolved groups.
+    rng = np.random.default_rng(0)
     slot_team = {}
     third_stats = []
     for g, teams in GROUPS.items():
@@ -254,18 +308,168 @@ def simulate_once(model, group_matches, rng):
     third_stats.sort(reverse=True)
     qualified_thirds = {g: t for _, _, _, _, g, t in third_stats[:8]}
     slot_team.update(allocate_thirds(qualified_thirds, rng))
+    return slot_team
+
+
+def _completed_knockout_rows():
+    """Return played 2026 knockout rows, excluding group matches."""
+    played, _ = load_matches()
+    wc = played[(played["tournament"] == "FIFA World Cup") &
+                (played["date"] >= "2026-06-01")]
+    rows = []
+    for r in wc.itertuples(index=False):
+        home, away = str(r.home_team), str(r.away_team)
+        if (home not in TEAM_GROUP or away not in TEAM_GROUP or
+                TEAM_GROUP[home] == TEAM_GROUP[away]):
+            continue
+        rows.append({
+            "date": _date_key(r.date), "home": home, "away": away,
+            "hs": int(r.home_score), "as": int(r.away_score)})
+    return rows
+
+
+def _winner_from_knockout_row(row, winner_overrides):
+    """Resolve a stored knockout row, including a penalty shootout winner."""
+    if row["hs"] > row["as"]:
+        return row["home"]
+    if row["as"] > row["hs"]:
+        return row["away"]
+
+    key = (row["date"], frozenset((row["home"], row["away"])))
+    winner = winner_overrides.get(key)
+    if winner in (row["home"], row["away"]):
+        return winner
+    raise ValueError(
+        f"Completed knockout match {row['date']} {row['home']} "
+        f"v {row['away']} is tied ({row['hs']}-{row['as']}) but has no "
+        "winner. Add a winner column to data/ko_overrides.csv."
+    )
+
+
+def _find_knockout_row(rows, team1, team2):
+    """Find one completed row for an unordered pair and remove ambiguity."""
+    pair = frozenset((team1, team2))
+    matches = [i for i, row in enumerate(rows)
+               if frozenset((row["home"], row["away"])) == pair]
+    if len(matches) > 1:
+        raise ValueError(f"Multiple completed knockout rows found for {team1} v {team2}")
+    return matches[0] if matches else None
+
+
+def load_live_bracket(group_matches=None):
+    """Build the current bracket state from fixed results.
+
+    Completed knockout rows are matched to the official bracket by their two
+    teams.  This means the function does not rely on feed ordering, and it
+    fails loudly if a result cannot be mapped or a shootout winner is missing.
+    """
+    if group_matches is None:
+        group_matches = load_group_matches()
+    slot_team = _fixed_group_slots(group_matches)
+    state = LiveBracket(slot_team=slot_team)
+    if not slot_team:
+        return state
+
+    rows = _completed_knockout_rows()
+    winner_overrides = _load_ko_winner_overrides()
+    winners = {}
+
+    rounds = (R32, R16, QF, SF, (FINAL,))
+    for rnd in rounds:
+        for match, s1, s2 in rnd:
+            t1 = slot_team.get(s1) or winners.get(s1)
+            t2 = slot_team.get(s2) or winners.get(s2)
+            if t1 is None or t2 is None:
+                # The previous round is not complete yet, so this match has
+                # no fixed participants and cannot have a valid result yet.
+                continue
+            row_idx = _find_knockout_row(rows, t1, t2)
+            if row_idx is None:
+                continue
+            row = rows.pop(row_idx)
+            winner = _winner_from_knockout_row(row, winner_overrides)
+            loser = t2 if winner == t1 else t1
+            state.locked_winners[match] = winner
+            state.eliminated.add(loser)
+            winners[match] = winner
+
+    # The third-place playoff is present in the results feed but is not part
+    # of the title bracket.  Once both semifinals are known, discard that
+    # separate result before checking that every remaining row maps to a title
+    # match.
+    if all(match in winners for match, _, _ in SF):
+        semifinal_losers = []
+        for match, s1, s2 in SF:
+            t1 = slot_team.get(s1) or winners[s1]
+            t2 = slot_team.get(s2) or winners[s2]
+            semifinal_losers.append(t2 if winners[match] == t1 else t1)
+        third_place_pair = frozenset(semifinal_losers)
+        rows[:] = [r for r in rows
+                   if frozenset((r["home"], r["away"])) != third_place_pair]
+
+    if rows:
+        details = ", ".join(
+            f"{r['date']} {r['home']} v {r['away']}" for r in rows[:4])
+        suffix = "..." if len(rows) > 4 else ""
+        raise ValueError(
+            "Could not map completed World Cup knockout result(s) onto the "
+            f"official bracket: {details}{suffix}"
+        )
+    return state
+
+
+def simulate_once(model, group_matches, rng, live_bracket=None):
+    if live_bracket is None:
+        live_bracket = load_live_bracket(group_matches)
+
+    # --- group stage ---
+    by_group = defaultdict(list)
+    for m in group_matches:
+        if m["fixed"]:
+            hs, as_ = m["hs"], m["as"]
+        else:
+            h1 = 0.0 if m["neutral"] else 1.0
+            hs, as_ = model.sample(m["home"], m["away"], h1, 0.0, rng)
+        by_group[m["group"]].append((m["home"], m["away"], hs, as_))
+
+    if live_bracket.slot_team:
+        # Once groups are complete, the actual bracket assignment is a fact,
+        # not another random draw in each Monte Carlo run.
+        slot_team = dict(live_bracket.slot_team)
+    else:
+        slot_team = {}
+        third_stats = []
+        for g, teams in GROUPS.items():
+            order, pts, gd, gf = rank_group(teams, by_group[g], rng)
+            slot_team["1" + g] = order[0]
+            slot_team["2" + g] = order[1]
+            t3 = order[2]
+            third_stats.append((pts[t3], gd[t3], gf[t3], rng.random(), g, t3))
+
+        third_stats.sort(reverse=True)
+        qualified_thirds = {g: t for _, _, _, _, g, t in third_stats[:8]}
+        slot_team.update(allocate_thirds(qualified_thirds, rng))
 
     advanced = set(slot_team.values())
 
     # --- knockout ---
     winners = {}
-    for rnd in (R32, R16, QF, SF):
+    for rnd in (R32, R16, QF, SF, (FINAL,)):
         for match, s1, s2 in rnd:
             t1 = slot_team.get(s1) or winners[s1]
             t2 = slot_team.get(s2) or winners[s2]
-            winners[match] = model.knockout_winner(t1, t2, rng)
+            locked = live_bracket.locked_winners.get(match)
+            if locked is not None:
+                if locked not in (t1, t2):
+                    raise ValueError(
+                        f"Live bracket has {locked} as {match} winner, but "
+                        f"the simulated participants are {t1} and {t2}"
+                    )
+                winners[match] = locked
+            else:
+                winners[match] = model.knockout_winner(t1, t2, rng)
     finalists = (winners["M101"], winners["M102"])
-    champion = model.knockout_winner(*finalists, rng)
+    champion = winners["M103"]
 
     r16 = {winners[m] for m, _, _ in R32}
     qf = {winners[m] for m, _, _ in R16}
@@ -295,6 +499,7 @@ def main():
         adj = {}
     model = MatchModel(sources)
     group_matches = load_group_matches()
+    live_bracket = load_live_bracket(group_matches)
     rng = np.random.default_rng(args.seed)
 
     stages = ["win_group", "reach_R32", "reach_R16", "reach_QF",
@@ -302,7 +507,8 @@ def main():
     counts = {t: dict.fromkeys(stages, 0) for ts in GROUPS.values() for t in ts}
 
     for _ in range(args.sims):
-        gw, adv, r16, qf, sf, fin, champ = simulate_once(model, group_matches, rng)
+        gw, adv, r16, qf, sf, fin, champ = simulate_once(
+            model, group_matches, rng, live_bracket)
         for t in gw: counts[t]["win_group"] += 1
         for t in adv: counts[t]["reach_R32"] += 1
         for t in r16: counts[t]["reach_R16"] += 1
@@ -322,6 +528,9 @@ def main():
 
     pd.set_option("display.width", 140)
     print(f"\n2026 World Cup — {args.sims:,} simulations\n")
+    if live_bracket.locked_winners:
+        print(f"Live bracket: {len(live_bracket.locked_winners)} knockout "
+              f"matches locked; {len(live_bracket.eliminated)} teams eliminated\n")
     show = df.head(20).copy()
     for s in stages:
         show[s] = (show[s] * 100).map("{:.1f}%".format)

@@ -146,66 +146,88 @@ def cmd_predict(p):
     }
 
 
-def _load_draw(tour: str):
+def _load_draw_groups(tour: str, event_filter: str = "") -> list[dict]:
     if not DRAW_CSV.exists():
         raise ValueError(f"No draw. Add {DRAW_CSV} "
                          "(tour, surface, best_of, round, player_a, player_b) "
                          "or run: python -m tennis.fetch --draw-template")
-    rows: list[dict] = []
-    surface = "hard"
-    best_of = 3
+    wanted = event_filter.lower().strip()
+    groups: dict[str, dict] = {}
     with open(DRAW_CSV, newline="") as f:
         for row in csv.DictReader(f):
             if (row.get("tour") or "").lower() not in ("", tour):
                 continue
+            event = (row.get("tourney_name") or "").strip() or "Saved draw"
+            if wanted and wanted not in event.lower():
+                continue
             a, b = (row.get("player_a") or "").strip(), (row.get("player_b") or "").strip()
             if a and b:
-                rows.append({
+                try:
+                    best_of = int(float(row.get("best_of") or 3))
+                except (TypeError, ValueError):
+                    best_of = 3
+                group = groups.setdefault(event, {
+                    "event": event, "event_id": row.get("event_id") or "",
+                    "surface": (row.get("surface") or "hard").lower(),
+                    "best_of": best_of, "rows": []})
+                group["rows"].append({
                     "round": (row.get("round") or "").strip(),
                     "player_a": a,
                     "player_b": b,
                     "state": (row.get("state") or "").strip(),
                     "winner": (row.get("winner") or "").strip(),
+                    "surface": (row.get("surface") or group["surface"]).lower(),
+                    "best_of": best_of,
                 })
-                surface = (row.get("surface") or surface).lower()
-                try:
-                    best_of = int(float(row.get("best_of") or best_of))
-                except ValueError:
-                    pass
-    if not rows:
+    if not groups:
         raise ValueError(f"No {tour.upper()} rows in {DRAW_CSV}.")
-    return rows, surface, best_of
+    return list(groups.values())
+
+
+def _load_draw(tour: str):
+    """Backward-compatible single-draw loader for callers outside the adapter."""
+    group = _load_draw_groups(tour)[0]
+    return group["rows"], group["surface"], group["best_of"]
 
 
 def cmd_simulate(p):
     tour = _tour(p)
     params = _load_params_or_raise(tour)
-    draw_rows, surface, best_of = _load_draw(tour)
+    event_filter = str(p.get("event") or p.get("tourney_name") or "")
+    groups = _load_draw_groups(tour, event_filter)
     n = _sims_arg(p)
     import numpy as np
     rng = np.random.default_rng(int(p.get("seed", 0)) or None)
     hf = _h2h_fn(tour, bool(p.get("h2h", True)))
-    try:
-        res = S.simulate_draw_rows(draw_rows, params, surface, best_of=best_of,
-                                   n_sims=n, rng=rng, h2h_fn=hf)
-    except ValueError as e:
-        raise ValueError(f"{e}. Re-fetch the draw from ESPN or save a draw with "
-                         "completed winners/state columns.") from None
-    rows = [{"player": k, "win": round(v["win"], 4), "final": round(v["final"], 4),
-             "sf": round(v["sf"], 4), "qf": round(v["qf"], 4)}
-            for k, v in res.items()]
+    rows = []
+    total_draw_rows = 0
+    locked = 0
+    for group in groups:
+        draw_rows = group["rows"]
+        total_draw_rows += len(draw_rows)
+        locked += sum(1 for r in draw_rows if r.get("state") == "post" and r.get("winner"))
+        try:
+            res = S.simulate_draw_rows(draw_rows, params, group["surface"],
+                                       best_of=group["best_of"], n_sims=n,
+                                       rng=rng, h2h_fn=hf)
+        except ValueError as e:
+            raise ValueError(f"{e}. Re-fetch the draw from ESPN or save a draw with "
+                             "completed winners/state columns.") from None
+        rows.extend({"event": group["event"], "player": k,
+                     "win": round(v["win"], 4), "final": round(v["final"], 4),
+                     "sf": round(v["sf"], 4), "qf": round(v["qf"], 4)}
+                    for k, v in res.items())
     rows.sort(key=lambda r: -r["win"])
     columns = [
+        *([{"key": "event", "label": "Event", "fmt": "text"}] if len(groups) > 1 else []),
         {"key": "player", "label": "Player", "fmt": "text"},
         {"key": "win", "label": "Win", "fmt": "pct1"},
         {"key": "final", "label": "Final", "fmt": "pct"},
         {"key": "sf", "label": "SF", "fmt": "pct"},
         {"key": "qf", "label": "QF", "fmt": "pct"}]
-    locked = sum(1 for r in draw_rows if (r.get("state") == "post" and r.get("winner")))
-    note = (f"{n:,} sims · {len(draw_rows)} draw rows"
+    note = (f"{n:,} sims per event · {len(groups)} event(s) · {total_draw_rows} draw rows"
             + (f" · {locked} locked result(s)" if locked else "")
-            + f" · "
-            f"{tour.upper()} · {surface} · best-of-{best_of}")
+            + f" · {tour.upper()}")
     return {"note": note, "columns": columns, "rows": rows}
 
 

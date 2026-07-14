@@ -167,6 +167,10 @@ class ConsoleRun(BaseModel):
 
 
 class TennisMatch(BaseModel):
+    tourney_name: str = Field(default="", max_length=80)
+    event_id: str = Field(default="", max_length=80)
+    surface: str | None = Field(default=None, pattern=r"^(hard|clay|grass|carpet)$")
+    best_of: int | None = Field(default=None, ge=1, le=5)
     round: str = ""
     player_a: str
     player_b: str
@@ -493,76 +497,93 @@ def tennis_draw_fetch(body: dict = None):
     if tour not in ("atp", "wta"):
         raise HTTPException(400, "tour must be atp or wta")
 
-    from tennis.providers import fetch_draw, DATA_DIR as TENNIS_DATA
+    from tennis.providers import fetch_draws, DATA_DIR as TENNIS_DATA
+    from tennis.season import write_draw_csv
 
-    draw = fetch_draw(tour=tour, tourney_filter=tourney_filter)
-    if draw is None:
+    draws = fetch_draws(tour=tour, tourney_filter=tourney_filter)
+    if not draws:
         raise HTTPException(503, "Could not fetch draw from ESPN — check network connection")
 
     draw_csv = TENNIS_DATA / "draw.csv"
     odds_csv = TENNIS_DATA / "odds.csv"
 
-    # Write draw.csv (completed, live, and upcoming matches)
-    draw_buf = io.StringIO()
-    w = csv.writer(draw_buf)
-    w.writerow(["tour", "tourney_name", "surface", "best_of", "round",
-                "player_a", "player_b", "state", "winner", "score", "match_id"])
-    for m in draw.matches:
-        w.writerow([draw.tour, draw.tourney_name, draw.surface,
-                    draw.best_of, m.round, m.player_a, m.player_b,
-                    m.state, m.winner, m.score, m.match_id])
-    draw_csv.write_text(draw_buf.getvalue())
+    replace_events = {d.tourney_name for d in draws} if tourney_filter else None
+    write_draw_csv(draws, path=draw_csv, replace_events=replace_events)
 
-    # Preserve existing odds for any players already in odds.csv
+    # Keep unrelated tours/events and add blank rows for newly fetched matches.
     existing_odds: dict[tuple, dict] = {}
     if odds_csv.exists():
         with open(odds_csv, newline="") as f:
             for row in csv.DictReader(f):
-                pa, pb = row.get("player_a","").strip(), row.get("player_b","").strip()
+                pa, pb = row.get("player_a", "").strip(), row.get("player_b", "").strip()
                 if pa and pb:
-                    existing_odds[(pa, pb)] = row
+                    event = (row.get("tourney_name") or "").strip().lower()
+                    existing_odds[(event, tuple(sorted((pa.lower(), pb.lower()))))] = row
 
-    # Write updated odds.csv (keep existing, add blank rows for new matches)
     odds_buf = io.StringIO()
     w2 = csv.writer(odds_buf)
-    w2.writerow(["tour", "surface", "best_of", "player_a", "player_b", "odds_a", "odds_b"])
-    for m in draw.matches:
-        key = (m.player_a, m.player_b)
-        if "TBD" in (m.player_a.upper(), m.player_b.upper()):
-            continue
-        if key in existing_odds:
-            r = existing_odds[key]
-            w2.writerow([draw.tour, draw.surface, draw.best_of,
-                         m.player_a, m.player_b,
-                         r.get("odds_a",""), r.get("odds_b","")])
-        elif m.state in ("pre", "in"):
-            w2.writerow([draw.tour, draw.surface, draw.best_of,
-                         m.player_a, m.player_b, "", ""])
+    w2.writerow(["tour", "tourney_name", "event_id", "surface", "best_of",
+                 "player_a", "player_b", "odds_a", "odds_b"])
+    selected_names = {d.tourney_name.lower() for d in draws}
+    if odds_csv.exists():
+        with open(odds_csv, newline="") as f:
+            for r in csv.DictReader(f):
+                r_tour = (r.get("tour") or "").lower()
+                r_event = (r.get("tourney_name") or "").lower()
+                if r_tour == tour and (not tourney_filter or r_event in selected_names):
+                    continue
+                w2.writerow([r.get("tour", ""), r.get("tourney_name", ""),
+                             r.get("event_id", ""), r.get("surface", ""),
+                             r.get("best_of", ""), r.get("player_a", ""),
+                             r.get("player_b", ""), r.get("odds_a", ""),
+                             r.get("odds_b", "")])
+    for draw in draws:
+        for m in draw.matches:
+            if "TBD" in (m.player_a.upper(), m.player_b.upper()):
+                continue
+            key = (draw.tourney_name.lower(),
+                   tuple(sorted((m.player_a.lower(), m.player_b.lower()))))
+            old = existing_odds.get(key)
+            if old or m.state in ("pre", "in"):
+                w2.writerow([draw.tour, draw.tourney_name, draw.event_id,
+                             draw.surface, draw.best_of, m.player_a, m.player_b,
+                             old.get("odds_a", "") if old else "",
+                             old.get("odds_b", "") if old else ""])
     odds_csv.write_text(odds_buf.getvalue())
 
+    all_matches = [{
+        "tourney_name": draw.tourney_name, "event_id": draw.event_id,
+        "surface": draw.surface, "best_of": draw.best_of,
+        "round": m.round, "player_a": m.player_a, "player_b": m.player_b,
+        "odds_a": None, "odds_b": None, "state": m.state,
+        "winner": m.winner, "score": m.score, "match_id": m.match_id}
+        for draw in draws for m in draw.matches]
     return {
-        "tourney_name": draw.tourney_name,
-        "tour": draw.tour,
-        "surface": draw.surface,
-        "best_of": draw.best_of,
-        "matches": [
-            {"round": m.round, "player_a": m.player_a, "player_b": m.player_b,
-             "odds_a": None, "odds_b": None, "state": m.state,
-             "winner": m.winner, "score": m.score, "match_id": m.match_id}
-            for m in draw.matches
-        ],
+        "tour": tour,
+        "events": [d.tourney_name for d in draws],
+        "tourney_name": draws[0].tourney_name if len(draws) == 1 else "",
+        "surface": draws[0].surface if len(draws) == 1 else "",
+        "best_of": draws[0].best_of if len(draws) == 1 else 3,
+        "matches": all_matches,
     }
 
 
 @app.get("/api/tennis/draw")
-def tennis_draw_get():
-    """Return the current tennis draw + odds as a combined JSON payload."""
+def tennis_draw_get(tour: str = "atp"):
+    """Return saved draws + odds for one tour as a combined JSON payload.
+
+    The editor is tour-scoped so loading/saving ATP cannot accidentally
+    relabel or remove the saved WTA events (and vice versa).
+    """
     from tennis.providers import DATA_DIR as TENNIS_DATA
+    tour = tour.lower().strip()
+    if tour not in ("atp", "wta"):
+        raise HTTPException(400, "tour must be atp or wta")
     draw_csv = TENNIS_DATA / "draw.csv"
     odds_csv = TENNIS_DATA / "odds.csv"
 
-    # Read tournament-level fields from draw.csv
-    tour, tourney_name, surface, best_of = "atp", "", "grass", 3
+    surface, best_of = "grass", 3
+    event_names: list[str] = []
     draw_rows: dict[tuple, dict] = {}
     if draw_csv.exists():
         with open(draw_csv, newline="") as f:
@@ -570,15 +591,22 @@ def tennis_draw_get():
                 pa, pb = (row.get("player_a") or "").strip(), (row.get("player_b") or "").strip()
                 if not pa or not pb:
                     continue
-                tour = (row.get("tour") or tour).lower()
-                tourney_name = row.get("tourney_name") or tourney_name
+                row_tour = (row.get("tour") or tour).lower()
+                if row_tour not in ("", tour):
+                    continue
+                tourney_name = row.get("tourney_name") or ""
+                if tourney_name and tourney_name not in event_names:
+                    event_names.append(tourney_name)
                 surface = (row.get("surface") or surface).lower()
                 try:
                     best_of = int(float(row.get("best_of") or best_of))
                 except (ValueError, TypeError):
                     pass
-                key = (pa, pb)
-                draw_rows[key] = {"round": row.get("round") or "", "player_a": pa, "player_b": pb,
+                key = (tourney_name.lower(), tuple(sorted((pa.lower(), pb.lower()))))
+                draw_rows[key] = {"tourney_name": tourney_name,
+                                  "event_id": row.get("event_id") or "",
+                                  "surface": surface, "best_of": best_of,
+                                  "round": row.get("round") or "", "player_a": pa, "player_b": pb,
                                   "odds_a": None, "odds_b": None,
                                   "state": row.get("state") or "",
                                   "winner": row.get("winner") or "",
@@ -592,9 +620,21 @@ def tennis_draw_get():
                 pa, pb = (row.get("player_a") or "").strip(), (row.get("player_b") or "").strip()
                 if not pa or not pb:
                     continue
-                key = (pa, pb)
+                row_tour = (row.get("tour") or tour).lower()
+                if row_tour not in ("", tour):
+                    continue
+                event = (row.get("tourney_name") or "").strip().lower()
+                key = (event, tuple(sorted((pa.lower(), pb.lower()))))
                 if key not in draw_rows:
-                    draw_rows[key] = {"round": "", "player_a": pa, "player_b": pb,
+                    try:
+                        row_best_of = int(float(row.get("best_of") or best_of))
+                    except (ValueError, TypeError):
+                        row_best_of = best_of
+                    draw_rows[key] = {"tourney_name": row.get("tourney_name") or "",
+                                      "event_id": row.get("event_id") or "",
+                                      "surface": (row.get("surface") or surface).lower(),
+                                      "best_of": row_best_of,
+                                      "round": "", "player_a": pa, "player_b": pb,
                                       "odds_a": None, "odds_b": None,
                                       "state": "", "winner": "",
                                       "score": "", "match_id": ""}
@@ -605,7 +645,8 @@ def tennis_draw_get():
                     pass
 
     return {
-        "tour": tour, "tourney_name": tourney_name,
+        "tour": tour, "events": event_names,
+        "tourney_name": event_names[0] if len(event_names) == 1 else "",
         "surface": surface, "best_of": best_of,
         "matches": list(draw_rows.values()),
     }
@@ -622,25 +663,46 @@ def tennis_draw_post(payload: TennisDrawPayload):
     # Write draw.csv
     draw_buf = io.StringIO()
     w = csv.writer(draw_buf)
-    w.writerow(["tour", "tourney_name", "surface", "best_of", "round",
+    w.writerow(["tour", "tourney_name", "event_id", "surface", "best_of", "round",
                 "player_a", "player_b", "state", "winner", "score", "match_id"])
+    # Keep the other tour's saved events when the editor saves this tour.
+    if draw_csv.exists():
+        with open(draw_csv, newline="") as f:
+            for old in csv.DictReader(f):
+                if (old.get("tour") or "").lower() not in ("", payload.tour):
+                    w.writerow([old.get(c, "") for c in
+                                ("tour", "tourney_name", "event_id", "surface", "best_of",
+                                 "round", "player_a", "player_b", "state", "winner",
+                                 "score", "match_id")])
     for m in payload.matches:
         pa, pb = m.player_a.strip(), m.player_b.strip()
         if pa and pb:
-            w.writerow([payload.tour, payload.tourney_name, payload.surface,
-                        payload.best_of, m.round, pa, pb, m.state,
+            event_name = m.tourney_name.strip() or payload.tourney_name
+            surface = m.surface or payload.surface
+            best_of = m.best_of or payload.best_of
+            w.writerow([payload.tour, event_name, m.event_id, surface,
+                        best_of, m.round, pa, pb, m.state,
                         m.winner.strip(), m.score, m.match_id])
     draw_csv.write_text(draw_buf.getvalue())
 
     # Write odds.csv (only rows where at least one odds value provided)
     odds_buf = io.StringIO()
     w2 = csv.writer(odds_buf)
-    w2.writerow(["tour", "surface", "best_of", "player_a", "player_b", "odds_a", "odds_b"])
+    w2.writerow(["tour", "tourney_name", "event_id", "surface", "best_of",
+                 "player_a", "player_b", "odds_a", "odds_b"])
+    if odds_csv.exists():
+        with open(odds_csv, newline="") as f:
+            for old in csv.DictReader(f):
+                if (old.get("tour") or "").lower() not in ("", payload.tour):
+                    w2.writerow([old.get(c, "") for c in
+                                 ("tour", "tourney_name", "event_id", "surface", "best_of",
+                                  "player_a", "player_b", "odds_a", "odds_b")])
     for m in payload.matches:
         pa, pb = m.player_a.strip(), m.player_b.strip()
         if pa and pb and (m.odds_a is not None or m.odds_b is not None):
-            w2.writerow([payload.tour, payload.surface, payload.best_of,
-                         pa, pb,
+            w2.writerow([payload.tour, m.tourney_name.strip() or payload.tourney_name,
+                         m.event_id, m.surface or payload.surface,
+                         m.best_of or payload.best_of, pa, pb,
                          round(m.odds_a, 3) if m.odds_a is not None else "",
                          round(m.odds_b, 3) if m.odds_b is not None else ""])
     odds_csv.write_text(odds_buf.getvalue())

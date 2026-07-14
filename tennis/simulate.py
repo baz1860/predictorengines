@@ -320,7 +320,8 @@ def simulate_draw_rows(draw_rows: list[dict], params, surface: str,
     include ``state`` and ``winner``. Completed rows lock their winner; unresolved
     rows are simulated. Later rows with ``TBD`` slots are filled from the previous
     round's winners in row order. If the feed stops before listing the final, the
-    remaining rounds are synthesized from the surviving players.
+    remaining rounds are synthesized from the surviving players; an odd partial
+    field carries one deterministic bye until the bracket is even again.
     """
     import numpy as np
     from . import model as M
@@ -407,11 +408,12 @@ def simulate_draw_rows(draw_rows: list[dict], params, surface: str,
 
         alive = list(prev_winners)
         while len(alive) > 1:
-            if len(alive) % 2:
-                raise ValueError("cannot synthesize remaining draw rounds from "
-                                 f"{len(alive)} surviving players")
+            # ESPN sometimes publishes a partial 28-player draw as 7 matches
+            # in the next round before the missing slot is known. Preserve a
+            # bye rather than aborting the whole event simulation.
+            bye = alive.pop() if len(alive) % 2 else None
             rank = _round_rank(FIELD_ROUND.get(len(alive), ""), len(alive))
-            winners = []
+            winners = [bye] if bye else []
             for i in range(0, len(alive), 2):
                 a, b = alive[i], alive[i + 1]
                 _credit_reach(counts, best_rank, a, rank)

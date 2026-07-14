@@ -13,11 +13,12 @@ from. Free, no-key implementations:
     ranks are not available; Player 1 is treated as the winner (heuristic).
     https://github.com/JeffSackmann/tennis_MatchChartingProject
 
-  - `CompositeProvider` (default): routes ATP → TMLProvider, WTA →
-    MatchChartingProvider.
+  - `CompositeProvider` (default): routes ATP → TMLProvider and WTA → the
+    public WTA results API, with Sackmann/MatchCharting as fallbacks.
 
-  - `SackmannProvider` (legacy): the original Sackmann ATP+WTA repos; kept for
-    reference but both repos returned HTTP 404 as of June 2026.
+  - `SackmannProvider`: Jeff Sackmann's complete tour-level ATP/WTA season
+    files.  It remains a historical fallback when the primary feed is
+    unavailable.
 
 All normalise to the canonical `matches.csv` schema:
 
@@ -36,6 +37,7 @@ import io
 import json
 import sys
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -200,11 +202,24 @@ def parse_set_score(score: Optional[str]) -> tuple[int, int]:
 # Sackmann provider (free, no key)
 # ─────────────────────────────────────────────
 
-_SACKMANN_BASE = {
-    "atp": "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master",
-    "wta": "https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master",
-}
 _FILE_PREFIX = {"atp": "atp_matches", "wta": "wta_matches"}
+
+
+def _sackmann_urls(year: int, tour: str) -> list[str]:
+    """Return the raw-file URL variants used by the two GitHub front ends.
+
+    GitHub has served both the short ``/master/file`` form and the explicit
+    ``/refs/heads/master/file`` form over time.  Keeping both here makes a
+    refresh resilient to that routing difference while the local cache keeps
+    already downloaded seasons offline-safe.
+    """
+    repo = f"JeffSackmann/tennis_{tour}"
+    filename = f"{_FILE_PREFIX[tour]}_{year}.csv"
+    return [
+        f"https://raw.githubusercontent.com/{repo}/refs/heads/master/{filename}",
+        f"https://raw.githubusercontent.com/{repo}/master/{filename}",
+        f"https://github.com/{repo}/raw/refs/heads/master/{filename}",
+    ]
 
 
 class SackmannProvider:
@@ -233,14 +248,14 @@ class SackmannProvider:
                 return cache.read_text(encoding="utf-8")
             except OSError:
                 pass
-        url = f"{_SACKMANN_BASE[tour]}/{_FILE_PREFIX[tour]}_{year}.csv"
-        text = _http_text(url)
-        if text and text.lstrip().lower().startswith(("tourney_id", "﻿tourney_id")):
-            try:
-                cache.write_text(text, encoding="utf-8")
-            except OSError:
-                pass
-            return text
+        for url in _sackmann_urls(year, tour):
+            text = _http_text(url, retries=1)
+            if text and text.lstrip().lower().startswith(("tourney_id", "﻿tourney_id")):
+                try:
+                    cache.write_text(text, encoding="utf-8")
+                except OSError:
+                    pass
+                return text
         # offline / not-found → stale cache if we have one
         if cache.exists():
             try:
@@ -251,6 +266,8 @@ class SackmannProvider:
 
     def matches_for(self, year: int, tour: str) -> list[MatchRecord]:
         tour = tour.lower()
+        if tour not in self.tours:
+            return []
         text = self._season_csv(year, tour)
         if not text:
             return []
@@ -470,21 +487,171 @@ class MatchChartingProvider:
 
 
 # ─────────────────────────────────────────────
-# Composite provider (default: TML for ATP, MatchCharting for WTA)
+# Official WTA website provider (public JSON, no key)
+# ─────────────────────────────────────────────
+
+_WTA_API_BASE = "https://api.wtatennis.com/tennis"
+
+
+class WTAOfficialProvider:
+    """Completed WTA singles from the public WTA website tennis API.
+
+    The site exposes tournament metadata and per-tournament match JSON used by
+    its scores pages.  It is a substantially better WTA training source than
+    MatchCharting: it includes every completed singles result returned by the
+    tour, reliable winner codes, scores, surfaces, and current-season updates.
+    Raw season payloads are cached as one file so routine refits do not make a
+    request per tournament.
+    """
+
+    name = "wta_official"
+
+    def seasons_available(self) -> list[int]:
+        return list(range(2018, _dt.date.today().year + 1))
+
+    def _season_payload(self, year: int) -> Optional[dict]:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache = CACHE_DIR / f"wta_official_{year}.json"
+        current = year >= _dt.date.today().year
+        if cache.exists() and (not current or
+                               _dt.date.fromtimestamp(cache.stat().st_mtime)
+                               == _dt.date.today()):
+            try:
+                return json.loads(cache.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        tournaments: list[dict] = []
+        page = 0
+        while True:
+            page_params = urllib.parse.urlencode({
+                "page": page, "pageSize": 100,
+                "excludeLevels": "ITF",
+                "from": f"{year}-01-01", "to": f"{year}-12-31",
+            })
+            text = _http_text(f"{_WTA_API_BASE}/tournaments/?{page_params}",
+                              retries=2, timeout=30)
+            if not text:
+                break
+            try:
+                body = json.loads(text)
+            except json.JSONDecodeError:
+                break
+            content = body.get("content") or []
+            tournaments.extend(content)
+            if len(content) < 100:
+                break
+            page += 1
+
+        if not tournaments:
+            if cache.exists():
+                try:
+                    return json.loads(cache.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    pass
+            return None
+
+        matches: list[dict] = []
+        for tournament in tournaments:
+            group = tournament.get("tournamentGroup") or {}
+            group_id = group.get("id")
+            if group_id is None:
+                continue
+            url = (f"{_WTA_API_BASE}/tournaments/{group_id}/{year}/matches")
+            text = _http_text(url, retries=2, timeout=30)
+            if not text:
+                continue
+            try:
+                body = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            for match in body.get("matches") or []:
+                matches.append({"tournament": tournament, "match": match})
+
+        payload = {"tournaments": tournaments, "matches": matches}
+        try:
+            cache.write_text(json.dumps(payload), encoding="utf-8")
+        except OSError:
+            pass
+        return payload
+
+    @staticmethod
+    def _name(match: dict, side: str) -> str:
+        first = str(match.get(f"PlayerNameFirst{side}") or "").strip()
+        last = str(match.get(f"PlayerNameLast{side}") or "").strip()
+        return " ".join(p for p in (first, last) if p)
+
+    @staticmethod
+    def _round(match: dict) -> str:
+        level = str(match.get("DrawLevelType") or "M").upper()
+        raw = str(match.get("RoundID") or "").upper()
+        if level == "Q":
+            return {"1": "Q1", "2": "Q2", "Q": "QF-Q"}.get(raw, raw)
+        return {"1": "R1", "2": "R2", "3": "R3", "Q": "QF",
+                "S": "SF", "F": "F"}.get(raw, raw)
+
+    def matches_for(self, year: int, tour: str) -> list[MatchRecord]:
+        if tour.lower() != "wta":
+            return []
+        payload = self._season_payload(year)
+        if not payload:
+            return []
+        out: list[MatchRecord] = []
+        for item in payload.get("matches") or []:
+            tournament = item.get("tournament") or {}
+            match = item.get("match") or {}
+            if str(match.get("MatchState") or "").upper() != "F":
+                continue
+            if str(match.get("DrawMatchType") or "S").upper() != "S":
+                continue
+            a, b = self._name(match, "A"), self._name(match, "B")
+            winner_code = str(match.get("Winner") or "")
+            if not a or not b or winner_code not in {"2", "3", "4", "5", "6", "7"}:
+                continue
+            winner, loser = (a, b) if winner_code in {"2", "4", "6"} else (b, a)
+            score = str(match.get("ScoreString") or "").replace(",", " ").strip()
+            ws, ls = parse_set_score(score)
+            date_raw = str(match.get("MatchTimeStamp") or
+                           tournament.get("startDate") or "")[:10]
+            tourney_id = f"{year}-{match.get('EventID') or (tournament.get('tournamentGroup') or {}).get('id', '')}"
+            out.append(MatchRecord(
+                date=date_raw,
+                tourney_id=tourney_id,
+                tourney_name=(tournament.get("title") or
+                              (tournament.get("tournamentGroup") or {}).get("name") or "").strip(),
+                tour="wta",
+                surface=normalise_surface(tournament.get("surface")),
+                round=self._round(match),
+                best_of=3,
+                winner=winner,
+                loser=loser,
+                winner_rank=9999,
+                loser_rank=9999,
+                winner_sets=ws,
+                loser_sets=ls,
+                score=score,
+            ))
+        return out
+
+
+# ─────────────────────────────────────────────
+# Composite provider (default: TML for ATP, official WTA API for WTA)
 # ─────────────────────────────────────────────
 
 class CompositeProvider:
-    """Routes ATP → TMLProvider and WTA → MatchChartingProvider.
+    """Routes ATP → TMLProvider and WTA → WTAOfficialProvider.
 
-    Default provider after the original Sackmann repos became unavailable
-    (both returned HTTP 404 as of June 2026).
+    WTA falls back to Sackmann, then MatchCharting, when the public WTA API is
+    unavailable for a season.
     """
 
     name = "composite"
 
     def __init__(self) -> None:
         self._atp = TMLProvider()
-        self._wta = MatchChartingProvider(tours=("wta",))
+        self._wta = WTAOfficialProvider()
+        self._wta_sackmann = SackmannProvider(tours=("wta",))
+        self._wta_fallback = MatchChartingProvider(tours=("wta",))
 
     def seasons_available(self) -> list[int]:
         atp = set(self._atp.seasons_available())
@@ -496,7 +663,11 @@ class CompositeProvider:
         if t == "atp":
             return self._atp.matches_for(year, tour)
         if t == "wta":
-            return self._wta.matches_for(year, tour)
+            rows = self._wta.matches_for(year, tour)
+            if rows:
+                return rows
+            rows = self._wta_sackmann.matches_for(year, tour)
+            return rows or self._wta_fallback.matches_for(year, tour)
         return []
 
 
@@ -531,6 +702,37 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
     tours = [t.lower() for t in tours]
 
     existing = load_matches()
+    original_count = len(existing)
+    prefetched: dict[tuple[str, int], list[MatchRecord]] = {}
+
+    # The old WTA seed was MatchCharting metadata (with ``mcp-`` IDs). Once
+    # the official WTA feed has produced a real season, replace that legacy
+    # season rather than training on both heuristic and official duplicates.
+    # This is deliberately limited to CompositeProvider so custom providers
+    # and offline fallback runs keep their existing rows untouched.
+    wta_official_years: set[int] = set()
+    if isinstance(provider, CompositeProvider) and "wta" in tours:
+        for year in years:
+            recs = provider.matches_for(year, "wta")
+            prefetched[("wta", year)] = recs
+            if any(r.tourney_id and not r.tourney_id.startswith("mcp-")
+                   for r in recs):
+                wta_official_years.add(year)
+        if wta_official_years:
+            filtered = []
+            for row in existing:
+                if ((row.get("tour") or "").lower() == "wta"
+                        and (row.get("tourney_id") or "").startswith("mcp-")):
+                    raw_year = (row.get("tourney_id") or "")[4:8]
+                    try:
+                        row_year = int(raw_year)
+                    except ValueError:
+                        row_year = int((row.get("date") or "0000")[:4] or 0)
+                    if row_year in wta_official_years:
+                        continue
+                filtered.append(row)
+            existing = filtered
+
     seen = {
         (r.get("tour", ""), r.get("tourney_id", ""), r.get("winner", ""),
          r.get("loser", ""), r.get("round", ""))
@@ -540,7 +742,9 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
     new_rows: list[dict] = []
     for tour in tours:
         for year in years:
-            recs = provider.matches_for(year, tour)
+            recs = prefetched.get((tour, year))
+            if recs is None:
+                recs = provider.matches_for(year, tour)
             if verbose:
                 print(f"[{provider.name}] {tour} {year}: {len(recs)} match(es)")
             for rec in recs:
@@ -550,7 +754,8 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
                 seen.add(key)
                 new_rows.append(asdict(rec))
 
-    if not new_rows:
+    legacy_removed = original_count - len(existing)
+    if not new_rows and not legacy_removed:
         if verbose:
             print("  no new matches")
         return 0
@@ -563,7 +768,8 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
         w.writeheader()
         w.writerows(all_rows)
     if verbose:
-        print(f"  +{len(new_rows)} matches → {MATCHES_CSV} ({len(all_rows)} total)")
+        print(f"  +{len(new_rows)} new matches, {legacy_removed} legacy rows replaced "
+              f"→ {MATCHES_CSV} ({len(all_rows)} total)")
     return len(new_rows)
 
 
@@ -573,6 +779,17 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
 
 # Known surface map: tourney name fragment (lower) → surface
 _KNOWN_SURFACES: dict[str, str] = {
+    # Current-season tour names (keep the specific names ahead of generic
+    # fallbacks so the live card prices the right surface).
+    "swiss open gstaad": "clay",
+    "gstaad": "clay",
+    "nordea open": "clay",
+    "bastad": "clay",
+    "croatia open umag": "clay",
+    "umag": "clay",
+    "iasi": "clay",
+    "kitzbuhel": "clay",
+    "kitzbühel": "clay",
     "wimbledon": "grass",
     "eastbourne": "grass",
     "birmingham": "grass",
@@ -659,6 +876,7 @@ class TournamentDraw:
     surface: str
     best_of: int
     matches: list[DrawMatch]
+    event_id: str = ""
 
 
 def _infer_surface(tourney_name: str) -> str:
@@ -685,15 +903,40 @@ def _espn_draw(tour: str) -> list[TournamentDraw]:
         return []
 
     results: list[TournamentDraw] = []
+    tour = tour.lower()
+    target_slug = "mens-singles" if tour == "atp" else "womens-singles"
     for event in data.get("events", []):
         tourney_name = event.get("name") or event.get("shortName") or ""
         surface = _infer_surface(tourney_name)
 
         groupings = event.get("groupings", [])
-        # Use first grouping (Men's Singles / Women's Singles)
         if not groupings:
             continue
-        competitions = groupings[0].get("competitions", [])
+        # Joint ATP/WTA events expose four groupings.  The old implementation
+        # blindly used groupings[0], which made the ATP feed price women's
+        # singles at events such as Bastad.  Prefer the tour-specific slug and
+        # retain a display-name fallback for older ESPN payloads.
+        selected = [
+            g for g in groupings
+            if str((g.get("grouping") or {}).get("slug") or "").lower()
+            == target_slug
+        ]
+        if not selected:
+            selected = [
+                g for g in groupings
+                if target_slug.replace("-", " ") in str(
+                    (g.get("grouping") or {}).get("displayName") or ""
+                ).lower().replace("'", "")
+            ]
+        if not selected:
+            # Keep compatibility with minimal test fixtures that omit grouping
+            # metadata, but never choose a doubles grouping when one is marked.
+            selected = [
+                g for g in groupings
+                if "double" not in str((g.get("grouping") or {}).get(
+                    "displayName") or "").lower()
+            ] or groupings[:1]
+        competitions = selected[0].get("competitions", [])
 
         # best_of: ATP Grand Slams are best-of-5; everything else (incl. WTA Slams) is best-of-3.
         # ESPN's format.regulation.periods is not reliable for this — use the major flag only.
@@ -737,29 +980,35 @@ def _espn_draw(tour: str) -> list[TournamentDraw]:
         if matches:
             results.append(TournamentDraw(
                 tourney_name=tourney_name,
-                tour=tour.lower(),
+                tour=tour,
                 surface=surface,
                 best_of=best_of,
                 matches=matches,
+                event_id=str(event.get("id") or event.get("uid") or ""),
             ))
 
     return results
 
 
-def fetch_draw(tour: str = "atp", tourney_filter: str = "") -> Optional[TournamentDraw]:
-    """Return the best matching TournamentDraw for the given tour and optional
-    tournament name filter. Picks the first match when no filter is given.
-
-    Returns None on failure or when no suitable tournament is found.
-    """
+def fetch_draws(tour: str = "atp", tourney_filter: str = "") -> list[TournamentDraw]:
+    """Return every active draw for a tour, optionally filtered by name."""
     draws = _espn_draw(tour)
+    if tourney_filter:
+        f = tourney_filter.lower().strip()
+        draws = [d for d in draws if f in d.tourney_name.lower()]
+    return draws
+
+
+def fetch_draw(tour: str = "atp", tourney_filter: str = "") -> Optional[TournamentDraw]:
+    """Backward-compatible singular draw helper.
+
+    New callers should use :func:`fetch_draws`; this function retains the old
+    first-match behavior for the UI and integrations that explicitly expect a
+    single tournament.
+    """
+    draws = fetch_draws(tour, tourney_filter)
     if not draws:
         return None
-    if tourney_filter:
-        f = tourney_filter.lower()
-        for d in draws:
-            if f in d.tourney_name.lower():
-                return d
     return draws[0]
 
 
