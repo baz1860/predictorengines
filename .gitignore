@@ -75,12 +75,20 @@ edge.py.bak
 # Local planning notes.
 plans/international-refactor-plan.md
 
+# Rendered PDF inspection artifacts; source PDFs remain outside the repository.
+tmp/pdfs/
+
 # Club Soccer raw API/HTTP response caches (regenerated on demand; thousands
 # of small per-request files, not meant to be versioned).
 club_soccer/data/bsd_cache/
 club_soccer/data/weather_cache/
 club_soccer/data/fdcouk_cache/
 club_soccer/data/clubelo_cache/
+# Bzzoiro v2 shotmaps/lineups/player payloads and flattened joins are
+# provider-fetched local state; rebuild with club_soccer.bsd_enrichment.
+club_soccer/data/bsd_enrichment/
+club_soccer/data/bsd_enriched_matches.csv
+club_soccer/data/bsd_enrichment_manifest.csv
 # Player-appearance cache: derived from bsd_cache, huge (pretty-printed JSON
 # per player), and rebuildable via `python3 -m club_soccer.player_features
 # --refresh` or `--from-cache`. Not meant to be versioned either.

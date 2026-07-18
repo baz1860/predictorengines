@@ -35,6 +35,7 @@ for p in (str(ROOT), str(HERE)):
 from . import model as M
 from .competitions import BY_NAME
 from .names import make_canon
+from . import schema
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
@@ -76,27 +77,48 @@ def parse(text, comp_name, canon):
         if not mm or date is None:
             continue
         home_raw, away_raw, res = mm.group(1), mm.group(2), mm.group(3)
-        res_noht = re.sub(r"\([^)]*\)", "", res)
+        # Remove half-time annotations, but keep parenthesised AET/penalty
+        # annotations because they carry the cup tie's advancement metadata.
+        res_noht = re.sub(r"\((?![^)]*(?:pen\.|a\.e\.t\.))[^)]*\)", "", res)
+        res_noht = res_noht.replace("(", " ").replace(")", " ")
+        result_scope = "regulation"
+        shootout = None
         if "a.e.t." in res_noht:
+            result_scope = "extra_time"
             sm = re.search(r"(\d+)-(\d+)\s*a\.e\.t\.", res_noht)
         elif "pen." in res_noht:
-            sm = re.search(r"(\d+)-(\d+)\s*pen", res_noht) or re.search(r"(\d+)-(\d+)", res_noht)
+            result_scope = "penalties"
+            penm = re.search(r"(\d+)-(\d+)\s*pen", res_noht)
+            # Typical source text is `1-1 4-3 pen.`. The first pair is the
+            # regulation score; the second pair is the shootout tally.
+            before_pen = res_noht[:penm.start()] if penm else res_noht
+            sm = re.search(r"(\d+)-(\d+)", before_pen)
+            if penm:
+                shootout = (int(penm.group(1)), int(penm.group(2)))
+            if sm is None and penm:
+                sm = penm
         else:
             sm = re.search(r"(\d+)-(\d+)", res_noht)
         if not sm:
             continue
         home, away = canon(home_raw), canon(away_raw)
-        rows.append({
+        row = {
             "fixture_id": fid(comp.api_id, date, home, away),
             "date": date, "season": int(date[:4]),
             "competition": comp.name, "competition_id": comp.api_id,
             "country": comp.country, "type": "europe",
             "home_id": "", "home": home, "away_id": "", "away": away,
             "home_goals": int(sm.group(1)), "away_goals": int(sm.group(2)),
-            "status": "FT", "neutral": 0,
+            "status": "FT", "result_scope": result_scope, "neutral": 0,
             "home_shots": "", "away_shots": "", "home_sot": "", "away_sot": "",
-            "home_corners": "", "away_corners": "",
-        })
+            "home_corners": "", "away_corners": "", "xg_source": "",
+        }
+        if shootout is not None:
+            row.update({"shootout_home": shootout[0], "shootout_away": shootout[1],
+                        "shootout_winner": "home" if shootout[0] > shootout[1] else "away"})
+        for col in schema.FIXTURE_COLUMNS:
+            row.setdefault(col, "")
+        rows.append(row)
     return rows
 
 
@@ -142,7 +164,7 @@ def main():
     print("  sample new teams:", ", ".join(sorted(kept_new)[:12]))
 
     if args.merge:
-        base = pd.read_csv(FIXTURES)
+        base = pd.read_csv(FIXTURES, low_memory=False)
         merged = pd.concat([base, uefa], ignore_index=True).drop_duplicates(
             subset=["fixture_id"], keep="first")
         merged.to_csv(FIXTURES, index=False)

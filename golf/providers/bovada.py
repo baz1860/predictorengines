@@ -32,6 +32,14 @@ MATCHUPS_CSV = DATA_DIR / "matchups.csv"
 COUPON_URL = ("https://www.bovada.lv/services/sports/event/coupon/events/A/"
               "description/golf?marketFilterId=def&preMatchOnly=true&lang=en")
 
+# Once a tournament tees off, Bovada moves its outright winner and tournament
+# match-up markets from the pre-match coupon to the live one, so the pre-match
+# feed above only carries next-round 2/3-balls mid-event. Fetching the live
+# coupon as well keeps odds.csv / matchups.csv updating in-play instead of
+# going stale after round 1 starts.
+LIVE_COUPON_URL = ("https://www.bovada.lv/services/sports/event/coupon/events/A/"
+                   "description/golf?marketFilterId=def&liveOnly=true&lang=en")
+
 
 def _slug(name: str) -> str:
     """Slug used to match coupon event links, e.g. 'Travelers Championship'
@@ -123,17 +131,35 @@ class BovadaGolfProvider:
         self.cache_dir = cache_dir or CACHE_DIR
         self.ttl_seconds = ttl_seconds
 
-    def fetch_coupon(self, use_cache: bool = False) -> list:
+    def fetch_coupon(self, use_cache: bool = False, live: bool = False) -> list:
+        """Fetch the golf coupon. `live=False` is the pre-match feed; `live=True`
+        is the in-play feed, where outrights and tournament match-ups live once
+        the event has teed off. Each feed keeps its own cache file."""
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        cache = self.cache_dir / "coupon_golf.json"
+        cache = self.cache_dir / ("coupon_golf_live.json" if live else "coupon_golf.json")
         if use_cache and cache.exists() and \
                 time.time() - cache.stat().st_mtime <= self.ttl_seconds:
             return json.loads(cache.read_text())
-        req = urllib.request.Request(COUPON_URL, headers={"User-Agent": "Mozilla/5.0"})
+        url = LIVE_COUPON_URL if live else COUPON_URL
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=25) as resp:
             payload = json.load(resp)
         cache.write_text(json.dumps(payload))
         return payload
+
+    # Markets worth taking from the live coupon: tournament-level prices that
+    # settle on all 72 holes. Live round 2/3-ball groups are deliberately
+    # excluded — mid-round in-play prices reflect holes already played and must
+    # not feed the pre-round group pricer.
+    LIVE_MARKETS = ("win", "tournament_matchup")
+
+    def live_event_quotes(self, coupon: list, event_name: str,
+                          event_id: str = "") -> list[OddsQuote]:
+        """Tournament-level quotes (outright winner, tournament match-ups) from
+        the live coupon, so those boards keep updating after the event tees off
+        and drops out of the pre-match feed."""
+        return [q for q in self.event_quotes(coupon, event_name, event_id=event_id)
+                if q.market in self.LIVE_MARKETS]
 
     def event_quotes(self, coupon: list, event_name: str, event_id: str = "",
                      round_no: int = 1) -> list[OddsQuote]:

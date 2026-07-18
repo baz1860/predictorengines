@@ -137,8 +137,8 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                 }
 
         try:
-            pred = M.predict(home, away, comp, model_name, params=params,
-                             player_adj=p_adj)
+            pred = M.predict_match(home, away, comp, str(date), model_name,
+                                   params=params, player_adj=p_adj)
         except ValueError:
             continue
         if calib_maps is not None:
@@ -179,6 +179,20 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                         row["stake_gbp"] = 0.0
             out.append(row)
     out.sort(key=lambda x: -x["ev_per_unit"])
+    # The shared market blend is deliberately gated at the engine level. A
+    # fitted weight alone never changes production pricing; app.market_blend's
+    # DEFAULT_BLEND_ON must explicitly include club_soccer after a held-out
+    # win against both pure model and pure market.
+    try:
+        from app.market_blend import apply_blend_to_rows, is_default_on
+        if is_default_on("club_soccer"):
+            apply_blend_to_rows(out, "club_soccer", bankroll, KELLY_FRACTION,
+                                kelly_key="kelly_stake")
+            out.sort(key=lambda x: -x["ev_per_unit"])
+    except Exception:
+        # Pricing must remain available if the optional shared helper is absent
+        # or malformed; the unblended rows are the safe fallback.
+        pass
     return out
 
 
@@ -263,7 +277,10 @@ def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
         key_t = (str(fx.home).lower(), str(fx.away).lower(), str(fx.competition))
         fixture_lookup[key_t] = fx
 
-    events = get_all_events(key, status="upcoming")
+    # BSD's canonical enum is notstarted. bsd_client also accepts the human
+    # alias, but keep the wire value explicit here because a silent empty
+    # response is worse than a visible fetch failure.
+    events = get_all_events(key, status="notstarted")
     CACHE.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
@@ -295,8 +312,10 @@ def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
         odds_a = _decimal(ev.get("odds_away"))
 
         # Over/under 2.5 and BTTS (BSD may provide these as top-level fields)
-        odds_over = _decimal(ev.get("odds_over25") or ev.get("odds_over_2_5"))
-        odds_under = _decimal(ev.get("odds_under25") or ev.get("odds_under_2_5"))
+        odds_over = _decimal(ev.get("odds_over_25") or ev.get("odds_over25")
+                             or ev.get("odds_over_2_5"))
+        odds_under = _decimal(ev.get("odds_under_25") or ev.get("odds_under25")
+                              or ev.get("odds_under_2_5"))
         odds_btts_y = _decimal(ev.get("odds_btts_yes") or ev.get("odds_btts"))
         odds_btts_n = _decimal(ev.get("odds_btts_no"))
 
