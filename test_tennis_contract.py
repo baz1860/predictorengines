@@ -245,6 +245,28 @@ def _partial_draw_progression() -> None:
         "known semifinalists should be locked into SF"
 
 
+def _multi_event_simulation() -> None:
+    """The simulate command must run every saved event, not only the first."""
+    from app.engines import registry
+
+    rows = []
+    pairs = [(0, 7), (3, 4), (1, 6), (2, 5)]
+    for event in ("Synthetic Open", "Second Open"):
+        rows.extend(dict(tour="atp", tourney_name=event, surface="hard", best_of=3,
+                         round="QF", player_a=NAMES[a], player_b=NAMES[b],
+                         state="pre", winner="", score="", match_id=f"{event}-{a}")
+                    for a, b in pairs)
+    pd.DataFrame(rows).to_csv(DATA / "draw.csv", index=False)
+
+    sim = registry.get("tennis").simulate({"tour": "atp", "sims": 2500, "seed": 4})
+    validate_table(sim)
+    assert "event" in {c["key"] for c in sim["columns"]}, \
+        "multi-event simulation omitted the event column"
+    assert {r["event"] for r in sim["rows"]} == {"Synthetic Open", "Second Open"}, \
+        "simulation did not cover every saved event"
+    assert "2 event(s)" in sim["note"], f"event count missing: {sim['note']}"
+
+
 def _validation_and_calibration() -> None:
     from tennis import calibrate as C
     from tennis import model as M
@@ -370,6 +392,7 @@ def main() -> int:
             M.save_params(M.fit(df, tour=tour), tour=tour)
         _check("model_behaviour", _model_behaviour)
         _check("adapter_contract", _adapter_contract)
+        _check("multi_event_simulation", _multi_event_simulation)
         _check("partial_draw_progression", _partial_draw_progression)
         _check("settlement", _settlement)
         _check("market+portfolio", _market_and_portfolio)

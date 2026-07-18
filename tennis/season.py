@@ -1,19 +1,21 @@
-"""tennis/season.py — the one front door for the tennis engine.
+"""tennis/season.py — the front door for the tennis engine.
 
 Same mental model as the World Cup engine: pull the week's tournament list, take
-a draw, let the fitted model price it, and print the best bets — round by round
-(R128 → … → final). Everything else in this package (`fetch`, `model`,
-`simulate`, `edge`, …) is plumbing this drives; you should not need to call those
-directly for a normal week.
+all active draws for the selected tour, let the fitted model price them, and
+print the best bets — round by round (R128 → … → final). Everything else in
+this package (`fetch`, `model`, `simulate`, `edge`, …) is plumbing this drives;
+you should not need to call those directly for a normal week.
 
     python -m tennis.season --schedule              # live ATP tournaments + draws
     python -m tennis.season --schedule --tour wta
-    python -m tennis.season                         # price the current ATP draw
-    python -m tennis.season --tour wta --event Berlin
+    python -m tennis.season                         # price all active ATP events
+    python -m tennis.season --tour wta               # price all active WTA events
+    python -m tennis.season --tour both              # price both tours
+    python -m tennis.season --tour wta --event Berlin  # narrow to one event
     python -m tennis.season --no-fetch              # reprice the saved draw.csv
     python -m tennis.season --event Wimbledon --odds-api
 
-The draw is pulled automatically from ESPN and saved to `tennis/data/draw.csv`
+The draws are pulled automatically from ESPN and saved to `tennis/data/draw.csv`
 (so `simulate`/`edge` keep working). Book odds can be fetched from The Odds API
 with `--odds-api` or entered manually in `tennis/data/odds.csv`
 (`--odds-template` writes a skeleton). Any match the model rates above the market
@@ -31,14 +33,14 @@ from pathlib import Path
 from . import calibrate as C
 from . import market as MK
 from . import model as M
-from .providers import DATA_DIR, fetch_draw
+from .providers import DATA_DIR, fetch_draws
 
 DRAW_CSV = DATA_DIR / "draw.csv"
 ODDS_CSV = DATA_DIR / "odds.csv"
 CARD_MD = DATA_DIR / "card.md"
 DEFAULT_KELLY = 0.25
 
-DRAW_COLUMNS = ["tour", "tourney_name", "surface", "best_of", "round",
+DRAW_COLUMNS = ["tour", "tourney_name", "event_id", "surface", "best_of", "round",
                 "player_a", "player_b", "state", "winner", "score", "match_id"]
 
 # Bracket order, earliest round first.
@@ -55,6 +57,10 @@ _ROUND_LABEL = {"R128": "Round of 128", "R64": "Round of 64", "R32": "Round of 3
 # ── schedule ──────────────────────────────────────────────────────────────────
 
 def print_schedule(tour: str = "atp") -> None:
+    if tour == "both":
+        print_schedule("atp")
+        print_schedule("wta")
+        return
     draws = _all_draws(tour)
     print(f"{tour.upper()} — {len(draws)} active tournament(s)\n")
     if not draws:
@@ -97,22 +103,29 @@ def build_card(
         raise ValueError(f"No fitted {tour.upper()} model. Run: "
                          f"python -m tennis.model --fit --tour {tour}")
 
-    draw = fetch_draw(tour, tourney) if fetch else None
     notes: list[str] = []
-    if draw:
-        write_draw_csv(draw)
-        notes.append(f"draw: {draw.tourney_name} (ESPN) → draw.csv")
-        tourney_name, surface, best_of = draw.tourney_name, draw.surface, draw.best_of
-        matches = [_draw_match_row(m) for m in draw.matches]
+    draws = fetch_draws(tour, tourney) if fetch else []
+    if draws:
+        # A filtered refresh replaces only that event; an unfiltered refresh
+        # replaces the active tour's event set while retaining the other tour.
+        replace_events = {d.tourney_name for d in draws} if tourney else None
+        write_draw_csv(draws, replace_events=replace_events)
+        if len(draws) == 1:
+            notes.append(f"draw: {draws[0].tourney_name} (ESPN) → draw.csv")
+        else:
+            names = ", ".join(d.tourney_name for d in draws)
+            notes.append(f"draw: {len(draws)} events ({names}) (ESPN) → draw.csv")
+        matches = [_draw_match_row(m, d) for d in draws for m in d.matches]
     else:
-        matches, surface, best_of, tourney_name = _load_draw_csv(tour)
-        notes.append(f"draw: {tourney_name} (saved draw.csv)" if matches
+        matches = _load_draw_csv(tour, tourney)
+        notes.append(f"draw: {len({m.get('tourney_name', '') for m in matches})} saved event(s)"
+                     if matches
                      else "draw: none found")
 
     if fetch_odds:
         try:
             from . import fetch as FETCH
-            odds_event = tourney_name or tourney
+            odds_event = tourney
             odds_rows = FETCH.fetch_odds_api(tour=tour, event=odds_event,
                                              api_key=api_key,
                                              regions=odds_regions)
@@ -130,28 +143,43 @@ def build_card(
     h2h_fn = _h2h_fn(tour)
     w_mkt = MK.blend_weights().get("match_winner", 0.5)
 
-    by_round: dict[str, list[dict]] = {}
+    by_event: dict[str, dict] = {}
     n_bets = 0
     for m in matches:
         rnd, a, b = m["round"], m["player_a"], m["player_b"]
+        event_name = m.get("tourney_name") or ""
+        surface = (m.get("surface") or "hard").lower()
+        try:
+            best_of = int(float(m.get("best_of") or 3))
+        except (TypeError, ValueError):
+            best_of = 3
+        odds_pair = odds.get((event_name.lower(), _key(a, b)))
+        if odds_pair is None:
+            odds_pair = odds.get(("", _key(a, b)))
         row = _price_match(a, b, surface, params, h2h_fn, maps,
-                           odds.get(_key(a, b)), w_mkt if blended else None,
+                           odds_pair, w_mkt if blended else None,
                            bankroll, kelly, state=m.get("state", ""),
                            winner=m.get("winner", ""))
         if row.get("recommended") and row["edge"] >= min_edge:
             n_bets += 1
-        by_round.setdefault(rnd or "R?", []).append(row)
+        event = by_event.setdefault(event_name, {
+            "surface": surface, "best_of": best_of, "by_round": {}})
+        event["by_round"].setdefault(rnd or "R?", []).append(row)
 
-    text = _render_card(tourney_name, tour, surface, best_of, by_round,
-                        min_edge, notes)
+    text = _render_card(tour, by_event, min_edge, notes)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text)
-    return {"event": tourney_name, "tour": tour, "matches": len(matches),
+    event_names = [name for name in by_event if name]
+    return {"event": event_names[0] if len(event_names) == 1 else "",
+            "events": event_names, "tour": tour, "matches": len(matches),
             "bets": n_bets, "output": str(output), "notes": notes}
 
 
-def _draw_match_row(m) -> dict:
-    return {"round": m.round, "player_a": m.player_a, "player_b": m.player_b,
+def _draw_match_row(m, draw) -> dict:
+    return {"tour": draw.tour, "tourney_name": draw.tourney_name,
+            "event_id": getattr(draw, "event_id", ""),
+            "surface": draw.surface, "best_of": draw.best_of,
+            "round": m.round, "player_a": m.player_a, "player_b": m.player_b,
             "state": getattr(m, "state", ""), "winner": getattr(m, "winner", ""),
             "score": getattr(m, "score", ""), "match_id": getattr(m, "match_id", "")}
 
@@ -180,7 +208,8 @@ def _price_match(a, b, surface, params, h2h_fn, maps, odds_pair, w_mkt,
 
     row = {**base_row, "favourite": fav, "p_fav": p_fav,
            "status": "Live" if state == "in" else ""}
-    if not odds_pair:
+    if (not odds_pair or a.strip().lower() not in odds_pair
+            or b.strip().lower() not in odds_pair):
         return row
     # Price the favourite's side with the book. odds_pair maps lowered name → odds.
     oa, ob = odds_pair[a.strip().lower()], odds_pair[b.strip().lower()]
@@ -198,49 +227,57 @@ def _price_match(a, b, surface, params, h2h_fn, maps, odds_pair, w_mkt,
     return row
 
 
-def _render_card(tourney_name, tour, surface, best_of, by_round, min_edge,
-                 notes) -> str:
+def _render_card(tour, by_event, min_edge, notes) -> str:
     generated = time.strftime("%Y-%m-%d %H:%M")
+    event_names = [name for name in by_event if name]
+    title = event_names[0] if len(event_names) == 1 else tour.upper()
     L = [
-        f"# {tourney_name or tour.upper()} — Best Bets",
+        f"# {title} — Best Bets",
         "",
-        f"_Generated {generated} · {tour.upper()} · {surface} · "
-        f"best-of-{best_of} · fitted model_",
+        f"_Generated {generated} · {tour.upper()} · {len(by_event)} event(s) · fitted model_",
         "",
     ]
-    if not by_round:
+    if not by_event:
         L += ["_No draw available. Run `--schedule` to see live tournaments, or "
               "fill in `tennis/data/draw.csv`._", ""]
         return "\n".join(L)
 
-    for rnd in _ordered(by_round):
-        rows = by_round[rnd]
-        L.append(f"## {_ROUND_LABEL.get(rnd, rnd)}")
+    for event_name, event in by_event.items():
+        by_round = event["by_round"]
+        if len(by_event) > 1:
+            L.append(f"## {event_name or tour.upper()}")
+            L.append("")
+        L.append(f"_{event['surface']} · best-of-{event['best_of']}_")
         L.append("")
-        L.append("| Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |")
-        L.append("|---|---|---|--:|--:|--:|--:|--:|")
-        rows.sort(key=lambda r: (r["completed"], -r["edge"] if r["odds"] else 1,
-                                 -(r["p_fav"] or 0)))
-        for r in rows:
-            match = f"{r['round_a']} v {r['round_b']}"
-            status = r.get("status") or "To play"
-            if r["odds"]:
-                odds = f"{r['odds']:.2f}"
-                mkt = f"{r['p_market']*100:.0f}%"
-                edge = f"{r['edge']:+.1f}%"
-                stake = f"£{r['stake']:.2f}" if r["recommended"] else "—"
-            else:
-                odds = mkt = edge = stake = "—"
-            pwin = f"{r['p_fav']*100:.0f}%" if r["p_fav"] is not None else "—"
-            pick = f"**{r['favourite']}**" if r["recommended"] else r["favourite"]
-            L.append(f"| {match} | {status} | {pick} | {pwin} | {odds} "
-                     f"| {mkt} | {edge} | {stake} |")
-        L.append("")
+        for rnd in _ordered(by_round):
+            rows = by_round[rnd]
+            L.append(f"### {_ROUND_LABEL.get(rnd, rnd)}")
+            L.append("")
+            L.append("| Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |")
+            L.append("|---|---|---|--:|--:|--:|--:|--:|")
+            rows.sort(key=lambda r: (r["completed"], -r["edge"] if r["odds"] else 1,
+                                     -(r["p_fav"] or 0)))
+            for r in rows:
+                match = f"{r['round_a']} v {r['round_b']}"
+                status = r.get("status") or "To play"
+                if r["odds"]:
+                    odds = f"{r['odds']:.2f}"
+                    mkt = f"{r['p_market']*100:.0f}%"
+                    edge = f"{r['edge']:+.1f}%"
+                    stake = f"£{r['stake']:.2f}" if r["recommended"] else "—"
+                else:
+                    odds = mkt = edge = stake = "—"
+                pwin = f"{r['p_fav']*100:.0f}%" if r['p_fav'] is not None else "—"
+                pick = f"**{r['favourite']}**" if r["recommended"] else r["favourite"]
+                L.append(f"| {match} | {status} | {pick} | {pwin} | {odds} "
+                         f"| {mkt} | {edge} | {stake} |")
+            L.append("")
 
     L.append("## Notes")
     L.append("")
-    n_bets = sum(1 for rows in by_round.values() for r in rows
-                 if r["recommended"] and r["edge"] >= min_edge)
+    n_bets = sum(1 for event in by_event.values()
+                 for rows in event["by_round"].values()
+                 for r in rows if r["recommended"] and r["edge"] >= min_edge)
     L.append(f"- {n_bets} bet(s) backed (model edge over the book, staked).")
     L.append("- Bold pick = staked bet. Add prices to `tennis/data/odds.csv` to "
              "price more matches.")
@@ -252,51 +289,78 @@ def _render_card(tourney_name, tour, surface, best_of, by_round, min_edge,
 
 # ── draw + odds I/O ──────────────────────────────────────────────────────────
 
-def write_draw_csv(draw, path: Path = DRAW_CSV) -> Path:
-    """Persist a fetched TournamentDraw to draw.csv (the simulate/edge contract)."""
+def write_draw_csv(draws, path: Path = DRAW_CSV,
+                   replace_events: set[str] | None = None) -> Path:
+    """Persist one or more fetched draws without dropping other tours/events."""
+    if not isinstance(draws, (list, tuple)):
+        draws = [draws]
+    draws = [d for d in draws if d is not None]
+    if not draws:
+        return path
     path.parent.mkdir(parents=True, exist_ok=True)
+    target_tours = {str(d.tour).lower() for d in draws}
+    target_events = {str(e).lower() for e in (replace_events or set())}
+    existing: list[dict] = []
+    if path.exists():
+        with open(path, newline="") as f:
+            for row in csv.DictReader(f):
+                row_tour = (row.get("tour") or "").lower()
+                row_event = (row.get("tourney_name") or "").lower()
+                if row_tour in target_tours and (
+                        replace_events is None or row_event in target_events):
+                    continue
+                existing.append(row)
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=DRAW_COLUMNS)
         w.writeheader()
-        for m in draw.matches:
-            w.writerow({"tour": draw.tour, "tourney_name": draw.tourney_name,
-                        "surface": draw.surface, "best_of": draw.best_of,
-                        "round": m.round, "player_a": m.player_a,
-                        "player_b": m.player_b, "state": getattr(m, "state", ""),
-                        "winner": getattr(m, "winner", ""),
-                        "score": getattr(m, "score", ""),
-                        "match_id": getattr(m, "match_id", "")})
+        w.writerows({c: row.get(c, "") for c in DRAW_COLUMNS} for row in existing)
+        for draw in draws:
+            for m in draw.matches:
+                w.writerow({"tour": draw.tour, "tourney_name": draw.tourney_name,
+                            "event_id": getattr(draw, "event_id", ""),
+                            "surface": draw.surface, "best_of": draw.best_of,
+                            "round": m.round, "player_a": m.player_a,
+                            "player_b": m.player_b, "state": getattr(m, "state", ""),
+                            "winner": getattr(m, "winner", ""),
+                            "score": getattr(m, "score", ""),
+                            "match_id": getattr(m, "match_id", "")})
     return path
 
 
-def _load_draw_csv(tour: str):
+def _load_draw_csv(tour: str, tourney_filter: str = "") -> list[dict]:
     if not DRAW_CSV.exists():
-        return [], "hard", 3, ""
-    matches, surface, best_of, name = [], "hard", 3, ""
+        return []
+    matches = []
+    wanted = tourney_filter.lower().strip()
     with open(DRAW_CSV, newline="") as f:
         for r in csv.DictReader(f):
             if (r.get("tour") or "").lower() not in ("", tour):
                 continue
+            if wanted and wanted not in (r.get("tourney_name") or "").lower():
+                continue
             a, b = (r.get("player_a") or "").strip(), (r.get("player_b") or "").strip()
             if not (a and b):
                 continue
-            matches.append({"round": r.get("round") or "R?", "player_a": a,
+            matches.append({"tour": (r.get("tour") or tour).lower(),
+                            "tourney_name": r.get("tourney_name") or "",
+                            "event_id": r.get("event_id") or "",
+                            "surface": (r.get("surface") or "hard").lower(),
+                            "best_of": r.get("best_of") or 3,
+                            "round": r.get("round") or "R?", "player_a": a,
                             "player_b": b, "state": r.get("state") or "",
                             "winner": r.get("winner") or "",
                             "score": r.get("score") or "",
                             "match_id": r.get("match_id") or ""})
-            surface = (r.get("surface") or surface).lower()
-            name = r.get("tourney_name") or name
-            try:
-                best_of = int(float(r.get("best_of") or best_of))
-            except ValueError:
-                pass
-    return matches, surface, best_of, name
+    return matches
 
 
 def _load_odds(tour: str) -> dict:
-    """{frozenset(name_a, name_b) key → {name_lower: decimal_odds}}, so a lookup
-    is order-independent and each player's price is recovered by name."""
+    """Return event-aware, order-independent odds lookups.
+
+    Keys are ``(lower_tourney_name, pair_key)``.  A blank tournament name is a
+    deliberate fallback for legacy odds.csv files that predate multi-event
+    support.
+    """
     if not ODDS_CSV.exists():
         return {}
     out = {}
@@ -310,7 +374,8 @@ def _load_odds(tour: str) -> dict:
             except (ValueError, KeyError, TypeError):
                 continue
             if a and b:
-                out[_key(a, b)] = {a.lower(): oa, b.lower(): ob}
+                event = (r.get("tourney_name") or "").strip().lower()
+                out[(event, _key(a, b))] = {a.lower(): oa, b.lower(): ob}
     return out
 
 
@@ -347,7 +412,7 @@ def main() -> None:
         description="Tennis engine — live schedule and round-by-round best-bets card")
     ap.add_argument("--schedule", action="store_true",
                     help="list live tournaments + draws for the tour and exit")
-    ap.add_argument("--tour", default="atp", choices=["atp", "wta"])
+    ap.add_argument("--tour", default="atp", choices=["atp", "wta", "both"])
     ap.add_argument("--event", default="", help="tournament name filter (e.g. Wimbledon)")
     ap.add_argument("--no-fetch", action="store_true",
                     help="reprice the saved draw.csv instead of pulling ESPN")
@@ -361,17 +426,46 @@ def main() -> None:
                     help="The Odds API key; defaults to THE_ODDS_API_KEY/data/api_keys.json")
     ap.add_argument("--regions", default="eu",
                     help="The Odds API regions for --odds-api (default: eu)")
+    ap.add_argument("--output", default="",
+                    help="card path; --tour both uses this for the index")
     args = ap.parse_args()
 
     if args.schedule:
         print_schedule(args.tour)
         return
 
-    summary = build_card(tour=args.tour, tourney=args.event,
-                         fetch=not args.no_fetch, bankroll=args.bankroll,
-                         kelly=args.kelly, min_edge=args.min_edge,
-                         fetch_odds=args.odds_api, api_key=args.api_key,
-                         odds_regions=args.regions)
+    common = dict(tourney=args.event, fetch=not args.no_fetch,
+                  bankroll=args.bankroll, kelly=args.kelly,
+                  min_edge=args.min_edge, fetch_odds=args.odds_api,
+                  api_key=args.api_key, odds_regions=args.regions)
+    if args.tour == "both":
+        summaries = []
+        for tour in ("atp", "wta"):
+            summary = build_card(tour=tour, output=DATA_DIR / f"card_{tour}.md",
+                                 **common)
+            summaries.append(summary)
+            print(f"{tour.upper()} — {summary['matches']} match(es), "
+                  f"{summary['bets']} bet(s) backed")
+            for n in summary["notes"]:
+                print(f"  · {n}")
+            print(f"Card → {summary['output']}")
+        index = Path(args.output) if args.output else CARD_MD
+        index.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["# Tennis — Best Bets", "",
+                 "_Run both tours with all active events._", ""]
+        for summary in summaries:
+            card_name = Path(summary["output"]).name
+            lines.extend([f"## {summary['tour'].upper()}", "",
+                          f"{len(summary['events'])} event(s), "
+                          f"{summary['matches']} match(es), "
+                          f"[{card_name}]({card_name})", ""])
+        index.write_text("\n".join(lines))
+        print(f"Index → {index}")
+        return
+
+    default_output = CARD_MD if args.tour == "atp" else DATA_DIR / "card_wta.md"
+    summary = build_card(tour=args.tour, output=Path(args.output) if args.output else default_output,
+                         **common)
     print(f"{summary['event'] or summary['tour'].upper()} — "
           f"{summary['matches']} match(es), {summary['bets']} bet(s) backed")
     for n in summary["notes"]:

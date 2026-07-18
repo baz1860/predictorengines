@@ -104,8 +104,9 @@ class WorldCupAdapter(EngineAdapter):
 
     def simulate(self, params: dict[str, Any]) -> dict[str, Any]:
         from engines.worldcup.dixoncoles import build_sources
-        from engines.worldcup.simulate import (MatchModel, load_group_matches, simulate_once,
-                              GROUPS, TEAM_GROUP)
+        from engines.worldcup.simulate import (
+            MatchModel, load_group_matches, load_live_bracket, simulate_once,
+            GROUPS, TEAM_GROUP)
         model = str(params.get("model", "blend"))
         if model not in MODELS:
             raise ValueError(f"Unknown model: {model}")
@@ -118,12 +119,14 @@ class WorldCupAdapter(EngineAdapter):
         sources, ratings = build_sources(model)
         mm = MatchModel(sources)
         group_matches = load_group_matches()
+        live_bracket = load_live_bracket(group_matches)
         rng = np.random.default_rng(int(params.get("seed", 42)))
 
         stages = self.simulate_schema()["stages"]
         counts = {t: dict.fromkeys(stages, 0) for ts in GROUPS.values() for t in ts}
         for _ in range(n):
-            gw, adv, r16, qf, sf, fin, champ = simulate_once(mm, group_matches, rng)
+            gw, adv, r16, qf, sf, fin, champ = simulate_once(
+                mm, group_matches, rng, live_bracket)
             for t in gw: counts[t]["win_group"] += 1
             for t in adv: counts[t]["reach_R32"] += 1
             for t in r16: counts[t]["reach_R16"] += 1
@@ -143,7 +146,11 @@ class WorldCupAdapter(EngineAdapter):
                     {"key": "group", "label": "Grp", "fmt": "text"},
                     {"key": "elo", "label": "Elo", "fmt": "num"}] +
                    [{"key": s, "label": stage_labels[s], "fmt": "pct"} for s in stages])
-        return {"note": f"{n:,} simulations · {model} model",
+        note = f"{n:,} simulations · {model} model"
+        if live_bracket.locked_winners:
+            note += (f" · {len(live_bracket.locked_winners)} live knockout "
+                     "matches locked")
+        return {"note": note,
                 "columns": columns, "rows": rows[:40]}
 
     # ── edge (value vs bookmaker odds) ───────────────────────────────────────

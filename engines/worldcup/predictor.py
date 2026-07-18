@@ -31,6 +31,7 @@ ELO_HOME_ADV = 65.0      # home advantage used inside the Elo rating update (fix
 BASE_RATING = 1500.0
 MAX_GOALS = 10           # scoreline grid size
 DC_RHO = -0.10           # Dixon-Coles correlation for low scores (default / fallback)
+_UNRESOLVED_TEAM_TOKENS = {"", "NA", "NAN", "NONE", "TBD", "TO BE DECIDED"}
 
 
 def load_dc_params(path: Path = DC_PARAMS_FILE) -> dict | None:
@@ -299,6 +300,18 @@ def cmd_match(args, ratings, beta, conf_adjs=None, conf_threshold=0):
 
 def cmd_worldcup(upcoming, ratings, beta, conf_adjs=None, conf_threshold=0):
     wc = upcoming[upcoming["tournament"] == "FIFA World Cup"].copy()
+    # Local results.csv deliberately keeps future knockout placeholders so the
+    # fixture survives the upstream merge.  They have no teams until the
+    # preceding round is complete, so they are not modelable yet.
+    def resolved_team(value) -> bool:
+        if pd.isna(value):
+            return False
+        return str(value).strip().upper() not in _UNRESOLVED_TEAM_TOKENS
+
+    ready = wc[wc["home_team"].map(resolved_team)
+               & wc["away_team"].map(resolved_team)].copy()
+    skipped = len(wc) - len(ready)
+    wc = ready
     rows = []
     for r in wc.itertuples(index=False):
         adv = 0.0 if r.neutral else HOME_ADV
@@ -312,11 +325,17 @@ def cmd_worldcup(upcoming, ratings, beta, conf_adjs=None, conf_threshold=0):
                      "p_home": round(w, 3), "p_draw": round(d, 3), "p_away": round(l, 3),
                      "p_btts": round(p_btts, 3),
                      "likely_score": f"{i}-{j}"})
-    out = pd.DataFrame(rows).sort_values("date")
+    if rows:
+        out = pd.DataFrame(rows).sort_values("date")
+    else:
+        out = pd.DataFrame(columns=["date", "home", "away", "xg_home", "xg_away",
+                                    "p_home", "p_draw", "p_away", "p_btts",
+                                    "likely_score"])
     dest = Path(__file__).resolve().parents[2] / "predictions_worldcup_2026.csv"
     out.to_csv(dest, index=False)
     print(out.to_string(index=False))
-    print(f"\nSaved {len(out)} predictions -> {dest.name}")
+    suffix = f"; skipped {skipped} unresolved fixture(s)" if skipped else ""
+    print(f"\nSaved {len(out)} predictions -> {dest.name}{suffix}")
 
 
 def cmd_backtest(played, beta):

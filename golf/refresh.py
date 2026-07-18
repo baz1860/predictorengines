@@ -20,7 +20,9 @@ from . import store
 from .providers.bovada import (BovadaGolfProvider, _dedupe as _bovada_dedupe,
                                export_csvs as bovada_export_csvs)
 from .providers.espn import EspnGolfProvider
-from .providers.odds_manual import ManualOddsProvider, THREEBALLS_RAW, write_threeballs_csv
+from .providers.odds_manual import (ManualOddsProvider, THREEBALLS_RAW,
+                                    threeballs_csv_path, threeballs_raw_path,
+                                    write_threeballs_csv)
 from .providers.odds_theoddsapi import MAJOR_SPORT_KEYS, TheOddsApiGolfProvider
 from .providers.pgatour_stats import PgaTourStatsProvider, write_stats_csv
 from .providers.weather import OpenMeteoProvider
@@ -38,8 +40,9 @@ def main() -> None:
     ap.add_argument("--weather", action="store_true", help="pull Open-Meteo forecast when course coordinates exist")
     ap.add_argument("--odds-api-sport", default="",
                     help="optional The Odds API golf sport key for major outrights")
-    ap.add_argument("--manual-raw", default=str(THREEBALLS_RAW),
-                    help="manual 3-ball raw paste path")
+    ap.add_argument("--manual-raw", default="",
+                    help="manual round-group raw paste path "
+                         "(default: golf/data/threeballs_r{round}_raw.txt)")
     ap.add_argument("--tee-raw", default=str(TEE_TIMES_RAW),
                     help="manual tee-sheet raw paste path")
     ap.add_argument("--round", type=int, default=1, dest="round_no",
@@ -73,7 +76,7 @@ def run_refresh(
     stats: bool = False,
     weather: bool = False,
     odds_api_sport: str = "",
-    manual_raw: str = str(THREEBALLS_RAW),
+    manual_raw: str = "",
     tee_raw: str = str(TEE_TIMES_RAW),
     round_no: int = 1,
     fit: bool = False,
@@ -87,6 +90,9 @@ def run_refresh(
     """
     run_started = time.time()
     event_id = event
+    # Resolve the raw paste path per round so each round's tee groups live in
+    # their own file (threeballs_r{N}_raw.txt) and can't bleed across rounds.
+    manual_raw = manual_raw or str(threeballs_raw_path(round_no))
     db = store.init_db()
     checks: list[qa.SourceCheck] = []
     provider_rows = {}
@@ -336,7 +342,8 @@ def run_refresh(
             )
             if raw_quotes:
                 quotes.extend(raw_quotes)
-                write_threeballs_csv(raw_quotes, event=event.name if event else "")
+                write_threeballs_csv(raw_quotes, event=event.name if event else "",
+                                     round_no=round_no)
     quotes = _dedupe_quotes(quotes)
     if quotes:
         checks.extend(manual.qa_checks(quotes))
@@ -373,7 +380,7 @@ def run_refresh(
     # live pricing (see engine._board_fresh). Surface that as a warning with the
     # exact command to re-pull, so a stale board is visible rather than silent.
     checks.extend(_board_freshness_checks(
-        run_started, rounds_done, event.event_id if event else ""))
+        run_started, rounds_done, event.event_id if event else "", round_no))
 
     summary = qa.summarize(checks)
     manifest = {
@@ -397,6 +404,29 @@ def run_refresh(
     path = store.write_manifest(manifest)
     manifest["manifest_path"] = str(path)
     return manifest
+
+
+def ensure_round_board(round_no: int, *, event_name: str = "",
+                       event_id: str = "") -> int:
+    """Parse a round's manual raw paste into its per-round board CSV.
+
+    The season card's round auto-detection finalises only after the live
+    leaderboard read inside run_refresh, so the refresh may have parsed a
+    different round's paste. This idempotently parses the *target* round's
+    paste (threeballs_r{round}_raw.txt → threeballs_r{round}.csv) so the round
+    pricer finds the board. No-op when no paste exists for the round.
+    Returns the number of groups written.
+    """
+    raw_path = threeballs_raw_path(round_no)
+    if not raw_path.exists():
+        return 0
+    quotes = ManualOddsProvider().parse_threeball_text(
+        raw_path.read_text(errors="replace"),
+        event_id=event_id, round_no=int(round_no), book="manual_paste")
+    if not quotes:
+        return 0
+    write_threeballs_csv(quotes, event=event_name, round_no=int(round_no))
+    return len({q.group_id for q in quotes})
 
 
 LIVE_SCORES_CSV = DATA_DIR / "scores_live.csv"
@@ -443,7 +473,7 @@ def _write_live_scores(espn, event, *, use_cache: bool = False) -> int:
 
 
 def _board_freshness_checks(run_started: float, rounds_done: int,
-                            event_id: str) -> list[qa.SourceCheck]:
+                            event_id: str, round_no: int = 1) -> list[qa.SourceCheck]:
     """Warn when an odds board wasn't re-pulled this cycle while a round is live.
 
     A board file older than this refresh run is, by definition, older than the
@@ -457,7 +487,7 @@ def _board_freshness_checks(run_started: float, rounds_done: int,
     boards = {
         "odds.csv": "outright/place",
         "matchups.csv": "tournament matchup",
-        "threeballs.csv": "group",
+        threeballs_csv_path(round_no).name: f"round {int(round_no)} group",
     }
     checks: list[qa.SourceCheck] = []
     for fname, label in boards.items():

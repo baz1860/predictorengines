@@ -152,8 +152,10 @@ function setupPredict() {
   const schema = (eng.schemas && eng.schemas.predict) || eng.predict_schema || {};
   const names = schema.names || [];
   const label = schema.team_label || "Team";
-  $("label-team1").textContent = `${label} 1`;
+  const raceMode = schema.kind === "race";
+  $("label-team1").textContent = raceMode ? label : `${label} 1`;
   $("label-team2").textContent = `${label} 2`;
+  $("team2").parentElement.style.display = raceMode ? "none" : "";
   $("team-names").innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
   const models = schema.models || [];
   const modelSel = $("model");
@@ -174,7 +176,10 @@ function setupPredict() {
   const wrap = $("home-wrap");
   const cb = $("home");
   const t1 = $("team1");
-  if (schema.neutral_toggle) {
+  if (raceMode) {
+    wrap.style.display = "none";
+    wrap.dataset.mode = "";
+  } else if (schema.neutral_toggle) {
     wrap.style.display = "";
     wrap.dataset.mode = "neutral";
     cb.checked = false;
@@ -202,6 +207,8 @@ async function runPredict() {
     team1: $("team1").value.trim(), team2: $("team2").value.trim(),
     model: $("model").value || undefined,
   };
+  const schema = (eng.schemas && eng.schemas.predict) || eng.predict_schema || {};
+  if (schema.kind === "race") params.race_id = params.team1;
   if (mode === "home") params.home = $("home").checked;
   else if (mode === "neutral") params.neutral = $("home").checked;
   readFilters("predict-filters", "predict", params);
@@ -250,6 +257,8 @@ async function runCompare() {
   err.hidden = true;
   const mode = $("home-wrap").dataset.mode;
   const base = { team1: $("team1").value.trim(), team2: $("team2").value.trim() };
+  const schema = (eng.schemas && eng.schemas.predict) || eng.predict_schema || {};
+  if (schema.kind === "race") base.race_id = base.team1;
   if (mode === "home") base.home = $("home").checked;
   else if (mode === "neutral") base.neutral = $("home").checked;
   readFilters("predict-filters", "predict", base);
@@ -539,7 +548,7 @@ async function runEdge(record) {
       const recCount = edgeState.full.filter((x) => x.recommended).length;
       const recBtn = $("edge-record-btn");
       if (record) { recBtn.hidden = true; if (r.recorded) toast(`Recorded ${r.recorded} bet(s)`, "ok"); }
-      else { recBtn.hidden = recCount === 0; recBtn.textContent = `Record ${recCount} recommended`; }
+      else { recBtn.hidden = r.staking_enabled === false || recCount === 0; recBtn.textContent = `Record ${recCount} recommended`; }
     } catch (e) { err.textContent = e.message; err.hidden = false; result.hidden = true; }
   });
 }
@@ -1521,6 +1530,10 @@ function _applyDrawData(d) {
   const boSel = $("draw-best-of");
   if (boSel) boSel.value = String(d.best_of || 3);
   drawState.matches = (d.matches || []).map((m) => ({
+    tourney_name: m.tourney_name || d.tourney_name || "",
+    event_id: m.event_id || "",
+    surface: m.surface || d.surface || "",
+    best_of: m.best_of || d.best_of || 3,
     round: m.round || "",
     player_a: m.player_a || "",
     player_b: m.player_b || "",
@@ -1579,7 +1592,9 @@ async function setupDraw() {
         _applyDrawData(r);
         const upcoming = r.matches.filter((m) => m.state === "pre").length;
         const live = r.matches.filter((m) => m.state === "in").length;
-        fetchNote.textContent = `${r.tourney_name} · ${r.surface} · ${r.matches.length} match${r.matches.length !== 1 ? "es" : ""} fetched` +
+        const events = r.events || (r.tourney_name ? [r.tourney_name] : []);
+        const eventLabel = events.length > 1 ? `${events.length} events` : (r.tourney_name || "draw");
+        fetchNote.textContent = `${eventLabel} · ${r.matches.length} match${r.matches.length !== 1 ? "es" : ""} fetched` +
           (live ? ` (${live} live)` : "") + ` · ${upcoming} upcoming ✓`;
         fetchNote.hidden = false;
         toast("Draw fetched from ESPN", "ok");
@@ -1591,7 +1606,9 @@ async function setupDraw() {
   };
 
   $("draw-add-btn").onclick = () => {
-    drawState.matches.push({ round: "", player_a: "", player_b: "", state: "", winner: "", score: "", match_id: "", odds_a: null, odds_b: null });
+    drawState.matches.push({ tourney_name: $("draw-tourney").value.trim(), event_id: "",
+      surface: $("draw-surface").value, best_of: parseInt($("draw-best-of").value),
+      round: "", player_a: "", player_b: "", state: "", winner: "", score: "", match_id: "", odds_a: null, odds_b: null });
     renderDrawRows();
   };
 

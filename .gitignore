@@ -9,6 +9,7 @@ __pycache__/
 .env
 .venv/
 venv/
+.providers/
 
 # Local command-center/runtime state: SQLite databases, WAL files, caches,
 # and backups are generated on launch and must not be versioned.
@@ -38,6 +39,14 @@ tennis/data/edge_report.csv
 tennis/data/predictions*.csv
 tennis/data/validation_predictions.csv
 tennis/data/odds_history.csv
+horse_racing/data/model_params.json
+horse_racing/data/validation_report.json
+# Licensed provider payloads and derived datasets remain local.
+horse_racing/data/theracingapi/
+horse_racing/data/rpscrape/
+horse_racing/data/betfair/
+horse_racing/data.tar
+horse_racing/data1.tar
 
 # Data provenance manifests (written by update scripts; carry local mtimes).
 data_manifest.json
@@ -137,6 +146,7 @@ golf/data/threeballs_r*.*
 # Manual odds boards are filled in locally per betting day; every engine can
 # regenerate its blank template. (Matches odds.csv in any directory.)
 odds.csv
+!horse_racing/data/odds.csv
 threeballs.csv
 matchups.csv
 
@@ -149,6 +159,8 @@ data/suite_bankroll.json
 
 # Rendered outputs, rebuilt by every run (per-engine cards + the combined one).
 card.md
+card_atp.md
+card_wta.md
 daily_card.md
 golf/data/weekly_report.md
 predictions_worldcup_2026.csv

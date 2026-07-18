@@ -327,12 +327,14 @@ def upsert_events(con: sqlite3.Connection, events: Iterable[Mapping]) -> int:
 def upsert_field(con: sqlite3.Connection, event_id: str, rows: Iterable[Mapping]) -> int:
     rows = list(rows)
     upsert_players(con, rows)
+    seen_ids: set[str] = set()
     for r in rows:
         name = str(r.get("display_name") or r.get("name") or r.get("player") or "").strip()
         if not name:
             continue
         source_id = str(r.get("source_player_id") or r.get("player_id") or r.get("espn_id") or "").strip()
         player_id = str(r.get("player_id") or _pid(name, source_id))
+        seen_ids.add(player_id)
         con.execute(
             """
             INSERT INTO field_entries(event_id, player_id, status, entry_source,
@@ -360,6 +362,17 @@ def upsert_field(con: sqlite3.Connection, event_id: str, rows: Iterable[Mapping]
                 str(r.get("start_hole_r2") or ""),
                 _int_or_none(r.get("world_rank")),
             ),
+        )
+    # Make the field authoritative: drop entries no longer in the fetched field
+    # (withdrawals, and — importantly — players that a previous buggy merge of a
+    # concurrent event left behind). Only prune when we actually have a field, so
+    # a partial/failed fetch never wipes it.
+    if seen_ids:
+        placeholders = ",".join("?" for _ in seen_ids)
+        con.execute(
+            f"DELETE FROM field_entries WHERE event_id = ? "
+            f"AND player_id NOT IN ({placeholders})",
+            (event_id, *seen_ids),
         )
     return len(rows)
 

@@ -22,6 +22,7 @@ from .legacy import (
     RoundsProvider,
     TournamentMeta,
     accumulate_rounds,
+    accumulate_tours,
     get_provider,
     load_rounds,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "RoundsProvider",
     "TournamentMeta",
     "accumulate_rounds",
+    "accumulate_tours",
     "get_provider",
     "load_rounds",
     "EspnGolfProvider",

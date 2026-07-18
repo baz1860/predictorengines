@@ -1,9 +1,9 @@
 """tennis/fetch.py — data layer CLI for the tennis engine.
 
-Source of truth is data/matches.csv, seeded from Jeff Sackmann's free archives
-(no API key). Upcoming fixtures are pulled by tennis.season from ESPN into
-draw.csv. Book prices can be written from a manual template or fetched from
-The Odds API into odds.csv.
+Source of truth is data/matches.csv, accumulated from the free TML ATP archive
+and public WTA results API (with offline historical fallbacks). Upcoming
+fixtures are pulled by tennis.season from ESPN into draw.csv. Book prices can
+be written from a manual template or fetched from The Odds API into odds.csv.
 
 Usage:
   python -m tennis.fetch --seed 2019 2020 2021 2022 2023 2024 2025
@@ -35,10 +35,10 @@ from .providers import (
 DRAW_CSV = DATA_DIR / "draw.csv"
 ODDS_CSV = DATA_DIR / "odds.csv"
 
-DRAW_COLUMNS = ["tour", "tourney_name", "surface", "best_of", "round",
+DRAW_COLUMNS = ["tour", "tourney_name", "event_id", "surface", "best_of", "round",
                 "player_a", "player_b", "state", "winner", "score", "match_id"]
-ODDS_COLUMNS = ["tour", "surface", "best_of", "player_a", "player_b",
-                "odds_a", "odds_b"]
+ODDS_COLUMNS = ["tour", "tourney_name", "event_id", "surface", "best_of",
+                "player_a", "player_b", "odds_a", "odds_b"]
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 DEFAULT_ODDS_API_KEY = get_key("the-odds-api", env="THE_ODDS_API_KEY")
 
@@ -88,6 +88,8 @@ def _draw_index(tour: str) -> dict[tuple[str, str], dict]:
             except ValueError:
                 best_of = 3
             out[key] = {
+                "tourney_name": (r.get("tourney_name") or "").strip(),
+                "event_id": (r.get("event_id") or "").strip(),
                 "player_a": a,
                 "player_b": b,
                 "surface": (r.get("surface") or "hard").lower(),
@@ -149,7 +151,7 @@ def fetch_odds_api(tour: str = "atp", event: str = "", api_key: str | None = Non
         raise ValueError(f"No active Odds API tennis sport found for {label}.")
 
     rows: list[dict] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, tuple[str, str]]] = set()
     for sport in sport_keys:
         key = sport["key"]
         title = str(sport.get("title") or key)
@@ -187,6 +189,8 @@ def fetch_odds_api(tour: str = "atp", event: str = "", api_key: str | None = Non
             if meta:
                 out_a, out_b = meta["player_a"], meta["player_b"]
                 surface, best_of = meta["surface"], meta["best_of"]
+                tourney_name = meta.get("tourney_name", "")
+                event_id = meta.get("event_id", "")
                 # Preserve draw order. Provider home/away can be opposite.
                 if _pair_key(out_a, out_b) != _pair_key(a, b):
                     continue
@@ -199,15 +203,20 @@ def fetch_odds_api(tour: str = "atp", event: str = "", api_key: str | None = Non
             else:
                 out_a, out_b = a, b
                 surface, best_of = fallback_surface, fallback_best_of
+                tourney_name = title
+                event_id = str(ev.get("sport_key") or key)
                 odds_a = statistics.median(prices[fold_name(a)])
                 odds_b = statistics.median(prices[fold_name(b)])
 
             row_key = _pair_key(out_a, out_b)
-            if row_key in seen:
+            seen_key = (tourney_name.lower(), row_key)
+            if seen_key in seen:
                 continue
-            seen.add(row_key)
+            seen.add(seen_key)
             rows.append({
                 "tour": tour.lower(),
+                "tourney_name": tourney_name,
+                "event_id": event_id,
                 "surface": surface,
                 "best_of": best_of,
                 "player_a": out_a,
@@ -273,7 +282,8 @@ def main() -> None:
         return
     if args.odds_template:
         write_template(ODDS_CSV, ODDS_COLUMNS,
-                       {"tour": "atp", "surface": "grass", "best_of": 5,
+                       {"tour": "atp", "tourney_name": "Wimbledon", "event_id": "",
+                        "surface": "grass", "best_of": 5,
                         "player_a": "Carlos Alcaraz", "player_b": "Jannik Sinner",
                         "odds_a": "1.85", "odds_b": "2.00"})
         return

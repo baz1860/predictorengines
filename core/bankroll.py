@@ -28,7 +28,7 @@ import pandas as pd
 DATA = Path(__file__).resolve().parents[1] / "data"
 STATE = DATA / "bankroll.json"
 LEDGER = DATA / "ledger.csv"
-KO_OVERRIDES = DATA / "ko_overrides.csv"   # date,home,away,score90 (90-min score)
+KO_OVERRIDES = DATA / "ko_overrides.csv"   # date,home,away,score90[,winner]
 START_BANKROLL = 100.0
 MIN_STAKE = 0.10   # don't bother recording stakes below 10p
 
@@ -113,9 +113,11 @@ def place_bets(candidates):
 def _load_ko_overrides():
     """90-minute knockout scores keyed by (date, home, away).
 
-    File schema: date,home,away,score90  where score90 is e.g. "1-1" (the score
-    at the end of 90 minutes, before any extra time). Team names must match the
-    dataset / ledger spelling. Missing or malformed file => no overrides."""
+    File schema: date,home,away,score90[,winner] where score90 is e.g. "1-1"
+    (the score at the end of 90 minutes, before any extra time). The optional
+    winner column is used by the tournament simulator for penalty shootouts;
+    it is ignored by bet settlement. Team names must match the dataset / ledger
+    spelling. Missing or malformed file => no overrides."""
     if not KO_OVERRIDES.exists():
         return {}
     try:

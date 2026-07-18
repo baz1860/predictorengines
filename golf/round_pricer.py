@@ -17,7 +17,9 @@ from . import edge as E
 from . import market as MK
 from . import model as M
 from .providers.odds_manual import (ManualOddsProvider, OddsQuote,
-                                    THREEBALLS_CSV, board_event, norm_event)
+                                    THREEBALLS_CSV, board_event, norm_event,
+                                    post_cut_round, threeballs_csv_path,
+                                    threeballs_raw_path)
 
 DATA_DIR = Path(__file__).parent / "data"
 OUT_CSV = DATA_DIR / "round_edges.csv"
@@ -88,6 +90,22 @@ def price_round_groups(
         if q.market in ROUND_GROUP_MARKETS:
             groups.setdefault(q.group_id, []).append(q)
 
+    round_no = next((q.round_no for qs in groups.values() for q in qs if q.round_no), 1)
+    # Post-cut rounds (3 and 4) are played in twosomes. A 3-ball group tagged
+    # for one of these rounds is an impossible market — the group market is
+    # inferred from group size, so this means a stale round-1/2 threesome board
+    # is being re-priced for a later round. Refuse rather than invent a group
+    # no book offers.
+    if post_cut_round(round_no):
+        oversized = [gid for gid, qs in groups.items() if len(qs) >= 3]
+        if oversized:
+            raw_name = threeballs_raw_path(round_no).name
+            raise ValueError(
+                f"Round {int(round_no)} is played in 2-balls after the cut, but the "
+                f"round-group board has {len(oversized)} three-ball group(s) — this is "
+                f"a stale round-1/2 board. Paste this round's 2-ball tee groups into "
+                f"golf/data/{raw_name} and rerun refresh before pricing.")
+
     names = sorted({q.player_name for qs in groups.values() for q in qs})
     if not names:
         return []
@@ -119,7 +137,6 @@ def price_round_groups(
                 start_hole_r2=item.start_hole_r2,
             )
         field_items.append(item)
-    round_no = next((q.round_no for qs in groups.values() for q in qs if q.round_no), 1)
     rated = M.predict_field(
         field_items, params, course=course, is_major=is_major, round_no=int(round_no or 1))
     rating = {
@@ -228,9 +245,13 @@ def main() -> None:
     if not params:
         raise SystemExit("No model_params.json - run python -m golf.model --fit first.")
     bankroll = args.bankroll if args.bankroll is not None else E.load_bankroll()
+    board_csv = threeballs_csv_path(args.round_no)
+    raw_name = threeballs_raw_path(args.round_no).name
     quotes = ManualOddsProvider().load_threeballs(event_id=args.event_id, round_no=args.round_no)
     if not quotes:
-        raise SystemExit("No 3-ball odds found. Add golf/data/threeballs.csv or run golf.refresh on a raw paste.")
+        raise SystemExit(
+            f"No round-group odds found for round {args.round_no}. Paste this "
+            f"round's tee groups into golf/data/{raw_name} and run golf.refresh.")
     try:
         field_names = [p.name for p in M.load_field(players=M.load_players())]
     except FileNotFoundError:
@@ -239,12 +260,12 @@ def main() -> None:
     # Same event-tag guard as engine.cmd_round_3balls: name overlap alone
     # cannot catch a stale board when consecutive events share players.
     if current_event:
-        tag = board_event(THREEBALLS_CSV)
+        tag = board_event(board_csv)
         if norm_event(tag) != norm_event(current_event):
             raise SystemExit(
                 f"Round-group board is from '{tag or 'an untagged capture'}' but the "
                 f"current event is '{current_event}' — stale board. Re-paste this "
-                "event's tee groups into golf/data/threeballs_r1_raw.txt and rerun "
+                f"event's tee groups into golf/data/{raw_name} and rerun "
                 "golf.refresh.")
     missing = field_mismatch(quotes, field_names, params)
     if missing:
@@ -252,7 +273,7 @@ def main() -> None:
             f"Round-group board does not match the current field: {len(missing)} "
             f"player(s) are not in field.csv (stale board from another event?): "
             + ", ".join(missing)
-            + "\nRe-paste this event's tee groups into golf/data/threeballs_r1_raw.txt "
+            + f"\nRe-paste this event's tee groups into golf/data/{raw_name} "
               "and rerun golf.refresh."
         )
     rows = price_round_groups(
