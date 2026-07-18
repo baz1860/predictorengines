@@ -432,15 +432,27 @@ def main():
     ap.add_argument("--seed", nargs="*", type=int, metavar="YEAR",
                     help="Backfill data/rounds.csv for the given seasons "
                          "(e.g. --seed 2022 2023 2024 2025) and exit")
+    ap.add_argument("--tours", default="pga",
+                    help="Comma-separated tours to accumulate/seed: "
+                         "pga, liv, eur (DP World Tour). Default: pga. "
+                         "Example: --tours pga,liv,eur")
     args = ap.parse_args()
 
     # ── Round-history accumulation (v2 data store) ──
     if args.accumulate or args.seed is not None:
-        from .providers import accumulate_rounds, get_provider
+        from .providers import accumulate_rounds, accumulate_tours, get_provider
         seasons = args.seed if args.seed else None
-        provider = get_provider(seasons=seasons, need="history")
-        added = accumulate_rounds(provider)
-        print(f"Done. {added} new round(s) recorded.")
+        tours = [t.strip() for t in str(args.tours).split(",") if t.strip()]
+        if tours == ["pga"]:
+            # Unchanged default path: keyed provider (DataGolf) when available.
+            provider = get_provider(seasons=seasons, need="history")
+            added = accumulate_rounds(provider)
+            print(f"Done. {added} new round(s) recorded.")
+        else:
+            results = accumulate_tours(tours, seasons=seasons)
+            total = sum(results.values())
+            summary = ", ".join(f"{t}: {n}" for t, n in results.items())
+            print(f"Done. {total} new round(s) recorded ({summary}).")
         return
 
     fetched_field = []

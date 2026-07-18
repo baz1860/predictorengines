@@ -171,9 +171,12 @@ def load_bundle(data_dir: str | Path | None = None) -> DataBundle:
     if not results.empty and results["result_published_at"].isna().any():
         raise DataError("every result requires result_published_at")
     if not odds.empty:
-        bad_odds = odds["decimal_odds"].isna() | (odds["decimal_odds"] <= 1.0)
+        bad_odds = (odds["decimal_odds"].isna()
+                    | ~np.isfinite(odds["decimal_odds"])
+                    | (odds["decimal_odds"] <= 1.0))
         if bad_odds.any():
-            raise DataError("every populated odds row requires decimal_odds > 1.0")
+            raise DataError(
+                "every populated odds row requires finite decimal_odds > 1.0")
         if odds["captured_at"].isna().any():
             raise DataError("every odds row requires captured_at")
 

@@ -24,7 +24,8 @@ from . import refresh as GREF
 from . import round_pricer as GRP
 from . import simulate as GSIM
 from . import simulate_inplay as GSIP
-from .providers.odds_manual import ManualOddsProvider, board_event, norm_event
+from .providers.odds_manual import (ManualOddsProvider, board_event, norm_event,
+                                    threeballs_csv_path, threeballs_raw_path)
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -199,7 +200,7 @@ def cmd_refresh(p):
         stats=bool(p.get("stats", False)),
         weather=bool(p.get("weather", False)),
         odds_api_sport=p.get("odds_api_sport", "") or "",
-        manual_raw=p.get("manual_raw", "") or str(GREF.THREEBALLS_RAW),
+        manual_raw=p.get("manual_raw", "") or str(threeballs_raw_path(round_no)),
         round_no=round_no,
         fit=bool(p.get("fit", False)),
         use_cache=bool(p.get("use_cache", False)),
@@ -506,16 +507,20 @@ def cmd_round_3balls(p):
         raise ValueError("No model_params.json - run model.py --fit first.")
     round_no = int(p.get("round", p.get("round_no", 1)) or 1)
     event_id = p.get("event_id", "") or ""
+    board_csv = threeballs_csv_path(round_no)
+    raw_name = threeballs_raw_path(round_no).name
     quotes = ManualOddsProvider().load_threeballs(event_id=event_id, round_no=round_no)
     if not quotes:
-        raise ValueError("No 3-ball odds found in golf/data/threeballs.csv.")
+        raise ValueError(
+            f"No round-group odds found for round {round_no}. Paste this round's "
+            f"tee groups into golf/data/{raw_name} and rerun refresh.")
     # Event-tag staleness guard. The name-overlap check below cannot tell
     # consecutive events apart when their fields overlap (a co-sanctioned week
     # shares most of the tour), so the board must carry the event it was
     # captured for and it must be this one.
     current_event = _current_event_name()
     if current_event:
-        tag = board_event(DATA_DIR / "threeballs.csv")
+        tag = board_event(board_csv)
         if norm_event(tag) != norm_event(current_event):
             try:
                 GRP.OUT_CSV.unlink(missing_ok=True)
@@ -525,12 +530,12 @@ def cmd_round_3balls(p):
                 raise ValueError(
                     f"Round-group board is from '{tag}' but the current event is "
                     f"'{current_event}' — stale board. Re-paste this event's tee "
-                    "groups into golf/data/threeballs_r1_raw.txt and rerun refresh.")
+                    f"groups into golf/data/{raw_name} and rerun refresh.")
             raise ValueError(
                 "Round-group board has no event tag, so it can't be verified "
                 f"against the current event ('{current_event}'). Rerun refresh "
-                "(boards it writes are tagged), or add an 'event' column to "
-                f"golf/data/threeballs.csv with the value '{current_event}'.")
+                f"(boards it writes are tagged), or add an 'event' column to "
+                f"golf/data/{board_csv.name} with the value '{current_event}'.")
     missing = set(GRP.field_mismatch(quotes, _field_names(), params))
     if missing:
         board_players = {q.player_name for q in quotes
@@ -554,7 +559,7 @@ def cmd_round_3balls(p):
                 f"from another event?): " + ", ".join(sorted(missing)[:12])
                 + ("…" if len(missing) > 12 else "")
                 + ". Re-paste this event's tee groups into "
-                  "golf/data/threeballs_r1_raw.txt and rerun refresh.")
+                  f"golf/data/{raw_name} and rerun refresh.")
         bad_groups = {q.group_id for q in quotes if q.player_name in missing}
         quotes = [q for q in quotes if q.group_id not in bad_groups]
         if not quotes:

@@ -745,6 +745,57 @@ def _public_stat_prior(name: str, params: dict, canon: str | None = None) -> flo
     return None
 
 
+_STAT_ALIGN_CACHE: dict[int, dict] = {}
+
+
+def _public_stat_alignment(params: dict) -> dict | None:
+    """Location/scale mapping public SG-total priors onto the fitted-skill scale.
+
+    Fitted skill is measured against the full modelled pool (tour regulars sit
+    well above 0), while public SG-total is measured against the PGA Tour field
+    (tour regulars sit near 0). Blending them raw drags any player who *has* a
+    public prior toward ~0 while players without one keep full skill, which
+    inverts head-to-head ordering (a strong player with a prior can be rated
+    below a weaker one without). Matching the prior's mean and spread to the
+    fitted-skill distribution over the overlap set makes the blend a genuine
+    regularisation in one coordinate system. Cached per params object.
+    """
+    key = id(params)
+    if key in _STAT_ALIGN_CACHE:
+        return _STAT_ALIGN_CACHE[key] or None
+    players = params.get("players", {}) or {}
+    fw = float(params.get("form_weight", FORM_WEIGHT))
+    fits: list[float] = []
+    pubs: list[float] = []
+    for name, d in players.items():
+        if "skill" not in d:
+            continue
+        sp = _public_stat_prior(name, params, name)
+        if sp is None:
+            continue
+        fits.append(float(d["skill"]) + fw * float(d.get("form", 0.0)))
+        pubs.append(sp)
+    if len(fits) < 10:
+        _STAT_ALIGN_CACHE[key] = {}
+        return None
+    import statistics as _st
+    align = {
+        "fit_mean": _st.fmean(fits), "fit_sd": _st.pstdev(fits) or 1.0,
+        "pub_mean": _st.fmean(pubs), "pub_sd": _st.pstdev(pubs) or 1.0,
+    }
+    _STAT_ALIGN_CACHE[key] = align
+    return align
+
+
+def _aligned_public_prior(stat_prior: float, params: dict) -> float:
+    """Rescale a public SG-total prior onto the fitted-skill scale."""
+    a = _public_stat_alignment(params)
+    if not a:
+        return stat_prior
+    z = (stat_prior - a["pub_mean"]) / a["pub_sd"]
+    return a["fit_mean"] + z * a["fit_sd"]
+
+
 def _public_stat_components(name: str, params: dict, canon: str | None = None) -> dict[str, float]:
     priors = params.get("public_stat_priors", {}) or {}
     candidates = [canon, name]
@@ -979,6 +1030,10 @@ def _rating_for_components(name: str, params: dict, course: str = "",
         components["base"] = skill
         components["form"] = form_adj
         if stat_prior is not None:
+            # Public priors live on the PGA-Tour-relative SG scale; map them onto
+            # the fitted-skill scale before blending so the regularisation can't
+            # invert head-to-head ordering (see _public_stat_alignment).
+            stat_prior = _aligned_public_prior(stat_prior, params)
             blend = float(params.get("public_stat_blend", PUBLIC_STAT_BLEND))
             components["public_stat"] = blend * (stat_prior - rating)
             rating = (1 - blend) * rating + blend * stat_prior

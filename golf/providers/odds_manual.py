@@ -19,8 +19,30 @@ from .. import provider_qa as qa
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 ODDS_CSV = DATA_DIR / "odds.csv"
 MATCHUPS_CSV = DATA_DIR / "matchups.csv"
+# Legacy single-round board paths. Round boards are now per-round files
+# (threeballs_r{N}.csv / threeballs_r{N}_raw.txt) so a round-1 threesome board
+# cannot bleed into a round-3 pricing run. These names are kept for back-compat
+# and as the round-1 fallback.
 THREEBALLS_CSV = DATA_DIR / "threeballs.csv"
 THREEBALLS_RAW = DATA_DIR / "threeballs_r1_raw.txt"
+
+
+def threeballs_csv_path(round_no) -> Path:
+    """Parsed round-group board file for a given round."""
+    try:
+        n = int(round_no)
+    except (TypeError, ValueError):
+        n = 1
+    return DATA_DIR / f"threeballs_r{n}.csv"
+
+
+def threeballs_raw_path(round_no) -> Path:
+    """Raw paste file for a given round's tee groups."""
+    try:
+        n = int(round_no)
+    except (TypeError, ValueError):
+        n = 1
+    return DATA_DIR / f"threeballs_r{n}_raw.txt"
 
 
 @dataclass(frozen=True)
@@ -64,6 +86,20 @@ def _parse_odds(token: str) -> float | None:
 def _group_market(n_players: int) -> str:
     """Round-group market tag by field size: twosomes vs threesomes."""
     return "2ball" if n_players == 2 else "3ball"
+
+
+# Rounds played after the 36-hole cut. The field is halved and everyone goes
+# out in twosomes, so a 3-ball group tagged for one of these rounds is an
+# impossible market — in practice a leftover round-1/2 board being re-priced.
+POST_CUT_ROUNDS = (3, 4)
+
+
+def post_cut_round(round_no) -> bool:
+    """True if round_no is a post-cut round (played in 2-balls)."""
+    try:
+        return int(round_no) in POST_CUT_ROUNDS
+    except (TypeError, ValueError):
+        return False
 
 
 class ManualOddsProvider:
@@ -141,7 +177,13 @@ class ManualOddsProvider:
 
     def load_threeballs(self, path: Path | None = None, event_id: str = "",
                         round_no: int | None = 1) -> list[OddsQuote]:
-        path = path or THREEBALLS_CSV
+        if path is None:
+            path = threeballs_csv_path(round_no)
+            # Round-1 back-compat: fall back to the legacy single-board file if
+            # no per-round file has been written yet. Later rounds get no such
+            # fallback, so a leftover round-1 board can't serve round 3/4.
+            if not path.exists() and int(round_no or 1) == 1 and THREEBALLS_CSV.exists():
+                path = THREEBALLS_CSV
         if not path.exists():
             return []
         out = []
@@ -239,8 +281,14 @@ def parse_skybet_threeball_text(text: str) -> list[dict]:
 
 
 def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
-                         event: str = "") -> Path:
-    path = path or THREEBALLS_CSV
+                         event: str = "", round_no: int | None = None) -> Path:
+    quotes = list(quotes)
+    if path is None:
+        # Default to the per-round board file. Prefer an explicit round_no, else
+        # infer it from the quotes so each round's board lands in its own file.
+        if round_no is None:
+            round_no = next((q.round_no for q in quotes if q.round_no), 1)
+        path = threeballs_csv_path(round_no)
     path.parent.mkdir(parents=True, exist_ok=True)
     by_group: dict[str, list[OddsQuote]] = {}
     for q in quotes:

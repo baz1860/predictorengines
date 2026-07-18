@@ -145,9 +145,19 @@ def build_card(
     # Refresh ascertains the current event (ESPN) and records the live state —
     # which rounds are complete — into live_state.json. cmd_simulate / cmd_edge
     # then auto-route to the in-play simulator off that state.
+    refresh_round = None
     if refresh:
+        # The round is only *finalised* by the live-leaderboard read inside the
+        # refresh, but the refresh also needs the round up front to load the
+        # right per-round manual board (threeballs_r{round}_raw.txt). Pre-detect
+        # it from the last known live state so a --round-less run still reads the
+        # current round's paste; any change is reconciled below.
+        prelim = _read_json(LIVE_STATE_JSON)
+        prelim_done = int(prelim.get("rounds_done") or 0)
+        refresh_round = (round_no if round_no is not None
+                         else (prelim_done + 1 if prelim_done else 1))
         manifest = GREF.run_refresh(season=season, event=event_id, stats=stats,
-                                    weather=weather, fit=fit, round_no=round_no or 1)
+                                    weather=weather, fit=fit, round_no=refresh_round)
         event = manifest.get("event") or {}
         notes.append("refresh: " + (event.get("name") or "current event"))
 
@@ -157,6 +167,16 @@ def build_card(
     rounds_done = int(live_state.get("rounds_done") or 0)
     if round_no is None:
         round_no = rounds_done + 1 if rounds_done else 1
+
+    # If the finalised round moved past what the refresh parsed the manual board
+    # for (a round completed during this run), parse the target round's paste now
+    # so the round pricer finds threeballs_r{round}.csv.
+    if refresh and refresh_round != round_no:
+        parsed = GREF.ensure_round_board(
+            round_no, event_name=event.get("name") or "",
+            event_id=event.get("event_id") or event_id)
+        if parsed:
+            notes.append(f"round {round_no} board: {parsed} group(s) parsed from paste")
 
     event_name = (event.get("name") or live_state.get("event_name")
                   or _field_event())
@@ -190,6 +210,12 @@ def build_card(
     try:
         GENG.cmd_round_3balls(dict(base, round_no=round_no))  # → round_edges.csv
     except ValueError as exc:
+        # Pricing didn't run, so any existing round_edges.csv is from a previous
+        # round/run. Clear it so the card can't report phantom round bets.
+        try:
+            ROUND_3BALL_CSV.unlink(missing_ok=True)
+        except OSError:
+            pass
         notes.append(f"round 3-balls skipped: {exc}")
 
     predictions = _read_csv(PREDICTIONS_CSV)
@@ -381,11 +407,15 @@ def _notes_section(manifest: dict, notes: list[str]) -> str:
     if errors:
         lines.append(f"- ⚠ {len(errors)} data error(s) — see free_source_manifest.json")
     if warnings:
-        # Freshness/staleness warnings carry an actionable fix command, so show
-        # the messages, not just a count. Others stay summarised.
-        fresh = [w for w in warnings if str(w.get("source", "")).startswith("freshness.")]
-        other = [w for w in warnings if w not in fresh]
-        for w in fresh:
+        # High-signal warnings carry an actionable message (a fix command, or a
+        # data-integrity red flag like a merged/implausible field), so show them
+        # verbatim. Others stay summarised.
+        def _high_signal(w: dict) -> bool:
+            src = str(w.get("source", ""))
+            return src.startswith("freshness.") or src == "espn.field"
+        shown = [w for w in warnings if _high_signal(w)]
+        other = [w for w in warnings if w not in shown]
+        for w in shown:
             lines.append(f"- ⚠ {w.get('message')}")
         if other:
             lines.append(f"- {len(other)} other data warning(s) — see free_source_manifest.json")

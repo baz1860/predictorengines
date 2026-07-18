@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import scipy
 from scipy.optimize import minimize, minimize_scalar
-from scipy.special import logsumexp
 
 from .features import FEATURES, FEATURE_SCHEMA_VERSION, build_feature_frame
 from .config import (ALLOWED_CODES, ALLOWED_JURISDICTIONS, DEFAULT_CUTOFF_MINUTES)
@@ -20,7 +19,7 @@ from .schema import (DATA_DIR, DataBundle, DataError, load_bundle, race_cutoff,
                      race_row, runner_snapshot)
 
 ARTIFACT_PATH = DATA_DIR / "model_params.json"
-MODEL_NAME = "regularized_conditional_logit_v1"
+MODEL_NAME = "regularized_conditional_logit_v2"
 
 
 def _file_sha256(path: Path) -> str | None:
@@ -57,6 +56,21 @@ def _code_sha256() -> str:
     return digest.hexdigest()
 
 
+def _data_provenance(data_dir: Path) -> dict | None:
+    path = data_dir / "provider_manifest.json"
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {"provider": "unknown", "validation_grade": "invalid_manifest"}
+    if not isinstance(payload, dict):
+        return {"provider": "unknown", "validation_grade": "invalid_manifest"}
+    return {key: payload.get(key) for key in (
+        "provider", "validation_grade", "assumptions", "rpscrape_commit",
+        "rpscrape_safety_patch_sha256", "raw_files") if key in payload}
+
+
 def _valid_labelled(frame: pd.DataFrame) -> pd.DataFrame:
     valid = []
     for rid, group in frame.groupby("race_id", sort=False):
@@ -65,8 +79,8 @@ def _valid_labelled(frame: pd.DataFrame) -> pd.DataFrame:
     return frame[frame["race_id"].astype(str).isin(valid)].copy()
 
 
-def _matrix(frame: pd.DataFrame, means=None, scales=None):
-    x = frame[FEATURES].astype(float).to_numpy()
+def _matrix(frame: pd.DataFrame, means=None, scales=None, features=None):
+    x = frame[list(features) if features is not None else FEATURES].astype(float).to_numpy()
     if means is None:
         means = np.nanmean(x, axis=0)
     if scales is None:
@@ -80,24 +94,46 @@ def _groups(frame: pd.DataFrame) -> list[np.ndarray]:
     return [np.asarray(idx, dtype=int) for idx in frame.groupby("race_id", sort=False).indices.values()]
 
 
-def _fit_coefficients(frame: pd.DataFrame, l2: float = 1.0):
-    frame = frame.reset_index(drop=True)
-    x, means, scales = _matrix(frame)
-    y = frame["won"].astype(float).to_numpy()
+def _group_layout(frame: pd.DataFrame):
+    """Contiguous group layout for vectorized grouped-softmax computation.
+
+    Returns a row permutation making races contiguous, the group start
+    offsets within that permutation, and each permuted row's group index.
+    """
     groups = _groups(frame)
+    order = np.concatenate(groups)
+    lengths = np.asarray([len(idx) for idx in groups], dtype=int)
+    starts = np.concatenate([[0], np.cumsum(lengths)[:-1]])
+    row_group = np.repeat(np.arange(len(lengths)), lengths)
+    return order, starts, row_group
+
+
+def _grouped_softmax(z: np.ndarray, starts: np.ndarray,
+                     row_group: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Probabilities and per-group log-sum-exp over contiguous groups."""
+    gmax = np.maximum.reduceat(z, starts)
+    expz = np.exp(z - gmax[row_group])
+    sums = np.add.reduceat(expz, starts)
+    return expz / sums[row_group], gmax + np.log(sums)
+
+
+def _fit_coefficients(frame: pd.DataFrame, l2: float = 1.0, features=None):
+    names = list(features) if features is not None else FEATURES
+    frame = frame.reset_index(drop=True)
+    x, means, scales = _matrix(frame, features=names)
+    y = frame["won"].astype(float).to_numpy()
+    order, starts, row_group = _group_layout(frame)
+    x_o, y_o = x[order], y[order]
+    winner_rows = np.flatnonzero(y_o == 1.0)
 
     def objective(beta):
-        logits = x @ beta
-        loss = 0.5 * l2 * float(beta @ beta)
-        grad = l2 * beta.copy()
-        for idx in groups:
-            z = logits[idx]
-            probs = np.exp(z - logsumexp(z))
-            loss += float(logsumexp(z) - z[np.argmax(y[idx])])
-            grad += x[idx].T @ (probs - y[idx])
+        z = x_o @ beta
+        probs, lse = _grouped_softmax(z, starts, row_group)
+        loss = 0.5 * l2 * float(beta @ beta) + float(lse.sum() - z[winner_rows].sum())
+        grad = l2 * beta + x_o.T @ (probs - y_o)
         return loss, grad
 
-    result = minimize(lambda b: objective(b), np.zeros(len(FEATURES)), jac=True,
+    result = minimize(lambda b: objective(b), np.zeros(len(names)), jac=True,
                       method="L-BFGS-B", options={"maxiter": 500, "ftol": 1e-11})
     if not result.success:
         raise RuntimeError(f"conditional-logit fit failed: {result.message}")
@@ -105,31 +141,33 @@ def _fit_coefficients(frame: pd.DataFrame, l2: float = 1.0):
 
 
 def _probabilities(frame: pd.DataFrame, beta, means, scales,
-                   temperature: float = 1.0) -> np.ndarray:
+                   temperature: float = 1.0, features=None) -> np.ndarray:
     frame = frame.reset_index(drop=True)
-    x, _, _ = _matrix(frame, np.asarray(means), np.asarray(scales))
+    x, _, _ = _matrix(frame, np.asarray(means), np.asarray(scales), features=features)
     logits = x @ np.asarray(beta)
+    order, starts, row_group = _group_layout(frame)
+    z = logits[order] / max(float(temperature), 0.05)
+    probs, _ = _grouped_softmax(z, starts, row_group)
     out = np.zeros(len(frame), dtype=float)
-    for idx in _groups(frame):
-        z = logits[idx] / max(float(temperature), 0.05)
-        out[idx] = np.exp(z - logsumexp(z))
+    out[order] = probs
     return out
 
 
-def _temperature(frame: pd.DataFrame, beta, means, scales) -> float:
+def _temperature(frame: pd.DataFrame, beta, means, scales, features=None) -> float:
     frame = frame.reset_index(drop=True)
     y = frame["won"].astype(float).to_numpy()
-    x, _, _ = _matrix(frame, np.asarray(means), np.asarray(scales))
+    x, _, _ = _matrix(frame, np.asarray(means), np.asarray(scales), features=features)
     logits = x @ np.asarray(beta)
-    groups = _groups(frame)
+    order, starts, row_group = _group_layout(frame)
+    z_o, y_o = logits[order], y[order]
+    winner_rows = np.flatnonzero(y_o == 1.0)
+    n_groups = len(starts)
 
     def nll(log_t):
         t = float(np.exp(log_t))
-        total = 0.0
-        for idx in groups:
-            z = logits[idx] / t
-            total += float(logsumexp(z) - z[np.argmax(y[idx])])
-        return total / max(len(groups), 1)
+        z = z_o / t
+        _, lse = _grouped_softmax(z, starts, row_group)
+        return float(lse.sum() - z[winner_rows].sum()) / max(n_groups, 1)
 
     result = minimize_scalar(nll, bounds=(np.log(0.25), np.log(4.0)), method="bounded")
     return float(np.exp(result.x)) if result.success else 1.0
@@ -151,9 +189,11 @@ def _race_metrics(frame: pd.DataFrame, p: np.ndarray) -> dict:
 
 def fit(bundle: DataBundle | None = None, data_dir: str | Path | None = None,
         min_races: int = 30, l2: float = 1.0,
-        cutoff_minutes: int = DEFAULT_CUTOFF_MINUTES) -> dict:
+        cutoff_minutes: int = DEFAULT_CUTOFF_MINUTES,
+        half_life_scale: float = 1.0) -> dict:
     bundle = bundle or load_bundle(data_dir)
-    frame = _valid_labelled(build_feature_frame(bundle, cutoff_minutes=cutoff_minutes))
+    frame = _valid_labelled(build_feature_frame(bundle, cutoff_minutes=cutoff_minutes,
+                                                half_life_scale=half_life_scale))
     race_order = (frame[["race_id", "scheduled_off_utc"]].drop_duplicates()
                   .sort_values("scheduled_off_utc"))
     n_races = len(race_order)
@@ -178,6 +218,7 @@ def fit(bundle: DataBundle | None = None, data_dir: str | Path | None = None,
         frame[["race_id", "runner_id", "won", *FEATURES]], index=False
     ).values.tobytes()).hexdigest()
     git = git_provenance()
+    data_provenance = _data_provenance(bundle.data_dir)
     artifact = {
         "model": MODEL_NAME,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
@@ -187,6 +228,7 @@ def fit(bundle: DataBundle | None = None, data_dir: str | Path | None = None,
         "scales": [float(v) for v in scales],
         "temperature": float(temperature),
         "l2": float(l2), "cutoff_minutes": int(cutoff_minutes),
+        "half_life_scale": float(half_life_scale),
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "trained_through": str(race_order.iloc[-1]["scheduled_off_utc"]),
         "n_races": int(n_races), "n_runners": int(len(frame)),
@@ -201,6 +243,9 @@ def fit(bundle: DataBundle | None = None, data_dir: str | Path | None = None,
         "input_checksums": {name: _file_sha256(bundle.data_dir / f"{name}.csv")
                             for name in ("races", "runners", "results")},
         "git_commit": git["commit"], "git_dirty": bool(git["dirty"]),
+        "data_provenance": data_provenance,
+        "deployment_eligible": bool(
+            data_provenance and data_provenance.get("validation_grade") == "point_in_time"),
         "code_sha256": _code_sha256(),
         "environment": {"python": platform.python_version(),
                         "numpy": np.__version__, "pandas": pd.__version__,
@@ -244,7 +289,8 @@ def predict_race(race_id: str, bundle: DataBundle | None = None,
     artifact = artifact or load_artifact(artifact_path or artifact_path_for(data_dir))
     cutoff_minutes = int(artifact.get("cutoff_minutes", 15))
     frame = build_feature_frame(bundle, [str(race_id)], cutoff_minutes=cutoff_minutes,
-                                include_labels=False)
+                                include_labels=False,
+                                half_life_scale=float(artifact.get("half_life_scale", 1.0)))
     if frame.empty:
         raise DataError(f"race {race_id!r} has fewer than two eligible runners at cutoff")
     p = _probabilities(frame, artifact["coefficients"], artifact["means"],

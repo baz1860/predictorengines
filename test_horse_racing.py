@@ -22,7 +22,7 @@ from horse_racing.features import FEATURES, build_feature_frame
 from horse_racing.model import (fit, git_provenance, load_artifact, predict_race,
                                 save_artifact)
 from horse_racing.schema import DataError, load_bundle
-from horse_racing.validate import walk_forward
+from horse_racing.validate import main as validate_main, walk_forward
 
 
 def _synthetic(root: Path, n_completed: int = 72) -> str:
@@ -157,6 +157,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         current = _synthetic(root)
+        synthetic_odds = pd.read_csv(root / "odds.csv")
+        synthetic_odds[["race_id", "runner_id", "decimal_odds"]].assign(
+            price_type="official_starting_price",
+            available_at="2025-01-01T00:00:00+00:00", source="synthetic"
+        ).to_csv(root / "starting_prices.csv", index=False)
         bundle = load_bundle(root)
         artifact = fit(bundle=bundle, min_races=30)
         save_artifact(artifact, root / "model_params.json")
@@ -249,12 +254,36 @@ def main() -> int:
         assert not infinite_size["board_complete"].any()
         assert not infinite_size["recommended"].any()
 
+        infinite_odds_root = root / "infinite-odds"
+        infinite_odds_root.mkdir()
+        _synthetic(infinite_odds_root)
+        malformed_odds = pd.read_csv(infinite_odds_root / "odds.csv", dtype=str)
+        quote = malformed_odds["race_id"] == current
+        malformed_odds.loc[quote, "decimal_odds"] = "1e999"
+        malformed_odds.to_csv(infinite_odds_root / "odds.csv", index=False)
+        try:
+            load_bundle(infinite_odds_root)
+            raise AssertionError("non-finite decimal odds should be rejected at ingestion")
+        except DataError:
+            pass
+
         _preds, report = walk_forward(root, min_train=30, test_size=14)
         assert report["metrics"]["p_model"]["races"] >= 35
         assert report["metrics"]["p_model"]["log_loss"] \
             < report["metrics"]["p_uniform"]["log_loss"]
         assert report["metrics"]["p_market"]["races"] >= 35
+        assert report["metrics"]["p_starting_price"]["races"] >= 35
+        assert report["paired_logloss"]["model_minus_starting_price"]["races"] >= 35
         assert report["paired_logloss"]["model_minus_uniform"]["races"] >= 35
+        assert report["market_selection"]["matched"]["races"] >= 35
+        assert report["market_selection"]["unmatched"]["races"] == 0
+        assert "scope_note" in report["market_selection"]
+        (root / "provider_manifest.json").write_text(json.dumps({
+            "provider": "the_racing_api", "validation_grade": "research_only",
+        }))
+        assert validate_main(["--data-dir", str(root), "--gate"]) == 2
+        assert validate_main(["--data-dir", str(root), "--write-baseline"]) == 2
+        assert not (root / "validation_baseline.json").exists()
 
         # Use a separate copy because this deliberately appends a correction.
         correction_root = root / "correction"

@@ -9,6 +9,7 @@ __pycache__/
 .env
 .venv/
 venv/
+.providers/
 
 # Local command-center/runtime state: SQLite databases, WAL files, caches,
 # and backups are generated on launch and must not be versioned.
@@ -40,6 +41,12 @@ tennis/data/validation_predictions.csv
 tennis/data/odds_history.csv
 horse_racing/data/model_params.json
 horse_racing/data/validation_report.json
+# Licensed provider payloads and derived datasets remain local.
+horse_racing/data/theracingapi/
+horse_racing/data/rpscrape/
+horse_racing/data/betfair/
+horse_racing/data.tar
+horse_racing/data1.tar
 
 # Data provenance manifests (written by update scripts; carry local mtimes).
 data_manifest.json

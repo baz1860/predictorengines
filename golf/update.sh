@@ -26,7 +26,12 @@ echo "  Golf engine v2 update  $(date '+%Y-%m-%d %H:%M')"
 echo "════════════════════════════════════════════"
 
 echo ""; echo "── 1/5 Accumulate latest results → rounds.csv ──"
-python3 -m golf.fetch --accumulate || echo "  accumulate skipped (offline)"
+# Tours to keep current. PGA uses the keyed provider (DataGolf) when available;
+# LIV + DP World Tour (eur) come from ESPN — the only free source that carries
+# them — so their players stay fitted from real rounds instead of manual priors.
+# Override with e.g. GOLF_TOURS=pga to revert to PGA-only.
+GOLF_TOURS="${GOLF_TOURS:-pga,liv,eur}"
+python3 -m golf.fetch --accumulate --tours "$GOLF_TOURS" || echo "  accumulate skipped (offline)"
 
 echo ""; echo "── 2/5 Refresh current field + odds ──"
 FETCH_ARGS="--espn"

@@ -152,6 +152,17 @@ def _add_days(iso_date: str, days: int) -> str:
 
 ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
 ESPN_LEADERBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard"
+# Tour-aware scoreboard template. ESPN carries every tour under the same JSON
+# shape; only the slug changes. `eur` is the DP World Tour (league id 7002),
+# `liv` is LIV Golf (league id 1109).
+ESPN_SCOREBOARD_TMPL = "https://site.api.espn.com/apis/site/v2/sports/golf/{tour}/scoreboard"
+# Friendly aliases → ESPN url slug. The slug is also what we store in the
+# rounds.csv `tour` column so downstream filters can tell tours apart.
+TOUR_SLUGS = {
+    "pga": "pga",
+    "liv": "liv",
+    "eur": "eur", "dpwt": "eur", "euro": "eur", "european": "eur",
+}
 
 
 class EspnProvider:
@@ -160,30 +171,40 @@ class EspnProvider:
     One call per season (`scoreboard?dates=YYYY`) returns every completed event
     with each competitor's per-round linescores embedded, so a few calls seed
     years of history. Raw season payloads are cached under data/api_cache/.
+
+    ``tour`` selects the circuit: ``pga`` (default), ``liv`` (LIV Golf), or
+    ``eur`` (DP World Tour). The same parser works for all three because ESPN
+    returns an identical event/competitor/linescore shape per tour. Majors are
+    only ingested from the PGA feed; on LIV/DPWT they are skipped so a player's
+    major rounds are never double-counted under two tournament ids.
     """
 
     name = "espn"
     supports_history = True
 
-    def __init__(self, seasons: Optional[Iterable[int]] = None):
+    def __init__(self, seasons: Optional[Iterable[int]] = None,
+                 tour: str = "pga"):
         if seasons is None:
             yr = _dt.date.today().year
             seasons = [yr - 1, yr]
         self.seasons = sorted(set(int(s) for s in seasons))
+        self.tour_slug = TOUR_SLUGS.get(str(tour).lower(), str(tour).lower())
+        self.name = f"espn-{self.tour_slug}"
         self._events: dict[str, dict] = {}   # tournament_id → raw event payload
         self._meta: dict[str, TournamentMeta] = {}
 
     # -- season payloads (cached) --
     def _season_payload(self, year: int) -> Optional[dict]:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache = CACHE_DIR / f"espn_pga_{year}.json"
+        cache = CACHE_DIR / f"espn_{self.tour_slug}_{year}.json"
         is_complete_past = year < _dt.date.today().year
         if cache.exists() and is_complete_past:
             try:
                 return json.loads(cache.read_text())
             except (ValueError, OSError):
                 pass
-        data = _http_json(f"{ESPN_SCOREBOARD}?dates={year}")
+        url = ESPN_SCOREBOARD_TMPL.format(tour=self.tour_slug)
+        data = _http_json(f"{url}?dates={year}")
         if data is not None and data.get("events"):
             try:
                 cache.write_text(json.dumps(data))
@@ -210,12 +231,17 @@ class EspnProvider:
                 if not tid:
                     continue
                 name = ev.get("name", "")
+                # Majors appear on the PGA feed already; skip any that surface on
+                # the LIV/DPWT feeds so the same rounds aren't ingested twice
+                # under different tournament ids.
+                if self.tour_slug != "pga" and _is_major(name):
+                    continue
                 date = (ev.get("date") or "")[:10]
                 comp = (ev.get("competitions") or [{}])[0]
                 course = _espn_course(ev, comp) or name
                 self._events[tid] = ev
                 self._meta[tid] = TournamentMeta(
-                    tournament_id=tid, name=name, date=date, tour="pga",
+                    tournament_id=tid, name=name, date=date, tour=self.tour_slug,
                     is_major=_is_major(name), course=course)
 
     def recent_tournaments(self, since: Optional[str] = None) -> list[TournamentMeta]:
@@ -414,6 +440,34 @@ def accumulate_rounds(provider: Optional[RoundsProvider] = None,
     if verbose:
         print(f"  +{len(new_rows)} rounds → {ROUNDS_CSV} ({len(all_rows)} total)")
     return len(new_rows)
+
+
+def accumulate_tours(tours: Iterable[str],
+                     seasons: Optional[Iterable[int]] = None,
+                     since: Optional[str] = None,
+                     verbose: bool = True) -> dict[str, int]:
+    """Accumulate round history for several tours into the one rounds.csv.
+
+    ``tours`` accepts slugs or aliases (``pga``, ``liv``, ``eur``/``dpwt``).
+    Each tour is fetched with its own ESPN feed and appended via the same
+    idempotent, offline-safe ``accumulate_rounds`` path. PGA always uses the
+    keyed provider when available (DataGolf) so nothing regresses; LIV/DPWT go
+    straight to ESPN, which is the only free source that carries them.
+
+    Returns ``{tour_slug: rows_added}``.
+    """
+    seasons = list(seasons) if seasons is not None else None
+    results: dict[str, int] = {}
+    for tour in tours:
+        slug = TOUR_SLUGS.get(str(tour).lower(), str(tour).lower())
+        if slug == "pga":
+            provider: RoundsProvider = get_provider(seasons=seasons, need="history")
+        else:
+            provider = EspnProvider(seasons=seasons, tour=slug)
+        if verbose:
+            print(f"── tour: {slug} ──")
+        results[slug] = accumulate_rounds(provider, since=since, verbose=verbose)
+    return results
 
 
 if __name__ == "__main__":

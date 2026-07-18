@@ -122,14 +122,31 @@ class EspnGolfProvider:
     def current_event(self, event_id: str | None = None,
                       use_cache: bool = False) -> EspnEvent | None:
         payload = self.current_event_payload(event_id, use_cache=use_cache)
-        events = payload.get("events", []) or []
+        events = self._events_for(payload, event_id)
         return _event_from_payload(events[0]) if events else None
+
+    @staticmethod
+    def _events_for(payload: dict, event_id: str | None) -> list[dict]:
+        """The single target event's payload entries.
+
+        ESPN's scoreboard returns the whole week's board — several concurrent
+        tournaments (e.g. The Open alongside the Barracuda Championship). All the
+        per-competitor readers below must scope to one event or they merge fields
+        from every event that week. Match the requested id; otherwise fall back to
+        the featured (first) event, matching current_event's behaviour.
+        """
+        events = payload.get("events", []) or []
+        if event_id:
+            matched = [ev for ev in events if str(ev.get("id") or "") == str(event_id)]
+            if matched:
+                return matched
+        return events[:1]
 
     def field(self, event_id: str | None = None,
               use_cache: bool = False) -> list[EspnFieldEntry]:
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         out = []
-        for ev in payload.get("events", []) or []:
+        for ev in self._events_for(payload, event_id):
             for comp in ev.get("competitions", []) or []:
                 for c in comp.get("competitors", []) or []:
                     athlete = c.get("athlete") or {}
@@ -156,7 +173,7 @@ class EspnGolfProvider:
                          use_cache: bool = False) -> list[dict]:
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         rows = []
-        for ev in payload.get("events", []) or []:
+        for ev in self._events_for(payload, event_id):
             eid = str(ev.get("id") or event_id or "")
             for comp in ev.get("competitions", []) or []:
                 for c in comp.get("competitors", []) or []:
@@ -177,7 +194,7 @@ class EspnGolfProvider:
                     use_cache: bool = False) -> list[HoleScore]:
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         out = []
-        for ev in payload.get("events", []) or []:
+        for ev in self._events_for(payload, event_id):
             eid = str(ev.get("id") or event_id or "")
             for comp in ev.get("competitions", []) or []:
                 for c in comp.get("competitors", []) or []:
@@ -238,7 +255,7 @@ class EspnGolfProvider:
         """
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         players: list[dict] = []
-        for ev in payload.get("events", []) or []:
+        for ev in self._events_for(payload, event_id):
             for comp in ev.get("competitions", []) or []:
                 for c in comp.get("competitors", []) or []:
                     athlete = c.get("athlete") or {}
@@ -302,6 +319,7 @@ class EspnGolfProvider:
         return [
             qa.require_columns("espn.field", rows, ["name", "status", "source_player_id"]),
             qa.min_rows("espn.field", rows, 20),
+            qa.field_size("espn.field", rows),
         ]
 
     def _json(self, label: str, url: str, params: dict | None = None,

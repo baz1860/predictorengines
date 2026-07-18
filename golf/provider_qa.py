@@ -62,6 +62,29 @@ def min_rows(source: str, rows: Iterable[Mapping], minimum: int) -> SourceCheck:
     return SourceCheck(source, True, "info", f"{n} row(s)", n)
 
 
+def field_size(source: str, rows: Iterable[Mapping], ceiling: int = 160) -> SourceCheck:
+    """Flag an implausibly large field.
+
+    No single stroke-play tournament on these tours fields more than ~156
+    players (majors included), so a materially larger count almost always means
+    the board merged several concurrent events (e.g. The Open + the Barracuda
+    Championship the same week). Warn rather than error so a genuinely unusual
+    field never blocks a run.
+    """
+    n = len(list(rows))
+    if n > ceiling:
+        return SourceCheck(
+            source,
+            False,
+            "warning",
+            f"field has {n} players (> {ceiling}) — implausibly large for a single "
+            "tournament; likely a merged board from concurrent events. Check the "
+            "event scoping before trusting the field/leaderboard.",
+            n,
+        )
+    return SourceCheck(source, True, "info", f"field size {n} plausible", n)
+
+
 def file_freshness(source: str, path: str | Path, max_age_hours: float) -> SourceCheck:
     p = Path(path)
     if not p.exists():
