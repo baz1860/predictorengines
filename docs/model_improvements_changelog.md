@@ -310,3 +310,159 @@ in case it's reverted.
 
 ### Files
 - none changed for this phase
+
+## Club Soccer Phase 8 — canonical identities and league environment experiment (2026-07-11)
+
+Added canonical match reconciliation on date + competition + home + away. This
+fixed duplicate provider records where football-data and BSD assigned different
+IDs to the same match; the richer BSD detail row is retained and conflicting
+scores remain a health failure rather than being averaged. The clean fixture
+file now contains 17,830 played matches and the health check reports zero
+duplicate identities.
+
+Added a gated hierarchical league-season scoring environment and home-advantage
+candidate. League-only estimates use recency-weighted empirical-Bayes shrinkage
+to both season-level and competition-level fallbacks; cup and European fixtures
+retain the existing competition-strength path.
+
+**Result:** on 16,879 identical walk-forward predictions, the candidate was
+rejected. Incumbent Brier was **0.612495** and log-loss **1.021347**; candidate
+Brier was **0.612744** (+0.000250) and log-loss **1.021674** (+0.000327).
+OU2.5 Brier improved slightly (0.245318 → 0.245214), but the primary 1X2
+metrics worsened. The fitted tables are stored with
+`league_adjustments_active=false` for future re-testing; live probabilities
+remain on the incumbent model.
+
+### Files
+- `club_soccer/identities.py`
+- `club_soccer/model.py`, `club_soccer/validate.py`
+- `club_soccer/data/validation_league_adjustments.json`
+
+## Club Soccer Phase 9 — temperature calibration promoted (2026-07-11)
+
+The prior isotonic calibration candidate improved Brier on one held-out slice
+but worsened log-loss, so it stayed inactive. Replaced it with a single
+multiclass temperature parameter fitted on prior walk-forward predictions.
+
+The fixed time-split gate improved both primary metrics on every split:
+
+- 2025-01: ΔBrier **−0.000178**, Δlog-loss **−0.000344**
+- 2025-07: ΔBrier **−0.000275**, Δlog-loss **−0.000466**
+- 2025-12: ΔBrier **−0.000411**, Δlog-loss **−0.000629**
+
+The all-data fitted temperature is **0.925**. Across 16,879 walk-forward
+predictions, Brier improved **0.612495 → 0.612271** and log-loss improved
+**1.021347 → 1.020937**. The calibration is now active for the displayed
+1X2 probabilities and pricing paths; the underlying score model remains
+unchanged.
+
+### Files
+- `club_soccer/calibrate.py`, `club_soccer/validate.py`
+- `club_soccer/data/calibration.json`
+
+## Club Soccer Phase 10 — BSD historical backfill and context promotion (2026-07-11)
+
+Backfilled BSD event details for tracked fixtures from 2025-08-01 through
+2026-05-31. The fixture history grew to **20,348 played matches**, real xG
+coverage rose from **3.1% to 16.5%** (3,366 matches), and player cache
+coverage now spans **2025-08-05 to 2026-07-09** with 27,690 applications.
+Canonical identity and score-conflict checks remain clean.
+
+On the same clean walk-forward framework, the raw model improved from the
+pre-backfill **0.612495 / 1.021347** (Brier / log-loss) to **0.611685 /
+1.020271** after the data backfill. BSD-detail rows are also materially more
+predictive in the diagnostic split: xG component Brier **0.610338** versus
+**0.618763** for rows without BSD xG. This is a source diagnostic, not a
+separate promotion claim.
+
+The context fit was re-run with the expanded cup and European history. The
+minutes-load player term remains inactive because point-in-time coverage is
+only 5%. Rest differential, European hangover and cup tier gap passed an
+ensemble held-out gate: Brier **0.6076 → 0.6068** and log-loss
+**1.0149 → 1.0139** on 2025-12 onward. Those coefficients are now active.
+
+Combined production walk-forward performance is **0.611244 / 1.019665**
+before calibration and **0.611079 / 1.019382** after the re-gated
+temperature calibration. Ensemble weight re-tuning was still rejected by
+the time-split gate.
+
+### Files
+- `club_soccer/data/fixtures.csv`, `club_soccer/data/bsd_cache/`
+- `club_soccer/data/player_stats_cache.json`
+- `club_soccer/data/context_coef_club.json`
+- `club_soccer/context.py`, `test_club_soccer.py`
+
+## Club Soccer Phase 11 — 2024–25 historical backfill (2026-07-11)
+
+Pulled the previous season from BSD with a 2,500-detail request budget. The
+canonical fixture history now contains **22,377 played matches** and
+**24,997 total fixtures**. The pull added score history and 11 additional
+real-xG rows, but older BSD detail coverage is materially thinner: overall
+real-xG coverage is now **15.1%**, while SoT coverage is **86.9%**.
+
+The expanded raw production path is **0.611198 Brier / 1.019589 log-loss**
+over 21,062 walk-forward predictions. This is a small raw improvement versus
+the previous backfill, but the temperature calibration candidate failed the
+early fixed splits (it improved only the recent split), so calibration is
+held inactive. This is intentional: the extra history stays in the model,
+but no calibration lift is claimed until the next rolling data refresh
+re-establishes the gate.
+
+Player cache history now reaches 2025-07-08, but minutes-load coverage remains
+below 5% and is not activated.
+
+## Club Soccer Phase 12 — paper-informed player-quality layer (2026-07-11)
+
+The metric-stability preprint was converted into a point-in-time feature layer,
+not a direct match-model assumption. `player_quality.py` builds recent top-XI
+snapshots from pre-match appearances, shrinks xG/90 by position, shrinks pass
+completion by pass count, and returns neutral output for low-coverage teams.
+The model now has an optional `quality_adj` path, but it is gated separately
+from availability and cannot affect production while inactive.
+
+The fixed-split gate currently has **0 usable rows out of 21,062**: BSD's
+historical event details contain match-level information but no player rows,
+and the player-stat endpoint returned empty responses for the older cached
+events. The artifact is therefore written with `active: false`; this is a
+coverage failure rather than evidence that player quality has no predictive
+value. Current-season BSD player data remains useful for lineups and
+availability, but a historical player backfill is required before this signal
+can be judged fairly.
+
+### Files
+- `club_soccer/player_quality.py`
+- `club_soccer/data/player_quality.json`
+- `club_soccer/model.py`, `club_soccer/player_features.py`
+- `test_club_soccer.py`, `club_soccer/README.md`
+
+## Club Soccer Phase 13 — Bzzoiro v2 spatial/player enrichment (2026-07-11)
+
+Added a resumable Bzzoiro-compatible v2 collector for match shotmaps, team
+stats, confirmed lineups, incidents and per-match player statistics. The
+completed cache contains **712 league matches**: all 380 Premier League
+matches in the requested window plus 332 matches from La Liga, Serie A,
+Bundesliga and Ligue 1 before the provider rate-limited the remaining bulk
+backfill. Every cached match has a shotmap and confirmed lineup, and all 712
+have player rows: **29,511 player-match observations**, with zero endpoint
+failures. All rows joined to canonical fixtures (699 exact, 13 same-pair/date
+fallback joins).
+
+The first model challenger was deliberately conservative: fill only missing
+complete xG pairs from the Bzzoiro shotmap and preserve existing xG. It filled
+158 pairs. On the 2025/26 point-in-time window (7,003 predictions), Brier moved
+from **0.610597 to 0.610642** and log-loss from **1.019031 to 1.019091**. The
+small regression fails the 1X2 promotion gate, so the production fixture file
+and model remain unchanged. OU2.5 and BTTS diagnostics moved slightly better,
+but that is not sufficient to promote a 1X2 training change.
+
+The raw cache is retained for a second experiment using pre-match rolling
+shot quality and player availability. The collector supports resumable
+low-rate continuation after the provider throttle; no data is discarded when
+an endpoint is unavailable.
+
+### Files
+- `club_soccer/bsd_enrichment.py`, `bsd_client.py`
+- `club_soccer/data/bsd_enrichment/`
+- `club_soccer/data/bsd_enriched_matches.csv`
+- `club_soccer/data/bsd_enrichment_manifest.csv`
+- `club_soccer/validate.py`, `test_club_soccer.py`

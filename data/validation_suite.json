@@ -1,29 +1,47 @@
 {
-  "generated_at": "2026-06-21T11:40:29",
+  "generated_at": "2026-07-11T12:27:42",
   "engines": {
     "worldcup": {
       "status": "PASS",
       "returncode": 0,
-      "seconds": 0.8,
-      "detail": "     59.8%    0.5125     0.8728\n50/50 blend       60.3%    0.5104     0.8684\nSub-window since 2024-01-01 (v1 reference: blend 60.4% / 0.5038)  (n=2578)\nmodel           accuracy     Brier   log-loss\nElo+Poisson       60.2%    0.5082     0.8632\nDixon-Coles       59.9%    0.5063     0.8631\n50/50 blend       60.3%    0.5043     0.8586\n[gate] blend Brier 0.5104 vs baseline 0.5099 (limit 0.5119) -> PASS"
+      "seconds": 0.9,
+      "detail": "     59.9%    0.5122     0.8724\n50/50 blend       60.4%    0.5097     0.8676\nSub-window since 2024-01-01 (v1 reference: blend 60.4% / 0.5038)  (n=2640)\nmodel           accuracy     Brier   log-loss\nElo+Poisson       60.3%    0.5066     0.8611\nDixon-Coles       60.0%    0.5059     0.8627\n50/50 blend       60.5%    0.5032     0.8573\n[gate] blend Brier 0.5097 vs baseline 0.5099 (limit 0.5119) -> PASS"
     },
     "club_soccer": {
       "status": "PASS",
       "returncode": 0,
-      "seconds": 13.6,
-      "detail": " tested 501\n  [43/48] 2026-05  tested 274\n  [44/48] 2027-01  tested 36\n  [45/48] 2027-02  tested 16\n  [46/48] 2027-03  tested 16\n  [47/48] 2027-04  tested 10\n  [48/48] 2027-05  tested 2\n  (172 matches skipped \u2014 team unseen in its training window)\nWalk-forward Club Soccer validation (n=16794)\naccuracy 49.1%  Brier 0.6124  log-loss 1.0211\n[gate] Brier 0.6124 vs baseline 0.6124 (limit 0.6224) -> PASS"
+      "seconds": 12.0,
+      "detail": "[39/43] 2026-01  tested 573\n  [40/43] 2026-02  tested 523\n  [41/43] 2026-03  tested 481\n  [42/43] 2026-04  tested 501\n  [43/43] 2026-05  tested 274\n  (172 matches skipped \u2014 team unseen in its training window)\nWalk-forward Club Soccer validation (n=16714)\naccuracy 49.0%  Brier 0.6126  log-loss 1.0214\nOU2.5 Brier 0.2453  BTTS Brier 0.2475\n[gate] Brier 0.6126 vs baseline 0.6124 (limit 0.6224) -> PASS"
     },
     "cfb": {
       "status": "PASS",
       "returncode": 0,
-      "seconds": 3.4,
-      "detail": "1879   (acc 70.4%)\n  margin_mae 12.78\n  total_mae  13.05\n  ATS ROI:    \u22650.0:-3.6%  \u22651.0:-4.1%  \u22652.0:-1.5%  \u22653.0:-5.5%  \u22654.0:-9.6%\n  Totals ROI: \u22650.0:+0.7%  \u22651.0:+2.8%  \u22652.0:+2.7%  \u22653.0:+4.6%  \u22654.0:+6.6%\nmetric         current  baseline     limit  status\nml_brier        0.1879    0.1879    0.1929  PASS\nmargin_mae     12.7840   12.7840   13.2840  PASS\ntotal_mae      13.0480   13.0480   13.5480  PASS"
+      "seconds": 3.7,
+      "detail": "1879   (acc 70.4%)\n  margin_mae 12.79\n  total_mae  13.02\n  ATS ROI:    \u22650.0:-4.1%  \u22651.0:-4.1%  \u22652.0:-2.1%  \u22653.0:-5.7%  \u22654.0:-8.1%\n  Totals ROI: \u22650.0:+1.9%  \u22651.0:+1.3%  \u22652.0:+1.5%  \u22653.0:+5.7%  \u22654.0:+0.2%\nmetric         current  baseline     limit  status\nml_brier        0.1879    0.1879    0.1929  PASS\nmargin_mae     12.7910   12.7840   13.2840  PASS\ntotal_mae      13.0230   13.0480   13.5480  PASS"
     },
     "golf": {
       "status": "PASS",
       "returncode": 0,
-      "seconds": 52.3,
-      "detail": ")\n   0.35 \u2192  0.48  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (3350)\n   0.45 \u2192  0.54  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (3778)\n   0.55 \u2192  0.62  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (3143)\n   0.64 \u2192  0.71  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (1633)\n   0.74 \u2192  0.78  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (763)\n   0.85 \u2192  0.87  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (786)\n   0.96 \u2192  0.94  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (1489)\nBaseline headline Brier 0.14475  \u2192  now 0.14377  (\u0394 -0.00098, tol 0.004)"
+      "seconds": 68.6,
+      "detail": ")\n   0.35 \u2192  0.46  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (3559)\n   0.45 \u2192  0.54  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (4355)\n   0.55 \u2192  0.62  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (3345)\n   0.64 \u2192  0.71  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (1422)\n   0.75 \u2192  0.82  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (566)\n   0.86 \u2192  0.88  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (768)\n   0.95 \u2192  0.94  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (1443)\nBaseline headline Brier 0.14553  \u2192  now 0.14405  (\u0394 -0.00148, tol 0.004)"
+    },
+    "tennis": {
+      "status": "PASS",
+      "returncode": 0,
+      "seconds": 14.4,
+      "detail": "\u2588\u2588\u2588\u2588\u2588  (379)\n   0.36 \u2192  0.30  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (1433)\n   0.46 \u2192  0.42  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (3097)\n   0.54 \u2192  0.56  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (3423)\n   0.64 \u2192  0.73  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (1467)\n   0.74 \u2192  0.83  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (565)\n   0.83 \u2192  0.92  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (130)\n   0.90 \u2192  1.00  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  (1)\nBaseline headline Brier 0.22317  \u2192  now 0.22317  (\u0394 +0.00000, tol 0.005)"
+    },
+    "nfl": {
+      "status": "PASS",
+      "returncode": 0,
+      "seconds": 6.9,
+      "detail": "r reliability: mean |gap| = 0.092 over 10 bins\n  push-rate calibration (predicted vs actual, at key numbers):\n    |line|=3: predicted 7.4%  actual 10.2%  (n=433)\n    |line|=7: predicted 5.2%  actual 6.4%  (n=172)\n    |line|=6: predicted 3.6%  actual 4.2%  (n=142)\n    |line|=10: predicted 3.7%  actual 7.5%  (n=80)\n  ok  margin_mae: 10.2935 (baseline 10.2935)\n  ok  ml_brier: 0.2245 (baseline 0.2245)"
+    },
+    "nhl": {
+      "status": "PASS",
+      "returncode": 0,
+      "seconds": 0.5,
+      "detail": "ok  margin_mae: 2.1810 (baseline 2.1810)\n  ok  brier: 0.2578 (baseline 0.2578)"
     }
   }
 }

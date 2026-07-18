@@ -42,10 +42,13 @@ for p in (str(ROOT), str(HERE)):
         sys.path.insert(0, p)
 
 from api_keys import get_key
-from bsd_client import get_all_events, get_event, league_name as bsd_league_name
+from bsd_client import (fixture_detail_fields, get_all_events, get_event,
+                        league_name as bsd_league_name,
+                        normalized_match_statistics)
 from .competitions import COMPETITIONS, comp_from_bsd_league
 from . import model as M
 from .names import make_canon
+from .fetch import _merge_fixture_rows
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
@@ -117,7 +120,7 @@ def _bsd_to_row(event: dict, comp_name: str, comp_api_id: int,
     except (ValueError, IndexError):
         season = None
 
-    return {
+    row = {
         "fixture_id": event.get("id"),
         "date": date_str,
         "season": season,
@@ -133,13 +136,13 @@ def _bsd_to_row(event: dict, comp_name: str, comp_api_id: int,
         "away_goals": away_goals,
         "status": status_raw.upper()[:3] if status_raw else "",
         "neutral": 0,
-        "home_shots": "",
-        "away_shots": "",
-        "home_sot": "",
-        "away_sot": "",
-        "home_corners": "",
-        "away_corners": "",
+        "home_shots": "", "away_shots": "", "home_sot": "", "away_sot": "",
+        "home_corners": "", "away_corners": "", "xg_source": "",
     }
+    for col, value in fixture_detail_fields(event).items():
+        if value is not None and value != "":
+            row[col] = value
+    return row
 
 
 def fetch_fixtures(seasons: list[int] | None, key: str,
@@ -150,7 +153,7 @@ def fetch_fixtures(seasons: list[int] | None, key: str,
 
     # Fetch upcoming and finished
     all_events: list[dict] = []
-    for status in ("upcoming", "finished"):
+    for status in ("notstarted", "finished"):
         try:
             all_events.extend(get_all_events(key, status=status))
         except Exception as exc:
@@ -216,26 +219,14 @@ def _extract_stats(event_detail: dict) -> dict[str, dict[str, int | str]]:
     """
     result: dict[str, dict] = {"home": {}, "away": {}}
 
-    # Format 1: nested statistics dict {"home": [...], "away": [...]}
-    stats = event_detail.get("statistics") or event_detail.get("stats") or {}
-    if isinstance(stats, dict):
-        for side in ("home", "away"):
-            side_data = stats.get(side) or {}
-            if isinstance(side_data, list):
-                for s in side_data:
-                    col = STAT_LIST_MAP.get(str(s.get("type", "")).strip().lower())
-                    if col:
-                        result[side][col] = _num(s.get("value"))
-            elif isinstance(side_data, dict):
-                for field, col in STAT_FIELDS.items():
-                    if field in side_data:
-                        result[side][col] = _num(side_data[field])
-    # Format 2: top-level home_shots, away_corners, etc.
+    stats = normalized_match_statistics(event_detail)
     for side in ("home", "away"):
-        for field, col in STAT_FIELDS.items():
-            full = f"{side}_{field}"
-            if full in event_detail and col not in result[side]:
-                result[side][col] = _num(event_detail[full])
+        result[side] = {
+            "shots": _num(stats[side].get("shots")),
+            "sot": _num(stats[side].get("sot")),
+            "corners": _num(stats[side].get("corners")),
+            "xg": stats[side].get("xg"),
+        }
 
     return result
 
@@ -262,20 +253,25 @@ def fetch_stats(df: pd.DataFrame, key: str, max_stats: int,
             except Exception as exc:
                 print(f"  ! BSD event {fid}: {exc}")
                 continue
-        by_id[str(fid)] = _extract_stats(detail)
+        by_id[str(fid)] = detail
         if n % 25 == 0:
             print(f"  ...{n}/{len(todo)}")
 
-    for col in ("home_shots", "away_shots", "home_sot", "away_sot",
-                "home_corners", "away_corners"):
-        side, stat = col.split("_", 1)
-        stat_key = "sot" if stat == "sot" else stat.replace("_", "")
-        # Fix: map column name to stat key correctly
-        stat_key = {"shots": "shots", "sot": "sot", "corners": "corners"}.get(
-            stat, stat)
+    detail_cols = [
+        "home_shots", "away_shots", "home_sot", "away_sot", "home_corners",
+        "away_corners", "home_xg", "away_xg", "home_possession", "away_possession",
+        "home_yellow_cards", "away_yellow_cards", "home_red_cards", "away_red_cards",
+        "home_goals_ht", "away_goals_ht", "home_goals_ft", "away_goals_ft",
+        "extra_time_home_goals", "extra_time_away_goals", "shootout_home",
+        "shootout_away", "shootout_winner", "round_name", "round_number",
+        "group_name", "venue", "neutral",
+    ]
+    for col in detail_cols:
+        if col not in df.columns:
+            df[col] = ""
         df[col] = df.apply(
-            lambda r: by_id.get(str(r["fixture_id"]), {}).get(side, {}).get(stat_key, "")
-            if pd.notna(r.get("fixture_id")) else "",
+            lambda r: fixture_detail_fields(by_id[str(r["fixture_id"])]).get(col, "")
+            if pd.notna(r.get("fixture_id")) and str(r["fixture_id"]) in by_id else r.get(col, ""),
             axis=1,
         )
     return df
@@ -360,17 +356,14 @@ def main() -> None:
         df = fetch_stats(df, key, args.max_stats, args.pause)
 
     if merge:
-        base = pd.read_csv(FIXTURES)
+        base = pd.read_csv(FIXTURES, low_memory=False)
         new_teams = sorted(
             (set(df["home"].dropna()) | set(df["away"].dropna())) - league_teams
         )
         linked = len(
             (set(df["home"].dropna()) | set(df["away"].dropna())) & league_teams
         )
-        merged = (
-            pd.concat([base, df], ignore_index=True)
-            .drop_duplicates(subset=["fixture_id"], keep="first")
-        )
+        merged = _merge_fixture_rows(base, df)
         merged.to_csv(FIXTURES, index=False)
         print(
             f"\nMerged {len(df)} fetched rows -> {FIXTURES} "

@@ -9,6 +9,7 @@ never fatal, per the offline-first / never-raise-out-of-a-pipeline rule.
 from __future__ import annotations
 
 import sys
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from . import model as M
+from .identities import (conflicting_score_identity_count,
+                         duplicate_identity_count)
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -42,19 +45,24 @@ def run_checks() -> dict:
     if not FIXTURES.exists():
         report.update({
             "future_ft_rows": None, "duplicate_fixture_ids": None,
+            "duplicate_match_identities": None, "conflicting_score_identities": None,
             "days_since_last_result": None, "upcoming_count": None,
-            "stats_coverage": None, "ok": False,
+            "stats_coverage": None, "xg_coverage": None,
+            "coverage_by_type": {}, "cup_coverage": {}, "xg_source_counts": {},
+            "player_cache": {}, "ok": False,
             "error": f"{FIXTURES} not found",
         })
         return report
 
-    df = pd.read_csv(FIXTURES)
+    df = pd.read_csv(FIXTURES, low_memory=False)
 
     finished_mask = df["status"].astype(str).str.upper().isin(_FINISHED_STATUSES)
     future_ft = df[finished_mask & (df["date"].astype(str) > str(today))]
     report["future_ft_rows"] = int(len(future_ft))
 
     report["duplicate_fixture_ids"] = int(df["fixture_id"].duplicated().sum())
+    report["duplicate_match_identities"] = duplicate_identity_count(df)
+    report["conflicting_score_identities"] = conflicting_score_identity_count(df)
 
     played = df.dropna(subset=["home_goals", "away_goals"])
     if not played.empty:
@@ -70,16 +78,94 @@ def run_checks() -> dict:
     if not played.empty:
         sot_present = played["home_sot"].notna() & played["away_sot"].notna()
         report["stats_coverage"] = round(float(sot_present.mean()), 4)
+        if "home_xg" in played.columns and "away_xg" in played.columns:
+            xg_present = played["home_xg"].notna() & played["away_xg"].notna()
+            report["xg_coverage"] = round(float(xg_present.mean()), 4)
+        else:
+            report["xg_coverage"] = 0.0
+
+        coverage_by_type = {}
+        type_series = (played["type"] if "type" in played.columns
+                       else pd.Series("unknown", index=played.index))
+        for kind, grp in played.groupby(type_series, dropna=False):
+            sot = grp["home_sot"].notna() & grp["away_sot"].notna()
+            xg = ((grp["home_xg"].notna() & grp["away_xg"].notna())
+                  if "home_xg" in grp.columns and "away_xg" in grp.columns
+                  else pd.Series(False, index=grp.index))
+            coverage_by_type[str(kind)] = {
+                "played": int(len(grp)),
+                "sot": round(float(sot.mean()), 4),
+                "xg": round(float(xg.mean()), 4),
+            }
+        report["coverage_by_type"] = coverage_by_type
+        if "xg_source" in played.columns:
+            source = (played["xg_source"].fillna("missing").astype(str).str.strip()
+                      .replace({"": "missing", "nan": "missing"}))
+            report["xg_source_counts"] = {str(k): int(v) for k, v in source.value_counts().items()}
+        else:
+            report["xg_source_counts"] = {"missing": int(len(played))}
+
+        cups = played[played["type"] == "cup"] if "type" in played.columns else played.iloc[0:0]
+        if not cups.empty:
+            cup_cov = {}
+            for comp, grp in cups.groupby("competition"):
+                sot = grp["home_sot"].notna() & grp["away_sot"].notna()
+                xg = ((grp["home_xg"].notna() & grp["away_xg"].notna())
+                      if "home_xg" in grp.columns and "away_xg" in grp.columns
+                      else pd.Series(False, index=grp.index))
+                shootouts = (grp["shootout_winner"].notna()
+                             & grp["shootout_winner"].astype(str).ne("")) \
+                    if "shootout_winner" in grp.columns else pd.Series(False, index=grp.index)
+                cup_cov[str(comp)] = {
+                    "played": int(len(grp)),
+                    "sot": round(float(sot.mean()), 4),
+                    "xg": round(float(xg.mean()), 4),
+                    "shootouts_recorded": int(shootouts.sum()),
+                }
+            report["cup_coverage"] = cup_cov
     else:
         report["stats_coverage"] = None
+        report["xg_coverage"] = None
+        report["coverage_by_type"] = {}
+        report["cup_coverage"] = {}
+        report["xg_source_counts"] = {}
 
-    report["ok"] = report["future_ft_rows"] == 0 and report["duplicate_fixture_ids"] == 0
+    cache = DATA / "player_stats_cache.json"
+    player_report = {"exists": cache.exists(), "schema": None, "players": 0,
+                     "players_with_apps": 0, "apps": 0,
+                     "oldest_app_date": None, "latest_app_date": None}
+    if cache.exists():
+        try:
+            raw = json.loads(cache.read_text())
+            records = [v for k, v in raw.items() if k != "v" and isinstance(v, dict)]
+            app_dates = [str(a.get("date")) for v in records for a in (v.get("apps") or [])
+                         if a.get("date")]
+            player_report.update({
+                "schema": raw.get("v"),
+                "players": len(records),
+                "players_with_apps": sum(bool(v.get("apps")) for v in records),
+                "apps": sum(len(v.get("apps") or []) for v in records),
+                "oldest_app_date": min(app_dates) if app_dates else None,
+                "latest_app_date": max(app_dates) if app_dates else None,
+            })
+        except Exception as exc:
+            player_report["error"] = str(exc)
+    report["player_cache"] = player_report
+
+    report["ok"] = (report["future_ft_rows"] == 0
+                    and report["duplicate_fixture_ids"] == 0
+                    and report["duplicate_match_identities"] == 0
+                    and report["conflicting_score_identities"] == 0)
 
     print(f"Club Soccer health check ({today}):")
     status = "PASS" if report["future_ft_rows"] == 0 else "FAIL"
     print(f"  [{status}] future_ft_rows = {report['future_ft_rows']} (must be 0)")
     status = "PASS" if report["duplicate_fixture_ids"] == 0 else "FAIL"
     print(f"  [{status}] duplicate_fixture_ids = {report['duplicate_fixture_ids']} (must be 0)")
+    status = "PASS" if report["duplicate_match_identities"] == 0 else "FAIL"
+    print(f"  [{status}] duplicate_match_identities = {report['duplicate_match_identities']} (must be 0)")
+    status = "PASS" if report["conflicting_score_identities"] == 0 else "FAIL"
+    print(f"  [{status}] conflicting_score_identities = {report['conflicting_score_identities']} (must be 0)")
 
     if days_since is None:
         print("  [WARN] days_since_last_result: no played rows found")
@@ -92,6 +178,21 @@ def run_checks() -> dict:
     cov = report["stats_coverage"]
     print(f"  [INFO] stats_coverage (SoT present) = "
           f"{'n/a' if cov is None else f'{cov:.1%}'}")
+    xg_cov = report.get("xg_coverage")
+    print(f"  [INFO] xg_coverage (both sides present) = "
+          f"{'n/a' if xg_cov is None else f'{xg_cov:.1%}'}")
+    print(f"  [INFO] xg_sources = {report.get('xg_source_counts', {})}")
+    for kind, values in report.get("coverage_by_type", {}).items():
+        print(f"  [INFO] {kind}: played={values['played']} SoT={values['sot']:.1%} "
+              f"xG={values['xg']:.1%}")
+    if report.get("cup_coverage"):
+        for comp, values in report["cup_coverage"].items():
+            print(f"  [INFO] cup {comp}: played={values['played']} "
+                  f"SoT={values['sot']:.1%} xG={values['xg']:.1%} "
+                  f"shootouts={values['shootouts_recorded']}")
+    pc = report["player_cache"]
+    print(f"  [INFO] player_cache: schema={pc.get('schema')} players={pc.get('players', 0)} "
+          f"apps={pc.get('apps', 0)} latest={pc.get('latest_app_date') or 'n/a'}")
 
     return report
 

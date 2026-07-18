@@ -11,7 +11,35 @@ from __future__ import annotations
 from typing import Iterable
 
 # Bump when the row shape changes in a way that invalidates cached matrices.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
+
+# Canonical fixture shape. Older CSVs are intentionally accepted by
+# model.load_fixtures(), but every new fetch/merge writes these columns so
+# competition context and BSD detail data are not silently discarded.
+FIXTURE_COLUMNS = [
+    "fixture_id", "date", "season", "competition", "competition_id",
+    "country", "type", "home_id", "home", "away_id", "away",
+    "home_goals", "away_goals", "status", "result_scope", "neutral",
+    "home_shots", "away_shots", "home_sot", "away_sot",
+    "home_corners", "away_corners", "home_xg", "away_xg", "xg_source",
+    "home_possession", "away_possession",
+    "home_yellow_cards", "away_yellow_cards",
+    "home_red_cards", "away_red_cards",
+    "home_goals_ht", "away_goals_ht", "home_goals_ft", "away_goals_ft",
+    "extra_time_home_goals", "extra_time_away_goals",
+    "shootout_home", "shootout_away", "shootout_winner",
+    "round_name", "round_number", "group_name", "venue",
+]
+
+FIXTURE_NUMERIC_COLUMNS = [
+    "home_goals", "away_goals", "neutral", "home_shots", "away_shots",
+    "home_sot", "away_sot", "home_corners", "away_corners", "home_xg",
+    "away_xg", "home_possession", "away_possession", "home_yellow_cards",
+    "away_yellow_cards", "home_red_cards", "away_red_cards", "home_goals_ht",
+    "away_goals_ht", "home_goals_ft", "away_goals_ft",
+    "extra_time_home_goals", "extra_time_away_goals", "shootout_home",
+    "shootout_away", "round_number",
+]
 
 # Provenance fields every row carries.
 PROVENANCE_COLUMNS = ["asof", "source", "fetched_at", "schema_version"]

@@ -1,0 +1,54 @@
+{
+  "active": false,
+  "coefficients": {
+    "attack_xg90": 0.0,
+    "pass_pct": 0.0
+  },
+  "lookback_days": 365,
+  "half_life_days": 180.0,
+  "min_player_minutes": 450.0,
+  "min_team_players": 6,
+  "coverage": {
+    "validation_rows": 21062,
+    "usable_rows": 0,
+    "usable_rate": 0.0,
+    "cache_apps": 30407,
+    "cache_teams": 824
+  },
+  "heldout": {
+    "splits": [
+      {
+        "split": "2025-01-01",
+        "train_n": 0,
+        "test_n": 0,
+        "eligible": false
+      },
+      {
+        "split": "2025-07-01",
+        "train_n": 0,
+        "test_n": 0,
+        "eligible": false
+      },
+      {
+        "split": "2025-12-01",
+        "train_n": 0,
+        "test_n": 0,
+        "eligible": false
+      }
+    ],
+    "promote": false,
+    "all_data": {
+      "raw": {
+        "n": 0,
+        "brier": null,
+        "log_loss": null
+      },
+      "candidate": {
+        "n": 0,
+        "brier": null,
+        "log_loss": null
+      }
+    }
+  },
+  "note": "Inactive unless every fixed split has at least 50 training and 100 test rows and both Brier and log-loss improve. Features are point-in-time and neutral on low coverage."
+}
