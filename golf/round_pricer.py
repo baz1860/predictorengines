@@ -30,7 +30,7 @@ ROUND_GROUP_MARKETS = ("2ball", "3ball")
 
 def _norm_name(name: str) -> str:
     """Case/spacing-insensitive key for matching board names to the field."""
-    return " ".join(str(name).casefold().split())
+    return M._fold_name(name)
 
 
 def field_mismatch(quotes: list[OddsQuote], field_names: list[str],
@@ -174,9 +174,15 @@ def price_round_groups(
         for k, q in enumerate(qs):
             is_best = best[k]
             p_best = float(is_best.mean())
-            # Dead-heat expected return per unit stake: if tied, stake is split
-            # across tied winners and each split is paid at the quoted odds.
-            returns = np.where(is_best, q.decimal_odds / tie_count, 0.0)
+            unique_win = is_best & (tie_count == 1)
+            tied_best = is_best & (tie_count > 1)
+            if (q.settlement_rule or "dead_heat") == "push_tie":
+                # A tied 2-ball is void: return the original stake.
+                returns = np.where(unique_win, q.decimal_odds,
+                                   np.where(tied_best, 1.0, 0.0))
+            else:
+                # Dead heat: split the stake across the tied winners.
+                returns = np.where(is_best, q.decimal_odds / tie_count, 0.0)
             expected_return = float(returns.mean())
             ev = expected_return - 1.0
             dead_heat_prob_equiv = expected_return / q.decimal_odds

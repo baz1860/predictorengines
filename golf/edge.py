@@ -29,6 +29,8 @@ import sys
 from itertools import combinations
 from pathlib import Path
 
+from .io_utils import atomic_write_csv
+
 DATA_DIR = Path(__file__).parent / "data"
 PARENT_DATA = Path(__file__).parent.parent / "data"
 
@@ -284,66 +286,10 @@ def evaluate_h2h(
     bankroll: float = 100.0,
     kelly_mult: float = 0.25,
 ) -> list[dict]:
-    """
-    Evaluate head-to-head matchups.
-    odds_data entries need keys: 'h2h_a_odds', 'h2h_b_odds' — or
-    the odds.csv can list individual player lines for head-to-head.
-    """
-    bets = []
-
-    if all_pairs:
-        field_keys = list(preds.keys())
-        pairs = list(combinations(field_keys, 2))
-
-    if not pairs:
-        return bets
-
-    for key_a, key_b in pairs:
-        p_a = h2h_prob_from_predictions(preds, key_a, key_b)
-        if p_a is None:
-            continue
-        p_b = 1.0 - p_a
-
-        name_a = preds[key_a]["name"]
-        name_b = preds[key_b]["name"]
-
-        # Look for odds in odds_data (h2h market column)
-        # Odds.csv h2h format: player, market=h2h, opponent, odds
-        # Fall back: scan for matching h2h entries
-        for key, od in odds_data.items():
-            h2h_odds_a = od.get("h2h_a_odds")
-            h2h_odds_b = od.get("h2h_b_odds")
-            if not h2h_odds_a or not h2h_odds_b:
-                continue
-
-            ev_a = ev(p_a, h2h_odds_a) * 100
-            ev_b = ev(p_b, h2h_odds_b) * 100
-
-            if ev_a >= min_edge:
-                st = stake(p_a, h2h_odds_a, bankroll, kelly_mult)
-                bets.append({
-                    "player":      name_a,
-                    "market":      f"H2H vs {name_b}",
-                    "model_prob":  f"{p_a*100:.1f}%",
-                    "book_odds":   f"{h2h_odds_a:.2f}",
-                    "ev_pct":      f"{ev_a:.1f}%",
-                    "kelly_stake": f"£{st:.2f}",
-                    "rating":      preds[key_a]["rating"],
-                })
-            if ev_b >= min_edge:
-                st = stake(p_b, h2h_odds_b, bankroll, kelly_mult)
-                bets.append({
-                    "player":      name_b,
-                    "market":      f"H2H vs {name_a}",
-                    "model_prob":  f"{p_b*100:.1f}%",
-                    "book_odds":   f"{h2h_odds_b:.2f}",
-                    "ev_pct":      f"{ev_b:.1f}%",
-                    "kelly_stake": f"£{st:.2f}",
-                    "rating":      preds[key_b]["rating"],
-                })
-
-    bets.sort(key=lambda b: float(b["ev_pct"].rstrip("%")), reverse=True)
-    return bets
+    """Retired unsafe legacy API; tournament matchups require keyed pair odds."""
+    raise RuntimeError(
+        "evaluate_h2h is retired because its odds were not keyed to each pair; "
+        "use load_matchup_odds + simulate_tournament + price_all instead.")
 
 
 def evaluate_h2h_no_odds(preds: dict, top_n: int = 20) -> None:
@@ -447,16 +393,22 @@ def load_threeball_odds(path: Path | None = None,
     return out
 
 
-def _bet_row(player, market_label, side, book, p_model, p_final, bankroll, kelly):
-    e = ev(p_final, book)
+def _bet_row(player, market_label, side, book, p_model, p_final, bankroll, kelly,
+             push_prob: float = 0.0):
+    push_prob = min(max(float(push_prob), 0.0), 1.0)
+    e = p_final * float(book) + push_prob - 1.0
+    at_risk = max(0.0, 1.0 - push_prob)
+    conditional_p = p_final / at_risk if at_risk else 0.0
+    kf = max(0.0, kelly_fraction(conditional_p, book) * kelly)
     return {
         "player": player, "market": market_label,
         "bet": f"{market_label} — {player}", "side": side,
         "odds": round(float(book), 2),
         "p_model": round(float(p_final), 4),
         "ev_per_unit": round(float(e), 3),
-        "kelly_frac": round(max(0.0, kelly_fraction(p_final, book) * kelly), 4),
-        "stake_gbp": stake(p_final, book, bankroll, kelly),
+        "kelly_frac": round(kf, 4),
+        "stake_gbp": round(kf * bankroll, 2),
+        "push_prob": round(push_prob, 4) if push_prob else 0.0,
         "_ev": e,
     }
 
@@ -477,7 +429,8 @@ def price_all(rated, results, odds_data, matchup_odds, threeball_odds,
     # outright board → fair win probs (robust to partial boards)
     win_board = {od["name"]: od["odds_win"]
                  for od in odds_data.values() if od.get("odds_win")}
-    win_fair = market.devig_outright(win_board) if win_board else {}
+    board_complete = bool(rated) and len(win_board) >= max(2, int(0.9 * len(rated)))
+    win_fair = market.devig_outright(win_board, complete=board_complete) if win_board else {}
 
     # ── outright / place / cut ──
     for od in odds_data.values():
@@ -488,6 +441,7 @@ def price_all(rated, results, odds_data, matchup_odds, threeball_odds,
         raw = {"win": r["win"], "top5": r["top5"], "top10": r["top10"],
                "top20": r["top20"], "cut": r["made_cut"]}
         probs = calibrate.apply_row(raw, calib_maps) if calibrated else raw
+        offered = {}
         for mkt in PLACE_MARKETS:
             book = od.get(PLACE_COL[mkt])
             if not book:
@@ -497,11 +451,26 @@ def price_all(rated, results, odds_data, matchup_odds, threeball_odds,
             if mkt == "cut" and not cut_binds:
                 continue
             p_model = probs[mkt]
-            if p_model >= CERTAINTY:
-                continue
             p_mkt = win_fair.get(name) if mkt == "win" else market.devig_line(book, mkt)
             p_final = market.blend(p_model, p_mkt, bw.get(mkt, 0.0)) \
                 if (blended and p_mkt) else p_model
+            offered[mkt] = (book, p_model, p_mkt, p_final)
+        # Different blend weights can otherwise violate win ⊆ top5 ⊆ ... .
+        wider = None
+        for mkt in reversed(PLACE_MARKETS):
+            if mkt not in offered:
+                continue
+            book, p_model, p_mkt, p_final = offered[mkt]
+            if wider is not None:
+                p_final = min(p_final, wider)
+            wider = p_final
+            offered[mkt] = (book, p_model, p_mkt, p_final)
+        for mkt in PLACE_MARKETS:
+            if mkt not in offered:
+                continue
+            book, p_model, p_mkt, p_final = offered[mkt]
+            if p_final >= CERTAINTY:
+                continue
             row = _bet_row(name, MARKET_LABEL[mkt], mkt, book, p_model, p_final,
                            bankroll, kelly)
             row["p_market"] = round(p_mkt, 4) if p_mkt else ""
@@ -517,11 +486,18 @@ def price_all(rated, results, odds_data, matchup_odds, threeball_odds,
         if d is None:
             continue
         fair = market.devig([o["a"], o["b"]], method="multiplicative")
+        tie = float(d.get("tie", 0.0))
+        at_risk = 1.0 - tie
+        if at_risk <= 0:
+            continue
         for side, player, opp, book, pm, pf in (
                 ("a", a, b, o["a"], d[a], fair[0]), ("b", b, a, o["b"], d[b], fair[1])):
-            p_final = market.blend(pm, pf, bw.get("matchup", 0.0)) if blended else pm
+            conditional_pm = pm / at_risk
+            conditional_final = (market.blend(conditional_pm, pf, bw.get("matchup", 0.0))
+                                 if blended else conditional_pm)
+            p_final = at_risk * conditional_final
             row = _bet_row(player, f"Matchup vs {opp}", f"matchup:{player}|{opp}",
-                           book, pm, p_final, bankroll, kelly)
+                           book, pm, p_final, bankroll, kelly, push_prob=tie)
             row["p_market"] = round(pf, 4)
             rows.append(row)
 
@@ -563,10 +539,7 @@ def write_edge_report(bets: list[dict], path: Path | None = None) -> Path:
     # Always (re)write, even when empty: an empty result must clear the file so
     # the card and downstream readers never surface a previous run's stale bets
     # (e.g. after the odds board goes stale mid-tournament).
-    with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(bets)
+    atomic_write_csv(path, cols, bets, extrasaction="ignore")
     if bets:
         print(f"  {len(bets)} priced markets → {path}")
     else:

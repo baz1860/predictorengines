@@ -38,6 +38,9 @@ class EspnEvent:
     tour: str = "pga"
     source: str = "espn"
     source_event_id: str = ""
+    cut_rule: int = 65
+    no_cut: bool = False
+    total_rounds: int = 4
 
     def as_store_row(self) -> dict:
         row = asdict(self)
@@ -138,8 +141,7 @@ class EspnGolfProvider:
         events = payload.get("events", []) or []
         if event_id:
             matched = [ev for ev in events if str(ev.get("id") or "") == str(event_id)]
-            if matched:
-                return matched
+            return matched
         return events[:1]
 
     def field(self, event_id: str | None = None,
@@ -226,7 +228,7 @@ class EspnGolfProvider:
 
     def completed_round_scores(
         self, event_id: str | None = None, use_cache: bool = False,
-        cut_size: int = 65,
+        cut_size: int = 65, no_cut: bool = False,
     ) -> tuple[list[dict], int]:
         """Build a between-rounds scores snapshot from the live leaderboard.
 
@@ -268,8 +270,11 @@ class EspnGolfProvider:
                         holes = rline.get("linescores") or []
                         if len(holes) < 18:
                             continue  # round in progress — don't count it
+                        score = _to_par(rline.get("displayValue"))
+                        if score is None:
+                            continue
                         completed += 1
-                        cum += _to_par(rline.get("displayValue"))
+                        cum += score
                     players.append({
                         "name": name,
                         "score": cum,
@@ -288,7 +293,7 @@ class EspnGolfProvider:
         # After the cut round (R2), derive the cut line from the 36-hole scores,
         # since the feed won't tell us. Top `cut_size` and ties survive.
         cut_line = None
-        if rounds_done == 2:
+        if rounds_done == 2 and not no_cut:
             r36 = sorted(p["score"] for p in players
                          if p["completed"] >= 2 and not p["_cut_flag"])
             if len(r36) > cut_size:
@@ -346,6 +351,21 @@ def _event_from_payload(ev: dict) -> EspnEvent:
     comp = (ev.get("competitions") or [{}])[0]
     status = ((ev.get("status") or {}).get("type") or {}).get("name") or \
         ((comp.get("status") or {}).get("type") or {}).get("name") or ""
+    fmt = comp.get("format") or ev.get("format") or {}
+    no_cut = bool(
+        comp.get("noCut", ev.get("noCut", False))
+        or fmt.get("noCut", False)
+        or str(fmt.get("name") or fmt.get("description") or "").strip().lower() == "no cut"
+    )
+    try:
+        cut_rule = int(comp.get("cutRule", ev.get("cutRule", fmt.get("cutRule", 65))) or 65)
+    except (TypeError, ValueError):
+        cut_rule = 65
+    try:
+        total_rounds = int(comp.get(
+            "numberOfRounds", ev.get("numberOfRounds", fmt.get("rounds", 4))) or 4)
+    except (TypeError, ValueError):
+        total_rounds = 4
     return EspnEvent(
         event_id=str(ev.get("id") or ""),
         source_event_id=str(ev.get("id") or ""),
@@ -354,6 +374,9 @@ def _event_from_payload(ev: dict) -> EspnEvent:
         end_date=str(ev.get("endDate") or "")[:10],
         course_name=_course_name(ev, comp),
         status=status,
+        cut_rule=cut_rule,
+        no_cut=no_cut,
+        total_rounds=total_rounds,
     )
 
 
@@ -370,15 +393,17 @@ def _status_name(comp: dict) -> str:
     return str(((comp.get("status") or {}).get("type") or {}).get("name") or "")
 
 
-def _to_par(display) -> float:
-    """ESPN round/aggregate to-par string → float. Blank, dash or 'E' → 0.0."""
+def _to_par(display) -> float | None:
+    """ESPN round/aggregate to-par string → float; invalid values are absent."""
     s = str(display if display is not None else "").strip()
-    if s in ("", "-", "--", "—", "E", "e"):
+    if s in ("E", "e"):
         return 0.0
+    if s in ("", "-", "--", "—"):
+        return None
     try:
         return float(s.replace("+", ""))
     except ValueError:
-        return 0.0
+        return None
 
 
 def _is_out(competitor: dict) -> bool:

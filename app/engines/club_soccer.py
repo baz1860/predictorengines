@@ -71,9 +71,17 @@ class ClubSoccerAdapter(EngineAdapter):
             result["market_blend"] = {"applied": True, "w": w, "experimental": True}
             result["note"] = (result.get("note", "")
                               + f" · market-blended (experimental, w={w:.2f})")
+            # The blend rewrites kelly_stake/stake_gbp — re-apply the evidence
+            # gate so a closed gate can never be reopened by a stake rewrite.
+            from club_soccer.edge import apply_evidence_gate
+            apply_evidence_gate(rows)
         self._mark_recommended(rows)
         if params.get("record"):
-            recs = [r for r in rows if r.get("recommended")]
+            # Hard assertion in front of place_bets: even if a past-dated row
+            # somehow survived quote validation, it is never recorded.
+            today = pd.Timestamp.now(tz="UTC").date().isoformat()
+            recs = [r for r in rows if r.get("recommended")
+                    and str(r.get("date", ""))[:10] >= today]
             if recs:
                 df = pd.DataFrame(recs).rename(columns={"date": "match_date"})
                 df["source"] = odds_source
@@ -86,11 +94,14 @@ class ClubSoccerAdapter(EngineAdapter):
     @staticmethod
     def _mark_recommended(rows: list[dict]) -> None:
         """Flag the bets recording would place: best edge per (home, away, market)
-        with edge > 0 and model prob ≥ 0.40. Recording places exactly these."""
+        with edge > 0, model prob ≥ 0.40, a nonzero stake, and no suppression
+        (do-not-bet filter or evidence gate). Recording places exactly these."""
         best: dict[tuple, dict] = {}
         for r in rows:
             r["recommended"] = False
-            if float(r.get("edge", 0.0)) > 0 and float(r.get("p_model", 0.0)) >= 0.40:
+            if (float(r.get("edge", 0.0)) > 0 and float(r.get("p_model", 0.0)) >= 0.40
+                    and float(r.get("kelly_stake", 0.0) or 0.0) > 0
+                    and not r.get("suppressed_reason")):
                 k = (r.get("home"), r.get("away"), r.get("market"))
                 if k not in best or float(r["edge"]) > float(best[k]["edge"]):
                     best[k] = r

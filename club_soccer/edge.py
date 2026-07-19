@@ -46,6 +46,87 @@ MARKETS = {
 }
 
 
+# Manual odds.csv is never staked past this age — a stale quote on a settled
+# match must never reach a staking table (season.py card OR app recording).
+MANUAL_ODDS_MAX_AGE_DAYS = 2.0
+# Live quotes carry a per-quote `quoted_at_utc` timestamp and expire fast: a
+# cached/replayed live frame must not price a card hours later.
+LIVE_QUOTE_MAX_AGE_HOURS = 6.0
+
+
+def validate_quotes(odds: pd.DataFrame, source: str = "manual",
+                    now: datetime | None = None,
+                    max_manual_age_days: float = MANUAL_ODDS_MAX_AGE_DAYS,
+                    ) -> tuple[pd.DataFrame, list[str]]:
+    """The one quote-validation gate for every pricing entry point
+    (season.py card, engine.cmd_edge, the app adapter's record path).
+
+    Returns (filtered_quotes, issues). Rules:
+    - quotes on past or undated fixtures are dropped — a settled or in-play
+      match must never be priced as a bet;
+    - when a `quoted_at_utc` column is present (stamped by the live
+      fetchers), each quote is age-checked individually: manual quotes
+      expire after `max_manual_age_days`, live quotes after
+      LIVE_QUOTE_MAX_AGE_HOURS; un-timestamped rows in a timestamped frame
+      are dropped;
+    - for source="manual" without timestamps, the whole file is rejected
+      when odds.csv's mtime is older than `max_manual_age_days` (weak
+      proxy — trivially defeated by `touch` — which is why timestamped
+      quotes take precedence whenever available)."""
+    issues: list[str] = []
+    if odds is None or odds.empty:
+        return odds, issues
+    now = now or datetime.now(timezone.utc)
+    now_ts = pd.Timestamp(now)
+    if "quoted_at_utc" in odds.columns:
+        q = pd.to_datetime(odds["quoted_at_utc"], utc=True, errors="coerce",
+                           format="mixed")
+        max_age = pd.Timedelta(days=max_manual_age_days) if source == "manual" \
+            else pd.Timedelta(hours=LIVE_QUOTE_MAX_AGE_HOURS)
+        age = now_ts - q
+        # A future-dated timestamp is corrupt provenance, not freshness:
+        # its negative age must fail, with only a small clock-skew tolerance.
+        skew = pd.Timedelta(minutes=5)
+        fresh = q.notna() & (age >= -skew) & (age <= max_age)
+        n_stale = int((~fresh).sum())
+        if n_stale:
+            issues.append(f"dropped {n_stale} quote(s) with stale, missing, or "
+                          f"future-dated quoted_at_utc (limit {max_age})")
+        odds = odds[fresh]
+        if odds.empty:
+            return odds.copy(), issues
+    elif source == "manual":
+        try:
+            age_days = (now.timestamp() - ODDS_CSV.stat().st_mtime) / 86400.0
+        except FileNotFoundError:
+            age_days = None
+        if age_days is not None and age_days > max_manual_age_days:
+            issues.append(f"manual odds.csv is {age_days:.1f} days old (limit "
+                          f"{max_manual_age_days:g}d) — stale quotes are never staked")
+            return odds.iloc[0:0].copy(), issues
+    # format="mixed": a frame mixing "2026-07-19 12:00:00" and "2026-07-20"
+    # must not silently NaT-out (and thereby drop) the second style.
+    d = pd.to_datetime(odds["date"], errors="coerce", format="mixed")
+    today_ts = pd.Timestamp(now.date())
+    n_past = int((d.isna() | (d < today_ts)).sum())
+    if n_past:
+        issues.append(f"dropped {n_past} quote(s) on past or undated fixtures")
+    odds = odds[d.notna() & (d >= today_ts)].copy()
+    # kickoff_utc, where present, closes the date-only granularity hole: a
+    # 12:00 UTC kickoff must not price at 23:00 the same day. Legacy rows
+    # without a parseable kickoff instant keep the date-only rule above.
+    if "kickoff_utc" in odds.columns and not odds.empty:
+        k = pd.to_datetime(odds["kickoff_utc"], utc=True, errors="coerce",
+                           format="mixed")
+        past_ko = k.notna() & (k <= now_ts)
+        n_ko = int(past_ko.sum())
+        if n_ko:
+            issues.append(f"dropped {n_ko} quote(s) on fixtures already "
+                          "kicked off (kickoff_utc)")
+        odds = odds[~past_ko].copy()
+    return odds, issues
+
+
 def devig(odds: list[float]) -> np.ndarray:
     inv = np.array([1.0 / float(o) for o in odds])
     return inv / inv.sum()
@@ -98,6 +179,13 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                    apply_do_not_bet: bool = False) -> list[dict]:
     """Compute edge rows from priced odds.
 
+    Odds may carry a ``bookmaker`` column (absent → treated as one book,
+    "manual"). Each book is de-vigged independently and only if it quotes the
+    market's complete outcome set; the output has exactly one row per outcome
+    (best executable price, edge vs that book's own de-vigged probability,
+    cross-book mean reported as p_consensus), so an outcome is never staked
+    more than once per match.
+
     player_adj_map, if provided, maps (home_lower, away_lower, comp) →
     player_adj dict from PlayerFeatureStore, e.g.:
         {("arsenal", "chelsea", "Premier League"):
@@ -110,10 +198,60 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
     """
     out = []
     params = M.load_params()
-    for (date, comp, home, away, market), grp in odds.groupby(
-            ["date", "competition", "home", "away", "market"], dropna=False):
+    odds = odds.copy()
+    if "bookmaker" not in odds.columns:
+        odds["bookmaker"] = "manual"
+    odds["bookmaker"] = (odds["bookmaker"].fillna("manual").astype(str)
+                         .str.strip().str.lower().replace("", "manual"))
+    # Normalize text and the line up front: mixed-case sides must not silently
+    # change grouping, and a blank-string line must never reach float().
+    odds["market"] = odds["market"].astype(str).str.strip().str.lower()
+    odds["side"] = odds["side"].astype(str).str.strip().str.lower()
+    if "line" in odds.columns:
+        line_num = pd.to_numeric(odds["line"], errors="coerce")
+    else:
+        line_num = pd.Series(np.nan, index=odds.index)
+    odds["_line_key"] = line_num.map(lambda v: "" if pd.isna(v) else f"{v:g}")
+    skipped = {"unknown_market_or_line": 0, "duplicate_side_book": 0,
+               "incomplete_book": 0}
+    for (date, comp, home, away, market, line_key), grp in odds.groupby(
+            ["date", "competition", "home", "away", "market", "_line_key"],
+            dropna=False):
+        # The line is part of the market identity: `over 2.5` and `under 3.5`
+        # are different markets and must never be de-vigged as a pair. Only
+        # the exact lines MARKETS supports are priced.
+        expected_sides = {s for s, l in MARKETS.get(str(market), [])
+                          if line_key == ("" if l is None else f"{l:g}")}
+        if not expected_sides:
+            skipped["unknown_market_or_line"] += len(grp)
+            continue
         priced = grp[np.isfinite(grp["odds"]) & (grp["odds"] > 1.0)]
-        if len(priced) < 2:
+        # De-vig each bookmaker separately. Normalizing several books' prices
+        # as one market deflates every implied probability and manufactures
+        # fake edges. A book only counts if it quotes the complete outcome
+        # set exactly once per side (a duplicate side means a stale update or
+        # corrupt join — reject the book rather than guess which price is
+        # real); the card then carries ONE row per outcome — best executable
+        # price across books, edge measured against that book's own de-vigged
+        # probability — so the same outcome is never staked twice.
+        book_probs: dict[str, list[float]] = {}
+        best_quote: dict[str, tuple[float, pd.Series, float]] = {}
+        for _, bg in priced.groupby("bookmaker"):
+            sides = bg["side"].tolist()
+            if len(sides) != len(set(sides)):
+                skipped["duplicate_side_book"] += 1
+                continue
+            if set(sides) != expected_sides:
+                skipped["incomplete_book"] += 1
+                continue
+            implied = devig(bg["odds"].tolist())
+            for (_, r), p_bk in zip(bg.iterrows(), implied):
+                side = str(r["side"])
+                book_probs.setdefault(side, []).append(float(p_bk))
+                o = float(r["odds"])
+                if side not in best_quote or o > best_quote[side][0]:
+                    best_quote[side] = (o, r, float(p_bk))
+        if not best_quote:
             continue
 
         # Player availability adjustment for this match
@@ -146,22 +284,30 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
             ph, pdr, pa = _apply_calib(pred["probs"]["home"], pred["probs"]["draw"],
                                        pred["probs"]["away"], calib_maps)
             pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"] = ph, pdr, pa
-        implied = devig(priced["odds"].tolist())
-        for (_, r), p_book in zip(priced.iterrows(), implied):
-            p_model = side_prob(pred, str(r["market"]), str(r["side"]))
-            ev = p_model * float(r["odds"]) - 1.0
+        for side in sorted(best_quote):
+            o, r, p_book = best_quote[side]
+            # Edge is measured against the EXECUTING book's own de-vigged
+            # probability. Measuring against a cross-book mean while taking
+            # the best price manufactures EV out of pure line-shopping: with
+            # books at fair 49% and 44%, a model equal to the 46.5% mean
+            # shows +2.4% "EV" at the better price. The cross-book mean is
+            # kept as p_consensus for reporting only.
+            p_consensus = float(np.mean(book_probs[side]))
+            p_model = side_prob(pred, str(r["market"]), side)
+            ev = p_model * o - 1.0
             # Haircut the stake (not the EV/edge display) by lineup-read
             # confidence — a shaky lineup should bet smaller, not look less +EV.
-            kfrac = KELLY_FRACTION * kelly(p_model, float(r["odds"])) * lineup_confidence
-            raw_line = r.get("line", np.nan)
-            line = "" if pd.isna(raw_line) else float(raw_line)
-            label = bet_label(home, away, str(r["market"]), str(r["side"]), line)
+            kfrac = KELLY_FRACTION * kelly(p_model, o) * lineup_confidence
+            # line_key is the already-normalized group line ("" = no line).
+            line = "" if line_key == "" else float(line_key)
+            label = bet_label(home, away, str(r["market"]), side, line)
             row = {"date": str(date), "competition": comp,
                    "match": f"{home} v {away}", "home": home, "away": away,
-                   "market": r["market"], "side": r["side"], "line": line,
-                   "bet": label, "odds": round(float(r["odds"]), 3),
+                   "market": str(r["market"]), "side": side, "line": line,
+                   "bet": label, "odds": round(o, 3),
                    "p_model": round(float(p_model), 3),
                    "p_book": round(float(p_book), 3),
+                   "p_consensus": round(p_consensus, 3),
                    "edge": round(float(p_model - p_book), 3),
                    "ev_per_unit": round(float(ev), 3),
                    "kelly_stake": round(float(kfrac), 4),
@@ -178,6 +324,9 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                         row["kelly_stake"] = 0.0
                         row["stake_gbp"] = 0.0
             out.append(row)
+    dropped = {k: v for k, v in skipped.items() if v}
+    if dropped:
+        print(f"  rows_from_odds: rejected odds groups {dropped}")
     out.sort(key=lambda x: -x["ev_per_unit"])
     # The shared market blend is deliberately gated at the engine level. A
     # fitted weight alone never changes production pricing; app.market_blend's
@@ -193,14 +342,49 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
         # Pricing must remain available if the optional shared helper is absent
         # or malformed; the unblended rows are the safe fallback.
         pass
+    # Evidence gate runs LAST — after every probability/stake transformation.
+    # The market blend above rewrites kelly_stake/stake_gbp, so zeroing before
+    # it would let the blend silently reopen stakes on gated rows. Any later
+    # consumer that mutates stakes must call apply_evidence_gate again.
+    apply_evidence_gate(out)
     return out
+
+
+def apply_evidence_gate(rows: list[dict]) -> bool:
+    """Zero every stake unless the evidence gate is open (see
+    evidence_gate.py for the preregistered criteria). Edges/EV stay visible
+    for diagnostics; nothing is backable or recordable while closed.
+
+    Idempotent and fail-CLOSED: call it as the FINAL step after any code
+    that rewrites kelly_stake/stake_gbp. Returns gate_open. Ends with a hard
+    invariant: a closed gate and a nonzero stake can never coexist."""
+    try:
+        from .evidence_gate import staking_allowed
+        gate_open, gate_reasons = staking_allowed()
+    except Exception as exc:
+        gate_open, gate_reasons = False, [f"gate import failed ({exc})"]
+    if not gate_open and rows:
+        for row in rows:
+            row["kelly_stake"] = 0.0
+            row["stake_gbp"] = 0.0
+            row.setdefault("suppressed_reason", "evidence-gate: no demonstrated edge")
+        print(f"  evidence gate CLOSED — all stakes zeroed ({len(gate_reasons)} "
+              "failing criteria; run `python3 -m club_soccer.evidence_gate`)")
+        assert all(float(r.get("kelly_stake") or 0) == 0.0
+                   and float(r.get("stake_gbp") or 0) == 0.0 for r in rows), \
+            "evidence gate closed but a nonzero stake survived"
+    return gate_open
 
 
 def bet_label(home: str, away: str, market: str, side: str, line) -> str:
     if market == "1x2":
         return {"home": f"{home} win", "draw": "Draw", "away": f"{away} win"}[side]
     if market == "total":
-        return f"{'Over' if side == 'over' else 'Under'} {float(line):g} goals"
+        try:
+            ln = f"{float(line):g}"
+        except (TypeError, ValueError):
+            ln = "?"           # never crash pricing over a display label
+        return f"{'Over' if side == 'over' else 'Under'} {ln} goals"
     if market == "btts":
         return "Both teams to score" if side == "yes" else "BTTS no"
     return f"{market} {side}"
@@ -339,10 +523,16 @@ def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
 
         base = {
             "date": date,
+            "kickoff_utc": str(getattr(fixture, "kickoff_utc", "") or ""),
             "competition": comp.name,
             "home": getattr(fixture, "home", home_raw),
             "away": getattr(fixture, "away", away_raw),
             "bookmaker": "bsd",
+            # BSD exposes no per-quote update time, so this is FETCH time —
+            # a stale provider feed would still look fresh. The provenance
+            # label lets a stronger future gate refuse fetch-time-only quotes.
+            "quoted_at_utc": datetime.now(timezone.utc).isoformat(),
+            "quote_time_source": "fetch_time_only",
         }
         if odds_h is not None:
             rows.append({**base, "market": "1x2", "side": "home", "line": "", "odds": odds_h})
@@ -395,6 +585,15 @@ def fetch_the_odds_api(api_key: str | None = None) -> pd.DataFrame:
             for book in event.get("bookmakers", []) or []:
                 for market in book.get("markets", []) or []:
                     key_name = market.get("key", "")
+                    # The Odds API publishes the bookmaker's own update time —
+                    # use it (market-level, falling back to book-level) so a
+                    # stale provider quote can't masquerade as fresh.
+                    provider_ts = market.get("last_update") or book.get("last_update")
+                    if provider_ts:
+                        quoted_at, ts_source = str(provider_ts), "provider_last_update"
+                    else:
+                        quoted_at = datetime.now(timezone.utc).isoformat()
+                        ts_source = "fetch_time_only"
                     for outcome in market.get("outcomes", []) or []:
                         name = str(outcome.get("name", ""))
                         odds = outcome.get("price")
@@ -414,7 +613,9 @@ def fetch_the_odds_api(api_key: str | None = None) -> pd.DataFrame:
                                      "competition": comp, "home": home, "away": away,
                                      "market": market_name, "side": side,
                                      "line": line, "odds": decimal,
-                                     "bookmaker": book.get("title", "")})
+                                     "bookmaker": book.get("title", ""),
+                                     "quoted_at_utc": quoted_at,
+                                     "quote_time_source": ts_source})
     if not rows:
         raise ValueError("No The Odds API odds matched upcoming local fixtures; use BSD odds (--bsd-odds) or manual odds.csv.")
     return pd.DataFrame(rows)

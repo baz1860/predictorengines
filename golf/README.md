@@ -114,7 +114,7 @@ golf/
 ├── market.py       # power de-vig, log-odds market blend, CLV tracking
 ├── calibrate.py    # isotonic per-market maps (win ≤ T5 ≤ … ≤ cut guard)
 ├── edge.py         # calibrated + blended EV across all markets
-├── portfolio.py    # simultaneous-Kelly: per-player + total caps, drawdown brake
+├── portfolio.py    # capped fractional Kelly: player/total caps + drawdown brake
 ├── validate.py     # walk-forward backtest + regression gate (the yardstick)
 ├── weekly_report.py# longer narrative report (season.py is the lean version)
 └── data/
@@ -160,7 +160,7 @@ markets come from the primary draw and are unaffected by `win_round_corr`.
   miscalibration, with a nesting guard (win ≤ T5 ≤ T10 ≤ T20 ≤ cut).
 - **market.py** — power de-vig for outright boards, per-line place margins, a
   log-odds blend toward the market, and CLV tracking.
-- **portfolio.py** — simultaneous-Kelly with a per-player correlation cap, a
+- **portfolio.py** — independent fractional-Kelly stakes scaled by a per-player cap, a
   total weekly cap, and a drawdown brake.
 
 ### Validating the model
@@ -169,6 +169,8 @@ markets come from the primary draw and are unaffected by `win_round_corr`.
 python3 -m golf.validate --since 2024-06-01 --sims 8000   # walk-forward + gate
 ```
 
-Walk-forward (139 events, 2023-06 → 2026-06) shows positive Brier skill on every
-market; make-cut and top-20 ≈ +9–10%. `validate.py` is the regression gate the
-daily `update.sh` runs before trusting a refit.
+`validate.py` excludes current-only public stats, global priors, course-architecture
+files, and weather from historical folds because point-in-time snapshots do not
+exist. The gate runs before the live refit and its frozen baseline changes only
+with an explicit `--write`. Re-run and explicitly re-baseline after changing the
+model; older headline figures produced with current feature files are invalid.

@@ -31,9 +31,33 @@ _fails: list[str] = []
 
 
 def check(name, cond):
+    # Collect-only: every check in a test function runs even after a failure
+    # (full diagnostic output). Under pytest the autouse fixture below turns
+    # any collected failure into a failed test; script mode reports at the
+    # end (__main__ block below).
     print(f"  {'PASS' if cond else 'FAIL'}  {name}")
     if not cond:
         _fails.append(name)
+
+
+try:
+    import pytest
+except ImportError:       # script mode doesn't need pytest installed
+    pytest = None
+
+if pytest is not None:
+    @pytest.fixture(autouse=True)
+    def _check_failures_fail_the_test():
+        """A FAIL recorded by check() must fail the pytest run.
+
+        check() only collects failures (so script mode can run every test and
+        report at the end); without this fixture pytest stayed green while
+        checks failed — a false-green harness.
+        """
+        before = len(_fails)
+        yield
+        new = _fails[before:]
+        assert not new, f"{len(new)} check failure(s): " + ", ".join(new)
 
 
 def test_registry():
@@ -738,6 +762,52 @@ def test_gated_production_layers():
     check("fixture schema includes xG provenance", "xg_source" in S.FIXTURE_COLUMNS)
 
 
+def test_validation_leak_free_paths():
+    print("20. historical evaluation never reads production artifacts")
+    from club_soccer import context as CTX
+    from club_soccer import validate as V
+    import inspect
+
+    # Pin the mechanism: with explicit context_coef/ensemble_weights the
+    # prediction path must never touch the production artifacts. If someone
+    # removes either explicit argument from validate.py, these checks fail.
+    params = M.load_params()
+    orig_load_coef = CTX.load_coef
+    orig_load_w = M.load_ensemble_weights
+    calls = {"coef": 0, "weights": 0}
+
+    def _boom_coef():
+        calls["coef"] += 1
+        raise AssertionError("production context artifact read during "
+                            "explicit-coef prediction")
+
+    def _boom_weights(path=None):
+        calls["weights"] += 1
+        raise AssertionError("production ensemble weights read during "
+                            "explicit-weights prediction")
+
+    CTX.load_coef = _boom_coef
+    M.load_ensemble_weights = _boom_weights
+    try:
+        pred = M.predict_match("Arsenal", "Chelsea", "Premier League",
+                               "2024-03-02", "ensemble", params=params,
+                               context_coef={},
+                               ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W))
+        ok = abs(sum(pred["probs"][k] for k in ("home", "draw", "away")) - 1.0) < 0.002
+    except AssertionError:
+        ok = False
+    finally:
+        CTX.load_coef = orig_load_coef
+        M.load_ensemble_weights = orig_load_w
+    check("explicit context_coef + ensemble_weights bypass production artifacts",
+          ok and calls["coef"] == 0 and calls["weights"] == 0)
+
+    src = inspect.getsource(V.walk_forward)
+    check("walk_forward passes explicit context_coef", "context_coef={}" in src)
+    check("walk_forward passes explicit ensemble weights",
+          "ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W)" in src)
+
+
 if __name__ == "__main__":
     test_registry()
     test_api_key_lookup()
@@ -762,6 +832,7 @@ if __name__ == "__main__":
     test_bsd_enrichment_candidate_join()
     test_real_xg_and_date_aware_prediction()
     test_gated_production_layers()
+    test_validation_leak_free_paths()
     print()
     if _fails:
         print(f"{len(_fails)} FAILURE(S): " + ", ".join(_fails))

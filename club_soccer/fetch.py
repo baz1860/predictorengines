@@ -87,6 +87,8 @@ def _merge_fixture_rows(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.Da
     if "fixture_id" not in columns:
         return pd.concat([old, new], ignore_index=True)
 
+    from .schema import RESULT_COLUMNS, VOID_STATUSES
+
     old_by_id = {str(v): i for i, v in old["fixture_id"].items() if _present(v)}
     for _, row in new.iterrows():
         key = str(row.get("fixture_id")) if _present(row.get("fixture_id")) else None
@@ -94,12 +96,23 @@ def _merge_fixture_rows(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.Da
             old = pd.concat([old, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if key is not None:
                 old_by_id[key] = len(old) - 1
-            continue
-        i = old_by_id[key]
-        for col in columns:
-            value = row.get(col)
-            if _present(value):
-                old.at[i, col] = value
+            i = len(old) - 1
+        else:
+            i = old_by_id[key]
+            for col in columns:
+                value = row.get(col)
+                if _present(value):
+                    old.at[i, col] = value
+        # A void transition (postponed/cancelled/abandoned/...) must clear
+        # every result/stat field. Present-values-only merging would otherwise
+        # keep an old FT score under the new POS status, and the fixture
+        # would keep training the model on a result that never stood.
+        status = str(old.at[i, "status"] or "").strip().upper()[:3] \
+            if "status" in columns else ""
+        if status in VOID_STATUSES:
+            for col in RESULT_COLUMNS:
+                if col in columns:
+                    old.at[i, col] = None
     return old.drop_duplicates(subset=["fixture_id"], keep="last").reset_index(drop=True)
 
 
@@ -211,6 +224,10 @@ def _bsd_to_fixture_row(event: dict, comp_name: str, comp_api_id: int,
 
     row = {
         "fixture_id": event.get("id"),
+        # Preserve the full kickoff instant — truncating to a date makes a
+        # 12:00 UTC kickoff look "future" until midnight, so a settled match
+        # could still be priced at 23:00. `date` stays as the display field.
+        "kickoff_utc": str(kickoff) if kickoff else "",
         "date": date_str,
         "season": season,
         "competition": comp_name,

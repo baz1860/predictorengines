@@ -1,10 +1,11 @@
 """
-golf/portfolio.py  –  Simultaneous-Kelly staking discipline.
+golf/portfolio.py  –  Capped fractional-Kelly staking discipline.
 
 A golf week throws up many bets at once that are strongly correlated: win,
 top-5, top-10, top-20 and make-cut on the SAME player are nested, and matchups
 add more of the same exposure. Independent quarter-Kelly on each over-bets that
-player. This caps exposure per player and in aggregate, and brakes staking
+player. This is not a joint/simultaneous Kelly optimiser: it caps exposure per
+player and in aggregate, and brakes staking
 during a drawdown. Mirrors the World Cup v2 M7 portfolio defaults.
 
   rows = apply_portfolio(rows, bankroll, peak)   # mutates/returns staked rows
@@ -16,11 +17,20 @@ from collections import defaultdict
 
 PER_PLAYER_CAP = 0.10   # max fraction of bankroll across one player's bets
 TOTAL_CAP = 0.40        # max fraction of bankroll staked in one week
+GROUP_CAP = 0.10        # mutually-exclusive outright/group exposure cap
 DD_FULL = 0.85          # bankroll/peak above this → no brake
 DD_FLOOR = 0.70         # at/below this → maximum brake
 BRAKE_MIN = 0.50        # staking multiplier at full drawdown brake
 MIN_STAKE = 0.10
 CERTAINTY = 0.99        # never stake an implied-certain outcome (sim artifact)
+
+
+def _trim_rounding_excess(rows: list[dict], cap: float) -> None:
+    """Ensure penny rounding never leaves a capped bucket above its cap."""
+    excess = round(sum(r["stake_gbp"] for r in rows) - cap, 2)
+    if excess > 0 and rows:
+        target = max(rows, key=lambda r: r["stake_gbp"])
+        target["stake_gbp"] = round(max(0.0, target["stake_gbp"] - excess), 2)
 
 
 def drawdown_factor(bankroll: float, peak: float) -> float:
@@ -38,7 +48,8 @@ def drawdown_factor(bankroll: float, peak: float) -> float:
 def apply_portfolio(rows: list[dict], bankroll: float, peak: float | None = None,
                     per_player_cap: float = PER_PLAYER_CAP,
                     total_cap: float = TOTAL_CAP,
-                    min_stake: float = MIN_STAKE) -> list[dict]:
+                    min_stake: float = MIN_STAKE,
+                    group_cap: float = GROUP_CAP) -> list[dict]:
     """Scale per-bet `stake_gbp` down for drawdown, per-player correlation, and
     a total weekly cap. Returns the surviving rows (stakes ≥ min_stake), each
     annotated with `stake_capped` when it was reduced by a cap."""
@@ -68,6 +79,29 @@ def apply_portfolio(rows: list[dict], bankroll: float, peak: float | None = None
             f = cap_p / s
             for r in rs:
                 r["stake_gbp"] = round(r["stake_gbp"] * f, 2)
+            _trim_rounding_excess(rs, cap_p)
+
+    # Mutually exclusive outcomes must not each receive an independent Kelly
+    # allocation. Cap the whole outright winner market and each matchup/3-ball.
+    by_group: dict[str, list] = defaultdict(list)
+    for r in rows:
+        side = str(r.get("side") or "")
+        if side == "win":
+            key = "outright:win"
+        elif side.startswith("matchup:") or side.startswith("3ball:"):
+            kind, members = side.split(":", 1)
+            key = kind + ":" + "|".join(sorted(members.split("|")))
+        else:
+            continue
+        by_group[key].append(r)
+    cap_g = group_cap * bankroll
+    for rs in by_group.values():
+        s = sum(r["stake_gbp"] for r in rs)
+        if s > cap_g > 0:
+            f = cap_g / s
+            for r in rs:
+                r["stake_gbp"] = round(r["stake_gbp"] * f, 2)
+            _trim_rounding_excess(rs, cap_g)
 
     # total weekly exposure cap
     tot = sum(r["stake_gbp"] for r in rows)
@@ -76,6 +110,7 @@ def apply_portfolio(rows: list[dict], bankroll: float, peak: float | None = None
         f = cap_t / tot
         for r in rows:
             r["stake_gbp"] = round(r["stake_gbp"] * f, 2)
+        _trim_rounding_excess(rows, cap_t)
 
     out = []
     for r in rows:

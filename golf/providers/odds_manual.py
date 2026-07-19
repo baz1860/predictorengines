@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import re
 import time
+import datetime as dt
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -62,7 +63,7 @@ class OddsQuote:
         return asdict(self)
 
 
-HEADER_RE = re.compile(r"^[23]\s*Ball.*-\s*(.+)$", re.I)
+HEADER_RE = re.compile(r"^([23])\s*Ball.*-\s*(.+)$", re.I)
 NUM_RE = re.compile(r"^\d+(\.\d+)?$")
 FRAC_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)$")
 
@@ -218,7 +219,9 @@ class ManualOddsProvider:
 
     def parse_threeball_text(self, text: str, event_id: str = "",
                              round_no: int = 1, book: str = "manual") -> list[OddsQuote]:
-        groups = parse_skybet_threeball_text(text)
+        issues: list[str] = []
+        groups = parse_skybet_threeball_text(text, issues=issues)
+        self.last_parse_issues = issues
         out = []
         for group in groups:
             market = _group_market(len(group["players"]))
@@ -245,7 +248,7 @@ class ManualOddsProvider:
         ]
 
 
-def parse_skybet_threeball_text(text: str) -> list[dict]:
+def parse_skybet_threeball_text(text: str, issues: list[str] | None = None) -> list[dict]:
     """Parse pasted Sky Bet-style 3-ball boards.
 
     Expected shape (odds may be decimal 2.50, fractional 6/5, or evens):
@@ -258,26 +261,56 @@ def parse_skybet_threeball_text(text: str) -> list[dict]:
       4.00
     """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    groups, cur, pending = [], None, []
+    groups, cur = [], None
+
+    def finish(group):
+        if group is None:
+            return
+        expected = group.pop("_expected")
+        invalid = group.pop("_invalid")
+        pending_name = group.pop("_pending", None)
+        header_names = group.pop("_header_names")
+        parsed_names = [norm_event(n) for n, _ in group["players"]]
+        if pending_name:
+            invalid = f"missing odds after '{pending_name}'"
+        if len(group["players"]) != expected:
+            invalid = invalid or f"expected {expected} selections, parsed {len(group['players'])}"
+        if len(header_names) != expected:
+            invalid = invalid or f"header names {len(header_names)} disagree with {expected}-ball"
+        header_keys = [norm_event(n) for n in header_names]
+        if any(h not in p and p not in h for h, p in zip(header_keys, parsed_names)):
+            invalid = invalid or "selection order/names disagree with the group header"
+        if invalid:
+            if issues is not None:
+                issues.append(f"{group['group']}: {invalid}")
+            return
+        groups.append(group)
+
     for ln in lines:
         h = HEADER_RE.match(ln)
         if h:
-            if cur is not None:
-                groups.append(cur)
-            cur = {"group": h.group(1).strip(), "players": []}
-            pending = []
+            finish(cur)
+            label = h.group(2).strip()
+            cur = {"group": label, "players": [], "_expected": int(h.group(1)),
+                   "_header_names": [p.strip() for p in label.split("/") if p.strip()],
+                   "_pending": None, "_invalid": ""}
             continue
         if cur is None:
             continue
         odds = _parse_odds(ln)
         if odds is not None:
-            if pending:
-                cur["players"].append((pending.pop(0), odds))
+            if cur["_pending"] is None:
+                cur["_invalid"] = cur["_invalid"] or f"odds '{ln}' without a player"
+            else:
+                cur["players"].append((cur["_pending"], odds))
+                cur["_pending"] = None
         else:
-            pending.append(ln)
-    if cur is not None:
-        groups.append(cur)
-    return [g for g in groups if len(g["players"]) in (2, 3)]
+            if cur["_pending"] is not None:
+                cur["_invalid"] = cur["_invalid"] or (
+                    f"missing odds after '{cur['_pending']}' before '{ln}'")
+            cur["_pending"] = ln
+    finish(cur)
+    return groups
 
 
 def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
@@ -297,7 +330,7 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
     with path.open("w", newline="") as f:
         cols = [
             "group_id", "player_a", "player_b", "player_c",
-            "odds_a", "odds_b", "odds_c", "settlement_rule", "event",
+            "odds_a", "odds_b", "odds_c", "settlement_rule", "event", "captured_at",
         ]
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
@@ -306,7 +339,8 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
                 continue
             row = {"group_id": gid,
                    "settlement_rule": qs[0].settlement_rule or "dead_heat",
-                   "event": event}
+                   "event": event,
+                   "captured_at": qs[0].timestamp or _ts()}
             for slot, q in zip("abc", qs):  # player_c/odds_c stay blank for 2-balls
                 row[f"player_{slot}"] = q.player_name
                 row[f"odds_{slot}"] = q.decimal_odds
@@ -330,6 +364,22 @@ def board_event(path: Path) -> str:
             if ev:
                 return ev
     return ""
+
+
+def board_captured_at(path: Path) -> dt.datetime | None:
+    """Capture time embedded in a board; filesystem mtimes are not provenance."""
+    if not path.exists():
+        return None
+    try:
+        with path.open() as f:
+            for row in csv.DictReader(f):
+                raw = (row.get("captured_at") or row.get("timestamp") or "").strip()
+                if raw:
+                    parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
+    except (OSError, csv.Error, ValueError):
+        return None
+    return None
 
 
 def norm_event(name: str) -> str:

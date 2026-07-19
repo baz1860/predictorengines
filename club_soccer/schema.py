@@ -16,8 +16,31 @@ SCHEMA_VERSION = 4
 # Canonical fixture shape. Older CSVs are intentionally accepted by
 # model.load_fixtures(), but every new fetch/merge writes these columns so
 # competition context and BSD detail data are not silently discarded.
+# Statuses that VOID a result (postponed / cancelled / abandoned / suspended /
+# interrupted / awarded). A fixture transitioning into one of these must have
+# its scores and match stats cleared, and must never count as played: a
+# postponed match that keeps its pre-postponement score silently trains the
+# model on a result that officially never happened.
+VOID_STATUSES = {"POS", "CAN", "ABD", "SUS", "INT", "AWD"}
+
+# Result/stat columns cleared on a void transition.
+RESULT_COLUMNS = [
+    "home_goals", "away_goals", "home_goals_ht", "away_goals_ht",
+    "home_goals_ft", "away_goals_ft",
+    "extra_time_home_goals", "extra_time_away_goals",
+    "shootout_home", "shootout_away", "shootout_winner",
+    "home_shots", "away_shots", "home_sot", "away_sot",
+    "home_corners", "away_corners", "home_xg", "away_xg", "xg_source",
+    "home_possession", "away_possession",
+    "home_yellow_cards", "away_yellow_cards",
+    "home_red_cards", "away_red_cards",
+]
+
 FIXTURE_COLUMNS = [
-    "fixture_id", "date", "season", "competition", "competition_id",
+    # kickoff_utc: full kickoff instant (ISO, UTC) — `date` is a derived
+    # date-only display/partition field. Staking-time freshness checks should
+    # prefer kickoff_utc; legacy rows without it fall back to date-only.
+    "fixture_id", "kickoff_utc", "date", "season", "competition", "competition_id",
     "country", "type", "home_id", "home", "away_id", "away",
     "home_goals", "away_goals", "status", "result_scope", "neutral",
     "home_shots", "away_shots", "home_sot", "away_sot",

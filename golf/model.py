@@ -417,7 +417,7 @@ def _looks_like_scoreboard(raw_json: str | None) -> bool:
     return any(str(k).lower() in _SCOREBOARD_KEYS for k in blob)
 
 
-def load_public_stat_priors(path: Path | None = None) -> dict[str, dict]:
+def load_public_stat_priors(path: Path | None = None, *, asof=None) -> dict[str, dict]:
     """Load current public PGA Tour stat snapshots into player rating priors.
 
     The provider writes one row per player/stat. SG: Total is the preferred
@@ -427,6 +427,12 @@ def load_public_stat_priors(path: Path | None = None) -> dict[str, dict]:
     path = path or PUBLIC_STATS_CSV
     if not path.exists():
         return {}
+    # This file is a current snapshot, not a point-in-time history. It is safe
+    # for a live fit only; historical fits must not see future season totals.
+    if asof is not None:
+        import pandas as pd
+        if pd.Timestamp(asof).date() < pd.Timestamp.today().date():
+            return {}
     rows: dict[str, dict] = {}
     with open(path) as f:
         for r in csv.DictReader(f):
@@ -482,7 +488,8 @@ def load_rounds_df(path: Path | None = None):
     return df
 
 
-def fit(rounds_df, asof=None, config: dict | None = None) -> dict:
+def fit(rounds_df, asof=None, config: dict | None = None,
+        include_public_stats: bool | None = None) -> dict:
     """Fit skill, difficulty, sigma, form and course-fit on rounds before `asof`.
 
     Returns a params dict (see save_params for the JSON shape). Walk-forward safe:
@@ -591,7 +598,9 @@ def fit(rounds_df, asof=None, config: dict | None = None) -> dict:
                                 for p, v in fit_vals.items() if abs(v) > 0.05}
 
     default_skill = float(np.quantile(skill, DEFAULT_SKILL_QUANTILE))
-    public_priors = load_public_stat_priors()
+    if include_public_stats is None:
+        include_public_stats = pd.Timestamp(asof).date() >= pd.Timestamp.today().date()
+    public_priors = load_public_stat_priors(asof=asof) if include_public_stats else {}
 
     return {
         "asof": str(pd.Timestamp(asof).date()),
@@ -701,13 +710,21 @@ NAME_ALIASES = {
 _FOLDED_ALIASES = {_fold_name(k): v for k, v in NAME_ALIASES.items()}
 
 
-def _folded_index(params: dict) -> dict[str, str]:
+def _folded_index(params: dict) -> dict[str, str | None]:
     """Folded-name → canonical fitted name, cached on the params dict."""
     idx = params.get("_folded_index")
     if idx is None:
-        idx = {_fold_name(n): n for n in params.get("players", {})}
+        idx = {}
+        for n in params.get("players", {}):
+            key = _fold_name(n)
+            if key in idx and idx[key] != n:
+                idx[key] = None  # ambiguous: never silently pick the last player
+            else:
+                idx[key] = n
         for n in params.get("public_stat_priors", {}):
-            idx.setdefault(_fold_name(n), n)
+            key = _fold_name(n)
+            if key not in idx:
+                idx[key] = n
         params["_folded_index"] = idx
     return idx
 
@@ -998,8 +1015,9 @@ def _rating_for_components(name: str, params: dict, course: str = "",
     canon = resolve_name(name, params)
     pl = params.get("players", {}).get(canon) if canon else None
     fw = params.get("form_weight", FORM_WEIGHT)
-    stat_prior = _public_stat_prior(name, params, canon)
-    flags = {"course_arch": True, "global_priors": True, **(feature_flags or {})}
+    flags = {"public_stat": True, "course_arch": True, "global_priors": True,
+             **(feature_flags or {})}
+    stat_prior = _public_stat_prior(name, params, canon) if flags["public_stat"] else None
     manual_global = _global_player_prior(name, canon, global_priors) if flags["global_priors"] else None
     global_prior = _owgr_skill_prior(world_rank) if flags["global_priors"] else None
     components = {
@@ -1071,10 +1089,11 @@ def predict_field(field_names, params: dict, course: str = "",
     field mean (= 0) so simulate.py reads them directly; σ keeps absolute scale.
     """
     maj_mult = params.get("major_sigma_mult", 1.0) if is_major else 1.0
-    course_features = load_course_features()
-    global_priors = load_global_player_priors()
+    flags = {"weather": True, "public_stat": True, "course_arch": True,
+             "global_priors": True, **(feature_flags or {})}
+    course_features = load_course_features() if flags["course_arch"] else {}
+    global_priors = load_global_player_priors() if flags["global_priors"] else {}
     weather_features = load_weather_features() if weather_features is None else weather_features
-    flags = {"weather": True, "course_arch": True, "global_priors": True, **(feature_flags or {})}
     out: list[Player] = []
     for item in field_names:
         name = item.name if isinstance(item, Player) else str(item)

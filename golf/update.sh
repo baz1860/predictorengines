@@ -6,7 +6,7 @@
 # Usage: bash update.sh [--course COURSE] [--major]
 #   env: DG_API_KEY, ODDS_API_KEY (optional)
 
-set -uo pipefail
+set -euo pipefail
 # Run from the repo root so the golf package resolves (modules use package-relative
 # imports since Phase 4; invoke them with `python3 -m golf.X`).
 cd "$(dirname "$0")/.."
@@ -39,15 +39,17 @@ FETCH_ARGS="--espn"
 [ -n "$ODDS_KEY" ] && FETCH_ARGS="$FETCH_ARGS --odds-key $ODDS_KEY"
 python3 -m golf.fetch $FETCH_ARGS || echo "  field/odds refresh skipped (offline)"
 
-echo ""; echo "── 3/5 Refit skill + variance model ──"
-python3 -m golf.model --fit --top 10 || echo "  fit skipped"
+echo ""; echo "── 3/5 Walk-forward validate (blocking gate) ──"
+if ! python3 -m golf.validate --since 2024-06-01 --sims 8000 --gate --quiet; then
+  echo "  validation gate failed; model and calibration were not replaced" >&2
+  exit 2
+fi
 
-echo ""; echo "── 4/5 Walk-forward validate (gate) ──"
-python3 -m golf.validate --since 2024-06-01 --sims 8000 --gate --quiet \
-  || echo "  validation gate warning (model may have regressed)"
+echo ""; echo "── 4/5 Refit skill + variance model ──"
+python3 -m golf.model --fit --top 10
 
 echo ""; echo "── 5/5 Refit calibration ──"
-python3 -m golf.calibrate --fit || echo "  calibration skipped"
+python3 -m golf.calibrate --fit
 
 # Record data provenance (offline, never blocks) — run from the repo root.
 python3 -m app.provenance --engine golf --write || echo "  manifest skipped"

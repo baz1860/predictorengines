@@ -24,12 +24,11 @@ PASS, FAIL = 0, 0
 
 def check(name, cond, detail=""):
     global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"  PASS  {name}")
-    else:
+    if not cond:
         FAIL += 1
-        print(f"  FAIL  {name}  {detail}")
+        raise AssertionError(f"{name}: {detail}")
+    PASS += 1
+    print(f"  PASS  {name}")
 
 
 def synthetic_rounds() -> pd.DataFrame:
@@ -90,6 +89,16 @@ def test_fit_applies_config():
           str(params["course_k"]))
     check("fit returns fitted players", len(params["players"]) == 20,
           str(len(params["players"])))
+
+
+def test_historical_fit_excludes_current_public_stats(tmp_path, monkeypatch):
+    stats = tmp_path / "pgatour_stats.csv"
+    stats.write_text(
+        "season,stat_id,stat_name,player_name,rank,value,raw_json,source\n"
+        '2026,1,sg_total,Player 00,1,3.5,"{}",test\n')
+    monkeypatch.setattr(model, "PUBLIC_STATS_CSV", stats)
+    params = model.fit(synthetic_rounds(), asof="2024-07-01")
+    assert params["public_stat_priors"] == {}
 
 
 def main():

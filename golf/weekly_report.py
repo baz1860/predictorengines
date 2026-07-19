@@ -16,8 +16,10 @@ import time
 from pathlib import Path
 
 from . import engine as GENG
+from . import edge as GEDGE
 from . import model as GMOD
 from . import refresh as GREF
+from .io_utils import atomic_write_text
 
 DATA_DIR = Path(__file__).parent / "data"
 REPORTS_DIR = Path(__file__).parent / "reports"
@@ -86,7 +88,7 @@ def generate_report(
         major=major,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(report)
+    atomic_write_text(output, report)
     archive_path = None
     if archive:
         archive_path = _archive_report(output, manifest)
@@ -132,6 +134,7 @@ def _run_optional_steps(**kwargs) -> list[str]:
                 "major": kwargs["major"],
                 "seed": kwargs["seed"],
             })
+            GEDGE.write_edge_report(res.get("rows") or [], path=EDGE_CSV)
             notes.append("edge: " + str(res.get("note", "")).strip())
         except ValueError as exc:
             notes.append(f"edge skipped: {exc}")

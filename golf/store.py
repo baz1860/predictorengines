@@ -226,7 +226,10 @@ def init_db(path: Path | str | None = None) -> Path:
 
 
 def _pid(name: str, source_id: str = "") -> str:
-    return "name:" + " ".join(str(name or "").lower().split())
+    """Stable player identity. Provider IDs prevent same-name collisions."""
+    if str(source_id or "").strip():
+        return "source:" + str(source_id).strip()
+    return "name:" + " ".join(str(name or "").casefold().split())
 
 
 def upsert_players(con: sqlite3.Connection, players: Iterable[Mapping]) -> int:
@@ -456,7 +459,8 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
         rows = con.execute(
             """
             SELECT p.display_name AS name, f.world_rank, f.status,
-                   e.name AS event, e.course_name AS course,
+                   e.event_id, e.name AS event, e.course_name AS course,
+                   e.cut_rule, e.no_cut,
                    f.tee_time_r1, f.tee_time_r2,
                    f.start_hole_r1, f.start_hole_r2,
                    '' AS course_sigma,
@@ -471,7 +475,8 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
             (event_id,),
         ).fetchall()
     cols = [
-        "name", "world_rank", "status", "event", "course",
+        "name", "world_rank", "status", "event_id", "event", "course",
+        "cut_rule", "no_cut",
         "tee_time_r1", "tee_time_r2", "start_hole_r1", "start_hole_r2",
         "course_sigma",
         "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut",

@@ -76,18 +76,30 @@ def _actuals(event: pd.DataFrame) -> dict[str, dict]:
     made = g["made_cut"].max()
     nrounds = g["round"].count()
     # rank only players who completed the tournament; missed-cut → no top-N
-    finishers = total[made == 1]
+    # Only complete finishers are eligible for placement labels. A WD/DQ with
+    # three rounds must not be ranked against four-round totals.
+    max_rounds = int(nrounds.max()) if len(nrounds) else 4
+    finishers = total[(made == 1) & (nrounds == max_rounds)]
     rank = finishers.rank(method="min")
+    score_groups = finishers.groupby(finishers).groups
+
+    def credit(player: str, top_n: int) -> float:
+        if player not in rank.index:
+            return 0.0
+        tied = score_groups[finishers.loc[player]]
+        start = int(rank.loc[player])
+        slots = max(0, min(len(tied), top_n - start + 1))
+        return slots / len(tied)
     out = {}
     for player in total.index:
         mc = int(made.loc[player])
         r = int(rank.loc[player]) if (mc == 1 and player in rank.index) else 999
         out[player] = {
             "made_cut": mc,
-            "win": int(r == 1),
-            "top5": int(r <= 5),
-            "top10": int(r <= 10),
-            "top20": int(r <= 20),
+            "win": credit(player, 1),
+            "top5": credit(player, 5),
+            "top10": credit(player, 10),
+            "top20": credit(player, 20),
             "finish": r,
         }
     return out
@@ -106,6 +118,11 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
     (optional) overrides the scoring shape passed to the simulator, e.g.
     {"round_corr":.3,"tail_df":6,"win_round_corr":.1,"win_tail_df":6}."""
     sc = sim_config or {}
+    # Current feature files have no historical snapshots. Honest walk-forward
+    # evaluation disables them unless the caller supplies point-in-time data.
+    safe_flags = {"public_stat": False, "global_priors": False,
+                  "course_arch": False, "weather": False}
+    safe_flags.update(feature_flags or {})
     events = (df[["tournament_id", "date", "course", "is_major"]]
               .drop_duplicates("tournament_id")
               .sort_values("date"))
@@ -121,18 +138,23 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
         if len(prior) < MIN_TRAIN_ROUNDS:
             continue
         event_rounds = df[df["tournament_id"] == ev.tournament_id]
+        if int(event_rounds["round"].max()) != 4:
+            continue  # the production simulator is a 72-hole model
         field = sorted(event_rounds["player"].unique())
         if len(field) < 30:
             continue
         try:
-            params = model.fit(df, asof=start, config=config)
+            params = model.fit(df, asof=start, config=config,
+                               include_public_stats=False)
         except ValueError:
             continue
         rated = model.predict_field(field, params, course=str(ev.course),
                                     is_major=bool(ev.is_major),
-                                    feature_flags=feature_flags)
+                                    feature_flags=safe_flags)
+        made_by_player = event_rounds.groupby("player")["made_cut"].max()
+        event_no_cut = bool(len(made_by_player) and made_by_player.eq(1).all())
         res = gsim.simulate_tournament(
-            rated, n_sims=sims, cut_rule=65, rng=rng,
+            rated, n_sims=sims, cut_rule=65, no_cut=event_no_cut, rng=rng,
             round_corr=sc.get("round_corr"),
             tail_df=sc.get("tail_df", gsim._USE_CONFIG),
             win_round_corr=sc.get("win_round_corr"),
@@ -145,6 +167,7 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
             r = res[p.name]
             rows.append({
                 "tournament_id": ev.tournament_id, "date": str(start.date()),
+                "point_in_time_safe": 1,
                 "is_major": int(bool(ev.is_major)), "player": p.name,
                 "p_win": r["win"], "p_top5": r["top5"], "p_top10": r["top10"],
                 "p_top20": r["top20"], "p_cut": r["made_cut"],
@@ -159,13 +182,22 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
 
 def summarize(pred: pd.DataFrame) -> dict:
     report = {}
+    field_size = pred.groupby("tournament_id")["player"].transform("count").values.astype(float)
+    no_cut_event = pred.groupby("tournament_id")["y_cut"].transform("min").values == 1
+    naive_by_market = {
+        "win": 1.0 / field_size,
+        "top5": np.minimum(1.0, 5.0 / field_size),
+        "top10": np.minimum(1.0, 10.0 / field_size),
+        "top20": np.minimum(1.0, 20.0 / field_size),
+        "cut": np.where(no_cut_event, 1.0, np.minimum(1.0, 65.0 / field_size)),
+    }
     for mkt in MARKETS:
         col = "cut" if mkt == "cut" else mkt
         p = pred[f"p_{col}"].values
         y = pred[f"y_{col}"].values.astype(float)
         base = float(y.mean())
         b = brier(p, y)
-        b_base = brier(np.full_like(y, base), y)
+        b_base = brier(naive_by_market[mkt], y)
         report[mkt] = {
             "n": int(len(y)), "base_rate": round(base, 4),
             "brier": round(b, 5), "brier_base": round(b_base, 5),
@@ -235,7 +267,7 @@ def _config_label(cfg: dict) -> str:
 
 
 def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
-                split: str = "2025-01-01") -> dict:
+                split: str = "2025-01-01", holdout: str = "2026-01-01") -> dict:
     df = model.load_rounds_df()
     base_cfg = model.load_model_config()
     search_sims = max(300, min(750, sims // 8))
@@ -249,7 +281,10 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
         if pred.empty:
             continue
         train_rep = _rep_for_dates(pred, before=split) or summarize(pred)
-        test_rep = _rep_for_dates(pred, after=split) or summarize(pred)
+        test_rep = _rep_for_dates(pred, after=split, before=holdout)
+        holdout_rep = _rep_for_dates(pred, after=holdout)
+        if not test_rep or not holdout_rep:
+            raise SystemExit("Config tuning requires non-empty selection and final holdout windows.")
         row = {"config": cfg, "label": _config_label(cfg),
                "train_headline": train_rep["headline_brier"],
                "train_top10": train_rep["top10"]["brier"],
@@ -258,7 +293,8 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
                "test_headline": test_rep["headline_brier"],
                "test_top10": test_rep["top10"]["brier"],
                "test_top20": test_rep["top20"]["brier"],
-               "test_cut": test_rep["cut"]["brier"]}
+               "test_cut": test_rep["cut"]["brier"],
+               "holdout_headline": holdout_rep["headline_brier"]}
         screened.append(row)
         print(f"  [{i:>2}/{len(candidates)}] {row['label']:<42s} "
               f"train {row['train_headline']:.5f} test {row['test_headline']:.5f}")
@@ -269,17 +305,19 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
                 if r["train_top10"] <= current["train_top10"] + 0.002
                 and r["train_top20"] <= current["train_top20"] + 0.002
                 and r["train_cut"] <= current["train_cut"] + 0.002]
-    best_screen = min(feasible or screened, key=lambda r: (r["train_headline"], r["test_headline"]))
+    best_screen = min(feasible or screened, key=lambda r: r["test_headline"])
 
     print("\nFinal confirmation:")
     pred_cur = walk_forward(df, since=since, sims=sims, seed=seed,
                             verbose=False, config=base_cfg)
     rep_cur = summarize(pred_cur)
-    val_cur = _rep_for_dates(pred_cur, after=split) or rep_cur
+    val_cur = _rep_for_dates(pred_cur, after=holdout)
     pred_best = walk_forward(df, since=since, sims=sims, seed=seed,
                              verbose=False, config=best_screen["config"])
     rep_best = summarize(pred_best)
-    val_best = _rep_for_dates(pred_best, after=split) or rep_best
+    val_best = _rep_for_dates(pred_best, after=holdout)
+    if not val_cur or not val_best:
+        raise SystemExit("Config promotion requires an untouched final holdout window.")
     deltas = {m: val_best[m]["brier"] - val_cur[m]["brier"]
               for m in ("top10", "top20", "cut")}
     promote = (
@@ -287,7 +325,7 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
         and all(v <= 0.002 for v in deltas.values())
         and best_screen["label"] != "current"
     )
-    print(f"  selected on train split: {best_screen['label']}")
+    print(f"  selected on {split}..{holdout}: {best_screen['label']}")
     print(f"  validation current {val_cur['headline_brier']:.5f} config {base_cfg}")
     print(f"  validation chosen  {val_best['headline_brier']:.5f} config {best_screen['config']}")
     print("  validation market deltas: "
@@ -310,11 +348,13 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
                 "chosen_full_headline_brier": rep_best["headline_brier"],
                 "sims": sims,
                 "since": since,
-                "split": split,
+                "selection_split": split,
+                "holdout": holdout,
             })
             BASELINE_JSON.write_text(json.dumps(
                 {"headline_brier": rep_best["headline_brier"], "gate_tol": GATE_TOL,
-                 "asof": pred_best["date"].max()}, indent=1))
+                 "asof": pred_best["date"].max(), "schema_version": 2,
+                 "point_in_time_safe": True}, indent=1))
             print(f"  wrote {model.MODEL_CONFIG_JSON}")
             print(f"  baseline updated -> {BASELINE_JSON}")
     return out
@@ -322,7 +362,7 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
 
 def sweep_win_corr(since: str, sims: int, seed: int = 0,
                    split: str = "2025-01-01", candidates: list[float] | None = None,
-                   write: bool = False) -> dict:
+                   write: bool = False, holdout: str = "2026-01-01") -> dict:
     """Pick the win-market round_corr on walk-forward evidence.
 
     The place/cut markets are produced by the primary draw and are invariant to
@@ -357,11 +397,14 @@ def sweep_win_corr(since: str, sims: int, seed: int = 0,
         if len(field) < 30:
             continue
         try:
-            params = model.fit(df, asof=start, config=base_cfg)
+            params = model.fit(df, asof=start, config=base_cfg,
+                               include_public_stats=False)
         except ValueError:
             continue
-        rated = model.predict_field(field, params, course=str(ev.course),
-                                    is_major=bool(ev.is_major))
+        rated = model.predict_field(
+            field, params, course=str(ev.course), is_major=bool(ev.is_major),
+            feature_flags={"public_stat": False, "global_priors": False,
+                           "course_arch": False, "weather": False})
         actual = _actuals(event_rounds)
         for c in cand:
             wp = gsim.win_market_probs(rated, sims, c, win_tdf, rng)
@@ -374,9 +417,11 @@ def sweep_win_corr(since: str, sims: int, seed: int = 0,
     if not n_events:
         raise SystemExit("Win-corr sweep: no evaluable events — seed more history.")
 
-    def _score(recs):
-        sub = [r for r in recs if pd.Timestamp(r[1]) >= pd.Timestamp(split)]
-        sub = sub or recs   # fall back to full window if split leaves nothing
+    def _score(recs, after, before=None):
+        sub = [r for r in recs if pd.Timestamp(r[1]) >= pd.Timestamp(after)
+               and (before is None or pd.Timestamp(r[1]) < pd.Timestamp(before))]
+        if not sub:
+            raise SystemExit("Win-corr tuning requires non-empty selection and holdout windows.")
         p = np.array([r[2] for r in sub]); y = np.array([r[3] for r in sub], float)
         surp, byt = [], {}
         for tid, _d, pw, yw in sub:
@@ -388,12 +433,15 @@ def sweep_win_corr(since: str, sims: int, seed: int = 0,
         return {"win_logloss": logloss(p, y), "win_brier": brier(p, y),
                 "surprise": float(np.mean(surp)) if surp else None, "n": len(sub)}
 
-    scored = {c: _score(rows[c]) for c in cand}
+    scored = {c: _score(rows[c], split, holdout) for c in cand}
+    holdout_scored = {c: _score(rows[c], holdout) for c in cand}
     base = scored[place_rc]
     best_c = min(cand, key=lambda c: scored[c]["win_logloss"])
     best = scored[best_c]
+    hold_base, hold_best = holdout_scored[place_rc], holdout_scored[best_c]
     promote = (best_c != place_rc
-               and best["win_logloss"] <= base["win_logloss"] - 1e-4)
+               and best["win_logloss"] <= base["win_logloss"] - 1e-4
+               and hold_best["win_logloss"] <= hold_base["win_logloss"] - 1e-4)
 
     print(f"\n{'win_rc':>7}{'win_LL':>10}{'win_Brier':>11}{'surprise':>10}  (out-of-sample, n={base['n']})")
     for c in cand:
@@ -403,6 +451,8 @@ def sweep_win_corr(since: str, sims: int, seed: int = 0,
         print(f"{c:>7.2f}{s['win_logloss']:>10.5f}{s['win_brier']:>11.5f}{sp:>10}{flag}")
     print(f"\n  current win_round_corr (=place {place_rc:g}) logloss {base['win_logloss']:.5f}")
     print(f"  chosen  win_round_corr {best_c:g} logloss {best['win_logloss']:.5f}")
+    print(f"  untouched holdout {holdout}: current {hold_base['win_logloss']:.5f} "
+          f"chosen {hold_best['win_logloss']:.5f}")
     print(f"  verdict: {'PROMOTE' if promote else 'reject'}")
 
     if write and promote:
@@ -412,7 +462,8 @@ def sweep_win_corr(since: str, sims: int, seed: int = 0,
         cfg["win_tail_df"] = win_tdf
         cfg.setdefault("metrics", {})
         cfg["metrics"]["win_corr_sweep"] = {
-            "candidates": cand, "chosen": best_c, "since": since, "split": split,
+            "candidates": cand, "chosen": best_c, "since": since,
+            "selection_split": split, "holdout": holdout,
             "sims": sims, "win_logloss_place_regime": round(base["win_logloss"], 5),
             "win_logloss_chosen": round(best["win_logloss"], 5),
             "note": ("Separate, lower round_corr for the win market. Place/cut "
@@ -564,6 +615,22 @@ def main():
     head = rep["headline_brier"]
     if BASELINE_JSON.exists():
         baseline = json.loads(BASELINE_JSON.read_text())
+        safe_baseline = (baseline.get("schema_version") == 2
+                         and baseline.get("point_in_time_safe") is True)
+        if not safe_baseline:
+            if args.write:
+                BASELINE_JSON.write_text(json.dumps(
+                    {"headline_brier": head, "gate_tol": GATE_TOL,
+                     "asof": pred["date"].max(), "schema_version": 2,
+                     "point_in_time_safe": True}, indent=1))
+                print("Legacy/leaky baseline replaced by explicit honest baseline.")
+                return
+            if args.gate:
+                print("GATE FAIL: baseline predates point-in-time leakage controls; "
+                      "re-run validation with --write after reviewing results.")
+                sys.exit(2)
+            print("Ignoring legacy baseline that predates point-in-time leakage controls.")
+            return
         prev = baseline.get("headline_brier", head)
         delta = head - prev
         print(f"\nBaseline headline Brier {prev:.5f}  →  now {head:.5f}  "
@@ -571,16 +638,21 @@ def main():
         if args.gate and delta > GATE_TOL:
             print("GATE FAIL: model regressed beyond tolerance.")
             sys.exit(2)
-        if delta < -GATE_TOL:  # improvement → adopt new baseline
+        if args.write and delta < -GATE_TOL:  # explicit promotion only
             BASELINE_JSON.write_text(json.dumps(
                 {"headline_brier": head, "gate_tol": GATE_TOL,
-                 "asof": pred["date"].max()}, indent=1))
+                 "asof": pred["date"].max(), "schema_version": 2,
+                 "point_in_time_safe": True}, indent=1))
             print("Improved — baseline updated.")
-    else:
+    elif args.write:
         BASELINE_JSON.write_text(json.dumps(
             {"headline_brier": head, "gate_tol": GATE_TOL,
-             "asof": pred["date"].max()}, indent=1))
+             "asof": pred["date"].max(), "schema_version": 2,
+             "point_in_time_safe": True}, indent=1))
         print(f"\nBaseline written → {BASELINE_JSON}")
+    elif args.gate:
+        print("GATE FAIL: no frozen baseline; create one explicitly with --write.")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

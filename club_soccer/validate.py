@@ -119,13 +119,24 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
                 continue
             try:
                 # Validate the same date-aware path used by the card and edge
-                # layers. At present context coefficients are gated off, but
-                # this prevents validation silently diverging when one is
-                # promoted later.
+                # layers — EXCEPT the context coefficients. The production
+                # context artifact is fitted on full history, so loading it
+                # here would leak future information into past predictions
+                # (look-ahead bias). context_coef={} disables it; a proper
+                # per-window context refit is the planned upgrade, and until
+                # then walk-forward metrics measure the context-free model.
+                # ensemble_weights: the production ensemble_weights.json was
+                # selected on the full component history, so loading it here
+                # would leak future information (same pattern as the context
+                # artifact). The fixed DEFAULT_ENSEMBLE_W blend is the only
+                # weight set that is honest for every historical fold until
+                # per-window weight selection is implemented.
                 pred = M.predict_match(
                     r.home, r.away, r.competition, str(r.date.date()), "ensemble",
                     bool(r.neutral), params=params,
                     fixture_id=getattr(r, "fixture_id", None),
+                    context_coef={},
+                    ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W),
                 )
             except Exception:
                 skipped += 1

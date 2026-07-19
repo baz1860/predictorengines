@@ -123,7 +123,8 @@ def _win_frac(rng, means, sigmas, n_sims, n, round_corr, tail_df,
                           score_shifts=score_shifts)
     tot = scores.sum(axis=2)                              # (n_sims, n) 72-hole
     is_best = tot == tot.min(axis=1, keepdims=True)
-    return is_best.sum(axis=0) / n_sims
+    tie_size = is_best.sum(axis=1, keepdims=True)
+    return (is_best / tie_size).sum(axis=0) / n_sims
 
 
 def win_market_probs(players: list[Player], n_sims: int, round_corr: float,
@@ -245,7 +246,9 @@ def simulate_tournament(
     tb_idx = [(idx_of[a], idx_of[b], idx_of[c]) for a, b, c in (threeballs or [])
               if a in idx_of and b in idx_of and c in idx_of]
     mu_counts = np.zeros((len(mu_idx), 3), dtype=np.int64)   # a_better, b_better, tie
-    tb_counts = np.zeros((len(tb_idx), 4), dtype=np.int64)   # a_best, b_best, c_best, tie
+    # First three columns accumulate dead-heat-equivalent win credit; the last
+    # records shared-min probability for diagnostics.
+    tb_counts = np.zeros((len(tb_idx), 4), dtype=np.float64)
 
     # Expected score per round = -rating (lower = better)
     # Scores are relative to field average (0 = average field score)
@@ -253,10 +256,10 @@ def simulate_tournament(
     score_shifts = _weather_score_shifts(players)
 
     # Accumulators
-    wins      = np.zeros(n, dtype=np.int64)
-    top5s     = np.zeros(n, dtype=np.int64)
-    top10s    = np.zeros(n, dtype=np.int64)
-    top20s    = np.zeros(n, dtype=np.int64)
+    wins      = np.zeros(n, dtype=np.float64)
+    top5s     = np.zeros(n, dtype=np.float64)
+    top10s    = np.zeros(n, dtype=np.float64)
+    top20s    = np.zeros(n, dtype=np.float64)
     made_cuts = np.zeros(n, dtype=np.int64)
     fin_sum   = np.zeros(n, dtype=np.float64)
     fin_count = np.zeros(n, dtype=np.int64)
@@ -317,10 +320,11 @@ def simulate_tournament(
             for k, (ia, ib, ic) in enumerate(tb_idx):
                 s = (rank_score[ia], rank_score[ib], rank_score[ic])
                 mn = min(s)
-                if s.count(mn) > 1:
+                tied = [j for j, value in enumerate(s) if value == mn]
+                for j in tied:
+                    tb_counts[k, j] += 1.0 / len(tied)
+                if len(tied) > 1:
                     tb_counts[k, 3] += 1
-                else:
-                    tb_counts[k, s.index(mn)] += 1
 
         # Rank (lower = better)
         order = np.argsort(r72)
@@ -329,27 +333,38 @@ def simulate_tournament(
         prev_score = None
         prev_pos = 0
         tied_count = 0
+        groups = []
+        group = []
         for rank, idx in enumerate(order):
             if r72[idx] == np.inf:
                 break
             score = r72[idx]
             if score != prev_score:
+                if group:
+                    groups.append((prev_pos, group))
+                group = [idx]
                 prev_pos = rank + 1
                 tied_count = 1
                 prev_score = score
             else:
+                group.append(idx)
                 tied_count += 1
             positions[idx] = prev_pos
+        if group:
+            groups.append((prev_pos, group))
 
         # Accumulate
         for i, pos in enumerate(positions):
             if pos <= n:  # survived
                 fin_sum[i]   += pos
                 fin_count[i] += 1
-                if pos == 1:   wins[i]   += 1
-                if pos <= 5:   top5s[i]  += 1
-                if pos <= 10:  top10s[i] += 1
-                if pos <= 20:  top20s[i] += 1
+        # Economic dead-heat credit: a k-way tie shares the available places.
+        for start, tied in groups:
+            k = len(tied)
+            for limit, acc in ((1, wins), (5, top5s), (10, top10s), (20, top20s)):
+                credit = max(0, min(k, limit - start + 1)) / k
+                if credit:
+                    acc[tied] += credit
 
     # Build results dict
     results = {"__cut_binds__": cut_binds}

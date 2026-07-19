@@ -43,8 +43,8 @@ def parse_raw(path: Path) -> list[dict]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sims", type=int, default=200_000)
-    ap.add_argument("--course", default="Shinnecock Hills")
-    ap.add_argument("--major", action="store_true", default=True)
+    ap.add_argument("--course", default="")
+    ap.add_argument("--major", action="store_true")
     ap.add_argument("--kelly", type=float, default=0.25)
     ap.add_argument("--bankroll", type=float, default=None)
     ap.add_argument("--min-edge", type=float, default=0.0, help="min EV%% to flag a bet")
@@ -90,7 +90,7 @@ def main() -> None:
     order = list(names)
     mu = np.array([-rating[n] for n in order])
     sd = np.array([sigma[n] for n in order])
-    draws = rng.normal(mu[:, None], sd[:, None], size=(len(order), args.sims))
+    draws = np.rint(rng.normal(mu[:, None], sd[:, None], size=(len(order), args.sims)))
     row_of = {n: i for i, n in enumerate(order)}
 
     rows = []
@@ -98,13 +98,16 @@ def main() -> None:
         trio = g["players"]
         idx = [row_of[nm] for nm, _ in trio]
         sub = draws[idx]                     # (3, sims) round scores
-        winner = np.argmin(sub, axis=0)      # lowest score wins the round
-        p_model = [float(np.mean(winner == k)) for k in range(3)]
+        mins = sub.min(axis=0)
+        best = sub == mins
+        tie_count = best.sum(axis=0)
         books = [o for _, o in trio]
         fair = MK.devig(books, method="multiplicative")  # de-vigged market prob
         for k, (nm, odds) in enumerate(trio):
-            pm = p_model[k]
-            ev = pm * odds - 1.0
+            is_best = best[k]
+            expected_return = float(np.where(is_best, odds / tie_count, 0.0).mean())
+            pm = expected_return / odds
+            ev = expected_return - 1.0
             kf = max(0.0, E.kelly_fraction(pm, odds) * args.kelly)
             canon = resolved[nm]
             nr = params.get("players", {}).get(canon, {}).get("n_rounds", 0) if canon else 0

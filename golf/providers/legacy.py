@@ -257,6 +257,10 @@ class EspnProvider:
         if not ev or not meta:
             return []
         comp = (ev.get("competitions") or [{}])[0]
+        status = str(((ev.get("status") or {}).get("type") or {}).get("name") or
+                     ((comp.get("status") or {}).get("type") or {}).get("name") or "").upper()
+        if not any(k in status for k in ("FINAL", "COMPLETE", "POST")):
+            return []  # never freeze an in-progress/suspended event into history
         competitors = comp.get("competitors", [])
         field_size = len(competitors)
         out: list[RoundRecord] = []
@@ -274,9 +278,12 @@ class EspnProvider:
             for ls in lss:
                 rnd = int(ls.get("period") or 0)
                 stp = _parse_to_par(ls.get("displayValue"))
-                if rnd and stp is not None:
+                holes = ls.get("linescores") or []
+                if rnd and stp is not None and len(holes) >= 18:
                     rounds.append((rnd, stp))
-            made_cut = 1 if len(rounds) >= 3 else 0
+            pstatus = str(((c.get("status") or {}).get("type") or {}).get("name") or "").upper()
+            out_status = any(k in pstatus for k in ("CUT", "WD", "WITHDR", "DQ", "DISQUAL"))
+            made_cut = 0 if out_status and len(rounds) < 3 else 1
             for rnd, stp in rounds:
                 out.append(RoundRecord(
                     tournament_id=meta.tournament_id,
@@ -410,7 +417,12 @@ def accumulate_rounds(provider: Optional[RoundsProvider] = None,
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     existing = load_rounds()
-    seen = {(r["tournament_id"], r["player"], str(r["round"])) for r in existing}
+    def key_of(r):
+        pid = str(r.get("dg_id") or "").strip()
+        identity = f"id:{pid}" if pid else f"name:{r.get('player', '')}"
+        return (str(r.get("tournament_id", "")), identity, str(r.get("round", "")))
+
+    merged = {key_of(r): r for r in existing}
 
     new_rows: list[dict] = []
     tournaments = provider.recent_tournaments(since=since)
@@ -419,18 +431,19 @@ def accumulate_rounds(provider: Optional[RoundsProvider] = None,
               + (f" since {since}" if since else ""))
     for meta in tournaments:
         for rec in provider.rounds_for(meta.tournament_id):
-            key = (rec.tournament_id, rec.player, str(rec.round))
-            if key in seen:
+            row = asdict(rec)
+            key = key_of(row)
+            if merged.get(key) == row:
                 continue
-            seen.add(key)
-            new_rows.append(asdict(rec))
+            merged[key] = row
+            new_rows.append(row)
 
     if not new_rows:
         if verbose:
             print("  no new rounds")
         return 0
 
-    all_rows = existing + new_rows
+    all_rows = list(merged.values())
     all_rows.sort(key=lambda r: (r["date"], r["tournament_id"], int(r["round"]),
                                  int(r["finish"])))
     with open(ROUNDS_CSV, "w", newline="") as f:

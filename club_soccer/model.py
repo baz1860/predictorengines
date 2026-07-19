@@ -120,7 +120,15 @@ def load_fixtures(path: Path = FIXTURES) -> pd.DataFrame:
 
 
 def played(df: pd.DataFrame) -> pd.DataFrame:
-    return df.dropna(subset=["home_goals", "away_goals"]).copy()
+    """Fixtures with a standing result: both scores present AND the status is
+    not a void one. Score presence alone is not enough — a postponed fixture
+    that (incorrectly) retained its old score must never train the model."""
+    out = df.dropna(subset=["home_goals", "away_goals"])
+    if "status" in out.columns:
+        from .schema import VOID_STATUSES
+        status = out["status"].astype(str).str.strip().str.upper().str[:3]
+        out = out[~status.isin(VOID_STATUSES)]
+    return out.copy()
 
 
 def upcoming(df: pd.DataFrame) -> pd.DataFrame:
@@ -1193,7 +1201,8 @@ def predict(home: str, away: str, competition: str | None = None,
             player_adj: dict | None = None,
             context_adj: dict | None = None,
             match_date=None,
-            quality_adj: dict | None = None) -> dict:
+            quality_adj: dict | None = None,
+            ensemble_weights: dict | None = None) -> dict:
     """Predict match outcome probabilities.
 
     Parameters
@@ -1227,7 +1236,13 @@ def predict(home: str, away: str, competition: str | None = None,
     rho = _comp_rho(params, competition)
     if model == "ensemble":
         parts = component_matrices(params, home, away, competition, neutral, match_date)
-        weights = load_ensemble_weights()
+        # ensemble_weights=None loads the production artifact — correct for
+        # LIVE pricing only. Historical evaluation must pass explicit weights:
+        # ensemble_weights.json was selected using the full component history,
+        # so letting it leak into past predictions is look-ahead bias (the
+        # same pattern as context_coef in predict_match).
+        weights = (_normalise_weights(ensemble_weights)
+                   if ensemble_weights is not None else load_ensemble_weights())
         M = sum(weights[k] * parts[k] for k in ENSEMBLE_COMPONENTS)
         M = M / M.sum()
     elif model == "goals":
@@ -1294,7 +1309,9 @@ def predict_match(home: str, away: str, competition: str | None,
                   neutral: bool = False, params: dict | None = None,
                   player_adj: dict | None = None, fixture_id=None,
                   apply_context: bool = True,
-                  quality_adj: dict | None = None) -> dict:
+                  quality_adj: dict | None = None,
+                  context_coef: dict | None = None,
+                  ensemble_weights: dict | None = None) -> dict:
     """Point-in-time prediction wrapper used by cards and edge pricing.
 
     This keeps the live paths aligned: if a context coefficient is promoted,
@@ -1302,6 +1319,12 @@ def predict_match(home: str, away: str, competition: str | None,
     the displayed prediction and the priced prediction. With inactive context
     coefficients this is exactly the legacy model plus any supplied player
     availability adjustment.
+
+    context_coef: explicit context coefficients. None (default) loads the
+    production artifact — correct for LIVE pricing only. Historical
+    evaluation (walk-forward validation) MUST pass its own coefficients
+    (or {} to disable): the production artifact is fitted on full history,
+    so letting it leak into past predictions is look-ahead bias.
     """
     context_adj = {}
     if apply_context and match_date:
@@ -1314,10 +1337,12 @@ def predict_match(home: str, away: str, competition: str | None,
             season=_season_year(match_date),
             is_cup=bool(comp and comp.kind == "cup"),
             fixture_id=fixture_id,
+            coef=context_coef,
         )
     return predict(home, away, competition, model, neutral, params=params,
                    player_adj=player_adj, context_adj=context_adj,
-                   match_date=match_date, quality_adj=quality_adj)
+                   match_date=match_date, quality_adj=quality_adj,
+                   ensemble_weights=ensemble_weights)
 
 
 def main() -> None:

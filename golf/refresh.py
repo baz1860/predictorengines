@@ -17,6 +17,8 @@ from pathlib import Path
 
 from . import provider_qa as qa
 from . import store
+from . import model
+from .io_utils import atomic_write_csv, atomic_write_text
 from .providers.bovada import (BovadaGolfProvider, _dedupe as _bovada_dedupe,
                                export_csvs as bovada_export_csvs)
 from .providers.espn import EspnGolfProvider
@@ -161,6 +163,8 @@ def run_refresh(
                  if rounds_done else "pre-tournament — no completed rounds yet"),
                 rounds_done))
         except Exception as exc:  # noqa: BLE001 — never let scoring break refresh
+            _clear_inplay_artifacts()
+            provider_rows["live_scores_round"] = 0
             checks.append(qa.SourceCheck("espn.live_scores", False, "warning", str(exc), 0))
 
     stats_written = None
@@ -340,6 +344,10 @@ def run_refresh(
                 round_no=round_no,
                 book="manual_paste",
             )
+            for issue in getattr(manual, "last_parse_issues", []):
+                checks.append(qa.SourceCheck(
+                    "manual_paste", False, "warning",
+                    f"refused malformed round group: {issue}", 0))
             if raw_quotes:
                 quotes.extend(raw_quotes)
                 write_threeballs_csv(raw_quotes, event=event.name if event else "",
@@ -434,6 +442,18 @@ LIVE_STATE_JSON = DATA_DIR / "live_state.json"
 PREDICTIONS_INPLAY_CSV = DATA_DIR / "predictions_inplay.csv"
 
 
+def _clear_inplay_artifacts() -> None:
+    """Remove score-conditioned state whenever it cannot be proven current."""
+    for stale in (LIVE_SCORES_CSV, LIVE_STATE_JSON, PREDICTIONS_INPLAY_CSV):
+        try:
+            stale.unlink(missing_ok=True)
+        except OSError:
+            try:
+                stale.write_text("")
+            except OSError:
+                pass
+
+
 def _write_live_scores(espn, event, *, use_cache: bool = False) -> int:
     """Write the between-rounds scores snapshot and live_state.json.
 
@@ -441,32 +461,30 @@ def _write_live_scores(espn, event, *, use_cache: bool = False) -> int:
     is complete we clear any stale in-play artefacts so the engine falls back to
     its pre-tournament projection instead of last week's leaderboard.
     """
-    rows, rounds_done = espn.completed_round_scores(event.event_id, use_cache=use_cache)
+    rows, rounds_done = espn.completed_round_scores(
+        event.event_id, use_cache=use_cache,
+        cut_size=int(getattr(event, "cut_rule", 65) or 65),
+        no_cut=bool(getattr(event, "no_cut", False)),
+    )
 
     if rounds_done < 1 or not rows:
-        for stale in (LIVE_SCORES_CSV, LIVE_STATE_JSON, PREDICTIONS_INPLAY_CSV):
-            try:
-                stale.unlink(missing_ok=True)
-            except OSError:
-                try:            # some mounts block unlink → blank instead
-                    stale.write_text("")
-                except OSError:
-                    pass
+        _clear_inplay_artifacts()
         return 0
 
-    with open(LIVE_SCORES_CSV, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["name", "score", "made_cut"])
-        w.writeheader()
-        for r in rows:
-            w.writerow({"name": r["name"], "score": r["score"], "made_cut": r["made_cut"]})
+    atomic_write_csv(LIVE_SCORES_CSV, ["name", "score", "made_cut"], (
+        {"name": r["name"], "score": r["score"], "made_cut": r["made_cut"]}
+        for r in rows))
 
     survivors = sum(1 for r in rows if r["made_cut"])
-    LIVE_STATE_JSON.write_text(json.dumps({
+    atomic_write_text(LIVE_STATE_JSON, json.dumps({
         "event_id": event.event_id,
         "event_name": event.name,
         "rounds_done": rounds_done,
         "scores_csv": LIVE_SCORES_CSV.name,
         "survivors": survivors,
+        "cut_rule": int(getattr(event, "cut_rule", 65) or 65),
+        "no_cut": bool(getattr(event, "no_cut", False)),
+        "total_rounds": int(getattr(event, "total_rounds", 4) or 4),
         "updated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
     }, indent=2))
     return rounds_done
@@ -546,11 +564,7 @@ def _course_key(name: str) -> str:
 
 
 def _norm_name(name: str) -> str:
-    import unicodedata
-
-    s = unicodedata.normalize("NFKD", str(name or ""))
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    return " ".join(s.lower().replace(".", "").replace(",", "").split())
+    return model._fold_name(name)
 
 
 def _load_tee_time_overrides(event_id: str, event_name: str) -> dict[str, dict]:

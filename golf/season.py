@@ -31,6 +31,7 @@ from . import edge as GEDGE
 from . import engine as GENG
 from . import refresh as GREF
 from .providers.espn import EspnGolfProvider
+from .io_utils import atomic_write_text
 
 DATA_DIR = Path(__file__).parent / "data"
 PREDICTIONS_CSV = DATA_DIR / "predictions.csv"
@@ -227,7 +228,7 @@ def build_card(
                         threeball_rows, manifest, sims, major, course,
                         round_no, min_edge, notes)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(text)
+    atomic_write_text(output, text)
 
     staked = [r for r in edge_rows if _truthy(r.get("recommended"))]
     picks_3b = _recommended_3balls(threeball_rows, min_edge)

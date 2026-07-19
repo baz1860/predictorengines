@@ -11,9 +11,16 @@ set -euo pipefail
 # package-relative imports; invoke them with `python3 -m club_soccer.X`).
 cd "$(dirname "$0")/.."
 
-python3 -m club_soccer.season "$@" || echo "season.py run had a problem — see output above"
+# Required steps fail CLOSED: their failures propagate as a nonzero exit so
+# the scheduler (and anyone reading its status) sees a broken run instead of
+# a false-green one. Only provenance recording is best-effort.
+status=0
 
-python3 -m club_soccer.validate --gate || echo "validation warning"
+python3 -m club_soccer.season "$@" || { status=$?; echo "season.py FAILED (exit $status) — see output above"; }
 
-# Record data provenance (offline, never blocks).
+python3 -m club_soccer.validate --gate || { s=$?; echo "validation gate FAILED (exit $s)"; if [ "$status" -eq 0 ]; then status=$s; fi; }
+
+# Record data provenance (offline, best-effort — never blocks).
 python3 -m app.provenance --engine club_soccer --write || echo "manifest skipped"
+
+exit $status

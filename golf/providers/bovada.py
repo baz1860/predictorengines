@@ -232,18 +232,21 @@ def _dedupe(quotes: list[OddsQuote]) -> list[OddsQuote]:
 
 # ── exporters to the CSV contract the pricer reads ──────────────────────────
 
-def write_outrights_csv(quotes: Iterable[OddsQuote], path: Path | None = None) -> Path | None:
+def write_outrights_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
+                        event: str = "") -> Path | None:
     """Win-market quotes → odds.csv (name, odds_win). Returns None if no wins."""
     path = path or ODDS_CSV
     wins = [q for q in quotes if q.market == "win"]
     if not wins:
         return None
-    cols = ["name", "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut"]
+    cols = ["name", "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut",
+            "event", "captured_at"]
     with path.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         for q in wins:
-            w.writerow({"name": q.player_name, "odds_win": round(q.decimal_odds, 3)})
+            w.writerow({"name": q.player_name, "odds_win": round(q.decimal_odds, 3),
+                        "event": event, "captured_at": q.timestamp or _ts()})
     return path
 
 
@@ -262,14 +265,14 @@ def write_matchups_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
         return None
     with path.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["group_id", "player_a", "player_b",
-                                          "odds_a", "odds_b", "event"])
+                                          "odds_a", "odds_b", "event", "captured_at"])
         w.writeheader()
         for gid, qs in pairs.items():
             w.writerow({"group_id": gid,
                         "player_a": qs[0].player_name, "player_b": qs[1].player_name,
                         "odds_a": round(qs[0].decimal_odds, 3),
                         "odds_b": round(qs[1].decimal_odds, 3),
-                        "event": event})
+                        "event": event, "captured_at": qs[0].timestamp or _ts()})
     return path
 
 
@@ -279,7 +282,7 @@ def export_csvs(quotes: list[OddsQuote], event: str = "") -> dict[str, int]:
     never blanks an existing board. Boards are tagged with the event so the
     pricers can refuse them once the tour moves on."""
     written = {}
-    if write_outrights_csv(quotes):
+    if write_outrights_csv(quotes, event=event):
         written["odds.csv"] = sum(1 for q in quotes if q.market == "win")
     if write_matchups_csv(quotes, event=event):
         written["matchups.csv"] = sum(1 for q in quotes if q.market == "tournament_matchup") // 2

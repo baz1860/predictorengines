@@ -42,7 +42,7 @@ def _patched_provider(monkeypatch, competitors):
 # ──────────────────────────────────────────────
 
 @pytest.mark.parametrize("raw,expected", [
-    ("-7", -7.0), ("E", 0.0), ("+2", 2.0), ("", 0.0), ("--", 0.0), (None, 0.0),
+    ("-7", -7.0), ("E", 0.0), ("+2", 2.0), ("", None), ("--", None), (None, None),
 ])
 def test_to_par_parsing(raw, expected):
     assert espn_mod._to_par(raw) == expected
@@ -115,18 +115,19 @@ def test_cut_line_computed_when_feed_omits_it(monkeypatch):
 # ──────────────────────────────────────────────
 
 def test_board_fresh_guard(tmp_path):
-    import os, time
+    import datetime as dt, time
     board = tmp_path / "matchups.csv"
-    board.write_text("x")
     now = time.time()
-    # board written well before the refresh manifest → stale
-    os.utime(board, (now - 7200, now - 7200))
+    old = dt.datetime.fromtimestamp(now - 7200, dt.timezone.utc).isoformat()
+    board.write_text(f"event,captured_at\nTest,{old}\n")
     assert engine._board_fresh(board, ref=now) is False
-    # board written alongside the refresh → fresh
-    os.utime(board, (now - 60, now - 60))
+    fresh = dt.datetime.fromtimestamp(now - 60, dt.timezone.utc).isoformat()
+    board.write_text(f"event,captured_at\nTest,{fresh}\n")
     assert engine._board_fresh(board, ref=now) is True
-    # unknown ref (pre-tournament, no manifest) → treated as fresh
+    # unknown ref is only allowed pre-tournament; event tags are checked elsewhere
     assert engine._board_fresh(board, ref=None) is True
+    board.write_text("event\nTest\n")
+    assert engine._board_fresh(board, ref=now) is False
     # missing file → not fresh
     assert engine._board_fresh(tmp_path / "nope.csv", ref=now) is False
 
@@ -236,6 +237,41 @@ def test_refresh_writes_and_clears(monkeypatch, tmp_path):
     assert not refresh.LIVE_STATE_JSON.exists()
     assert not refresh.PREDICTIONS_INPLAY_CSV.exists()
 
+
+def test_live_state_rejects_previous_event(monkeypatch, tmp_path):
+    monkeypatch.setattr(engine, "DATA_DIR", tmp_path)
+    (tmp_path / "field.csv").write_text(
+        "name,event_id,event,cut_rule,no_cut\nA,NEW,New Open,65,0\n")
+    (tmp_path / "scores_live.csv").write_text("name,score,made_cut\nA,-9,1\n")
+    (tmp_path / "live_state.json").write_text(
+        '{"event_id":"OLD","event_name":"Old Open","rounds_done":2,'
+        '"scores_csv":"scores_live.csv"}')
+    assert engine._live_state({}) is None
+
+
+def test_no_cut_leaderboard_does_not_invent_cut(monkeypatch):
+    comps = [_competitor(f"P{i}", [_round_line(1, str(i)), _round_line(2, "E")])
+             for i in range(8)]
+    prov = _patched_provider(monkeypatch, comps)
+    rows, rounds_done = prov.completed_round_scores("TEST", cut_size=3, no_cut=True)
+    assert rounds_done == 2
+    assert all(r["made_cut"] == 1 for r in rows)
+
+
+def test_inplay_round_zero_matches_pretournament():
+    from golf.model import Player
+    from golf import simulate, simulate_inplay
+    players = [Player(name=f"P{i}", rating=(20-i)/30, sigma=2.7 + i/100)
+               for i in range(30)]
+    seed = 41
+    pre = simulate.simulate_tournament(
+        players, n_sims=5000, no_cut=True, rng=__import__('numpy').random.default_rng(seed))
+    live = simulate_inplay.simulate_inplay(
+        players, {p.name.lower(): 0.0 for p in players}, rounds_done=0,
+        n_sims=5000, no_cut=True, rng=__import__('numpy').random.default_rng(seed))
+    for p in players:
+        for market in ("win", "top5", "top10", "top20"):
+            assert abs(pre[p.name][market] - live[p.name][market]) < 1e-12
 
 # ──────────────────────────────────────────────
 # Engine auto-route

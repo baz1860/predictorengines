@@ -95,7 +95,42 @@ def fit_from_csv(path: Path | None = None) -> dict:
     if not path.exists():
         raise FileNotFoundError(
             f"No {path}. Run: python -m golf.validate  first.")
-    maps = fit_maps(pd.read_csv(path))
+    pred = pd.read_csv(path)
+    if "point_in_time_safe" not in pred.columns or not pred["point_in_time_safe"].eq(1).all():
+        raise ValueError(
+            "Validation predictions predate point-in-time leakage controls. "
+            "Re-run python -m golf.validate before fitting calibration.")
+    if "date" not in pred.columns:
+        raise ValueError("Calibration promotion requires dated validation predictions.")
+    event_dates = (pred[["tournament_id", "date"]].drop_duplicates()
+                   .sort_values("date"))
+    if len(event_dates) < 20:
+        raise ValueError("Calibration promotion requires at least 20 tournaments.")
+    cutoff = event_dates.iloc[int(len(event_dates) * 0.75)]["date"]
+    train = pred[pd.to_datetime(pred["date"]) < pd.Timestamp(cutoff)]
+    test = pred[pd.to_datetime(pred["date"]) >= pd.Timestamp(cutoff)]
+    full_maps = fit_maps(pred)
+    promoted = []
+    maps = {}
+    for market in MARKETS:
+        train_map = fit_maps(train)[market]
+        p = test[f"p_{market}"].values.astype(float)
+        y = test[f"y_{market}"].values.astype(float)
+        calibrated = np.interp(p, train_map["x"], train_map["y"])
+        raw_brier = float(np.mean((p - y) ** 2))
+        cal_brier = float(np.mean((calibrated - y) ** 2))
+        if cal_brier < raw_brier:
+            maps[market] = full_maps[market]
+            promoted.append(market)
+        else:
+            maps[market] = {"x": [0.0, 1.0], "y": [0.0, 1.0]}
+    maps["_meta"] = {
+        "schema_version": 2,
+        "point_in_time_safe": True,
+        "trained_through": str(pred["date"].max()) if "date" in pred else "",
+        "temporal_holdout_from": str(cutoff),
+        "promoted_markets": promoted,
+    }
     CALIB_FILE.write_text(json.dumps(maps, indent=1))
     return maps
 
@@ -103,7 +138,11 @@ def fit_from_csv(path: Path | None = None) -> dict:
 # ── apply (consumer) ──
 def load_maps():
     if CALIB_FILE.exists():
-        return json.loads(CALIB_FILE.read_text())
+        maps = json.loads(CALIB_FILE.read_text())
+        meta = maps.get("_meta") or {}
+        if meta.get("schema_version") != 2 or not meta.get("point_in_time_safe"):
+            return None
+        return maps
     return None
 
 

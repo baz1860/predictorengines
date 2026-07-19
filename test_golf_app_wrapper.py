@@ -14,12 +14,11 @@ PASS, FAIL = 0, 0
 
 def check(name, cond, detail=""):
     global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"  PASS  {name}")
-    else:
+    if not cond:
         FAIL += 1
-        print(f"  FAIL  {name}  {detail}")
+        raise AssertionError(f"{name}: {detail}")
+    PASS += 1
+    print(f"  PASS  {name}")
 
 
 def test_adapter_advertises_free_source_commands():

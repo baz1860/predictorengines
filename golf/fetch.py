@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import datetime as dt
 import json
 import os
 import sys
@@ -339,7 +340,9 @@ def write_players_csv(players: list[dict], path: Path | None = None) -> Path:
     return path
 
 
-def write_odds_csv(events: list[dict], path: Path | None = None, bookmaker_pref: list[str] | None = None) -> Path:
+def write_odds_csv(events: list[dict], path: Path | None = None,
+                   bookmaker_pref: list[str] | None = None,
+                   event_name: str = "") -> Path:
     """
     Parse The Odds API response into odds.csv in the format edge.py expects:
       name, odds_win, odds_top5, odds_top10, odds_top20, odds_cut, odds_nocut
@@ -389,11 +392,13 @@ def write_odds_csv(events: list[dict], path: Path | None = None, bookmaker_pref:
                 return bm_dict[bm]
         return max(bm_dict.values())  # take highest if preferred not available
 
-    cols = ["name", "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut", "odds_nocut"]
+    captured_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    cols = ["name", "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut",
+            "odds_nocut", "event", "captured_at"]
     rows = []
     for name, markets in sorted(collected.items()):
-        row = {"name": name}
-        for col in cols[1:]:
+        row = {"name": name, "event": event_name, "captured_at": captured_at}
+        for col in ("odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut", "odds_nocut"):
             if col in markets:
                 row[col] = f"{best_odds(markets[col]):.2f}"
             else:
@@ -517,13 +522,13 @@ def main():
                 sport = find_golf_sport_key(args.odds_key, event_name)
             if sport:
                 odds_data = fetch_odds(args.odds_key, market="outrights", sport=sport)
-                write_odds_csv(odds_data)
+                write_odds_csv(odds_data, event_name=event_name)
             elif event_name:
                 # Confirmed: no market for this event. Any existing odds.csv
                 # belongs to an earlier event, and edge.py matches odds to
                 # predictions by player name alone — the same pros play every
                 # week, so stale odds would silently price the wrong event.
-                write_odds_csv([])
+                write_odds_csv([], event_name=event_name)
                 print(f"  Cleared odds.csv — no market for '{event_name}' yet.")
             else:
                 print("  No current event to match odds against — odds.csv left unchanged.")

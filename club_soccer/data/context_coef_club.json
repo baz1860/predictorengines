@@ -10,6 +10,7 @@
   "rest_diff_clip": 7,
   "cong14_clip": 4,
   "xi_load14_clip": 3.0,
-  "active": true,
-  "note": "Activated after expanded-data held-out ensemble gate: Brier 0.6068 -> 0.6063 and log-loss 1.0140 -> 1.0133 on 2025-12 onward. Minutes-load and precipitation terms excluded from active production because their point-in-time gates were insufficient."
+  "active": false,
+  "note": "Activated after expanded-data held-out ensemble gate: Brier 0.6068 -> 0.6063 and log-loss 1.0140 -> 1.0133 on 2025-12 onward. Minutes-load and precipitation terms excluded from active production because their point-in-time gates were insufficient.",
+  "deactivated_reason": "2026-07-19: deactivated pending leak-free validation. The coefficients were fitted on full history; walk-forward validation cannot yet refit them per training window, so while active the deployed predictor was unvalidated (validation measured the context-free model). Reactivate only after per-window context fitting exists in validate.py and the context-enabled model beats the context-free model out-of-sample."
 }

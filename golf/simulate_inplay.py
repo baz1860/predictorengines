@@ -59,6 +59,9 @@ def simulate_inplay(
     rng: np.random.Generator | None = None,
     matchups: list[tuple[str, str]] | None = None,
     threeballs: list[tuple[str, str, str]] | None = None,
+    cut_rule: int = 65,
+    no_cut: bool = False,
+    total_rounds: int = TOTAL_ROUNDS,
 ) -> dict[str, dict]:
     """
     Simulate the remaining rounds starting from current scores.
@@ -79,11 +82,13 @@ def simulate_inplay(
     ``__matchups__`` {(a,b): {a, b, tie}} and ``__threeballs__``
     {(a,b,c): {a, b, c, tie}}, matching simulate.simulate_tournament's contract.
     """
+    from . import simulate as pre
+
     rng = rng or np.random.default_rng()
-    rounds_left = TOTAL_ROUNDS - rounds_done
+    rounds_left = total_rounds - rounds_done
 
     if rounds_left <= 0:
-        raise ValueError("Tournament is already complete (rounds_done >= 4)")
+        raise ValueError("Tournament is already complete")
 
     # Filter to survivors only
     survivors = [p for p in players if p.name.lower() in current_scores]
@@ -96,26 +101,38 @@ def simulate_inplay(
     sigmas       = np.array([p.sigma  for p in survivors])
     base_scores  = np.array([current_scores[p.name.lower()] for p in survivors])
 
-    # Expected score per round = -rating
-    means = -ratings  # (n,)
+    means = -ratings
+    rc, tdf, win_rc, win_tdf = pre.load_sim_config()
+    shifts = pre._weather_score_shifts(survivors)
+    drawn = pre._draw_scores(rng, means, sigmas, n_sims, n, rc, tdf,
+                             score_shifts=shifts)
+    future_scores = drawn[:, :, :rounds_left]
+    totals = base_scores[np.newaxis, :] + future_scores.sum(axis=2)
 
-    # Accumulators
-    wins      = np.zeros(n, dtype=np.int64)
-    top5s     = np.zeros(n, dtype=np.int64)
-    top10s    = np.zeros(n, dtype=np.int64)
-    top20s    = np.zeros(n, dtype=np.int64)
-    fin_sum   = np.zeros(n, dtype=np.float64)
+    # After R1 the 36-hole cut is still uncertain. Apply it inside every draw;
+    # after R2 the snapshot already contains survivors only.
+    cut_binds = (not no_cut) and rounds_done < 2 and cut_rule < n
+    survived = np.ones((n_sims, n), dtype=bool)
+    if cut_binds:
+        r36 = base_scores[np.newaxis, :] + future_scores[:, :, 0]
+        cut_line = np.partition(r36, cut_rule - 1, axis=1)[:, cut_rule - 1]
+        survived = r36 <= cut_line[:, np.newaxis]
+        totals = np.where(survived, totals, np.inf)
+    settlement_totals = np.where(
+        np.isinf(totals), 1e6 + (r36 if cut_binds else 0.0), totals)
 
-    # Draw all remaining rounds at once: (n_sims, n, rounds_left)
-    future_scores = rng.normal(
-        loc=means[np.newaxis, :, np.newaxis],
-        scale=sigmas[np.newaxis, :, np.newaxis],
-        size=(n_sims, n, rounds_left),
-    )
-
-    # Total = base + sum of future rounds
-    future_totals = future_scores.sum(axis=2)                  # (n_sims, n)
-    totals        = base_scores[np.newaxis, :] + future_totals # (n_sims, n)
+    # The win regime remains separately configurable, matching pre-tournament.
+    win_totals = totals
+    if (win_rc, win_tdf) != (rc, tdf):
+        win_drawn = pre._draw_scores(rng, means, sigmas, n_sims, n,
+                                     win_rc, win_tdf, score_shifts=shifts)
+        win_totals = base_scores[np.newaxis, :] + win_drawn[:, :, :rounds_left].sum(axis=2)
+        if cut_binds:
+            # Winners necessarily clear the cut, but retain the same simulated
+            # cut rule so pathological small fields remain coherent.
+            wr36 = base_scores[np.newaxis, :] + win_drawn[:, :, 0]
+            wline = np.partition(wr36, cut_rule - 1, axis=1)[:, cut_rule - 1]
+            win_totals = np.where(wr36 <= wline[:, np.newaxis], win_totals, np.inf)
 
     # Tournament-long matchups / 3-balls off the SAME simulated finals. Only
     # survivor-vs-survivor groups are settled here; a group naming a cut player
@@ -130,7 +147,7 @@ def simulate_inplay(
 
     mres: dict = {}
     for a, b, ia, ib in mu_idx:
-        ta, tb = totals[:, ia], totals[:, ib]      # lower total = better
+        ta, tb = settlement_totals[:, ia], settlement_totals[:, ib]
         a_w = int(np.count_nonzero(ta < tb))
         b_w = int(np.count_nonzero(tb < ta))
         mres[(a, b)] = {a: a_w / n_sims, b: b_w / n_sims,
@@ -138,28 +155,29 @@ def simulate_inplay(
 
     tres: dict = {}
     for a, b, c, ia, ib, ic in tb_idx:
-        ta, tb, tc = totals[:, ia], totals[:, ib], totals[:, ic]
+        ta, tb, tc = (settlement_totals[:, ia], settlement_totals[:, ib],
+                      settlement_totals[:, ic])
         mn = np.minimum(np.minimum(ta, tb), tc)
         a_best, b_best, c_best = (ta == mn), (tb == mn), (tc == mn)
-        uniq = (a_best.astype(np.int8) + b_best + c_best) == 1   # no shared min
-        a_w = int(np.count_nonzero(a_best & uniq))
-        b_w = int(np.count_nonzero(b_best & uniq))
-        c_w = int(np.count_nonzero(c_best & uniq))
+        tie_size = a_best.astype(np.int8) + b_best + c_best
+        a_w = float(np.sum(a_best / tie_size))
+        b_w = float(np.sum(b_best / tie_size))
+        c_w = float(np.sum(c_best / tie_size))
         tres[(a, b, c)] = {a: a_w / n_sims, b: b_w / n_sims, c: c_w / n_sims,
-                           "tie": (n_sims - a_w - b_w - c_w) / n_sims}
+                           "tie": float(np.mean(tie_size > 1))}
 
-    # Rank every simulation at once. Totals are continuous (base ints + normal
-    # draws), so exact ties are measure-zero and ordinal ranking equals golf
-    # competition ranking — but it runs ~100x faster than a per-sim Python loop.
+    # Rank every simulation at once. Cut players (inf) rank behind survivors.
     order = np.argsort(totals, axis=1, kind="stable")          # (n_sims, n)
     ranks = np.empty_like(order)
     rows = np.arange(n_sims)[:, np.newaxis]
     ranks[rows, order] = np.arange(1, n + 1)[np.newaxis, :]     # 1 = best score
-    wins    = np.count_nonzero(ranks == 1,  axis=0)
+    win_best = win_totals == np.min(win_totals, axis=1, keepdims=True)
+    wins = (win_best / win_best.sum(axis=1, keepdims=True)).sum(axis=0)
     top5s   = np.count_nonzero(ranks <= 5,  axis=0)
     top10s  = np.count_nonzero(ranks <= 10, axis=0)
     top20s  = np.count_nonzero(ranks <= 20, axis=0)
     fin_sum = ranks.sum(axis=0, dtype=np.float64)
+    made_cuts = survived.mean(axis=0) if cut_binds else np.ones(n)
 
     results = {}
     for i, name in enumerate(names):
@@ -168,11 +186,13 @@ def simulate_inplay(
             "top5":        top5s[i]  / n_sims,
             "top10":       top10s[i] / n_sims,
             "top20":       top20s[i] / n_sims,
+            "made_cut":    float(made_cuts[i]),
             "current_score": base_scores[i],
             "avg_finish":  fin_sum[i] / n_sims,
             "n_sims":      n_sims,
         }
 
+    results["__cut_binds__"] = cut_binds
     if mres:
         results["__matchups__"] = mres
     if tres:

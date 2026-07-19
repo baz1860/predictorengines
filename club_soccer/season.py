@@ -17,7 +17,8 @@ Steps (in order):
      robots.txt (see docs/model_improvements_changelog.md) — not attempted.
   5. Refit the model (skipped: --fast).
   6. Standings are computed lazily by the card writer (no separate step).
-  7. Price the card: BSD odds if available else manual odds.csv, with
+  7. Price the card: BSD odds only (manual odds.csv needs --allow-manual-odds,
+     is age-limited, and only prices future fixtures), with
      availability report, context multipliers (whatever's promoted — none
      are, by design, until a future gate passes), do-not-bet filter.
   8. Write club_soccer/data/card.md.
@@ -27,6 +28,7 @@ Steps (in order):
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -56,14 +58,26 @@ DATA = HERE / "data"
 CARD = DATA / "card.md"
 CARD_HORIZON_DAYS = 7
 FDCOUK_STALE_DAYS = 6
+# Manual odds.csv is opt-in (--allow-manual-odds); freshness/future-kickoff
+# rules live in edge.validate_quotes — the one gate shared with the app.
+MANUAL_ODDS_MAX_AGE_DAYS = E.MANUAL_ODDS_MAX_AGE_DAYS
 
 
-def _step(title: str, fn: Callable, *args, **kwargs):
+# Required steps that failed this run. The card is still written (degraded is
+# better than absent for a human reader) but the process exits nonzero so
+# schedulers and update.sh see the failure instead of a false-green run.
+_FAILED_REQUIRED: list[str] = []
+
+
+def _step(title: str, fn: Callable, *args, required: bool = False, **kwargs):
     print(f"\n== {title} ==")
     try:
         return fn(*args, **kwargs)
     except Exception as exc:
-        print(f"   skipped ({type(exc).__name__}: {exc})")
+        print(f"   {'FAILED' if required else 'skipped'} "
+              f"({type(exc).__name__}: {exc})")
+        if required:
+            _FAILED_REQUIRED.append(f"{title}: {type(exc).__name__}: {exc}")
         return None
 
 
@@ -86,7 +100,8 @@ def _rebuild_squads_and_transfers(store: PF.PlayerFeatureStore) -> None:
 
 
 def run_network_steps(api_key: str) -> None:
-    _step("Fetch results + upcoming fixtures", F.fetch_fixtures, current=True, api_key=api_key)
+    _step("Fetch results + upcoming fixtures", F.fetch_fixtures, current=True,
+          api_key=api_key, required=True)
 
     _step("Pull absences", PF.pull_absences, api_key)
     store = PF.PlayerFeatureStore().load()
@@ -248,11 +263,18 @@ def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None,
     return lines
 
 
-def _backed_bets_section(edge_rows: list[dict]) -> list[str]:
+def _backed_bets_section(edge_rows: list[dict], today_str: str,
+                         pricing_note: str | None = None) -> list[str]:
+    # Defense in depth: even if a stale quote survives upstream filtering,
+    # a fixture dated before today is never presented as a backable bet.
     backed = [r for r in edge_rows if r.get("ev_per_unit", 0) > 0
-             and float(r.get("kelly_stake", 0) or 0) > 0 and not r.get("suppressed_reason")]
+             and float(r.get("kelly_stake", 0) or 0) > 0 and not r.get("suppressed_reason")
+             and str(r.get("date", ""))[:10] >= today_str]
     suppressed = [r for r in edge_rows if r.get("suppressed_reason")]
     lines = ["## Backed bets", ""]
+    if pricing_note:
+        lines.append(f"_{pricing_note}_")
+        lines.append("")
     if not backed:
         lines.append("No positive-EV, unsuppressed bets on the current odds.")
     else:
@@ -262,8 +284,18 @@ def _backed_bets_section(edge_rows: list[dict]) -> list[str]:
             lines.append(f"| {r['match']} | {r['market']} | {r['bet']} | {r['odds']} | "
                          f"{r['edge']:+.1%} | £{r['stake_gbp']:.2f} |")
     lines.append("")
-    if suppressed:
-        lines.append(f"_{len(suppressed)} bet(s) suppressed by the market-model do-not-bet filter._")
+    gate_suppressed = [r for r in suppressed
+                       if str(r.get("suppressed_reason", "")).startswith("evidence-gate")]
+    other_suppressed = [r for r in suppressed if r not in gate_suppressed]
+    if gate_suppressed:
+        lines.append(f"_Evidence gate CLOSED: {len(gate_suppressed)} priced outcome(s) "
+                     "shown for diagnostics only — the stored backtest shows no "
+                     "demonstrated edge, so no stakes are recommended "
+                     "(`python3 -m club_soccer.evidence_gate` for the criteria)._")
+        lines.append("")
+    if other_suppressed:
+        lines.append(f"_{len(other_suppressed)} bet(s) suppressed by the market-model "
+                     "do-not-bet filter._")
         lines.append("")
     return lines
 
@@ -318,13 +350,14 @@ def _weekly_footer() -> list[str]:
 
 
 def write_card(edge_rows: list[dict], player_adj_map: dict | None,
-               calib_maps: dict | None = None) -> None:
+               calib_maps: dict | None = None,
+               pricing_note: str | None = None) -> None:
     today = datetime.now(timezone.utc)
     today_str = str(today.date())
     lines: list[str] = []
     lines += _freshness_header(today_str)
     lines += _upcoming_section(pd.Timestamp(today.date()), player_adj_map, calib_maps)
-    lines += _backed_bets_section(edge_rows)
+    lines += _backed_bets_section(edge_rows, today_str, pricing_note)
     lines += _transfers_absences_section()
     if today.weekday() == 0:   # Monday
         lines += _weekly_footer()
@@ -334,7 +367,9 @@ def write_card(edge_rows: list[dict], player_adj_map: dict | None,
 
 
 # ── main ──────────────────────────────────────────────────────────────────
-def run(fast: bool = False, no_network: bool = False) -> None:
+def run(fast: bool = False, no_network: bool = False,
+        allow_manual_odds: bool = False) -> None:
+    _FAILED_REQUIRED.clear()   # per-run state: never inherit an old failure
     report = H.run_checks()
     if not report.get("ok", True):
         sys.exit("Health check hard-failed (future-dated finished rows or "
@@ -349,7 +384,7 @@ def run(fast: bool = False, no_network: bool = False) -> None:
         run_network_steps(api_key)
 
     if not fast:
-        _step("Refit model", lambda: M.save_params(M.fit()))
+        _step("Refit model", lambda: M.save_params(M.fit()), required=True)
     else:
         print("\n== Refit skipped (--fast) ==")
 
@@ -360,22 +395,79 @@ def run(fast: bool = False, no_network: bool = False) -> None:
         player_adj_map = _step("Player availability adjustments", E.fetch_player_adjustments, api_key)
 
     edge_rows: list[dict] = []
+    pricing_note: str | None = None
     if not no_network and api_key:
-        odds = _step("Fetch BSD odds", E.fetch_bsd_odds, api_key)
+        # required: a networked daily run whose whole point is pricing must
+        # not report success when the odds fetch itself failed. ("Provider
+        # has no quoted markets" raises inside fetch_bsd_odds too — that's a
+        # visible failure by design, not silently zero rows.)
+        odds = _step("Fetch BSD odds", E.fetch_bsd_odds, api_key, required=True)
         if odds is not None:
+            odds, issues = E.validate_quotes(odds, source="live")
+            for msg in issues:
+                print(f"   quote-validation: {msg}")
+        if odds is not None and not odds.empty:
             history_days = MM.history_age_days()
             edge_rows = _step("Price the card", E.rows_from_odds, odds, "ensemble", 100.0,
-                             calib_maps, player_adj_map, history_days >= MM.WARMUP_DAYS) or []
-    if not edge_rows:
+                             calib_maps, player_adj_map, history_days >= MM.WARMUP_DAYS,
+                             required=True) or []
+        if not edge_rows:
+            pricing_note = "Live pricing unavailable or failed — no bets staked."
+
+    # Manual odds.csv is never an automatic substitute for live pricing: it
+    # is opt-in and gated by edge.validate_quotes (age limit + future-kickoff
+    # filter). The failure mode this prevents: live pricing crashes, a
+    # weeks-old manual file silently prices the card, settled matches staked.
+    if not edge_rows and allow_manual_odds:
         try:
             odds = E.load_odds()
-            edge_rows = E.rows_from_odds(odds, "ensemble", 100.0,
-                                         calib_maps=calib_maps)
-            print("\n== Priced from manual odds.csv (no live BSD odds available) ==")
         except FileNotFoundError:
-            print("\n== No odds available (live or manual) — card has no bets ==")
+            odds = None
+            pricing_note = "No odds available (live or manual) — card has no bets."
+        if odds is not None:
+            odds, issues = E.validate_quotes(odds, source="manual")
+            if odds.empty:
+                pricing_note = ("Manual odds.csv unusable: " + "; ".join(issues)
+                                if issues else
+                                "Manual odds.csv has no future-dated fixtures — nothing staked.")
+            else:
+                edge_rows = E.rows_from_odds(odds, "ensemble", 100.0,
+                                             calib_maps=calib_maps)
+                pricing_note = ("Priced from manual odds.csv."
+                                + (" " + "; ".join(issues) if issues else ""))
+    elif not edge_rows and pricing_note is None:
+        pricing_note = ("No live odds — card has no bets "
+                        "(manual odds.csv requires --allow-manual-odds).")
+    if pricing_note:
+        print(f"\n== {pricing_note} ==")
 
-    write_card(edge_rows, player_adj_map, calib_maps)
+    write_card(edge_rows, player_adj_map, calib_maps, pricing_note)
+
+    # Durable run status: /tmp logs vanish and nobody watches launchd exit
+    # codes. last_run.json is the artifact a health check / notification hook
+    # can poll ("has there been a clean run in the last 26 hours?").
+    status = {
+        "finished_at_utc": datetime.now(timezone.utc).isoformat(),
+        "ok": not _FAILED_REQUIRED,
+        "failed_required_steps": list(_FAILED_REQUIRED),
+        "pricing_note": pricing_note,
+        "n_edge_rows": len(edge_rows),
+        "n_backed": sum(1 for r in edge_rows
+                        if float(r.get("kelly_stake", 0) or 0) > 0
+                        and not r.get("suppressed_reason")),
+        "fast": fast, "no_network": no_network,
+    }
+    try:
+        (DATA / "last_run.json").write_text(json.dumps(status, indent=2))
+    except Exception as exc:
+        print(f"   last_run.json not written ({exc})")
+
+    if _FAILED_REQUIRED:
+        print(f"\n{len(_FAILED_REQUIRED)} REQUIRED step(s) failed "
+              "(card written in degraded mode):")
+        for msg in _FAILED_REQUIRED:
+            print(f"  - {msg}")
+        sys.exit(3)
 
 
 def main() -> None:
@@ -383,8 +475,13 @@ def main() -> None:
     ap.add_argument("--fast", action="store_true", help="skip the model refit")
     ap.add_argument("--no-network", action="store_true",
                     help="skip every network step; build the card from cached data only")
+    ap.add_argument("--allow-manual-odds", action="store_true",
+                    help="permit pricing from manual data/odds.csv when live odds are "
+                         f"unavailable (age-limited to {MANUAL_ODDS_MAX_AGE_DAYS:g} days, "
+                         "future fixtures only)")
     args = ap.parse_args()
-    run(fast=args.fast, no_network=args.no_network)
+    run(fast=args.fast, no_network=args.no_network,
+        allow_manual_odds=args.allow_manual_odds)
 
 
 if __name__ == "__main__":

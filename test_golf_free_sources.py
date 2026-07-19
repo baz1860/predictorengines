@@ -16,18 +16,19 @@ from golf.providers.weather import OpenMeteoProvider
 from golf.round_pricer import price_round_3balls
 from golf.tee_times import parse_tee_sheet_text
 from golf import simulate as golf_sim
+from golf import edge as golf_edge
+from golf import portfolio as golf_portfolio
 
 PASS, FAIL = 0, 0
 
 
 def check(name, cond, detail=""):
     global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"  PASS  {name}")
-    else:
+    if not cond:
         FAIL += 1
-        print(f"  FAIL  {name}  {detail}")
+        raise AssertionError(f"{name}: {detail}")
+    PASS += 1
+    print(f"  PASS  {name}")
 
 
 def test_provider_paths():
@@ -53,6 +54,44 @@ def test_manual_threeball_parser():
     quotes = ManualOddsProvider().parse_threeball_text(raw, event_id="E1", round_no=2)
     check("normalizes parsed quotes", len(quotes) == 3 and quotes[0].round_no == 2,
           str(quotes))
+
+
+def test_manual_threeball_parser_rejects_shifted_or_incomplete_groups():
+    issues = []
+    raw = """
+    3 Ball Round 1 - Rai / Morikawa / Day
+    Aaron Rai
+    Collin Morikawa
+    2.38
+    Jason Day
+    3.50
+    """
+    assert parse_skybet_threeball_text(raw, issues=issues) == []
+    assert issues and "missing odds" in issues[0]
+
+
+def test_market_blend_preserves_nested_probabilities(monkeypatch):
+    class Rated:
+        name = "Player A"
+    results = {"__cut_binds__": True, "Player A": {
+        "win": .100, "top5": .101, "top10": .2, "top20": .3, "made_cut": .8}}
+    odds = {"player a": {"name": "Player A", "odds_win": 5.0, "odds_top5": 9.0}}
+    monkeypatch.setattr(golf_edge.market, "blend_weights",
+                        lambda: {"win": .6, "top5": .45})
+    monkeypatch.setattr(golf_edge.market, "devig_outright",
+                        lambda *a, **k: {"Player A": .2})
+    monkeypatch.setattr(golf_edge.market, "devig_line", lambda *a, **k: .11)
+    rows = golf_edge.price_all([Rated()], results, odds, {}, {}, bankroll=100,
+                               calibrated=False, blended=True, min_edge=-100.0)
+    probs = {r["side"]: r["p_model"] for r in rows}
+    assert probs["win"] <= probs["top5"]
+
+
+def test_portfolio_caps_mutually_exclusive_outrights():
+    rows = [{"player": f"P{i}", "side": "win", "p_model": .1,
+             "stake_gbp": 5.0} for i in range(8)]
+    staked = golf_portfolio.apply_portfolio(rows, bankroll=100.0)
+    assert sum(r["stake_gbp"] for r in staked) <= 10.0
 
 
 def test_pgatour_stats_text_parser():

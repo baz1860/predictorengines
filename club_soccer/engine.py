@@ -99,7 +99,14 @@ def cmd_edge(p: dict) -> dict:
     else:
         odds = E.load_odds()
         note = "Manual odds from club_soccer/data/odds.csv"
-    rows = E.rows_from_odds(odds, model_name, bankroll)
+    # Same gate as season.py: no pricing of settled/past fixtures, no stale
+    # manual file. Without this the app could recommend (and record!) bets
+    # on matches that finished weeks ago.
+    odds, quote_issues = E.validate_quotes(
+        odds, source="manual" if odds_source == "manual" else "live")
+    for msg in quote_issues:
+        note += f" · {msg}"
+    rows = E.rows_from_odds(odds, model_name, bankroll) if not odds.empty else []
     comp = (p.get("competition") or "").strip()
     if comp:
         rows = [r for r in rows if r.get("competition") == comp]

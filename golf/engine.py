@@ -13,6 +13,7 @@ Commands:
   edge      – calibrated + market-blended edges across all markets, portfolio-staked
 """
 import json
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +26,8 @@ from . import round_pricer as GRP
 from . import simulate as GSIM
 from . import simulate_inplay as GSIP
 from .providers.odds_manual import (ManualOddsProvider, board_event, norm_event,
-                                    threeballs_csv_path, threeballs_raw_path)
+                                    board_captured_at, threeballs_csv_path,
+                                    threeballs_raw_path)
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -35,6 +37,32 @@ def _current_event_name() -> str:
     board tags come from the same ESPN-resolved event name, so an exact
     (normalized) comparison is the staleness test."""
     return model.load_field_event()
+
+
+def _current_event_context() -> dict:
+    """Event provenance/rules embedded in field.csv by the refresh."""
+    path = DATA_DIR / "field.csv"
+    if not path.exists():
+        return {}
+    try:
+        with path.open() as f:
+            row = next(csv.DictReader(f), None) or {}
+    except (OSError, csv.Error):
+        return {}
+    return {
+        "event_id": str(row.get("event_id") or "").strip(),
+        "event_name": str(row.get("event") or "").strip(),
+        "cut_rule": int(row.get("cut_rule") or 65),
+        "no_cut": str(row.get("no_cut") or "").strip().lower() in {"1", "true", "yes"},
+    }
+
+
+def _simulation_rules(p: dict) -> tuple[int, bool]:
+    ctx = _current_event_context()
+    return (
+        int(p.get("cut_rule", ctx.get("cut_rule", 65)) or 65),
+        bool(p.get("no_cut", ctx.get("no_cut", False))),
+    )
 
 
 def _field_names() -> list[str]:
@@ -94,10 +122,10 @@ def _board_fresh(path: Path, ref: float | None, tol: float = 1800) -> bool:
     """
     if ref is None:
         return True
-    try:
-        return path.stat().st_mtime >= ref - tol
-    except OSError:
+    captured = board_captured_at(path)
+    if captured is None:
         return False
+    return captured.timestamp() >= ref - tol
 
 
 def _live_state(p) -> dict | None:
@@ -133,19 +161,34 @@ def _live_state(p) -> dict | None:
                 state = {}
             rounds_done = int(state.get("rounds_done") or 0)
             event_name = state.get("event_name", "")
+            event_id = state.get("event_id", "")
             scores_path = DATA_DIR / state.get("scores_csv", "scores_live.csv")
             source = "live leaderboard"
 
+            current = _current_event_context()
+            current_id = current.get("event_id", "")
+            current_name = current.get("event_name", "")
+            id_ok = bool(event_id and current_id and str(event_id) == str(current_id))
+            name_ok = bool(event_name and current_name
+                           and norm_event(event_name) == norm_event(current_name))
+            if not (id_ok or name_ok):
+                return None
+
     if rounds_done < 1 or not scores_path or not Path(scores_path).exists():
         return None
-    if rounds_done >= GSIP.TOTAL_ROUNDS:
+    total_rounds = int((state if 'state' in locals() else {}).get("total_rounds")
+                       or GSIP.TOTAL_ROUNDS)
+    if rounds_done >= total_rounds:
         return None  # tournament complete — nothing left to simulate
 
     scores = GSIP.load_scores(Path(scores_path))
     if not scores:
         return None
     return {"rounds_done": rounds_done, "scores": scores,
-            "source": source, "event_name": event_name}
+            "source": source, "event_name": event_name,
+            "cut_rule": int((state if 'state' in locals() else {}).get("cut_rule") or 65),
+            "no_cut": bool((state if 'state' in locals() else {}).get("no_cut", False)),
+            "total_rounds": total_rounds}
 
 
 def _inplay_results(rated, state, n, rng, matchups=None, threeballs=None):
@@ -165,15 +208,19 @@ def _inplay_results(rated, state, n, rng, matchups=None, threeballs=None):
             "Re-run refresh, or pass pretournament=1 to force the pre-event model.")
     res = GSIP.simulate_inplay(survivors, scores, state["rounds_done"],
                                n_sims=n, rng=rng,
-                               matchups=matchups, threeballs=threeballs)
-    results = {"__cut_binds__": False}
+                               matchups=matchups, threeballs=threeballs,
+                               cut_rule=int(state.get("cut_rule", 65)),
+                               no_cut=bool(state.get("no_cut", False)),
+                               total_rounds=int(state.get("total_rounds", 4)))
+    results = {"__cut_binds__": bool(res.get("__cut_binds__", False))}
     for name, r in res.items():
         if name.startswith("__"):
             results[name] = r          # pass reserved keys through unchanged
             continue
         results[name] = {
             "win": r["win"], "top5": r["top5"], "top10": r["top10"],
-            "top20": r["top20"], "made_cut": 1.0, "missed_cut": 0.0,
+            "top20": r["top20"], "made_cut": r.get("made_cut", 1.0),
+            "missed_cut": 1.0 - r.get("made_cut", 1.0),
             "avg_finish": r["avg_finish"], "current_score": r["current_score"],
             "n_sims": r["n_sims"],
         }
@@ -256,10 +303,11 @@ def cmd_simulate(p):
     n = _sims_arg(p)
     course = p.get("course", "") or ""
     major = bool(p.get("major", False))
-    cut_rule = int(p.get("cut_rule", 65))
+    cut_rule, no_cut = _simulation_rules(p)
     rated, fitted = _rated_field(course, major)
     rng = np.random.default_rng(int(p.get("seed", 0)) or None)
-    results = GSIM.simulate_tournament(rated, n_sims=n, cut_rule=cut_rule, rng=rng)
+    results = GSIM.simulate_tournament(
+        rated, n_sims=n, cut_rule=cut_rule, no_cut=no_cut, rng=rng)
     GSIM.write_predictions(rated, results)
     rows = []
     for pl in rated:
@@ -385,15 +433,19 @@ def cmd_edge(p):
     current_event = _current_event_name()
     if current_event:
         wrong = []
-        for label, path in (("matchup", DATA_DIR / "matchups.csv"),
+        for label, path in (("outright", DATA_DIR / "odds.csv"),
+                            ("matchup", DATA_DIR / "matchups.csv"),
                             ("3-ball", DATA_DIR / "threeballs.csv")):
-            odds_ref = matchup_odds if label == "matchup" else threeball_odds
+            odds_ref = (odds_data if label == "outright" else
+                        matchup_odds if label == "matchup" else threeball_odds)
             if not odds_ref:
                 continue
             tag = board_event(path)
             if norm_event(tag) != norm_event(current_event):
                 wrong.append(f"{label} ({tag or 'untagged'})")
-                if label == "matchup":
+                if label == "outright":
+                    odds_data = {}
+                elif label == "matchup":
                     matchup_odds = {}
                 else:
                     threeball_odds = {}
@@ -432,10 +484,31 @@ def cmd_edge(p):
         raise ValueError("No odds. Add golf/data/odds.csv (name, odds_win, "
                          "odds_top5, odds_top10, odds_top20, odds_cut) and/or "
                          "matchups.csv / threeballs.csv.")
+    # Record accepted, event-tagged prices for future CLV analysis. Place/cut
+    # lines are de-vigged individually; only outrights are normalized as a book.
+    if current_event and odds_data:
+        history_boards = {}
+        for mkt, col in (("win", "odds_win"), ("top5", "odds_top5"),
+                         ("top10", "odds_top10"), ("top20", "odds_top20"),
+                         ("cut", "odds_cut")):
+            board = {od["name"]: od[col] for od in odds_data.values() if od.get(col)}
+            if board:
+                history_boards[mkt] = board
+        GE.market.snapshot_fair(history_boards, event=current_event)
     bankroll = float(p.get("bankroll", 100.0))
     peak = float(p.get("peak", bankroll))
     kelly = float(p.get("kelly", GE.DEFAULT_KELLY))
     calibrated = bool(p.get("calibrated", True))
+    calibration_note = ""
+    if state is not None and "calibrated" not in p:
+        # Production maps were fit on pre-tournament probabilities. Do not
+        # silently apply them to conditioned in-play states without a separate
+        # temporal in-play calibration study.
+        calibrated = False
+        calibration_note = " · in-play calibration disabled"
+    elif calibrated and GE.calibrate.load_maps() is None:
+        calibrated = False
+        calibration_note = " · calibration unavailable (re-run honest validation + calibrate)"
     blended = bool(p.get("market_blend", True))
     min_edge = float(p.get("min_edge", 0.0))
 
@@ -454,7 +527,9 @@ def cmd_edge(p):
         rd = state["rounds_done"]
         inplay_note = f" · in-play after R{rd} (live leaderboard)"
     else:
-        results = GSIM.simulate_tournament(rated, n_sims=n, cut_rule=int(p.get("cut_rule", 65)),
+        cut_rule, no_cut = _simulation_rules(p)
+        results = GSIM.simulate_tournament(rated, n_sims=n, cut_rule=cut_rule,
+                                           no_cut=no_cut,
                                            rng=np.random.default_rng(0),
                                            matchups=pairs, threeballs=trios)
     rows = GE.price_all(rated, results, odds_data, matchup_odds, threeball_odds,
@@ -494,7 +569,8 @@ def cmd_edge(p):
     note = (f"{len([r for r in rows if r['recommended']])} staked / {len(rows)} "
             f"priced · {GPORT.summary(staked, bankroll, peak)}"
             f"{' · calibrated' if calibrated else ''}"
-            f"{' · market-blend' if blended else ''}{inplay_note}{stale_note}")
+            f"{' · market-blend' if blended else ''}{calibration_note}"
+            f"{inplay_note}{stale_note}")
     if not results.get("__cut_binds__", True) and state is None:
         note += (f" · ⚠ cut does not bind (field {len(rated)} ≤ cut rule): "
                  "make-cut suppressed")

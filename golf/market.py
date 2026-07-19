@@ -107,7 +107,8 @@ def fair_prob_map(odds_by_name: dict[str, float], method: str = "power") -> dict
 OUTRIGHT_MARGIN = 1.30   # assumed win-market margin when only a partial board is seen
 
 
-def devig_outright(odds_by_name: dict[str, float], complete_threshold: float = 1.10
+def devig_outright(odds_by_name: dict[str, float], complete_threshold: float = 1.10,
+                   complete: bool | None = None,
                    ) -> dict[str, float]:
     """Fair win probabilities from an outright board, robust to partial boards.
 
@@ -117,7 +118,7 @@ def devig_outright(odds_by_name: dict[str, float], complete_threshold: float = 1
     1 — instead strip an assumed market margin per price."""
     names = [n for n, o in odds_by_name.items() if o and o > 1.0]
     imp_sum = sum(1.0 / odds_by_name[n] for n in names)
-    if imp_sum >= complete_threshold:
+    if complete is True or (complete is None and imp_sum >= complete_threshold):
         return fair_prob_map(odds_by_name, method="power")
     return {n: (1.0 / odds_by_name[n]) / OUTRIGHT_MARGIN for n in names}
 
@@ -164,10 +165,15 @@ def snapshot_fair(odds_by_market: dict[str, dict[str, float]], event: str = "",
     """Append a timestamped de-vigged snapshot of the current board to
     odds_history.csv. odds_by_market: {market: {player: decimal_odds}}.
     Returns rows written. The latest snapshot before settlement is the close."""
-    ts = _dt.datetime.now().isoformat(timespec="seconds")
+    if not event:
+        return 0  # cross-event history is unusable; provenance is mandatory
+    ts = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
     rows = []
     for market, board in odds_by_market.items():
-        fair = fair_prob_map(board, method=method)
+        if market in LINE_MARGIN:
+            fair = {player: devig_line(o, market) for player, o in board.items()}
+        else:
+            fair = fair_prob_map(board, method=method)
         for player, o in board.items():
             fp = fair.get(player)
             rows.append({
@@ -189,13 +195,13 @@ def snapshot_fair(odds_by_market: dict[str, dict[str, float]], event: str = "",
 
 def closing_fair(player: str, market: str, event: str = "") -> float | None:
     """Most recent recorded fair probability for a player/market (the close)."""
-    if not ODDS_HISTORY.exists():
+    if not event or not ODDS_HISTORY.exists():
         return None
     best_ts, best = "", None
     with open(ODDS_HISTORY) as f:
         for r in csv.DictReader(f):
             if r["player"] == player and r["market"] == market and \
-               (not event or r["event"] == event) and r["fair_prob"]:
+               r["event"] == event and r["fair_prob"]:
                 if r["ts"] >= best_ts:
                     best_ts, best = r["ts"], float(r["fair_prob"])
     return best
