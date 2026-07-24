@@ -1,14 +1,43 @@
 {
-  "w": 0.163,
-  "w_refit_full": 1.0,
-  "w_refit_cv": 1.0,
+  "model_weight": 0.0,
+  "model_weight_cv": 0.0,
   "n": 128,
-  "source": "refit on WC2018+WC2022 (de-vigged 1X2), logit/geometric blend, leave-one-tournament-out CV",
-  "logloss_model_only": 1.0186,
-  "logloss_market_only": 0.9705,
-  "logloss_blend": 0.9705,
-  "cv_mean_logloss": 0.9705,
+  "source": "WC2018+WC2022 (de-vigged 1X2), logit/geometric blend, LOTO-CV",
+  "holdout_method": "leave_one_tournament_out",
+  "holdout_logloss_blend": 0.9704928473361917,
+  "holdout_logloss_model_only": 1.0185967209518256,
+  "holdout_logloss_market_only": 0.9704928473361917,
+  "holdout_folds": [
+    {
+      "test_tournament": 2018,
+      "train_tournament": 2022,
+      "n": 64,
+      "model_weight": 0.0,
+      "logloss_blend": 0.9406833543025441,
+      "logloss_model_only": 0.9867235760842636,
+      "logloss_market_only": 0.9406833543025441
+    },
+    {
+      "test_tournament": 2022,
+      "train_tournament": 2018,
+      "n": 64,
+      "model_weight": 0.0,
+      "logloss_blend": 1.0003023403698392,
+      "logloss_model_only": 1.0504698658193876,
+      "logloss_market_only": 1.0003023403698392
+    }
+  ],
+  "in_sample_logloss_blend": 0.9704928473361918,
+  "in_sample_logloss_model_only": 1.0185967209518256,
+  "in_sample_logloss_market_only": 0.9704928473361919,
+  "provenance": {
+    "generated_at_utc": "2026-07-20T21:11:22.630328+00:00",
+    "n_rows": 128,
+    "inputs": {
+      "data/wc2018_odds.csv": "5619d8af2ae14a4e5b394c3e692ecf62e114b06477d31326ae95de32d039ab63",
+      "data/wc2022_odds.csv": "64be2314edce5b58ffec6a3b206f717b9ecc8e8a010019645322998dbf78a076"
+    }
+  },
   "active": false,
-  "note": "Refit over 128 WC matches puts the optimal blend weight at w=1.0 (pure market): the model adds no 1X2 signal over the published World Cup line. This is a no-edge result, NOT a weight to deploy (w=1.0 = copy the market and pay the vig). Kept active=false and left the prior w=0.163 in place. Operational read: do not bet WC 1X2 on model edge; the model's value, if any, is in softer markets (less-watched internationals, specific totals) where it can beat a slower line. Re-run engines/worldcup/fit_market_blend.py as more odds history accrues.",
-  "prior_value_backup": "data/market_blend.json.bak.preblend (w=0.163, fit on WC2022 n=64)"
+  "note": "Holdout blend does not beat both endpoints by the preregistered margin: the model adds no WC 1X2 edge out of sample. Not deployable."
 }

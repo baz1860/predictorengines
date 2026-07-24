@@ -65,5 +65,7 @@
       "current_log_loss": 1.016658,
       "chosen_log_loss": 1.016646
     }
-  ]
+  ],
+  "active": false,
+  "deactivated_reason": "2026-07-19: deactivated pending leak-free per-window weight selection. These weights were chosen using the full component walk-forward history, so validation cannot honestly evaluate them; while active, production and validation were different predictors. Reactivate only via nested per-window selection with an untouched final holdout (see owner memo 3)."
 }

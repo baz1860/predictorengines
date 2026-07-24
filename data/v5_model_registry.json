@@ -1,0 +1,58 @@
+{
+  "engines": {
+    "worldcup": {
+      "champions": {
+        "1x2": "worldcup:1x2:2026-07-20T23:32:21+00:00:d79d33c5aaf2f54f"
+      },
+      "models": {
+        "worldcup:1x2:2026-07-20T23:32:21+00:00:d55e7fb6b84f22fa": {
+          "artifact": "",
+          "artifact_hash": "",
+          "created_at": "2026-07-20T23:32:21+00:00",
+          "engine": "worldcup",
+          "feature_schema": [
+            "elo_diff",
+            "market_move"
+          ],
+          "market": "1x2",
+          "metrics": {
+            "logloss": 1.1
+          },
+          "parent_version": "",
+          "promotion_history": [
+            {
+              "at": "2026-07-20T23:32:21+00:00",
+              "decision": "rejected",
+              "gate_report": {
+                "passed": false,
+                "reason": "heldout_regression"
+              }
+            }
+          ],
+          "role": "challenger",
+          "status": "rejected",
+          "version": "worldcup:1x2:2026-07-20T23:32:21+00:00:d55e7fb6b84f22fa"
+        },
+        "worldcup:1x2:2026-07-20T23:32:21+00:00:d79d33c5aaf2f54f": {
+          "artifact": "",
+          "artifact_hash": "",
+          "created_at": "2026-07-20T23:32:21+00:00",
+          "engine": "worldcup",
+          "feature_schema": [
+            "elo_diff"
+          ],
+          "market": "1x2",
+          "metrics": {
+            "logloss": 1.0
+          },
+          "parent_version": "",
+          "promotion_history": [],
+          "role": "champion",
+          "status": "active",
+          "version": "worldcup:1x2:2026-07-20T23:32:21+00:00:d79d33c5aaf2f54f"
+        }
+      }
+    }
+  },
+  "updated_at": "2026-07-20T23:32:21+00:00"
+}
