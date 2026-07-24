@@ -366,8 +366,11 @@ def load_edge_modifiers(calibrated=False, market_blend=False, context_enabled=Fa
         from .market_blend import load_w
         mods["mkt_blend_w"] = load_w()
         if mods["mkt_blend_w"] is None:
-            raise ValueError("--market-blend needs data/market_blend.json. "
-                             "Fit it first: python3 market_blend.py --fit")
+            raise ValueError(
+                "--market-blend has no deployable weight: data/market_blend.json "
+                "is missing, not active, or its holdout does not strictly beat both "
+                "pure-model and pure-market (the current WC artifact is a demoted "
+                "no-edge result). Refit with: python3 -m engines.worldcup.fit_market_blend")
     if context_enabled:
         from . import context as ctx_mod
         mods["ctx_mod"] = ctx_mod

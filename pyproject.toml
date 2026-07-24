@@ -33,14 +33,24 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-# NOTE: flat `pytest` collection across the whole repo does NOT work yet — several
-# test modules do bare `from edge import ...` / `from predictor import ...`, which
-# resolve to the wrong sport's module when all tests share one process. Unifying test
-# discovery under pytest is a Phase 5 deliverable (after the package restructure).
-# For now, run the canonical suite with `python run_checks.py`, or invoke pytest on
-# individual, self-contained test files.
+# `testpaths = ["tests"]` used to point at a directory with NO test files, so
+# the standard `pytest` command collected zero tests and exited green-ish —
+# the root conftest.py false-green guard never ran, and real failures stayed
+# hidden. Every real suite lives at the repo root; "." collects them.
+#
+# "." RECURSES, though, and `scripts/` holds two CLI analysis programs named
+# `form_forward_test.py` ("forward test" the experiment, not a pytest module).
+# Neither defines a single test function, but their identical basenames give
+# both the module name `form_forward_test` under pytest's prepend import mode,
+# which aborts the ENTIRE run with "import file mismatch". Excluding scripts/
+# drops zero tests and removes the collision. norecursedirs REPLACES pytest's
+# defaults, so the standard entries are repeated here.
 addopts = "-ra"
-testpaths = ["tests"]
+testpaths = ["."]
+norecursedirs = [
+    "scripts",
+    "*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}",
+]
 
 [tool.ruff]
 target-version = "py312"
