@@ -185,3 +185,27 @@ simtime.txt
 .fuse_hidden*
 _wtest*
 *_backup.csv
+
+# >>> Syncthing-owned club_soccer working data >>>
+# These change on essentially every pipeline run, or are written continuously
+# by the capture agent, so they are replicated via Syncthing (mini -> laptop),
+# NOT versioned in git — that keeps history clean and stops a stale committed
+# copy overwriting fresh state on another machine. Reference/evidence data
+# (club_alias_map, club_registry, uefa_coefficients*, *_evidence.json, the
+# cross-league/promotion baselines, identity_verdicts) stays tracked.
+club_soccer/data/decision_ledger.csv
+club_soccer/data/settlement_ledger.csv
+club_soccer/data/decision_time_ledger.csv
+club_soccer/data/backtest_market.json
+club_soccer/data/fixtures.csv
+club_soccer/data/market_history.csv
+club_soccer/data/squads_club.csv
+club_soccer/data/model_params.json
+club_soccer/data/comp_strength.json
+club_soccer/data/ensemble_weights.json
+club_soccer/data/last_run.json
+club_soccer/data/season.lock
+club_soccer/data/bet_card.md
+club_soccer/data/forward_predictions_club.csv
+club_soccer/data/validation_latest.json
+# <<< Syncthing-owned club_soccer working data <<<
