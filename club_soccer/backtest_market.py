@@ -36,7 +36,12 @@ from . import validate as V
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 MARKET_HISTORY = DATA / "market_history.csv"
-REPORT_JSON = DATA / "backtest_market.json"
+# Diagnostic only. This backtest selects and executes at the CLOSING price,
+# which the staking gate can never accept, so it must NOT own the gate's file
+# (backtest_market.json) — that belongs to decision_time_backtest.py. Writing
+# here keeps the closing-odds diagnostics available without ever being able to
+# masquerade as decision-time evidence.
+REPORT_JSON = DATA / "backtest_market_legacy.json"
 
 EDGE_THRESHOLDS = (0.02, 0.04, 0.06)
 KELLY_FRACTION = 0.25

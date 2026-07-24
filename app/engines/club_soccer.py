@@ -71,16 +71,22 @@ class ClubSoccerAdapter(EngineAdapter):
             result["market_blend"] = {"applied": True, "w": w, "experimental": True}
             result["note"] = (result.get("note", "")
                               + f" · market-blended (experimental, w={w:.2f})")
-            # The blend rewrites kelly_stake/stake_gbp — re-apply the evidence
-            # gate so a closed gate can never be reopened by a stake rewrite.
-            from club_soccer.edge import apply_evidence_gate
-            apply_evidence_gate(rows)
+        # The gate is applied UNCONDITIONALLY at this boundary — not only when
+        # the experimental blend ran. A refactored/mocked/alternate result
+        # must still pass through a final club-specific evidence check before
+        # anything is marked recommended.
+        from club_soccer.edge import apply_evidence_gate
+        apply_evidence_gate(rows)
         self._mark_recommended(rows)
         if params.get("record"):
-            # Hard assertion in front of place_bets: even if a past-dated row
-            # somehow survived quote validation, it is never recorded.
+            # ...and again immediately before recording candidates are built:
+            # recording is the last exit, and it must not rely on upstream
+            # suppression state alone.
+            apply_evidence_gate(rows)
             today = pd.Timestamp.now(tz="UTC").date().isoformat()
             recs = [r for r in rows if r.get("recommended")
+                    and not r.get("suppressed_reason")
+                    and float(r.get("kelly_stake", 0) or 0) > 0
                     and str(r.get("date", ""))[:10] >= today]
             if recs:
                 df = pd.DataFrame(recs).rename(columns={"date": "match_date"})
@@ -118,6 +124,13 @@ class ClubSoccerAdapter(EngineAdapter):
         fixtures["home_goals"] = pd.to_numeric(fixtures["home_goals"], errors="coerce")
         fixtures["away_goals"] = pd.to_numeric(fixtures["away_goals"], errors="coerce")
         played = fixtures.dropna(subset=["home_goals", "away_goals"])
+        # Settlement deliberately bypasses model.played() so an AWARDED (AWD)
+        # result still settles, but it must NOT settle a row whose status we
+        # could not map: an unrecognised status may well mean abandoned.
+        if "status" in played.columns:
+            from club_soccer.schema import normalize_status, QUARANTINE_STATUSES
+            played = played[~played["status"].map(normalize_status)
+                            .isin(QUARANTINE_STATUSES)]
         out = {}
         for i, r in rows.iterrows():
             match = played[(played["date"].astype(str) == str(r["match_date"]))

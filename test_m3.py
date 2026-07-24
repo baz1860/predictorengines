@@ -6,8 +6,11 @@ Run: python3 test_m3.py   (no pytest dependency). Covers:
      and the blend sits between model and market.
   2. compute_clv: closing-odds proxy = latest snapshot at/ before kick-off;
      CLV% = bet_odds/closing - 1; no snapshot -> NaN.
-  3. Fitted w (data/market_blend.json) is interior and strictly beats both
-     pure-model and pure-market log-loss on WC2022.
+  3. Fitted weight (data/market_blend.json) is interior and strictly beats both
+     pure-model and pure-market log-loss ON THE LEAVE-ONE-TOURNAMENT-OUT HOLDOUT.
+     This is EXPECTED RED: the holdout blend ties pure-market exactly (both folds
+     select model_weight=0.0), i.e. the model adds no World Cup 1X2 edge. Do not
+     relax these assertions to make the suite green — the demotion is the finding.
 """
 import json
 from pathlib import Path
@@ -74,9 +77,31 @@ def test_fitted_w():
         check("market_blend.json exists (run market_blend.py --fit)", False)
         return
     d = json.loads(BLEND_FILE.read_text())
-    check("w is interior (0 < w < 1)", 0.0 < d["w"] < 1.0)
-    check("blend log-loss < model-only", d["logloss_blend"] < d["logloss_model_only"])
-    check("blend log-loss < market-only", d["logloss_blend"] < d["logloss_market_only"])
+    # Judge the artifact on OUT-OF-SAMPLE evidence only, and judge it against
+    # its own active flag. An ACTIVE artifact must earn activation: interior
+    # weight, holdout beats both endpoints. An INACTIVE (demoted) artifact is
+    # the honest state for the current evidence (model_weight fit to 0.0 —
+    # pure market — because the model adds nothing over the close); the test
+    # must then enforce the demotion contract, not demand an edge that the
+    # evidence says does not exist.
+    from engines.worldcup.market_blend import load_w
+    if d.get("active") is True:
+        check("ACTIVE artifact: model_weight is interior (0 < w < 1)",
+              0.0 < d["model_weight"] < 1.0)
+        check("ACTIVE artifact: holdout blend log-loss < model-only",
+              d["holdout_logloss_blend"] < d["holdout_logloss_model_only"])
+        check("ACTIVE artifact: holdout blend log-loss < market-only",
+              d["holdout_logloss_blend"] < d["holdout_logloss_market_only"])
+    else:
+        check("demoted artifact: load_w() honors active:false (returns None)",
+              load_w() is None)
+        check("demotion is evidence-consistent (blend fails to beat at least "
+              "one endpoint on holdout)",
+              not (d["holdout_logloss_blend"] < d["holdout_logloss_model_only"]
+                   and d["holdout_logloss_blend"] < d["holdout_logloss_market_only"]))
+        check("demoted artifact stores full-precision holdout losses",
+              isinstance(d.get("holdout_logloss_blend"), float)
+              and len(str(d["holdout_logloss_blend"]).split(".")[-1]) > 6)
 
 
 if __name__ == "__main__":

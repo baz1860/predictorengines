@@ -1,0 +1,465 @@
+{
+  "generated_at_utc": "2026-07-22T12:27:50.141542+00:00",
+  "n_predictions": 10563,
+  "overall": {
+    "n": 9996,
+    "n_unpriceable": 567,
+    "brier": 0.61281,
+    "logloss": 1.02188,
+    "calibration": [
+      {
+        "bucket": "0.00-0.10",
+        "n": 203,
+        "predicted": 0.0781,
+        "observed": 0.069,
+        "error": -0.0092
+      },
+      {
+        "bucket": "0.10-0.20",
+        "n": 2241,
+        "predicted": 0.1637,
+        "observed": 0.1415,
+        "error": -0.0223
+      },
+      {
+        "bucket": "0.20-0.30",
+        "n": 13694,
+        "predicted": 0.2586,
+        "observed": 0.2543,
+        "error": -0.0042
+      },
+      {
+        "bucket": "0.30-0.40",
+        "n": 5980,
+        "predicted": 0.3474,
+        "observed": 0.348,
+        "error": 0.0006
+      },
+      {
+        "bucket": "0.40-0.50",
+        "n": 4396,
+        "predicted": 0.4454,
+        "observed": 0.4654,
+        "error": 0.02
+      },
+      {
+        "bucket": "0.50-0.65",
+        "n": 2809,
+        "predicted": 0.5573,
+        "observed": 0.5493,
+        "error": -0.008
+      },
+      {
+        "bucket": "0.65-0.80",
+        "n": 626,
+        "predicted": 0.7011,
+        "observed": 0.7636,
+        "error": 0.0624
+      },
+      {
+        "bucket": "0.80-1.01",
+        "n": 39,
+        "predicted": 0.8299,
+        "observed": 0.8718,
+        "error": 0.0419
+      }
+    ],
+    "max_abs_calibration_error": 0.0624
+  },
+  "by_tier": {
+    "full": {
+      "n": 8658,
+      "n_unpriceable": 0,
+      "brier": 0.61353,
+      "logloss": 1.02278,
+      "calibration": [
+        {
+          "bucket": "0.00-0.10",
+          "n": 161,
+          "predicted": 0.0783,
+          "observed": 0.0621,
+          "error": -0.0162
+        },
+        {
+          "bucket": "0.10-0.20",
+          "n": 1942,
+          "predicted": 0.164,
+          "observed": 0.1375,
+          "error": -0.0265
+        },
+        {
+          "bucket": "0.20-0.30",
+          "n": 11881,
+          "predicted": 0.2588,
+          "observed": 0.2563,
+          "error": -0.0025
+        },
+        {
+          "bucket": "0.30-0.40",
+          "n": 5178,
+          "predicted": 0.3472,
+          "observed": 0.3463,
+          "error": -0.0009
+        },
+        {
+          "bucket": "0.40-0.50",
+          "n": 3796,
+          "predicted": 0.4454,
+          "observed": 0.4652,
+          "error": 0.0198
+        },
+        {
+          "bucket": "0.50-0.65",
+          "n": 2463,
+          "predicted": 0.5574,
+          "observed": 0.5485,
+          "error": -0.0089
+        },
+        {
+          "bucket": "0.65-0.80",
+          "n": 523,
+          "predicted": 0.7005,
+          "observed": 0.7648,
+          "error": 0.0643
+        },
+        {
+          "bucket": "0.80-1.01",
+          "n": 30,
+          "predicted": 0.8272,
+          "observed": 0.8667,
+          "error": 0.0395
+        }
+      ],
+      "max_abs_calibration_error": 0.0643
+    },
+    "thin": {
+      "n": 1338,
+      "n_unpriceable": 0,
+      "brier": 0.60813,
+      "logloss": 1.01601,
+      "calibration": [
+        {
+          "bucket": "0.00-0.10",
+          "n": 42,
+          "predicted": 0.0776,
+          "observed": 0.0952,
+          "error": 0.0176
+        },
+        {
+          "bucket": "0.10-0.20",
+          "n": 299,
+          "predicted": 0.1622,
+          "observed": 0.1672,
+          "error": 0.005
+        },
+        {
+          "bucket": "0.20-0.30",
+          "n": 1813,
+          "predicted": 0.2572,
+          "observed": 0.2416,
+          "error": -0.0156
+        },
+        {
+          "bucket": "0.30-0.40",
+          "n": 802,
+          "predicted": 0.3489,
+          "observed": 0.3591,
+          "error": 0.0102
+        },
+        {
+          "bucket": "0.40-0.50",
+          "n": 600,
+          "predicted": 0.4457,
+          "observed": 0.4667,
+          "error": 0.021
+        },
+        {
+          "bucket": "0.50-0.65",
+          "n": 346,
+          "predicted": 0.5567,
+          "observed": 0.5549,
+          "error": -0.0018
+        },
+        {
+          "bucket": "0.65-0.80",
+          "n": 103,
+          "predicted": 0.7045,
+          "observed": 0.7573,
+          "error": 0.0528
+        }
+      ],
+      "max_abs_calibration_error": 0.0528
+    },
+    "unpriceable": {
+      "n": 0,
+      "n_unpriceable": 567
+    }
+  },
+  "uefa_cross_league": {
+    "n": 776,
+    "n_unpriceable": 210,
+    "brier": 0.58777,
+    "logloss": 0.98695,
+    "calibration": [
+      {
+        "bucket": "0.00-0.10",
+        "n": 25,
+        "predicted": 0.0787,
+        "observed": 0.08,
+        "error": 0.0013
+      },
+      {
+        "bucket": "0.10-0.20",
+        "n": 182,
+        "predicted": 0.162,
+        "observed": 0.1593,
+        "error": -0.0026
+      },
+      {
+        "bucket": "0.20-0.30",
+        "n": 1060,
+        "predicted": 0.2562,
+        "observed": 0.2142,
+        "error": -0.042
+      },
+      {
+        "bucket": "0.30-0.40",
+        "n": 440,
+        "predicted": 0.3503,
+        "observed": 0.3705,
+        "error": 0.0202
+      },
+      {
+        "bucket": "0.40-0.50",
+        "n": 348,
+        "predicted": 0.4472,
+        "observed": 0.5144,
+        "error": 0.0672
+      },
+      {
+        "bucket": "0.50-0.65",
+        "n": 203,
+        "predicted": 0.5574,
+        "observed": 0.6059,
+        "error": 0.0485
+      },
+      {
+        "bucket": "0.65-0.80",
+        "n": 65,
+        "predicted": 0.7057,
+        "observed": 0.7385,
+        "error": 0.0328
+      }
+    ],
+    "max_abs_calibration_error": 0.0672
+  },
+  "uefa_full_evidence": {
+    "n": 282,
+    "n_unpriceable": 0,
+    "brier": 0.58063,
+    "logloss": 0.97574,
+    "calibration": [
+      {
+        "bucket": "0.10-0.20",
+        "n": 55,
+        "predicted": 0.1653,
+        "observed": 0.1091,
+        "error": -0.0562
+      },
+      {
+        "bucket": "0.20-0.30",
+        "n": 392,
+        "predicted": 0.2479,
+        "observed": 0.199,
+        "error": -0.0489
+      },
+      {
+        "bucket": "0.30-0.40",
+        "n": 160,
+        "predicted": 0.3486,
+        "observed": 0.3937,
+        "error": 0.0451
+      },
+      {
+        "bucket": "0.40-0.50",
+        "n": 135,
+        "predicted": 0.4468,
+        "observed": 0.4963,
+        "error": 0.0495
+      },
+      {
+        "bucket": "0.50-0.65",
+        "n": 86,
+        "predicted": 0.5565,
+        "observed": 0.6163,
+        "error": 0.0598
+      },
+      {
+        "bucket": "0.65-0.80",
+        "n": 17,
+        "predicted": 0.6875,
+        "observed": 0.8824,
+        "error": 0.1948
+      }
+    ],
+    "max_abs_calibration_error": 0.1948
+  },
+  "domestic_full_evidence": {
+    "n": 8376,
+    "n_unpriceable": 0,
+    "brier": 0.61464,
+    "logloss": 1.02437,
+    "calibration": [
+      {
+        "bucket": "0.00-0.10",
+        "n": 160,
+        "predicted": 0.0782,
+        "observed": 0.0625,
+        "error": -0.0157
+      },
+      {
+        "bucket": "0.10-0.20",
+        "n": 1887,
+        "predicted": 0.1639,
+        "observed": 0.1383,
+        "error": -0.0256
+      },
+      {
+        "bucket": "0.20-0.30",
+        "n": 11489,
+        "predicted": 0.2591,
+        "observed": 0.2582,
+        "error": -0.0009
+      },
+      {
+        "bucket": "0.30-0.40",
+        "n": 5018,
+        "predicted": 0.3471,
+        "observed": 0.3448,
+        "error": -0.0024
+      },
+      {
+        "bucket": "0.40-0.50",
+        "n": 3661,
+        "predicted": 0.4453,
+        "observed": 0.4641,
+        "error": 0.0187
+      },
+      {
+        "bucket": "0.50-0.65",
+        "n": 2377,
+        "predicted": 0.5574,
+        "observed": 0.5461,
+        "error": -0.0114
+      },
+      {
+        "bucket": "0.65-0.80",
+        "n": 506,
+        "predicted": 0.7009,
+        "observed": 0.7609,
+        "error": 0.0599
+      },
+      {
+        "bucket": "0.80-1.01",
+        "n": 30,
+        "predicted": 0.8272,
+        "observed": 0.8667,
+        "error": 0.0395
+      }
+    ],
+    "max_abs_calibration_error": 0.0599
+  },
+  "underdog_reliability_all": {
+    "n": 933,
+    "mean_predicted_win_rate": 0.3008,
+    "observed_win_rate": 0.2444,
+    "bias": -0.0564,
+    "curve": [
+      {
+        "bucket": "0.00-0.10",
+        "n": 39,
+        "predicted": 0.0762,
+        "observed": 0.1026,
+        "error": 0.0263
+      },
+      {
+        "bucket": "0.10-0.20",
+        "n": 168,
+        "predicted": 0.1532,
+        "observed": 0.1429,
+        "error": -0.0103
+      },
+      {
+        "bucket": "0.20-0.30",
+        "n": 268,
+        "predicted": 0.2507,
+        "observed": 0.2164,
+        "error": -0.0343
+      },
+      {
+        "bucket": "0.30-0.40",
+        "n": 248,
+        "predicted": 0.3481,
+        "observed": 0.2863,
+        "error": -0.0618
+      },
+      {
+        "bucket": "0.40-0.50",
+        "n": 151,
+        "predicted": 0.4395,
+        "observed": 0.3444,
+        "error": -0.0951
+      },
+      {
+        "bucket": "0.50-0.65",
+        "n": 59,
+        "predicted": 0.5432,
+        "observed": 0.322,
+        "error": -0.2211
+      }
+    ]
+  },
+  "underdog_reliability_uefa": {
+    "n": 454,
+    "mean_predicted_win_rate": 0.2672,
+    "observed_win_rate": 0.2687,
+    "bias": 0.0015,
+    "curve": [
+      {
+        "bucket": "0.00-0.10",
+        "n": 22,
+        "predicted": 0.0764,
+        "observed": 0.0909,
+        "error": 0.0145
+      },
+      {
+        "bucket": "0.10-0.20",
+        "n": 105,
+        "predicted": 0.1517,
+        "observed": 0.1619,
+        "error": 0.0102
+      },
+      {
+        "bucket": "0.20-0.30",
+        "n": 156,
+        "predicted": 0.2481,
+        "observed": 0.25,
+        "error": 0.0019
+      },
+      {
+        "bucket": "0.30-0.40",
+        "n": 118,
+        "predicted": 0.3462,
+        "observed": 0.339,
+        "error": -0.0073
+      },
+      {
+        "bucket": "0.40-0.50",
+        "n": 41,
+        "predicted": 0.4376,
+        "observed": 0.4634,
+        "error": 0.0259
+      }
+    ]
+  }
+}

@@ -6,12 +6,24 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from v5 import drift, live, portfolio, registry, research, review, scenario, store
+
+
+@pytest.fixture(autouse=True)
+def _isolate_v5_store(tmp_path, monkeypatch):
+    """Redirect every shared V5 store to a throwaway dir per test, so tests are
+    hermetic and can never read or clobber the production stores (finding 15).
+    Previously these tests read the live stores and failed whenever production
+    already contained recommendations/reviews."""
+    for name in ("REGISTRY", "FEATURE_SNAPSHOTS", "RECOMMENDATIONS", "REVIEWS",
+                 "DRIFT_REPORT", "RESEARCH_BACKLOG"):
+        monkeypatch.setattr(store, name, tmp_path / getattr(store, name).name)
 
 
 def _backup(path: Path):
@@ -72,6 +84,9 @@ def test_feature_snapshot_and_recommendation_are_auditable():
 
 def test_drift_report_handles_thin_samples_without_false_promotion():
     old = _backup(store.RECOMMENDATIONS)
+    # Back up the shared report too, so restoring cannot delete a pre-existing
+    # production report that this test happened to overwrite (finding 15).
+    old_report = _backup(store.DRIFT_REPORT)
     try:
         store.append_csv(store.RECOMMENDATIONS, [{
             "recommendation_id": "r1", "created_at": store.now_iso(),
@@ -88,8 +103,7 @@ def test_drift_report_handles_thin_samples_without_false_promotion():
         assert "thin_recommendation_sample" in rep["alerts"]
     finally:
         _restore(store.RECOMMENDATIONS, old)
-        if store.DRIFT_REPORT.exists():
-            store.DRIFT_REPORT.unlink()
+        _restore(store.DRIFT_REPORT, old_report)
 
 
 def test_portfolio_optimizer_respects_hard_caps():
@@ -122,7 +136,8 @@ def test_live_model_passes_on_missing_timestamp():
 
 
 def test_human_review_is_analytics_only():
-    backups = {p: _backup(p) for p in (store.RECOMMENDATIONS, store.REVIEWS)}
+    backups = {p: _backup(p) for p in (store.RECOMMENDATIONS, store.REVIEWS,
+                                       store.RESEARCH_BACKLOG)}
     try:
         rec = registry.record_recommendation({
             "engine": "worldcup", "event_id": "e2", "market": "1x2",
@@ -137,8 +152,6 @@ def test_human_review_is_analytics_only():
     finally:
         for p, data in backups.items():
             _restore(p, data)
-        if store.RESEARCH_BACKLOG.exists():
-            store.RESEARCH_BACKLOG.unlink()
 
 
 def _run_all():

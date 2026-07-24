@@ -57,6 +57,11 @@ MARKET_COLUMNS = [
     "ps_h", "ps_d", "ps_a",
     "psc_h", "psc_d", "psc_a",
     "b365_over25", "b365_under25", "max_over25", "max_under25",
+    # Pinnacle CLOSING over/under 2.5 — the totals equivalent of psc_* and the
+    # CLV reference the staking gate needs to ever activate the OU2.5 market.
+    # Absent for the non-UEFA leagues (they have no fd.co.uk closing feed), so
+    # totals CLV is available for the European leagues only.
+    "psc_over25", "psc_under25",
     "source_code",
 ]
 
@@ -143,6 +148,8 @@ def _parse_csv(raw: str, code: str) -> pd.DataFrame:
         "b365_under25": col("B365<2.5").map(_num),
         "max_over25": col("Max>2.5").map(_num),
         "max_under25": col("Max<2.5").map(_num),
+        "psc_over25": col("PC>2.5").map(_num),
+        "psc_under25": col("PC<2.5").map(_num),
         "source_code": code,
     })
     return rows.dropna(subset=["match_date"])

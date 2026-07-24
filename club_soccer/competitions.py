@@ -19,6 +19,20 @@ class Competition:
     strength: float
     fdorg_code: str    # football-data.org competition code ("PL", "BL1", …); "" = not covered free
     bsd_league: str    # BSD league name substring for filtering; "" = use self.name
+    # P2 expansion. fd.co.uk is the primary source for the new leagues: BSD's
+    # catalogue turned out to hold only 18 UEFA domestic competitions and does
+    # NOT include Austria. See uefa_registry.py for the verified source map.
+    fdcouk_code: str = ""      # /mmz4281/{season}/{code}.csv division code
+    fdcouk_new: str = ""       # /new/{CODE}.csv country file
+    fdcouk_league: str = ""    # League column value inside a /new/ file
+    uefa_country: str = ""     # association key into uefa_registry (default: country)
+    # Nordic/Irish leagues run March-November, so their season IS the calendar
+    # year. The default Aug-May rule splits one real season across two labels
+    # at the July boundary, merging two different squads into one "season" —
+    # Eliteserien showed 19-20 teams for a 16-team league. That corrupts
+    # standings, promoted/relegated detection and per-league-season scoring
+    # rates for every affected competition.
+    calendar_season: bool = False
     # League geometry — parameterises P4.3 motivation bands. Not legally
     # perfect (e.g. playoff spots folded into a single count); documented
     # approximation per the plan. Zero for cups/Europe (not a table).
@@ -65,6 +79,153 @@ COMPETITIONS = [
     Competition("Europa League",        "Europe",   "europe", 0,   3,  0.88, "EL",  "Europa League"),
     Competition("Conference League",    "Europe",   "europe", 0, 848,  0.70, "",    "Conference League"),
     Competition("UEFA Super Cup",       "Europe",   "europe", 0, 531,  1.00, "",    "UEFA Super Cup"),
+
+    # ── P2: UEFA expansion ───────────────────────────────────────────────
+    # api_id 9000+ is a synthetic local range: these leagues are not sourced
+    # from api-football, but fixtures.csv carries competition_id for every
+    # row, so they need stable non-colliding ids.
+    #
+    # `strength` values come from uefa_registry.strength_prior(), which is
+    # anchored on the existing hand-set scale (Premier League 1.00 at
+    # coefficient 89.16, Scottish Premiership 0.58 at 27.50) and linear in the
+    # UEFA coefficient between them. They are PRIORS, not fitted values — P4
+    # replaces them, and comp_strength.json stays gated off meanwhile.
+    #
+    # teams_n is from live 2025/26 files where observed. releg/promo/euro
+    # spots are left at 0 rather than guessed: they only parameterise the
+    # P4.3 motivation bands, and 0 already means "not a table" for cups, so
+    # the effect is that motivation simply does not apply to these leagues
+    # yet. Populating them is a P3 follow-up.
+    Competition("Serie B",              "Italy",    "league", 2, 9001, 0.6521, "", "",
+                fdcouk_code="I2", teams_n=20, releg_spots=4, promo_spots=3, euro_spots=0),
+    Competition("Segunda División",     "Spain",    "league", 2, 9002, 0.6277, "", "Segunda División",
+                fdcouk_code="SP2", teams_n=22, releg_spots=4, promo_spots=3, euro_spots=0),
+    Competition("2. Bundesliga",        "Germany",  "league", 2, 9003, 0.6166, "", "",
+                fdcouk_code="D2", teams_n=18, releg_spots=3, promo_spots=3, euro_spots=0),
+    Competition("Ligue 2",              "France",   "league", 2, 9004, 0.5502, "", "",
+                fdcouk_code="F2", teams_n=18, releg_spots=3, promo_spots=3, euro_spots=0),
+    Competition("National League",      "England",  "league", 5, 9005, 0.26,   "", "",
+                fdcouk_code="EC", teams_n=24, releg_spots=4, promo_spots=2, euro_spots=0),
+    Competition("Eredivisie",           "Netherlands", "league", 1, 9006, 0.7598, "", "Eredivisie",
+                fdcouk_code="N1", teams_n=18, releg_spots=3, promo_spots=0, euro_spots=6),
+    Competition("Liga Portugal",        "Portugal", "league", 1, 9007, 0.7225, "", "Liga Portugal Betclic",
+                fdcouk_code="P1", teams_n=18, releg_spots=3, promo_spots=0, euro_spots=5),
+    Competition("Liga 3",               "Portugal", "league", 3, 9008, 0.3612, "", "Liga 3",
+                teams_n=20, releg_spots=4, promo_spots=4, euro_spots=0),
+    Competition("Belgian Pro League",   "Belgium",  "league", 1, 9009, 0.6815, "", "Pro League",
+                fdcouk_code="B1", teams_n=16, releg_spots=2, promo_spots=0, euro_spots=5),
+    Competition("Super Lig",            "Turkey",   "league", 1, 9010, 0.6216, "", "Trendyol Super Lig",
+                fdcouk_code="T1", teams_n=18, releg_spots=3, promo_spots=0, euro_spots=5),
+    Competition("Austrian Bundesliga",  "Austria",  "league", 1, 9011, 0.5834, "", "",
+                fdcouk_new="AUT", fdcouk_league="Bundesliga",
+                teams_n=12, releg_spots=1, promo_spots=1, euro_spots=5),
+    Competition("Eliteserien",          "Norway",   "league", 1, 9012, 0.5826, "", "Eliteserien",
+                fdcouk_new="NOR", fdcouk_league="Eliteserien", calendar_season=True,
+                teams_n=16, releg_spots=3, promo_spots=2, euro_spots=5),
+    Competition("Greek Super League",   "Greece",   "league", 1, 9013, 0.574,  "", "Stoiximan Super League",
+                fdcouk_code="G1", teams_n=14, releg_spots=2, promo_spots=0, euro_spots=5),
+    Competition("Swiss Super League",   "Switzerland", "league", 1, 9014, 0.5737, "", "Super League",
+                fdcouk_new="SWZ", fdcouk_league="Super League",
+                teams_n=12, releg_spots=2, promo_spots=2, euro_spots=4),
+    Competition("Danish Superliga",     "Denmark",  "league", 1, 9015, 0.572,  "", "",
+                fdcouk_new="DNK", fdcouk_league="Superliga",
+                teams_n=12, releg_spots=2, promo_spots=2, euro_spots=4),
+    Competition("Ekstraklasa",          "Poland",   "league", 1, 9016, 0.5528, "", "Ekstraklasa",
+                fdcouk_new="POL", fdcouk_league="Ekstraklasa",
+                teams_n=18, releg_spots=3, promo_spots=3, euro_spots=4),
+    Competition("Parva Liga",           "Bulgaria", "league", 1, 9017, 0.5068, "", "Parva Liga",
+                teams_n=16, releg_spots=2, promo_spots=2, euro_spots=4),
+    Competition("Romanian Superliga",   "Romania",  "league", 1, 9018, 0.5034, "", "Superliga",
+                fdcouk_new="ROU", fdcouk_league="Superliga",
+                teams_n=16, releg_spots=3, promo_spots=3, euro_spots=4),
+    Competition("Allsvenskan",          "Sweden",   "league", 1, 9019, 0.5013, "", "Allsvenskan",
+                fdcouk_new="SWE", fdcouk_league="Allsvenskan", calendar_season=True,
+                teams_n=16, releg_spots=3, promo_spots=2, euro_spots=4),
+    Competition("League of Ireland",    "Ireland",  "league", 1, 9020, 0.4620, "", "",
+                fdcouk_new="IRL", fdcouk_league="Premier Division", calendar_season=True,
+                teams_n=10, releg_spots=2, promo_spots=1, euro_spots=4),
+    Competition("Veikkausliiga",        "Finland",  "league", 1, 9021, 0.4586, "", "Veikkausliiga",
+                fdcouk_new="FIN", fdcouk_league="Veikkausliiga", calendar_season=True,
+                teams_n=12, releg_spots=2, promo_spots=1, euro_spots=4),
+    # Russia is UEFA-suspended: its clubs do not enter European competition, so
+    # these matches add no cross-league links and cannot inform relative league
+    # strength. Registered for completeness; P3 ingest is optional.
+    Competition("Russian Premier League", "Russia", "league", 1, 9022, 0.5173, "", "",
+                fdcouk_new="RUS", fdcouk_league="Premier League",
+                teams_n=16, releg_spots=4, promo_spots=4, euro_spots=4),
+
+    # ── Non-UEFA club competitions (BSD) ─────────────────────────────────
+    # Registered for BETTING these leagues, not for global comparability.
+    #
+    # Read this before using their ratings across confederations. The UEFA
+    # expansion worked because European competition links those leagues — the
+    # Premier League alone has 274 inter-league matches, which is what puts
+    # every European league on one Elo scale. These leagues have essentially
+    # ZERO competitive matches against the fitted European set; the only
+    # bridge is pre-season Club Friendlies, which are worthless for rating
+    # (rotated squads, no competitive intensity). And unlike the P4
+    # zero-connectivity leagues, there is no UEFA coefficient to anchor them.
+    #
+    # So: within-league ranking is sound. "Is an MLS side better than a
+    # Bundesliga side" is NOT answerable from this data, and `strength` below
+    # must not be read as commensurable with the European values. They are
+    # placeholders on a separate, unanchored scale — which is also why
+    # `pool` marks them as a distinct rating population.
+    #
+    # Data quality is good: 95-100% xG coverage on BSD, better than the ten
+    # fd.co.uk leagues that carry no shot data at all.
+    Competition("MLS",                  "USA",       "league", 1, 9101, 0.55, "", "MLS",
+                calendar_season=True, teams_n=30,
+                # No relegation in MLS — conferences and playoffs instead. 0 is
+                # correct here rather than unknown; motivation bands built on a
+                # relegation battle do not apply.
+                releg_spots=0, promo_spots=0, euro_spots=0),
+    Competition("USL Championship",     "USA",       "league", 2, 9102, 0.38, "", "USL Championship",
+                calendar_season=True, teams_n=24,
+                releg_spots=0, promo_spots=0, euro_spots=0),
+    Competition("J1 League",            "Japan",     "league", 1, 9103, 0.55, "", "J1 League",
+                calendar_season=True, teams_n=20,
+                releg_spots=3, promo_spots=0, euro_spots=0),
+    Competition("K League 1",           "South Korea", "league", 1, 9104, 0.55, "", "K League 1",
+                calendar_season=True, teams_n=12,
+                releg_spots=2, promo_spots=0, euro_spots=0),
+    Competition("Brasileirao Serie A",  "Brazil",    "league", 1, 9105, 0.62, "", "Brasileirão Serie A",
+                calendar_season=True, teams_n=20,
+                releg_spots=4, promo_spots=0, euro_spots=0),
+    Competition("Brasileirao Serie B",  "Brazil",    "league", 2, 9106, 0.44, "", "Brasileirão Serie B",
+                calendar_season=True, teams_n=20,
+                releg_spots=4, promo_spots=4, euro_spots=0),
+    Competition("Categoria Primera A",  "Colombia",  "league", 1, 9107, 0.50, "", "Categoría Primera A",
+                calendar_season=True, teams_n=20,
+                releg_spots=2, promo_spots=0, euro_spots=0),
+    Competition("Saudi Pro League",     "Saudi Arabia", "league", 1, 9108, 0.55, "", "Saudi Pro League",
+                teams_n=18, releg_spots=3, promo_spots=0, euro_spots=0),
+    Competition("Chinese Super League", "China",     "league", 1, 9109, 0.45, "", "Chinese Super League",
+                calendar_season=True, teams_n=16,
+                releg_spots=2, promo_spots=0, euro_spots=0),
+    Competition("Botola Pro",           "Morocco",   "league", 1, 9110, 0.42, "", "Botola Pro",
+                teams_n=16, releg_spots=2, promo_spots=0, euro_spots=0),
+    # Liga MX plays TWO championships per calendar year (Apertura Jul-Dec,
+    # Clausura Jan-May) with the same clubs. They are registered separately
+    # because they are separate tournaments, and calendar_season keeps each
+    # inside its own year rather than straddling the July boundary — but note
+    # the season model still assumes one competition-season per year, so
+    # cross-season logic (promotion priors, Elo season regression) is only
+    # approximately right for these two.
+    Competition("Liga MX Apertura",     "Mexico",    "league", 1, 9111, 0.52, "", "Liga MX Apertura",
+                calendar_season=True, teams_n=18,
+                releg_spots=0, promo_spots=0, euro_spots=0),
+    Competition("Liga MX Clausura",     "Mexico",    "league", 1, 9112, 0.52, "", "Liga MX Clausura",
+                calendar_season=True, teams_n=18,
+                releg_spots=0, promo_spots=0, euro_spots=0),
+    # Continental competitions. Libertadores/Sudamericana link the South
+    # American leagues to EACH OTHER, which makes their relative strengths
+    # identifiable within that confederation — the same mechanism UEFA
+    # competition provides in Europe. They do not link either continent to
+    # the other.
+    Competition("Copa Libertadores",    "South America", "europe", 0, 9113, 0.70, "", "Copa Libertadores"),
+    Competition("Copa Sudamericana",    "South America", "europe", 0, 9114, 0.58, "", "Copa Sudamericana"),
+    Competition("CAF Champions League", "Africa",    "europe", 0, 9115, 0.50, "", "CAF Champions League"),
 ]
 
 BY_NAME = {c.name: c for c in COMPETITIONS}
@@ -110,6 +271,55 @@ BSD_LEAGUE_ALIASES: dict[str, str] = {
     "conference league": "Conference League",
     "europa conference league": "Conference League",
     "uefa super cup": "UEFA Super Cup",
+    # ── P2 expansion ──────────────────────────────────────────────────────
+    # Verified against a live /api/v2/leagues/ pull (72 leagues), so these are
+    # BSD's actual strings rather than assumed ones. Exact-match only remains
+    # essential here: BSD's catalogue is global, and several of these names
+    # are ambiguous in isolation. "Super League" is Switzerland's (BSD id 15)
+    # — Greece's is "Stoiximan Super League" (id 24) and Portugal's top flight
+    # is "Liga Portugal Betclic" (id 2). "Superliga" is Romania's (id 23);
+    # Denmark's Superliga is not in BSD at all, it comes from fd.co.uk. A
+    # substring rule would merge these three continents' worth of leagues.
+    "eredivisie": "Eredivisie",
+    "liga portugal betclic": "Liga Portugal",
+    "liga 3": "Liga 3",
+    "pro league": "Belgian Pro League",
+    "trendyol super lig": "Super Lig",
+    "stoiximan super league": "Greek Super League",
+    "super league": "Swiss Super League",
+    "superliga": "Romanian Superliga",
+    "allsvenskan": "Allsvenskan",
+    "eliteserien": "Eliteserien",
+    "ekstraklasa": "Ekstraklasa",
+    "veikkausliiga": "Veikkausliiga",
+    "parva liga": "Parva Liga",
+    "segunda división": "Segunda División",
+    "segunda division": "Segunda División",
+    # ── Non-UEFA club competitions ────────────────────────────────────────
+    # Exact-match only remains essential. Two of these are the very names the
+    # original substring rule collided on: "USL Championship" against England's
+    # "Championship", and "Brasileirão Serie A" / "Chinese Super League"
+    # against Serie A and the Swiss Super League. They are now registered
+    # deliberately, which makes exact matching load-bearing rather than
+    # merely cautious — a substring rule here would merge four continents.
+    "mls": "MLS",
+    "usl championship": "USL Championship",
+    "j1 league": "J1 League",
+    "k league 1": "K League 1",
+    "brasileirão serie a": "Brasileirao Serie A",
+    "brasileirao serie a": "Brasileirao Serie A",
+    "brasileirão serie b": "Brasileirao Serie B",
+    "brasileirao serie b": "Brasileirao Serie B",
+    "categoría primera a": "Categoria Primera A",
+    "categoria primera a": "Categoria Primera A",
+    "saudi pro league": "Saudi Pro League",
+    "chinese super league": "Chinese Super League",
+    "botola pro": "Botola Pro",
+    "liga mx apertura": "Liga MX Apertura",
+    "liga mx clausura": "Liga MX Clausura",
+    "copa libertadores": "Copa Libertadores",
+    "copa sudamericana": "Copa Sudamericana",
+    "caf champions league": "CAF Champions League",
 }
 
 # football-data.org: competitions covered on the free tier

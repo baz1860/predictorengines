@@ -28,8 +28,11 @@ Steps (in order):
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
+import os
 import sys
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
@@ -113,6 +116,16 @@ def run_network_steps(api_key: str) -> None:
         rows = SO.build_snapshot_rows(api_key)
         return SO.append_snapshots(rows)
     _step("Snapshot odds", _snapshot)
+
+    # Results for the leagues BSD does not carry. Without this the P3
+    # expansion is a one-off backfill: 8 competitions — Austria among them —
+    # would freeze at their ingest date and go on being priced from ratings
+    # that never update again. Eight HTTP requests, so it runs every time
+    # rather than on a staleness heuristic.
+    def _refresh_expansion():
+        from . import seed_fdcouk_leagues as SFL
+        return SFL.refresh(verbose=True)
+    _step("Refresh BSD-less leagues (fd.co.uk)", _refresh_expansion)
 
     if _fdcouk_is_stale():
         _step("Refresh fd.co.uk market history (weekly)", FD.build)
@@ -263,6 +276,157 @@ def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None,
     return lines
 
 
+def _capped_stakes(backed: list[dict]) -> dict[int, tuple[float, bool]]:
+    """Portfolio-capped stakes for DISPLAY, using the same pure cap function
+    recording applies (app.portfolio.apply_caps) on the card's 100-unit
+    bankroll. Without this the card shows stakes the recorder would later
+    reduce — the operator would plan a portfolio that can't be placed.
+    Returns {row_index: (capped_stake, was_capped)}; rows capped below the
+    minimum stake map to (0.0, True)."""
+    try:
+        from app.portfolio import apply_caps
+    except Exception:
+        return {}
+    cand = [{"stake": float(r.get("stake_gbp") or 0.0),
+             "event_id": f"{r.get('home')}|{r.get('away')}|{r.get('date')}",
+             "engine": "club_soccer", "_i": i} for i, r in enumerate(backed)]
+    try:
+        capped = apply_caps(cand, bankroll=100.0)
+    except Exception:
+        return {}
+    out = {i: (0.0, True) for i in range(len(backed))}
+    for c in capped:
+        out[c["_i"]] = (float(c["stake"]), bool(c.get("stake_capped")))
+    return out
+
+
+def _evidence_cell(row: dict) -> str:
+    """Compact evidence marker for the bet tables (P0, report-only)."""
+    tier = str(row.get("evidence_tier", "unknown"))
+    if tier == "full":
+        return "ok"
+    nh = int(row.get("n_matches_home", 0) or 0)
+    na = int(row.get("n_matches_away", 0) or 0)
+    return f"**{tier.upper()}** ({nh}/{na} matches)"
+
+
+def _low_evidence_section(edge_rows: list[dict]) -> list[str]:
+    """Flag priced fixtures whose ratings rest on little or no real data.
+
+    Pricing deliberately continues for these (P0 is measurement, not
+    suppression), so this section is the safeguard: any suggestion built on a
+    team the model has barely observed is named here, with the reason, at the
+    point the suggestion is made.
+    """
+    seen: dict[str, dict] = {}
+    for r in edge_rows:
+        if str(r.get("evidence_tier", "full")) == "full":
+            continue
+        key = f"{r.get('date','')}|{r.get('match','')}"
+        if key not in seen:
+            seen[key] = r
+    if not seen:
+        return []
+    lines = ["## ⚠ Low-evidence fixtures", "",
+             "The model has little or no real data on the teams below, so these "
+             "prices are weakly identified. They are shown because pricing "
+             "continues through P0 by design — treat the probabilities as "
+             "provisional, not as a read.", "",
+             "| Date | Match | Tier | Why |", "|---|---|---|---|"]
+    for r in sorted(seen.values(), key=lambda x: str(x.get("date", ""))):
+        note = str(r.get("evidence_note", "")) or "under-evidenced"
+        lines.append(f"| {r.get('date','')} | {r.get('match','')} | "
+                     f"{str(r.get('evidence_tier','')).upper()} | {note} |")
+    lines.append("")
+    return lines
+
+
+# Card leads with likely WINNERS, not edge. The goal here is a steady stream of
+# bets the model expects to come in, with value flagged as secondary context —
+# not high-edge longshots. Confidence (p_model) is the primary sort; edge is a
+# column. Full-evidence only, so early qualifiers and barely-seen clubs never
+# lead the card.
+LIKELY_MIN_P = 0.55          # "likely to land" threshold
+SWEET_MIN_P = 0.53          # a real chance of winning …
+SWEET_MIN_EDGE = 0.03        # … AND the price is generous
+
+
+def _value_flag(edge: float) -> str:
+    if edge > SWEET_MIN_EDGE:
+        return "value"
+    if edge < -SWEET_MIN_EDGE:
+        return "short"
+    return "fair"
+
+
+def _bet_prob(row: dict) -> float:
+    """Model probability that THIS bet lands (side-aware)."""
+    try:
+        return float(row.get("p_model", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _likely_winners_section(edge_rows: list[dict], today_str: str) -> list[str]:
+    """The lead section: bets ranked by how likely the model thinks they are.
+
+    Two tables — the most likely to land (confidence first), then the sweet
+    spot where a likely pick is ALSO underpriced. Value is shown but never the
+    sort key, because the aim is regular winners, not maximised edge.
+    """
+    # NOTE: the blanket evidence-gate suppression (which zeroes every stake
+    # until a decision-time backtest exists) is deliberately NOT a filter here.
+    # This section is informational — "what does the model expect to win" — not
+    # a staking instruction, so a gated stake must not hide a likely pick. Only
+    # the per-fixture do-not-bet market signal is excluded, since that flags a
+    # specific line the model distrusts.
+    def _dnb(r):
+        reason = str(r.get("suppressed_reason", "") or "")
+        return reason and not reason.startswith("evidence-gate")
+    live = [r for r in edge_rows
+            if str(r.get("date", ""))[:10] >= today_str
+            and not _dnb(r)
+            and str(r.get("evidence_tier", "")) == "full"]
+    likely = sorted((r for r in live if _bet_prob(r) >= LIKELY_MIN_P),
+                    key=_bet_prob, reverse=True)
+    sweet = sorted((r for r in live if _bet_prob(r) >= SWEET_MIN_P
+                    and float(r.get("edge", 0) or 0) > SWEET_MIN_EDGE),
+                   key=_bet_prob, reverse=True)
+
+    lines = ["## Most likely to land", ""]
+    lines.append("_Full-evidence picks, ranked by the model's chance the bet wins. "
+                 "`value` = also underpriced, `short` = likely but the book has it "
+                 "tight, `fair` = square. Informational — staking stays gated until "
+                 "the decision-time backtest lands, so these are expectations, not "
+                 "instructions._")
+    lines.append("")
+    if not likely:
+        lines.append("_No full-evidence pick clears "
+                     f"{LIKELY_MIN_P:.0%} on the current board — typically an "
+                     "off-season week with only tight fixtures priced._")
+        lines.append("")
+    else:
+        lines.append("| Date | Match | Bet | Odds | Model | Value |")
+        lines.append("|---|---|---|---|---|---|")
+        for r in likely[:20]:
+            lines.append(f"| {str(r.get('date',''))[:10]} | {r.get('match','')} | "
+                         f"{r.get('bet','')} | {float(r.get('odds',0)):.2f} | "
+                         f"{_bet_prob(r):.0%} | {_value_flag(float(r.get('edge',0) or 0))} |")
+        lines.append("")
+
+    if sweet:
+        lines.append("### Sweet spot — likely *and* underpriced")
+        lines.append("")
+        lines.append("| Date | Match | Bet | Odds | Model | Edge |")
+        lines.append("|---|---|---|---|---|---|")
+        for r in sweet[:12]:
+            lines.append(f"| {str(r.get('date',''))[:10]} | {r.get('match','')} | "
+                         f"{r.get('bet','')} | {float(r.get('odds',0)):.2f} | "
+                         f"{_bet_prob(r):.0%} | {float(r.get('edge',0) or 0):+.1%} |")
+        lines.append("")
+    return lines
+
+
 def _backed_bets_section(edge_rows: list[dict], today_str: str,
                          pricing_note: str | None = None) -> list[str]:
     # Defense in depth: even if a stale quote survives upstream filtering,
@@ -278,11 +442,19 @@ def _backed_bets_section(edge_rows: list[dict], today_str: str,
     if not backed:
         lines.append("No positive-EV, unsuppressed bets on the current odds.")
     else:
-        lines.append("| Match | Market | Bet | Odds | Edge | Stake |")
-        lines.append("|---|---|---|---|---|---|")
-        for r in backed:
+        caps = _capped_stakes(backed)
+        lines.append("| Match | Market | Bet | Odds | Edge | Stake | Stake (capped) | Evidence |")
+        lines.append("|---|---|---|---|---|---|---|---|")
+        for i, r in enumerate(backed):
+            cs, was_capped = caps.get(i, (float(r["stake_gbp"]), False))
+            cap_cell = f"£{cs:.2f}" + ("*" if was_capped else "")
             lines.append(f"| {r['match']} | {r['market']} | {r['bet']} | {r['odds']} | "
-                         f"{r['edge']:+.1%} | £{r['stake_gbp']:.2f} |")
+                         f"{r['edge']:+.1%} | £{r['stake_gbp']:.2f} | {cap_cell} | "
+                         f"{_evidence_cell(r)} |")
+        if any(v[1] for v in caps.values()):
+            lines.append("")
+            lines.append("_\\* reduced by portfolio caps (event/correlated/daily/"
+                         "drawdown) — recording places the capped amount._")
     lines.append("")
     gate_suppressed = [r for r in suppressed
                        if str(r.get("suppressed_reason", "")).startswith("evidence-gate")]
@@ -333,13 +505,50 @@ def _transfers_absences_section() -> list[str]:
     return lines
 
 
+_VALIDATION_MAX_AGE_DAYS = 8
+
+
+def _read_validation_latest() -> dict | None:
+    """Metrics from the last `validate --gate`, if they are recent enough.
+
+    Returns None for a stale or unreadable artifact rather than the numbers it
+    contains. Displaying a month-old Brier on today's card as though it were
+    current is worse than displaying nothing — the card is where a regression
+    is supposed to become visible.
+    """
+    path = DATA / "validation_latest.json"
+    if not path.exists():
+        return None
+    try:
+        doc = json.loads(path.read_text())
+    except Exception:
+        return None
+    stamp = doc.get("generated_at_utc")
+    if not stamp:
+        return None
+    try:
+        age = (datetime.now(timezone.utc)
+               - datetime.fromisoformat(stamp)).total_seconds() / 86400
+    except ValueError:
+        return None
+    return doc if age <= _VALIDATION_MAX_AGE_DAYS else None
+
+
 def _weekly_footer() -> list[str]:
     lines = ["## Weekly check (Mondays)", ""]
-    from . import validate as V
     from . import backtest_market as BM
-    _, m = _step("Weekly walk-forward validate", V.walk_forward, verbose=False)
+    # Read the metrics the validation gate already wrote rather than running a
+    # second full walk-forward. update.sh invokes `validate --gate` on every
+    # run, so recomputing here duplicated a ~2-minute pass every Monday for an
+    # identical number. Folds are cached now, which would have made the repeat
+    # cheap, but free work is still work worth not doing.
+    m = _read_validation_latest()
     if m:
-        lines.append(f"- Walk-forward Brier: {m['brier']:.4f} (n={m['n']})")
+        stamp = f", {m['generated_at_utc'][:10]}" if m.get("generated_at_utc") else ""
+        lines.append(f"- Walk-forward Brier: {m['brier']:.4f} (n={m['n']}{stamp})")
+    else:
+        lines.append("- Walk-forward Brier: unavailable "
+                     "(run `python3 -m club_soccer.validate --gate`)")
     bt = _step("Weekly backtest_market summary", BM.run, verbose=False)
     if bt and bt.get("n_matched"):
         lines.append(f"- backtest_market: {bt['n_matched']} matched rows, model 1X2 "
@@ -356,8 +565,12 @@ def write_card(edge_rows: list[dict], player_adj_map: dict | None,
     today_str = str(today.date())
     lines: list[str] = []
     lines += _freshness_header(today_str)
+    # Lead with likely winners — the primary use is a steady stream of bets the
+    # model expects to come in. Edge is context, not the headline.
+    lines += _likely_winners_section(edge_rows, today_str)
     lines += _upcoming_section(pd.Timestamp(today.date()), player_adj_map, calib_maps)
     lines += _backed_bets_section(edge_rows, today_str, pricing_note)
+    lines += _low_evidence_section(edge_rows)
     lines += _transfers_absences_section()
     if today.weekday() == 0:   # Monday
         lines += _weekly_footer()
@@ -367,14 +580,186 @@ def write_card(edge_rows: list[dict], player_adj_map: dict | None,
 
 
 # ── main ──────────────────────────────────────────────────────────────────
+def _file_age_days(path: Path) -> float | None:
+    try:
+        return round((datetime.now(timezone.utc).timestamp()
+                      - path.stat().st_mtime) / 86400.0, 2)
+    except (FileNotFoundError, OSError):
+        return None
+
+
+LAST_RUN = DATA / "last_run.json"
+LOCK_FILE = DATA / "season.lock"
+
+
+class _SeasonLock:
+    """Exclusive, non-blocking inter-process lock for a season run.
+
+    Two overlapping launchd/manual runs must never interleave their status
+    writes. The second caller fails fast with SystemExit rather than racing
+    the first run's last_run.json."""
+
+    def __init__(self, path: Path = LOCK_FILE):
+        self.path = path
+        self._fh = None
+
+    def __enter__(self) -> "_SeasonLock":
+        DATA.mkdir(exist_ok=True)
+        self._fh = open(self.path, "w")
+        try:
+            fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self._fh.close()
+            self._fh = None
+            raise SystemExit(
+                f"Another club_soccer.season run holds {self.path.name}; "
+                "refusing to run concurrently (overlapping runs corrupt status).")
+        self._fh.write(f"{os.getpid()} "
+                       f"{datetime.now(timezone.utc).isoformat()}\n")
+        self._fh.flush()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        if self._fh is not None:
+            try:
+                fcntl.flock(self._fh, fcntl.LOCK_UN)
+            finally:
+                self._fh.close()
+                self._fh = None
+
+
+def _publish_status(payload: dict, run_id: str, claim: bool = False) -> None:
+    """Atomically publish last_run.json via a run-unique tmp file.
+
+    `claim=True` (the starting marker) takes ownership unconditionally: the
+    exclusive lock already guarantees we are the only live run, and a stale
+    marker left by a killed run must NOT wedge every future run out of
+    publishing status.
+
+    `claim=False` (the finished record) publishes only if we still own the
+    status, so a run that somehow lost the race cannot overwrite the live
+    run's marker with its own stale result. Either way the tmp file is
+    run-unique, so two runs never fight over one .tmp path."""
+    try:
+        DATA.mkdir(exist_ok=True)
+        if not claim:
+            try:
+                cur_id = json.loads(LAST_RUN.read_text()).get("run_id")
+            except (FileNotFoundError, ValueError, OSError, AttributeError):
+                cur_id = None
+            if cur_id is not None and cur_id != run_id:
+                print(f"   last_run.json owned by run {cur_id} — not overwriting")
+                return
+        tmp = DATA / f"last_run.json.{run_id}.tmp"
+        tmp.write_text(json.dumps(payload, indent=2))
+        tmp.replace(LAST_RUN)
+    except Exception as exc:
+        print(f"   last_run.json not written ({exc})")
+
+
+def _write_last_run(edge_rows: list[dict], pricing_note: str | None,
+                    fast: bool, no_network: bool, run_id: str,
+                    crashed: str | None = None) -> None:
+    """Atomic, written on EVERY exit path (success, required-step failure,
+    health hard-fail, uncaught crash). A monitor polls this file — a stale
+    green status after a fatal run would be a false all-clear. Carries the same
+    run_id as the running marker so status races are detectable."""
+    status = {
+        "state": "finished",
+        "run_id": run_id,
+        "finished_at_utc": datetime.now(timezone.utc).isoformat(),
+        "ok": not _FAILED_REQUIRED and crashed is None,
+        "crashed": crashed,
+        "failed_required_steps": list(_FAILED_REQUIRED),
+        "pricing_note": pricing_note,
+        "n_edge_rows": len(edge_rows),
+        "n_backed": sum(1 for r in edge_rows
+                        if float(r.get("kelly_stake", 0) or 0) > 0
+                        and not r.get("suppressed_reason")),
+        # Optional-input freshness: "0 absences" from a swallowed network
+        # failure looks identical to a real quiet day — the file ages tell
+        # the monitor (and the operator) which one it was.
+        "absences_age_days": _file_age_days(PF.ABSENCES_CSV),
+        "squads_age_days": _file_age_days(CS.SQUADS_CSV),
+        "odds_snapshot_age_days": _file_age_days(SO.ODDS_HISTORY_CSV),
+        "fast": fast, "no_network": no_network,
+    }
+    _publish_status(status, run_id)
+
+    # Append to the run ledger (P6). last_run.json answers "did the last run
+    # work?"; the ledger answers "has this been working?", which is the only
+    # way to see the slow failures — a league quietly ceasing to update,
+    # coverage eroding — where every individual run still reports green.
+    # Failures are recorded too: a history of successes alone cannot measure a
+    # streak. Best-effort, so observability can never fail the pipeline.
+    try:
+        from . import run_ledger as RL
+        RL.append({**status, **RL.snapshot()})
+    except Exception as exc:
+        print(f"   run ledger not written ({exc})")
+
+
+def _write_running_marker(run_id: str) -> None:
+    """Written atomically BEFORE any work: a SIGKILL/power loss mid-run then
+    leaves state="running" with a started_at_utc, not the previous green
+    status — the monitor fails a running state older than its deadline. The
+    UUID run_id is preserved through to the finished record."""
+    marker = {
+        "state": "running",
+        "run_id": run_id,
+        "started_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    # Claim ownership: a stale marker from a killed run must not block us.
+    _publish_status(marker, run_id, claim=True)
+
+
 def run(fast: bool = False, no_network: bool = False,
         allow_manual_odds: bool = False) -> None:
-    _FAILED_REQUIRED.clear()   # per-run state: never inherit an old failure
+    """Wrapper: every exit path — including the health hard-fail and any
+    uncaught crash — records a durable last_run.json before propagating.
+
+    An exclusive lock is held for the whole run so overlapping launchd/manual
+    invocations cannot interleave their status writes; the second caller exits
+    immediately via SystemExit."""
+    with _SeasonLock():
+        _FAILED_REQUIRED.clear()   # per-run state: never inherit an old failure
+        run_id = uuid.uuid4().hex
+        _write_running_marker(run_id)
+        edge_rows: list[dict] = []
+        pricing_note: str | None = None
+        crashed: str | None = None
+        pending_exit: BaseException | None = None
+        try:
+            edge_rows, pricing_note = _run_steps(fast, no_network, allow_manual_odds)
+        except SystemExit as exc:
+            crashed = f"SystemExit: {exc}"
+            pending_exit = exc
+        except BaseException as exc:
+            crashed = f"{type(exc).__name__}: {exc}"
+            pending_exit = exc
+        finally:
+            _write_last_run(edge_rows, pricing_note, fast, no_network,
+                            run_id, crashed)
+        if pending_exit is not None:
+            raise pending_exit
+
+    if _FAILED_REQUIRED:
+        print(f"\n{len(_FAILED_REQUIRED)} REQUIRED step(s) failed "
+              "(card written in degraded mode):")
+        for msg in _FAILED_REQUIRED:
+            print(f"  - {msg}")
+        sys.exit(3)
+
+
+def _run_steps(fast: bool, no_network: bool,
+               allow_manual_odds: bool) -> tuple[list[dict], str | None]:
     report = H.run_checks()
     if not report.get("ok", True):
-        sys.exit("Health check hard-failed (future-dated finished rows or "
-                 "duplicate fixture_ids present) — run `python3 -m club_soccer.fetch "
-                 "--repair` before continuing.")
+        _FAILED_REQUIRED.append("Health hard checks failed "
+                                "(see health output above)")
+        sys.exit("Health check hard-failed (future-dated finished rows, "
+                 "duplicate fixture_ids, or void rows with results) — run "
+                 "`python3 -m club_soccer.fetch --repair` before continuing.")
 
     api_key = get_key("bsd", env="BSD_API_KEY")
     if no_network or not api_key:
@@ -387,6 +772,26 @@ def run(fast: bool = False, no_network: bool = False,
         _step("Refit model", lambda: M.save_params(M.fit()), required=True)
     else:
         print("\n== Refit skipped (--fast) ==")
+
+    # Staking evidence, in three steps, all best-effort (never break the card):
+    #  1. record  — freeze today's in-window decisions into the append-only
+    #     ledger (immutable; the trustworthy basis for the gate).
+    #  2. settle  — append results/CLV for decisions whose fixtures finished.
+    #  3. backtest — recompute the gate artifact FROM the frozen ledger.
+    if not no_network and api_key:
+        def _record():
+            from . import decision_ledger as DL
+            return DL.record(api_key, verbose=True)
+        _step("Record staking decisions (ledger)", _record)
+    def _settle():
+        from . import decision_ledger as DL
+        return DL.settle(verbose=True)
+    _step("Settle staking decisions (ledger)", _settle)
+
+    def _decision_time():
+        from . import decision_time_backtest as DTB
+        return DTB.run(verbose=False)
+    _step("Decision-time backtest (staking evidence)", _decision_time)
 
     player_adj_map = None
     from .calibrate import load_active_maps
@@ -442,32 +847,7 @@ def run(fast: bool = False, no_network: bool = False,
         print(f"\n== {pricing_note} ==")
 
     write_card(edge_rows, player_adj_map, calib_maps, pricing_note)
-
-    # Durable run status: /tmp logs vanish and nobody watches launchd exit
-    # codes. last_run.json is the artifact a health check / notification hook
-    # can poll ("has there been a clean run in the last 26 hours?").
-    status = {
-        "finished_at_utc": datetime.now(timezone.utc).isoformat(),
-        "ok": not _FAILED_REQUIRED,
-        "failed_required_steps": list(_FAILED_REQUIRED),
-        "pricing_note": pricing_note,
-        "n_edge_rows": len(edge_rows),
-        "n_backed": sum(1 for r in edge_rows
-                        if float(r.get("kelly_stake", 0) or 0) > 0
-                        and not r.get("suppressed_reason")),
-        "fast": fast, "no_network": no_network,
-    }
-    try:
-        (DATA / "last_run.json").write_text(json.dumps(status, indent=2))
-    except Exception as exc:
-        print(f"   last_run.json not written ({exc})")
-
-    if _FAILED_REQUIRED:
-        print(f"\n{len(_FAILED_REQUIRED)} REQUIRED step(s) failed "
-              "(card written in degraded mode):")
-        for msg in _FAILED_REQUIRED:
-            print(f"  - {msg}")
-        sys.exit(3)
+    return edge_rows, pricing_note
 
 
 def main() -> None:

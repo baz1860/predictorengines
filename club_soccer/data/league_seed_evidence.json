@@ -1,0 +1,70 @@
+{
+  "phase": "P4b league-prior team seeding",
+  "status": "PROMOTED",
+  "flag": "model.fit(league_seed=True)",
+  "measured_at_utc": "2026-07-22T15:57:41.397296+00:00",
+  "method": "walk-forward, monthly refit, identical folds both arms",
+  "results": [
+    {
+      "window": "2025-07 onward",
+      "n": 11261,
+      "brier_default": 0.61799,
+      "brier_seeded": 0.616,
+      "logloss_default": 1.02952,
+      "logloss_seeded": 1.02675
+    },
+    {
+      "window": "2024-07 onward",
+      "n": 21596,
+      "brier_default": 0.6173,
+      "brier_seeded": 0.61521,
+      "logloss_default": 1.02865,
+      "logloss_seeded": 1.02572
+    }
+  ],
+  "delta_brier": -0.00209,
+  "delta_logloss": -0.00293,
+  "note": "Replicated across two windows, same direction and magnitude. This is the mechanism fix for the original complaint: an under-evidenced club was seeded at the pooled mean of 25 leagues rather than at its own league level. Not self-promoted \u2014 enabling it changes every thin team rating, so it is a deliberate decision like comp_strength.active and the market blend.",
+  "promoted_at_utc": "2026-07-22T16:37:01.333080+00:00",
+  "promoted_by": "barrie (explicit instruction)",
+  "promotion_mechanism": "model.LEAGUE_SEED_DEFAULT = True (in code, not runtime)",
+  "post_promotion_full_walk_forward": {
+    "n": 47598,
+    "brier_before": 0.6168,
+    "brier_after": 0.6153,
+    "gate": "PASS",
+    "gate_baseline": 0.6112,
+    "gate_limit": 0.6212
+  },
+  "not_promoted": {
+    "comp_strength.json": "stays active=false \u2014 the UEFA prior is biased upward for top-heavy leagues (Eredivisie observed 0.495 vs prior 0.760); see league_strength.py"
+  },
+  "revalidation_leak_free": {
+    "measured_at_utc": "2026-07-23T22:49:49.859474+00:00",
+    "method": "walk-forward, per-fold coef_as_of = fold cutoff (no future coefficients)",
+    "window": "2024-06 onward",
+    "n": 27896,
+    "seed_off": {
+      "brier": 0.61468,
+      "log_loss": 1.02472
+    },
+    "seed_on": {
+      "brier": 0.61279,
+      "log_loss": 1.02207
+    },
+    "delta": {
+      "brier": -0.00189,
+      "log_loss": -0.00265
+    },
+    "vs_contaminated": {
+      "contaminated_delta_brier": -0.00198,
+      "clean_delta_brier": -0.00189
+    },
+    "verdict": "seeding still wins on leak-free evidence \u2014 promotion STANDS",
+    "provenance": {
+      "fixtures_sha256": "9bfaec2ca893074a",
+      "model_params_sha256": "fdef756cc48f4738",
+      "coef_history_sha256": "4cc3b02c376bff86"
+    }
+  }
+}

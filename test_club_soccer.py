@@ -112,11 +112,19 @@ def test_model_math():
           abs(px["home"] + px["draw"] + px["away"] - 1.0) < 0.002)
     with tempfile.TemporaryDirectory() as td:
         f = Path(td) / "ensemble_weights.json"
-        f.write_text(json.dumps({"weights": {"goals": 2, "elo": 1, "xpress": 1}}))
+        # The artifact only applies with an explicit "active": true — inactive
+        # (or legacy flag-less) artifacts fall back to DEFAULT_ENSEMBLE_W so
+        # production and validation stay the same predictor.
+        f.write_text(json.dumps({"active": True,
+                                 "weights": {"goals": 2, "elo": 1, "xpress": 1}}))
         w = M.load_ensemble_weights(f)
         check("ensemble weights normalize from artifact", abs(sum(w.values()) - 1.0) < 1e-12)
         check("missing ensemble components default to zero", w["xg"] == 0.0 and w["xgf"] == 0.0)
         check("xpress artifact weight loaded", abs(w["xpress"] - 0.25) < 1e-12)
+        f.write_text(json.dumps({"weights": {"goals": 2, "elo": 1, "xpress": 1}}))
+        w_inactive = M.load_ensemble_weights(f)
+        check("flag-less weights artifact is ignored (defaults used)",
+              w_inactive == dict(M.DEFAULT_ENSEMBLE_W))
     try:
         M.predict("Not A Club", "Chelsea", "Premier League", params=params)
         check("unknown team raises", False)
@@ -204,15 +212,29 @@ def test_health_and_repair():
     # that merely contain a competition name as a substring (e.g. "USL
     # Championship" vs "Championship", "CAF Champions League" vs "Champions
     # League") — this silently blended other continents' results in.
-    check("USL Championship does not match England Championship",
-          C.comp_from_bsd_league("USL Championship") is None)
-    check("CAF Champions League does not match UEFA Champions League",
-          C.comp_from_bsd_league("CAF Champions League") is None)
-    check("Brasileirão Serie A does not match Italy Serie A",
-          C.comp_from_bsd_league("Brasileirão Serie A") is None)
-    check("exact league name still matches",
+    #
+    # UPDATED: these three are now REGISTERED competitions in their own right,
+    # so "resolves to None" is no longer the correct assertion. The contract is
+    # stronger now — each must resolve to its OWN competition on its OWN
+    # continent — and exact matching went from cautious to load-bearing.
+    for bsd_name, expect_country in (("USL Championship", "USA"),
+                                     ("CAF Champions League", "Africa"),
+                                     ("Brasileirão Serie A", "Brazil")):
+        comp = C.comp_from_bsd_league(bsd_name)
+        check(f"{bsd_name} resolves to its own competition ({expect_country})",
+              comp is not None and comp.country == expect_country)
+    check("England Championship is unaffected by the USA registration",
           C.comp_from_bsd_league("Championship") is not None
-          and C.comp_from_bsd_league("Championship").name == "Championship")
+          and C.comp_from_bsd_league("Championship").country == "England")
+    check("UEFA Champions League is unaffected by the CAF registration",
+          C.comp_from_bsd_league("Champions League") is not None
+          and C.comp_from_bsd_league("Champions League").country == "Europe")
+    check("Italy Serie A is unaffected by the Brazil registration",
+          C.comp_from_bsd_league("Serie A") is not None
+          and C.comp_from_bsd_league("Serie A").country == "Italy")
+    check("genuinely unsupported BSD leagues still resolve to nothing",
+          C.comp_from_bsd_league("Copa do Brasil") is None
+          and C.comp_from_bsd_league("NPL Queensland") is None)
 
 
 def test_match_identity_reconciliation():
@@ -732,12 +754,21 @@ def test_gated_production_layers():
     from app import market_blend as MB
 
     stored_calibration = CAL.load_maps()
+    calib_artifact = json.loads(CAL.CALIB_FILE.read_text())
     check("temperature calibration is explicitly gated",
           isinstance(stored_calibration, dict)
           and stored_calibration.get("method") == "temperature"
           and 0.5 < float(stored_calibration.get("temperature", 0.0)) < 1.5
           and (CAL.load_active_maps() is not None) == bool(
-              json.loads(CAL.CALIB_FILE.read_text()).get("active", False)))
+              calib_artifact.get("active", False)))
+    # Until PredictionConfig passes calibration per fold (owner plan 3),
+    # ACTIVE calibration would make production differ from walk-forward.
+    # Assert inactivity outright: loader-consistency alone would happily pass
+    # with active=true and silently recreate that mismatch.
+    check("temperature calibration artifact is explicitly INACTIVE "
+          f"(active={calib_artifact.get('active')!r})",
+          calib_artifact.get("active") is False
+          and CAL.load_active_maps() is None)
     check("market blend remains off until an explicit promotion",
           not MB.is_default_on("club_soccer"))
 
@@ -766,46 +797,85 @@ def test_validation_leak_free_paths():
     print("20. historical evaluation never reads production artifacts")
     from club_soccer import context as CTX
     from club_soccer import validate as V
-    import inspect
 
-    # Pin the mechanism: with explicit context_coef/ensemble_weights the
-    # prediction path must never touch the production artifacts. If someone
-    # removes either explicit argument from validate.py, these checks fail.
-    params = M.load_params()
-    orig_load_coef = CTX.load_coef
-    orig_load_w = M.load_ensemble_weights
+    # Run the REAL walk_forward on a synthetic league with the production
+    # artifact loaders booby-trapped to raise. walk_forward swallows
+    # per-prediction exceptions, so the leak signal is n == 0: if anyone
+    # removes the explicit context_coef/ensemble_weights arguments from
+    # validate.py, every prediction trips a loader and the fold produces
+    # nothing. (No source-string inspection — a comment can't satisfy this.)
+    rng = np.random.default_rng(7)
+    teams = [f"Club {c}" for c in "ABCDEF"]
+    rows, fid = [], 0
+    d = pd.Timestamp("2025-01-04")
+    for _ in range(14):
+        for h, a in zip(teams[::2], teams[1::2]):
+            fid += 1
+            rows.append(dict(fixture_id=f"syn{fid}", date=d, season=2024,
+                             competition="Synthetic League", type="league",
+                             neutral=0, home=h, away=a, status="FIN",
+                             home_goals=int(rng.poisson(1.4)),
+                             away_goals=int(rng.poisson(1.1)),
+                             home_sot=np.nan, away_sot=np.nan, xg_source=""))
+        teams = teams[1:] + teams[:1]
+        d += pd.Timedelta(days=16)
+    fx = pd.DataFrame(rows)
+
+    # Counter traps, not raise-only traps: walk_forward swallows per-row
+    # exceptions, so "n > 0" alone would tolerate PARTIAL leakage (some folds
+    # tripping, some clean). Zero calls + the exact expected fold size are
+    # both required.
     calls = {"coef": 0, "weights": 0}
 
-    def _boom_coef():
+    def _boom_coef(*a, **k):
         calls["coef"] += 1
-        raise AssertionError("production context artifact read during "
-                            "explicit-coef prediction")
+        raise AssertionError("production context artifact read in validation")
 
-    def _boom_weights(path=None):
+    def _boom_weights(*a, **k):
         calls["weights"] += 1
-        raise AssertionError("production ensemble weights read during "
-                            "explicit-weights prediction")
+        raise AssertionError("production ensemble weights read in validation")
 
-    CTX.load_coef = _boom_coef
-    M.load_ensemble_weights = _boom_weights
+    orig_coef, orig_w = CTX.load_coef, M.load_ensemble_weights
+    CTX.load_coef, M.load_ensemble_weights = _boom_coef, _boom_weights
     try:
-        pred = M.predict_match("Arsenal", "Chelsea", "Premier League",
-                               "2024-03-02", "ensemble", params=params,
-                               context_coef={},
-                               ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W))
-        ok = abs(sum(pred["probs"][k] for k in ("home", "draw", "away")) - 1.0) < 0.002
-    except AssertionError:
-        ok = False
+        preds, metrics = V.walk_forward(min_train=30, fixtures=fx, verbose=False)
+        # Deterministic synthetic league (seeded rng): the eligible test
+        # months yield exactly 12 out-of-fold predictions. Any swallowed
+        # exception (leak or regression) shrinks this count.
+        wf_ok = metrics.get("n", 0) == 12
+        # Snapshot the counters BEFORE the negative control runs: the control
+        # deliberately fires the traps, so reporting the live dict afterwards
+        # printed "coef=1" under a passing "zero calls" line.
+        wf_calls = calls.copy()
+        zero_calls = wf_calls["coef"] == 0 and wf_calls["weights"] == 0
+        # Negative control: the booby traps must actually fire on the
+        # artifact-loading default path, or the main check proves nothing.
+        try:
+            params = M.fit(fx)
+            M.predict_match("Club A", "Club B", "Synthetic League",
+                            "2025-08-01", "ensemble", params=params)
+            traps_fire = False
+        except AssertionError:
+            traps_fire = True
     finally:
-        CTX.load_coef = orig_load_coef
-        M.load_ensemble_weights = orig_load_w
-    check("explicit context_coef + ensemble_weights bypass production artifacts",
-          ok and calls["coef"] == 0 and calls["weights"] == 0)
-
-    src = inspect.getsource(V.walk_forward)
-    check("walk_forward passes explicit context_coef", "context_coef={}" in src)
-    check("walk_forward passes explicit ensemble weights",
-          "ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W)" in src)
+        CTX.load_coef, M.load_ensemble_weights = orig_coef, orig_w
+    check(f"walk_forward yields exactly 12 folds with loaders disabled "
+          f"(n={metrics.get('n', 0)})", wf_ok)
+    check(f"zero production-loader calls during walk_forward "
+          f"(coef={wf_calls['coef']}, weights={wf_calls['weights']})", zero_calls)
+    check("booby-trapped loaders fire on the default (production) path",
+          traps_fire)
+    # NOTE (known gaps, awaiting the PredictionConfig work in owner plan 3):
+    # competitions._load_comp_strength() and calibrate.load_active_maps()
+    # are also production-artifact reads reachable from prediction paths.
+    # Both are currently inactive; they cannot be zero-call-trapped until
+    # competition strength and calibration are passed explicitly per fold.
+    from club_soccer import competitions as COMP
+    import json as _json
+    comp_strength = _json.loads(COMP._COMP_STRENGTH_FILE.read_text()) \
+        if COMP._COMP_STRENGTH_FILE.exists() else {}
+    check("competition-strength artifact stays inactive until per-fold "
+          "plumbing exists", not comp_strength.get("active", False))
 
 
 if __name__ == "__main__":

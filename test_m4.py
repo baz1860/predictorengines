@@ -136,6 +136,7 @@ def test_annexc_loader():
         good = Path(d) / "good.json"
         good.write_text(json.dumps({combo: asg}))
         orig = simulate.ANNEXC_FILE
+        orig_table = simulate._ANNEXC
         simulate.ANNEXC_FILE = good
         try:
             table = simulate._load_annexc()
@@ -157,8 +158,11 @@ def test_annexc_loader():
                 rejected = True
             check("malformed table is rejected", rejected)
         finally:
+            # Restore the ORIGINAL cached table, not None: leaking _ANNEXC=None
+            # forces a lazy reload in later tests and, under flat collection,
+            # contaminated test_worldcup_live_bracket's third-place allocation.
             simulate.ANNEXC_FILE = orig
-            simulate._ANNEXC = None
+            simulate._ANNEXC = orig_table
 
 
 if __name__ == "__main__":

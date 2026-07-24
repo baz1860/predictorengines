@@ -1,0 +1,37 @@
+{
+  "change": "evidence-weighted ensemble: scale shot-based components by per-team shot-data coverage",
+  "status": "LIVE (default on)",
+  "measured_at_utc": "2026-07-22T19:52:15.040132+00:00",
+  "problem": "12 competitions (~31% of fitted matches) arrive from fd.co.uk /new/ files with no shot columns. Their attack_xg/defence_xg are identically 0 - league-average by construction, not measurement - yet the xg and xgf components held 40% of the default ensemble weight, diluting goals and elo.",
+  "mechanism": "weight_shot_components *= n/(n+8) where n = min(home,away) weighted shot-matches",
+  "walk_forward_2024_07_onward": {
+    "n": 21622,
+    "without_gating": {
+      "brier": 0.61519,
+      "ou25": 0.25664,
+      "btts": 0.25429
+    },
+    "with_gating": {
+      "brier": 0.61209,
+      "ou25": 0.25352,
+      "btts": 0.25231
+    },
+    "delta": {
+      "brier": -0.0031,
+      "ou25": -0.00312,
+      "btts": -0.00198
+    }
+  },
+  "full_history_gate": {
+    "brier_before": 0.6153,
+    "brier_after": 0.6119,
+    "baseline": 0.6112,
+    "limit": 0.6212,
+    "result": "PASS",
+    "ou25_delta_before": 0.0126,
+    "ou25_delta_after": 0.0074,
+    "btts_delta_before": 0.0083,
+    "btts_delta_after": 0.0048
+  },
+  "note": "Halves the post-P3 OU2.5/BTTS regression rather than eliminating it. The residual gap is the genuine cost of leagues with no shot data, not dilution. Clubs with full shot histories are unaffected."
+}

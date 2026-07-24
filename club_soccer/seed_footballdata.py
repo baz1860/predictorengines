@@ -171,7 +171,8 @@ def main() -> None:
                  f"Synthetic backup left intact; restore with: cp {BACKUP} {FIXTURES}")
 
     df = pd.DataFrame(rows).drop_duplicates(subset=["fixture_id"], keep="last")
-    df.to_csv(FIXTURES, index=False)
+    from .fetch import write_fixtures
+    write_fixtures(df)
     print(f"\nWrote {len(df)} real matches across {df['competition'].nunique()} "
           f"leagues -> {FIXTURES}")
 
@@ -184,7 +185,9 @@ def main() -> None:
     # Run validate.py as its own process from club_soccer/ so the right module
     # loads regardless of sys.path and writes its own baseline + predictions.
     import subprocess
-    subprocess.run([sys.executable, str(HERE / "validate.py"), "--update-baseline"],
+    # Descriptive only: a reseed must NOT move the promotion gate (that is the
+    # nested-holdout promoter's job), so --update-baseline is deliberately gone.
+    subprocess.run([sys.executable, str(HERE / "validate.py")],
                    cwd=str(HERE), check=False)
     print("  (uniform-1/3 baseline Brier ≈ 0.667 — beat it to have real skill)")
     print("\nDone. League data is real now. For cups/UEFA/upcoming fixtures you still "

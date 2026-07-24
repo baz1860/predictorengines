@@ -92,13 +92,19 @@ def _fdorg_to_row(match: dict, comp_name: str, comp_api_id: int,
     except ValueError:
         season = None
 
+    from .schema import (normalize_status, OFFICIAL_RESULT_STATUSES,
+                         QUARANTINE_STATUS)
     score_obj = match.get("score") or {}
     ft = score_obj.get("fullTime") or {}
-    status = str(match.get("status") or "").upper()
-    finished = status in ("FINISHED",)
+    status_raw = str(match.get("status") or "").strip()
+    canon = normalize_status(status_raw)
+    # AWARDED carries an official full-time score too (a forfeit is typically
+    # recorded 3-0); treating only FINISHED as scored dropped awarded results
+    # entirely, so they never reached the AWD settlement path.
+    has_result = canon in OFFICIAL_RESULT_STATUSES
 
-    home_goals = ft.get("home") if finished else None
-    away_goals = ft.get("away") if finished else None
+    home_goals = ft.get("home") if has_result else None
+    away_goals = ft.get("away") if has_result else None
 
     return {
         "fixture_id": match.get("id"),
@@ -114,7 +120,8 @@ def _fdorg_to_row(match: dict, comp_name: str, comp_api_id: int,
         "away": away,
         "home_goals": home_goals,
         "away_goals": away_goals,
-        "status": status[:3],
+        "status": canon,
+        "status_raw": status_raw if canon == QUARANTINE_STATUS else "",
         "neutral": 0,
         "home_shots": "",
         "away_shots": "",
@@ -226,7 +233,8 @@ def fetch_and_merge(api_key: str,
         merged = df_new
 
     DATA.mkdir(exist_ok=True)
-    merged.to_csv(FIXTURES, index=False)
+    from .fetch import write_fixtures
+    write_fixtures(merged)
     return merged
 
 
@@ -275,7 +283,8 @@ def main() -> None:
         df = fetch_all(key, competitions=args.competitions,
                        status=args.status, season=args.season)
         DATA.mkdir(exist_ok=True)
-        df.to_csv(FIXTURES, index=False)
+        from .fetch import write_fixtures
+        write_fixtures(df)
 
     played = df[df["home_goals"].notna() & df["away_goals"].notna()] if not df.empty else df
     print(f"\nWrote {len(df)} fixtures ({len(played)} played) -> {FIXTURES}")

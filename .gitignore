@@ -84,6 +84,15 @@ club_soccer/data/bsd_cache/
 club_soccer/data/weather_cache/
 club_soccer/data/fdcouk_cache/
 club_soccer/data/clubelo_cache/
+# fd.co.uk expansion-league source files (P3) — regenerated on demand.
+club_soccer/data/fdcouk_league_cache/
+# Walk-forward fold cache: derived, ~20 MB of JSON, and keyed on a fingerprint
+# of the code and data that produced it. Versioning it would be pure churn —
+# and a stale committed entry can never be served, since a changed fingerprint
+# simply misses.
+club_soccer/data/walkforward_cache/
+# Run history ledger: per-machine operational record, not source.
+club_soccer/data/run_history.jsonl
 # Bzzoiro v2 shotmaps/lineups/player payloads and flattened joins are
 # provider-fetched local state; rebuild with club_soccer.bsd_enrichment.
 club_soccer/data/bsd_enrichment/

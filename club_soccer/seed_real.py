@@ -49,6 +49,7 @@ from .competitions import COMPETITIONS, comp_from_bsd_league
 from . import model as M
 from .names import make_canon
 from .fetch import _merge_fixture_rows
+from .schema import QUARANTINE_STATUS, normalize_status as _norm_status
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
@@ -87,7 +88,7 @@ def _num(v) -> int | str:
 
 
 def _bsd_to_row(event: dict, comp_name: str, comp_api_id: int,
-                country: str, kind: str, canon=None) -> dict:
+                country: str, kind: str, canon=None, comp=None) -> dict:
     """Convert a BSD event dict to our fixtures.csv schema."""
     home = str(event.get("home_team") or "")
     away = str(event.get("away_team") or "")
@@ -98,8 +99,9 @@ def _bsd_to_row(event: dict, comp_name: str, comp_api_id: int,
     kickoff = str(event.get("date") or event.get("kickoff") or "")
     date_str = kickoff[:10]
 
-    status_raw = str(event.get("status") or "").lower()
-    finished = status_raw in _FINISHED
+    status_raw = str(event.get("status") or "").strip()
+    status_key = status_raw.lower()
+    finished = status_key in _FINISHED
 
     # Score
     score = event.get("score") or event.get("result") or {}
@@ -113,13 +115,13 @@ def _bsd_to_row(event: dict, comp_name: str, comp_api_id: int,
     home_goals = hg if finished else None
     away_goals = ag if finished else None
 
-    try:
-        year = int(date_str[:4])
-        month = int(date_str[5:7])
-        season = year if month >= 7 else year - 1
-    except (ValueError, IndexError):
-        season = None
+    # Season label comes from the ONE canonical helper, which knows that
+    # calendar-year leagues (Liga MX, Brazil, the Nordics) are their calendar
+    # year — inlining the July rule here mislabelled them.
+    from .fetch import season_for_date
+    season = season_for_date(date_str, comp)
 
+    canon_status = _norm_status(status_raw)
     row = {
         "fixture_id": event.get("id"),
         "date": date_str,
@@ -134,7 +136,8 @@ def _bsd_to_row(event: dict, comp_name: str, comp_api_id: int,
         "away": away,
         "home_goals": home_goals,
         "away_goals": away_goals,
-        "status": status_raw.upper()[:3] if status_raw else "",
+        "status": canon_status,
+        "status_raw": status_raw if canon_status == QUARANTINE_STATUS else "",
         "neutral": 0,
         "home_shots": "", "away_shots": "", "home_sot": "", "away_sot": "",
         "home_corners": "", "away_corners": "", "xg_source": "",
@@ -180,7 +183,8 @@ def fetch_fixtures(seasons: list[int] | None, key: str,
             continue
 
         # Season filter
-        row = _bsd_to_row(ev, comp.name, comp.api_id, comp.country, comp.kind, canon)
+        row = _bsd_to_row(ev, comp.name, comp.api_id, comp.country, comp.kind,
+                          canon, comp)
         if seasons and row["season"] not in seasons:
             continue
         rows.append(row)
@@ -284,7 +288,9 @@ def refit_and_baseline() -> None:
     print(f"  fitted {params['fitted_matches']} matches, {len(params['teams'])} teams")
     print("\nWalk-forward validation (fresh baseline):")
     import subprocess
-    subprocess.run([sys.executable, str(HERE / "validate.py"), "--update-baseline"],
+    # Descriptive only: a reseed must NOT move the promotion gate (that is the
+    # nested-holdout promoter's job), so --update-baseline is deliberately gone.
+    subprocess.run([sys.executable, str(HERE / "validate.py")],
                    cwd=str(HERE), check=False)
 
 
@@ -364,7 +370,8 @@ def main() -> None:
             (set(df["home"].dropna()) | set(df["away"].dropna())) & league_teams
         )
         merged = _merge_fixture_rows(base, df)
-        merged.to_csv(FIXTURES, index=False)
+        from .fetch import write_fixtures
+        write_fixtures(merged)
         print(
             f"\nMerged {len(df)} fetched rows -> {FIXTURES} "
             f"({len(base)} -> {len(merged)} rows)"
@@ -377,7 +384,8 @@ def main() -> None:
             print("  new/unlinked teams (add to names.OVERRIDES if dupes):")
             print("   ", ", ".join(new_teams[:25]) + (" ..." if len(new_teams) > 25 else ""))
     else:
-        df.to_csv(FIXTURES, index=False)
+        from .fetch import write_fixtures
+        write_fixtures(df)
         played = df[df["home_goals"].notna() & df["away_goals"].notna()]
         print(f"\nWrote {len(df)} fixtures ({len(played)} played) -> {FIXTURES}")
 

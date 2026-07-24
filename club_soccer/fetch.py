@@ -25,8 +25,9 @@ if str(ROOT) not in sys.path:
 from api_keys import get_key
 from bsd_client import (event_date_utc, fixture_detail_fields, get_all_events,
                         get_event, league_name as bsd_league_name)
-from .competitions import COMPETITIONS, comp_from_bsd_league
+from .competitions import COMPETITIONS, comp_from_bsd_league, get as comp_get
 from . import schema
+from .club_identity import canonical_name as _canonical_name
 from .identities import dedupe_fixtures
 
 HERE = Path(__file__).resolve().parent
@@ -72,10 +73,127 @@ def _present(value) -> bool:
     return not (isinstance(value, str) and value == "")
 
 
+# A write dropping more than this fraction of existing rows is refused.
+# 0.5 is deliberately loose: a legitimate dedupe or identity merge has never
+# removed more than ~13% in this project, so it will not trip, while the
+# failure it guards against replaced 95% of the file.
+SHRINK_GUARD_RATIO = 0.5
+
+
+def _allow_shrink() -> bool:
+    import os
+    return os.environ.get("CLUB_SOCCER_ALLOW_FIXTURE_SHRINK") == "1"
+
+
+def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
+    """THE write boundary for fixtures.csv. Every writer — fetchers AND
+    seeders — must come through here, never `to_csv(FIXTURES)` directly:
+    a fresh import that bypasses normalization can train the model on a
+    void fixture's retained score before health ever runs.
+
+    Normalizes status codes, clears result/stat fields on void statuses,
+    and writes atomically (tmp + replace)."""
+    from .schema import normalize_status, QUARANTINE_STATUS
+    path = FIXTURES if path is None else path
+    df = df.copy()
+    if "status" in df.columns:
+        original = df["status"]
+        df["status"] = original.map(normalize_status)
+        # Preserve the provider's string for anything we could not map, so a
+        # quarantined row can be diagnosed and the mapping added later.
+        quarantined = df["status"] == QUARANTINE_STATUS
+        if "status_raw" in df.columns:
+            # A row that has become recognised must not retain an obsolete raw
+            # quarantine value from an earlier provider response.
+            df.loc[~quarantined, "status_raw"] = ""
+        if quarantined.any():
+            if "status_raw" not in df.columns:
+                df["status_raw"] = ""
+            keep = (df["status_raw"].notna()
+                    & df["status_raw"].astype(str).str.strip().ne(""))
+            df.loc[quarantined & ~keep, "status_raw"] = \
+                original[quarantined & ~keep].astype(str)
+            print(f"   write_fixtures: {int(quarantined.sum())} row(s) quarantined "
+                  f"with unmapped status -> {QUARANTINE_STATUS} "
+                  f"(originals kept in status_raw)")
+    df = _clear_void_results(df)
+
+    # Drop self-matches. A team cannot play itself, so home == away is always
+    # corrupt — and BSD does emit it: querying event 185564 returns
+    # "Stade Rennais v Stade Rennais" and 196137 "Samsunspor v Samsunspor",
+    # both of which have a correct counterpart from fd.co.uk (Reims v Rennes,
+    # Samsunspor v Sivasspor). Left in, each becomes a self-match that fails
+    # the integrity gate and, worse, would train the model on a fabricated
+    # result. Filtered here at the single write boundary so no ingest path can
+    # reintroduce them.
+    if {"home", "away"}.issubset(df.columns):
+        selfmatch = df["home"].astype(str).str.strip() == df["away"].astype(str).str.strip()
+        if selfmatch.any():
+            print(f"   write_fixtures: dropped {int(selfmatch.sum())} self-match row(s) "
+                  "(home == away — corrupt provider data)")
+            df = df[~selfmatch].copy()
+
+    # Shrink guard. The write itself is atomic, which protects against a
+    # partial file — but not against atomically writing the WRONG file.
+    #
+    # `fetch_fixtures(current=False, date_from=..., date_to=...)` reaches here
+    # with only the fetched slice and no merge, and happily replaced a
+    # 55,000-row fixtures.csv with 2,704 rows. The parameter reads like
+    # "don't merge"; it actually means "don't merge, then overwrite
+    # everything". Recovered from a backup, but nothing in the pipeline would
+    # have flagged it — the next refit would simply have trained on 5% of the
+    # data and reported a plausible-looking Brier.
+    #
+    # Any writer that genuinely intends a large deletion must say so.
+    if path.exists() and not _allow_shrink():
+        try:
+            existing_rows = sum(1 for _ in path.open(encoding="utf-8")) - 1
+        except Exception:
+            existing_rows = 0
+        if existing_rows > 100 and len(df) < existing_rows * SHRINK_GUARD_RATIO:
+            raise ValueError(
+                f"refusing to shrink {path.name} from {existing_rows} to {len(df)} rows "
+                f"(< {SHRINK_GUARD_RATIO:.0%}). This is almost always an unmerged "
+                f"partial fetch — check `current=True`. Set "
+                f"CLUB_SOCCER_ALLOW_FIXTURE_SHRINK=1 to override deliberately.")
+
+    path.parent.mkdir(exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    df.to_csv(tmp, index=False)
+    tmp.replace(path)
+
+    # Invalidate identity caches derived from fixtures.csv at the single write
+    # boundary. team_countries() is cached process-wide, so within one daily
+    # run a later canonical_name() call (e.g. the fd.co.uk refresh after the BSD
+    # fetch) would otherwise scope against a pre-write country index.
+    if path.name == FIXTURES.name:
+        try:
+            from .club_identity import reset_country_index
+            reset_country_index()
+        except Exception:
+            pass
+    return df
+
+
+def _clear_void_results(df: pd.DataFrame) -> pd.DataFrame:
+    """Clear result/stat fields on rows whose status voids the result.
+    Every write path must go through this — not just the row-merge loop —
+    or a seeded/first-import void row can retain a score."""
+    from .schema import RESULT_COLUMNS, VOID_STATUSES, normalize_status
+    if df.empty or "status" not in df.columns:
+        return df
+    status = df["status"].map(normalize_status)
+    void = status.isin(VOID_STATUSES)
+    if void.any():
+        cols = [c for c in RESULT_COLUMNS if c in df.columns]
+        df.loc[void, cols] = None
+    return df
+
+
 def _merge_fixture_rows(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:
     """Merge incoming BSD rows without erasing richer existing observations."""
     if existing.empty:
-        return incoming.copy()
+        return _clear_void_results(incoming.copy())
     if incoming.empty:
         return existing.copy()
 
@@ -87,7 +205,7 @@ def _merge_fixture_rows(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.Da
     if "fixture_id" not in columns:
         return pd.concat([old, new], ignore_index=True)
 
-    from .schema import RESULT_COLUMNS, VOID_STATUSES
+    from .schema import RESULT_COLUMNS, VOID_STATUSES, normalize_status
 
     old_by_id = {str(v): i for i, v in old["fixture_id"].items() if _present(v)}
     for _, row in new.iterrows():
@@ -107,7 +225,7 @@ def _merge_fixture_rows(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.Da
         # every result/stat field. Present-values-only merging would otherwise
         # keep an old FT score under the new POS status, and the fixture
         # would keep training the model on a result that never stood.
-        status = str(old.at[i, "status"] or "").strip().upper()[:3] \
+        status = normalize_status(old.at[i, "status"]) \
             if "status" in columns else ""
         if status in VOID_STATUSES:
             for col in RESULT_COLUMNS:
@@ -176,6 +294,58 @@ def _enrich_rows_from_details(df: pd.DataFrame, api_key: str | None,
     return df
 
 
+def _country_to_league() -> dict[str, "object"]:
+    """country -> its registered tier-1 league Competition."""
+    from .competitions import COMPETITIONS
+    out: dict[str, object] = {}
+    for c in COMPETITIONS:
+        if c.kind == "league" and c.tier == 1 and c.country not in out:
+            out[c.country] = c
+    return out
+
+
+def reclassify_by_club_country(comp, agreed_country: str):
+    """Correct a league label to `agreed_country`'s tier-1 league.
+
+    Caller contract (see _bsd_to_fixture_row): only invoke this when BOTH clubs
+    are confidently known to the registry AND agree on `agreed_country` AND that
+    differs from the label. Requiring both clubs is the guard that stops a
+    single ambiguous club (Brazil's "Athletic Club", which openfootball lists
+    only as Spanish) from dragging a fixture into the wrong league.
+
+    BSD files Denmark's and Romania's top flights under the same name,
+    "Superliga", and tags the Danish matches country='Romania'; exact
+    league-name matching can't separate them, but two Danish clubs can.
+    Continental competitions are never reclassified.
+    """
+    if comp is None or comp.kind != "league" or not agreed_country:
+        return comp
+    if agreed_country == comp.country:
+        return comp
+    return _country_to_league().get(agreed_country) or comp
+
+
+def season_for_date(date_str: str, comp=None) -> int | None:
+    """Single source of truth for the season label of a match date.
+
+    Winter leagues (Aug-May) belong to the season that started the previous
+    July. Calendar-year leagues — every non-UEFA league we ingest plus the
+    Nordic/Irish ones — ARE their calendar year. Applying the Aug-May rule to
+    those splits one real season across two labels: it put every Liga MX
+    Clausura 2026 match into "2025", merging two tournaments' club-seasons and
+    corrupting standings, season regression and promotion logic. Both the BSD
+    adapter and the repair path must call THIS, not inline the rule.
+    """
+    try:
+        year = int(str(date_str)[:4])
+        month = int(str(date_str)[5:7])
+    except (ValueError, IndexError, TypeError):
+        return None
+    if comp is not None and getattr(comp, "calendar_season", False):
+        return year
+    return year if month >= 7 else year - 1
+
+
 def _bsd_to_fixture_row(event: dict, comp_name: str, comp_api_id: int,
                         country: str, kind: str) -> dict | None:
     """Map a single BSD event dict to our fixtures.csv schema.
@@ -185,13 +355,57 @@ def _bsd_to_fixture_row(event: dict, comp_name: str, comp_api_id: int,
     as mis-dated Champions League league-phase rows (e.g. status "finished",
     date a year ahead). Trusting that would poison Elo recency weighting.
     """
-    home = event.get("home_team") or ""
-    away = event.get("away_team") or ""
+    # Reconcile provider spellings onto the canonical club identity BEFORE the
+    # row is written. Skipping this is what let "FC Bayern München" coexist
+    # with "Bayern Munich": the same match arrived from two sources under two
+    # names, dedupe_fixtures keyed on the name and so never saw the pair, and
+    # the fit both split the club's rating and counted the match twice.
+    # Identity resolution order matters — an earlier version got this wrong and
+    # welded a Brazilian "Athletic Club" (ambiguous; openfootball only lists the
+    # Spanish one) onto Athletic Bilbao, then reclassified the fixture into La
+    # Liga. Two rules fix it:
+    #
+    #   1. Canonicalize scoped by the COMPETITION's country, not the registry
+    #      country of the raw name. The competition is what league the match is
+    #      actually in; the registry country of an ambiguous name is unreliable
+    #      and must never drive the merge. So "Athletic Club" in a Brasileirão
+    #      row is scoped Brazil and cannot become the Spanish Athletic Bilbao.
+    #
+    #   2. Only correct a wrong competition label when BOTH clubs are
+    #      confidently known AND agree on one other country (Denmark/Romania).
+    #      One known club is never enough — that is exactly what mislabelled the
+    #      Brazil fixture.
+    raw_home = event.get("home_team") or ""
+    raw_away = event.get("away_team") or ""
+    try:
+        from .club_registry import country_of as _reg_country
+    except Exception:
+        _reg_country = lambda _n: None    # noqa: E731
+
+    _comp = comp_get(comp_name)
+    if kind == "league" and _comp is not None:
+        ch, ca = _reg_country(raw_home), _reg_country(raw_away)
+        if ch and ca and ch == ca and ch != _comp.country:
+            fixed = reclassify_by_club_country(_comp, ch)
+            if fixed is not None and fixed.name != _comp.name:
+                comp_name, comp_api_id, country, kind = (
+                    fixed.name, fixed.api_id, fixed.country, fixed.kind)
+                _comp = fixed          # season/geometry must follow the fix
+        # scope by the (possibly corrected) competition country
+        home = _canonical_name(raw_home, country=country)
+        away = _canonical_name(raw_away, country=country)
+    else:
+        home = _canonical_name(raw_home)
+        away = _canonical_name(raw_away)
+
     kickoff = event_date_utc(event)
     date_str = str(kickoff)[:10]          # YYYY-MM-DD
-    status_raw = str(event.get("status") or "").lower()
+    # Keep the provider spelling for a possible quarantine record.  A
+    # lower-cased copy is used only for BSD's historical finished-status list.
+    status_raw = str(event.get("status") or "").strip()
+    status_key = status_raw.lower()
 
-    if status_raw in _FINISHED_STATUSES and date_str:
+    if status_key in _FINISHED_STATUSES and date_str:
         cutoff = str((datetime.now(timezone.utc) + timedelta(days=_FUTURE_FT_GRACE_DAYS)).date())
         if date_str > cutoff:
             return None
@@ -209,19 +423,16 @@ def _bsd_to_fixture_row(event: dict, comp_name: str, comp_api_id: int,
         away_goals = event.get("away_score") or event.get("goals_away")
 
     # Only record score for finished matches
-    if status_raw not in _FINISHED_STATUSES:
+    if status_key not in _FINISHED_STATUSES:
         home_goals = None
         away_goals = None
 
-    # Extract season from date
-    try:
-        year = int(date_str[:4])
-        # Season: if match is Aug-Dec it's the start of the season, else it's the end
-        month = int(date_str[5:7])
-        season = year if month >= 7 else year - 1
-    except (ValueError, IndexError):
-        season = None
+    # Season from date — calendar-season aware (MLS, Brasileirão, Liga MX, J1,
+    # CSL, Nordic, etc.). _comp was resolved above from the (possibly
+    # reclassified) competition.
+    season = season_for_date(date_str, _comp)
 
+    canon_status = schema.normalize_status(status_raw)
     row = {
         "fixture_id": event.get("id"),
         # Preserve the full kickoff instant — truncating to a date makes a
@@ -240,7 +451,8 @@ def _bsd_to_fixture_row(event: dict, comp_name: str, comp_api_id: int,
         "away": away,
         "home_goals": home_goals,
         "away_goals": away_goals,
-        "status": status_raw.upper()[:3] if status_raw else "",
+        "status": canon_status,
+        "status_raw": status_raw if canon_status == schema.QUARANTINE_STATUS else "",
         "neutral": 0,
         "home_shots": "", "away_shots": "", "home_sot": "", "away_sot": "",
         "home_corners": "", "away_corners": "", "xg_source": "",
@@ -377,7 +589,7 @@ def fetch_fixtures(season: int | None = None,
     df = df[ordered]
 
     DATA.mkdir(exist_ok=True)
-    df.to_csv(FIXTURES, index=False)
+    write_fixtures(df)
 
     if not df.empty:
         played_n = int(df["home_goals"].notna().sum())
@@ -432,8 +644,8 @@ def repair_future_dated(api_key: str | None = None) -> tuple[int, int]:
                 new_date = None
         if new_date:
             df.at[idx, "date"] = new_date
-            month, year = int(new_date[5:7]), int(new_date[:4])
-            df.at[idx, "season"] = year if month >= 7 else year - 1
+            df.at[idx, "season"] = season_for_date(
+                new_date, comp_get(df.at[idx, "competition"]))
             repaired += 1
         else:
             drop_idx.append(idx)
@@ -444,7 +656,7 @@ def repair_future_dated(api_key: str | None = None) -> tuple[int, int]:
         df = df.drop(index=drop_idx).reset_index(drop=True)
 
     DATA.mkdir(exist_ok=True)
-    df.to_csv(FIXTURES, index=False)
+    write_fixtures(df)
     dropped = len(drop_idx)
     print(f"repaired {repaired}, dropped {dropped}")
     return (repaired, dropped)

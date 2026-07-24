@@ -61,6 +61,24 @@ def run_checks() -> dict:
     report["future_ft_rows"] = int(len(future_ft))
 
     report["duplicate_fixture_ids"] = int(df["fixture_id"].duplicated().sum())
+
+    # Void statuses (postponed/cancelled/abandoned/...) must never retain a
+    # result: a POS row with a score keeps training the model on a result
+    # that never stood. Hard check.
+    from .schema import (RESULT_COLUMNS, VOID_STATUSES, QUARANTINE_STATUSES,
+                         normalize_status)
+    status_norm = df["status"].map(normalize_status)
+    void_mask = status_norm.isin(VOID_STATUSES)
+    # Unmapped provider statuses are inert (never trained, priced or settled)
+    # but they are invisible work: surface the count and the raw strings.
+    quarantined = status_norm.isin(QUARANTINE_STATUSES)
+    report["quarantined_status_rows"] = int(quarantined.sum())
+    if quarantined.any() and "status_raw" in df.columns:
+        report["quarantined_status_values"] = sorted(
+            set(df.loc[quarantined, "status_raw"].dropna().astype(str)))[:20]
+    result_cols = [c for c in RESULT_COLUMNS if c in df.columns]
+    has_result = df[result_cols].notna().any(axis=1) if result_cols else False
+    report["void_with_results"] = int((void_mask & has_result).sum())
     report["duplicate_match_identities"] = duplicate_identity_count(df)
     report["conflicting_score_identities"] = conflicting_score_identity_count(df)
 
@@ -155,11 +173,14 @@ def run_checks() -> dict:
     report["ok"] = (report["future_ft_rows"] == 0
                     and report["duplicate_fixture_ids"] == 0
                     and report["duplicate_match_identities"] == 0
-                    and report["conflicting_score_identities"] == 0)
+                    and report["conflicting_score_identities"] == 0
+                    and report.get("void_with_results", 0) == 0)
 
     print(f"Club Soccer health check ({today}):")
     status = "PASS" if report["future_ft_rows"] == 0 else "FAIL"
     print(f"  [{status}] future_ft_rows = {report['future_ft_rows']} (must be 0)")
+    status = "PASS" if report.get("void_with_results", 0) == 0 else "FAIL"
+    print(f"  [{status}] void_with_results = {report.get('void_with_results')} (must be 0)")
     status = "PASS" if report["duplicate_fixture_ids"] == 0 else "FAIL"
     print(f"  [{status}] duplicate_fixture_ids = {report['duplicate_fixture_ids']} (must be 0)")
     status = "PASS" if report["duplicate_match_identities"] == 0 else "FAIL"
@@ -193,6 +214,42 @@ def run_checks() -> dict:
     pc = report["player_cache"]
     print(f"  [INFO] player_cache: schema={pc.get('schema')} players={pc.get('players', 0)} "
           f"apps={pc.get('apps', 0)} latest={pc.get('latest_app_date') or 'n/a'}")
+
+    # Per-league staleness. A single global "days since last result" hides the
+    # failure that matters after the P3 expansion: one league silently ceasing
+    # to update while the other 40 keep flowing, so the aggregate looks fine
+    # and that league is priced off frozen ratings. Off-season gaps are normal,
+    # so only a league with NO upcoming fixtures and a long gap is flagged.
+    try:
+        from . import seed_fdcouk_leagues as SFL
+        rows = SFL.staleness()
+        stale = [r for r in rows if r["warn"]]
+        report["league_staleness"] = rows
+        report["stale_leagues"] = [r["competition"] for r in stale]
+        print(f"  [INFO] leagues tracked = {len(rows)}; "
+              f"stale in-season (no upcoming, >21d) = {len(stale)}")
+
+        # Authoritative check for the BSD-less leagues: is the SOURCE ahead of
+        # us? The season heuristic above is a cheap proxy that still flags
+        # pre-season gaps; this compares against the actual fd.co.uk file and
+        # only warns when there really are results we failed to ingest.
+        # Networked, so best-effort — the offline INFO above always prints.
+        try:
+            behind = [r for r in SFL.refresh_health() if r.get("behind")]
+            report["leagues_behind_source"] = [r["competition"] for r in behind]
+            if behind:
+                print(f"  [WARN] {len(behind)} league(s) are BEHIND their source "
+                      "— the fd.co.uk refresh is not ingesting available results:")
+                for r in behind[:8]:
+                    print(f"         {r['competition']} — ours {r.get('our_latest')} "
+                          f"vs source {r.get('source_latest')}")
+            else:
+                print("  [INFO] all BSD-less leagues are level with their source "
+                      "(no genuine staleness)")
+        except Exception as exc:
+            print(f"  [INFO] source-freshness check skipped ({exc})")
+    except Exception as exc:
+        print(f"  [INFO] league staleness unavailable ({exc})")
 
     return report
 

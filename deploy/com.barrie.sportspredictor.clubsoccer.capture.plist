@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.barrie.sportspredictor.clubsoccer.capture</string>
+
+  <!-- Lightweight decision capture. Records the frozen (fixture, market, side)
+       decision for every fixture now inside the [60, 120] min pre-kickoff
+       window, then settles any that have finished. This is DELIBERATELY split
+       from the heavy 07:30 season pipeline: the gate needs ~1,000 settled
+       decisions per threshold to open, and that is only reachable if capture
+       runs through the whole day, not once. Idempotent per decision id, so
+       re-running every 15 min never rewrites a recorded quote. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>python3</string>
+    <string>-m</string>
+    <string>club_soccer.decision_ledger</string>
+    <string>--record</string>
+    <string>--settle</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/lucky/AI Models/Soccer Prediction</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/lucky/.pyenv/versions/3.12.7/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- Every 15 minutes. A fixture must be seen at least once while its lead is
+       in [60, 120]; a 60-min window comfortably survives a skipped run. -->
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/lucky/Library/Logs/club_soccer_capture.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/lucky/Library/Logs/club_soccer_capture.log</string>
+</dict>
+</plist>

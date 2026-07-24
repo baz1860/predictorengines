@@ -17,11 +17,90 @@ SCHEMA_VERSION = 4
 # model.load_fixtures(), but every new fetch/merge writes these columns so
 # competition context and BSD detail data are not silently discarded.
 # Statuses that VOID a result (postponed / cancelled / abandoned / suspended /
-# interrupted / awarded). A fixture transitioning into one of these must have
-# its scores and match stats cleared, and must never count as played: a
-# postponed match that keeps its pre-postponement score silently trains the
-# model on a result that officially never happened.
-VOID_STATUSES = {"POS", "CAN", "ABD", "SUS", "INT", "AWD"}
+# interrupted). A fixture transitioning into one of these must have its
+# scores and match stats cleared, and must never count as played: a postponed
+# match that keeps its pre-postponement score silently trains the model on a
+# result that officially never happened.
+#
+# AWARDED (AWD) is deliberately NOT here: an awarded match carries a legal
+# official result (typically 3-0) per football-data.org's status model. It
+# counts as an official result for settlement — though whether awarded
+# scorelines should train the goals model is a separate open question.
+VOID_STATUSES = {"POS", "CAN", "ABD", "SUS", "INT"}
+
+# Statuses that carry a standing official result.
+OFFICIAL_RESULT_STATUSES = {"FT", "FIN", "AET", "PEN", "AWD"}
+
+# Statuses excluded from MODEL TRAINING. Superset of VOID_STATUSES: an
+# awarded (AWD) 3-0 is a legal official result — it settles bets — but it is
+# an administrative scoreline, not evidence about either team's goal-scoring
+# process, so it must not train the goals/Elo models.
+# QUARANTINE: a status we do not recognise. It is deliberately NOT void and NOT
+# an official result — we do not know what it means, so the row must not train,
+# must not settle, and must not be priced until a human maps it. The original
+# provider string is preserved in `status_raw` so it can be mapped later.
+QUARANTINE_STATUS = "UNK"
+QUARANTINE_STATUSES = {QUARANTINE_STATUS}
+
+# Non-terminal match states: the match is scheduled ("NOT") or in progress
+# ("LIV"). A live row can carry a CURRENT (non-final) score, so admitting it to
+# training or settlement grades an unfinished match as if it were over. These
+# are excluded from BOTH — only a terminal status may train or settle.
+NON_TERMINAL_STATUSES = {"NOT", "LIV"}
+
+TRAINING_EXCLUDED_STATUSES = (VOID_STATUSES | {"AWD"} | QUARANTINE_STATUSES
+                              | NON_TERMINAL_STATUSES)
+
+# ── canonical status normalization ────────────────────────────────────────
+# Providers emit either full words (FINISHED, AWARDED, ABANDONED) or their own
+# short codes. Naive first-three-characters truncation MISLABELS the important
+# ones — AWARDED->"AWA" (not AWD) and ABANDONED->"ABA" (not ABD) — so awarded
+# results never settle and abandoned rows are not recognised as void. Map
+# explicitly instead. This is the single source of truth every writer uses;
+# `AWA`/`ABA` are healed so any legacy truncated rows re-normalize correctly.
+_STATUS_CANON = {
+    "FINISHED": "FIN", "FIN": "FIN", "FT": "FT", "FULLTIME": "FT",
+    "AET": "AET", "AFTEREXTRATIME": "AET",
+    "PEN": "PEN", "PENALTIES": "PEN", "PENALTYSHOOTOUT": "PEN",
+    "AWARDED": "AWD", "AWD": "AWD", "AWA": "AWD",
+    "NOTSTARTED": "NOT", "NOT": "NOT", "SCHEDULED": "NOT", "TIMED": "NOT",
+    "POSTPONED": "POS", "POS": "POS",
+    "CANCELLED": "CAN", "CANCELED": "CAN", "CAN": "CAN",
+    "ABANDONED": "ABD", "ABD": "ABD", "ABA": "ABD",
+    "SUSPENDED": "SUS", "SUS": "SUS",
+    "INTERRUPTED": "INT", "INT": "INT",
+    "INPLAY": "LIV", "INPROGRESS": "LIV", "LIVE": "LIV", "PAUSED": "LIV",
+    "HALFTIME": "LIV", "LIV": "LIV",   # self-map: normalize_status must be idempotent
+    # BSD in-play phase labels (the "1st_half" that was quarantining as UNK).
+    # All are live-match states: inert for training/settlement, but recognised
+    # rather than quarantined. Alnum-stripping already removes the underscore.
+    "1STHALF": "LIV", "2NDHALF": "LIV", "FIRSTHALF": "LIV", "SECONDHALF": "LIV",
+    "1H": "LIV", "2H": "LIV", "ET": "LIV", "EXTRATIME": "LIV",
+    "BREAKTIME": "LIV", "PENALTIESLIVE": "LIV",
+}
+_STATUS_EMPTY = {"", "NAN", "NONE", "NON", "NULL"}
+
+
+def normalize_status(raw) -> str:
+    """Canonical status code (FIN/FT/AET/PEN/AWD/NOT/POS/CAN/ABD/SUS/INT/LIV).
+
+    Empty/NaN -> "". An UNRECOGNISED value -> QUARANTINE_STATUS ("UNK").
+
+    It must NOT fall back to the first three characters: truncation is exactly
+    the bug this map replaced, and it silently manufactures meaning — "POSITIVE"
+    and "POSTED" would both become "POS" (a VOID status, clearing results),
+    "FINALIZED" would become "FIN" (an OFFICIAL RESULT, admitting it to
+    training). Quarantining instead keeps an unknown status inert everywhere
+    until a human maps it."""
+    if raw is None:
+        return ""
+    s = str(raw).strip().upper()
+    if s in _STATUS_EMPTY:
+        return ""
+    key = "".join(ch for ch in s if ch.isalnum())
+    if key in _STATUS_CANON:
+        return _STATUS_CANON[key]
+    return QUARANTINE_STATUS
 
 # Result/stat columns cleared on a void transition.
 RESULT_COLUMNS = [
@@ -42,7 +121,10 @@ FIXTURE_COLUMNS = [
     # prefer kickoff_utc; legacy rows without it fall back to date-only.
     "fixture_id", "kickoff_utc", "date", "season", "competition", "competition_id",
     "country", "type", "home_id", "home", "away_id", "away",
-    "home_goals", "away_goals", "status", "result_scope", "neutral",
+    # status_raw: the provider's original string, preserved whenever the status
+    # could not be mapped (status == QUARANTINE_STATUS) so an operator can add
+    # the mapping later. Empty for recognised statuses.
+    "home_goals", "away_goals", "status", "status_raw", "result_scope", "neutral",
     "home_shots", "away_shots", "home_sot", "away_sot",
     "home_corners", "away_corners", "home_xg", "away_xg", "xg_source",
     "home_possession", "away_possession",

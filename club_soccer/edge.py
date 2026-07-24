@@ -52,6 +52,18 @@ MANUAL_ODDS_MAX_AGE_DAYS = 2.0
 # Live quotes carry a per-quote `quoted_at_utc` timestamp and expire fast: a
 # cached/replayed live frame must not price a card hours later.
 LIVE_QUOTE_MAX_AGE_HOURS = 6.0
+# A quote whose timestamp is only the FETCH time (quote_time_source ==
+# "fetch_time_only", e.g. BSD, which exposes no provider update time) proves
+# nothing about how stale the bookmaker's own price is. It is stakeable only
+# as an immediate live observation — fetched moments ago — never as a
+# several-hour-old cached frame. This 2-minute lifetime is the DEFAULT for any
+# live quote: only an allowlisted, trustworthy provider-timestamp source may
+# claim the longer LIVE_QUOTE_MAX_AGE_HOURS window (fail-closed on missing,
+# misspelled or unknown provenance).
+FETCH_TIME_ONLY_MAX_AGE_MINUTES = 2.0
+# quote_time_source values whose timestamp reflects the provider's own last
+# price update (not merely our fetch time) and therefore earn the 6h window.
+PROVIDER_TIMESTAMP_SOURCES = frozenset({"provider_last_update"})
 
 
 def validate_quotes(odds: pd.DataFrame, source: str = "manual",
@@ -81,8 +93,20 @@ def validate_quotes(odds: pd.DataFrame, source: str = "manual",
     if "quoted_at_utc" in odds.columns:
         q = pd.to_datetime(odds["quoted_at_utc"], utc=True, errors="coerce",
                            format="mixed")
-        max_age = pd.Timedelta(days=max_manual_age_days) if source == "manual" \
-            else pd.Timedelta(hours=LIVE_QUOTE_MAX_AGE_HOURS)
+        if source == "manual":
+            max_age = pd.Series(pd.Timedelta(days=max_manual_age_days),
+                                index=odds.index)
+        else:
+            # Live quotes default to the strict 2-minute fetch-time lifetime.
+            # Missing/misspelled/unknown provenance therefore fails closed;
+            # only an allowlisted provider-timestamp source earns the 6h window.
+            max_age = pd.Series(
+                pd.Timedelta(minutes=FETCH_TIME_ONLY_MAX_AGE_MINUTES),
+                index=odds.index)
+            if "quote_time_source" in odds.columns:
+                trusted = odds["quote_time_source"].astype(str).isin(
+                    PROVIDER_TIMESTAMP_SOURCES)
+                max_age[trusted] = pd.Timedelta(hours=LIVE_QUOTE_MAX_AGE_HOURS)
         age = now_ts - q
         # A future-dated timestamp is corrupt provenance, not freshness:
         # its negative age must fail, with only a small clock-skew tolerance.
@@ -91,7 +115,9 @@ def validate_quotes(odds: pd.DataFrame, source: str = "manual",
         n_stale = int((~fresh).sum())
         if n_stale:
             issues.append(f"dropped {n_stale} quote(s) with stale, missing, or "
-                          f"future-dated quoted_at_utc (limit {max_age})")
+                          "future-dated quoted_at_utc (live quotes without an "
+                          "allowlisted provider timestamp expire after "
+                          f"{FETCH_TIME_ONLY_MAX_AGE_MINUTES:g}m)")
         odds = odds[fresh]
         if odds.empty:
             return odds.copy(), issues
@@ -112,18 +138,28 @@ def validate_quotes(odds: pd.DataFrame, source: str = "manual",
     if n_past:
         issues.append(f"dropped {n_past} quote(s) on past or undated fixtures")
     odds = odds[d.notna() & (d >= today_ts)].copy()
-    # kickoff_utc, where present, closes the date-only granularity hole: a
-    # 12:00 UTC kickoff must not price at 23:00 the same day. Legacy rows
-    # without a parseable kickoff instant keep the date-only rule above.
-    if "kickoff_utc" in odds.columns and not odds.empty:
-        k = pd.to_datetime(odds["kickoff_utc"], utc=True, errors="coerce",
-                           format="mixed")
-        past_ko = k.notna() & (k <= now_ts)
-        n_ko = int(past_ko.sum())
+    # kickoff_utc closes the date-only granularity hole: a 12:00 UTC kickoff
+    # must not price at 23:00 the same day. LIVE quotes are fetched from the
+    # provider event that carries kickoff, so a live row without a parseable
+    # future kickoff is malformed and non-stakeable. Manual rows without a
+    # kickoff keep the (age-gated, opt-in) date-only rule above.
+    if not odds.empty:
+        if "kickoff_utc" in odds.columns:
+            k = pd.to_datetime(odds["kickoff_utc"], utc=True, errors="coerce",
+                               format="mixed")
+        else:
+            # tz-aware NaT series: a naive one cannot be compared to now.
+            k = pd.Series(pd.NaT, index=odds.index).dt.tz_localize("UTC")
+        if source == "live":
+            bad = k.isna() | (k <= now_ts)
+        else:
+            bad = k.notna() & (k <= now_ts)
+        n_ko = int(bad.sum())
         if n_ko:
-            issues.append(f"dropped {n_ko} quote(s) on fixtures already "
-                          "kicked off (kickoff_utc)")
-        odds = odds[~past_ko].copy()
+            issues.append(f"dropped {n_ko} quote(s) already kicked off or "
+                          "missing kickoff_utc"
+                          + (" (required for live quotes)" if source == "live" else ""))
+        odds = odds[~bad].copy()
     return odds, issues
 
 
@@ -279,6 +315,19 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                                    params=params, player_adj=p_adj)
         except ValueError:
             continue
+        # P0 evidence coverage. Report-only by design: pricing continues
+        # unchanged so the build can be measured against live behaviour, but
+        # every suggestion carries the tier of its least-evidenced side so a
+        # Sturm-Graz-shaped price is never presented as if it were a Premier
+        # League one. Stake suppression is deliberately NOT applied here.
+        cov = pred.get("coverage") or {}
+        cov_meta = {
+            "evidence_tier": str(cov.get("tier", "unknown")),
+            "evidence_ok": bool(cov.get("reliable", False)),
+            "evidence_note": " | ".join(cov.get("notes") or []),
+            "n_matches_home": int((cov.get("home") or {}).get("n", 0)),
+            "n_matches_away": int((cov.get("away") or {}).get("n", 0)),
+        }
         if calib_maps is not None:
             from .calibrate import apply as _apply_calib
             ph, pdr, pa = _apply_calib(pred["probs"]["home"], pred["probs"]["draw"],
@@ -312,6 +361,7 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                    "ev_per_unit": round(float(ev), 3),
                    "kelly_stake": round(float(kfrac), 4),
                    "stake_gbp": round(float(kfrac) * bankroll, 2)}
+            row.update(cov_meta)
             if p_adj_meta:
                 row.update(p_adj_meta)
             if apply_do_not_bet:
@@ -350,30 +400,60 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
     return out
 
 
-def apply_evidence_gate(rows: list[dict]) -> bool:
-    """Zero every stake unless the evidence gate is open (see
-    evidence_gate.py for the preregistered criteria). Edges/EV stay visible
-    for diagnostics; nothing is backable or recordable while closed.
+# Edge-row market string -> evidence-gate market key. BTTS is deliberately
+# absent: it has no CLV reference and is never staked (display-only).
+_GATE_MARKET = {"1x2": "1x2", "total": "total_over_under_2_5"}
 
-    Idempotent and fail-CLOSED: call it as the FINAL step after any code
-    that rewrites kelly_stake/stake_gbp. Returns gate_open. Ends with a hard
-    invariant: a closed gate and a nonzero stake can never coexist."""
+
+def apply_evidence_gate(rows: list[dict]) -> bool:
+    """Zero a stake unless ITS market's evidence gate is open. Per-market: a
+    proven 1X2 book can stake while an unproven (or CLV-less) OU2.5 stays
+    zeroed, and BTTS — which has no CLV reference — is never stakeable.
+
+    Idempotent and fail-CLOSED: call it as the FINAL step after any code that
+    rewrites kelly_stake/stake_gbp. Returns True if ANY market is open. Ends
+    with a hard invariant: a closed market and a nonzero stake never coexist."""
     try:
-        from .evidence_gate import staking_allowed
-        gate_open, gate_reasons = staking_allowed()
+        from .evidence_gate import (market_league_staking_allowed,
+                                     market_staking_allowed)
+        market_open = market_staking_allowed()
+        league_open = market_league_staking_allowed()
     except Exception as exc:
-        gate_open, gate_reasons = False, [f"gate import failed ({exc})"]
-    if not gate_open and rows:
-        for row in rows:
+        market_open, league_open = {}, {}
+        print(f"  evidence gate import failed ({exc}) — all stakes zeroed")
+
+    def _stands(row) -> bool:
+        """A stake may stand only if its MARKET is open and — when the artifact
+        carries per-league evidence — its LEAGUE is open too. With no per-league
+        data the market-level gate decides (backward-compatible)."""
+        gkey = _GATE_MARKET.get(str(row.get("market")))
+        if gkey is None or not market_open.get(gkey):
+            return False
+        if league_open:
+            return bool(league_open.get((gkey, str(row.get("competition"))), False))
+        return True
+
+    zeroed = 0
+    for row in rows:
+        if _stands(row):
+            continue                       # market (and league) open — stake stands
+        # market/league closed (or ungateable, e.g. BTTS): no stake may stand
+        if float(row.get("kelly_stake") or 0) or float(row.get("stake_gbp") or 0):
             row["kelly_stake"] = 0.0
             row["stake_gbp"] = 0.0
-            row.setdefault("suppressed_reason", "evidence-gate: no demonstrated edge")
-        print(f"  evidence gate CLOSED — all stakes zeroed ({len(gate_reasons)} "
-              "failing criteria; run `python3 -m club_soccer.evidence_gate`)")
-        assert all(float(r.get("kelly_stake") or 0) == 0.0
-                   and float(r.get("stake_gbp") or 0) == 0.0 for r in rows), \
-            "evidence gate closed but a nonzero stake survived"
-    return gate_open
+            zeroed += 1
+        row.setdefault("suppressed_reason", "evidence-gate: no demonstrated edge")
+    any_open = any(market_open.values())
+    if zeroed:
+        print(f"  evidence gate: {zeroed} stake(s) zeroed "
+              f"(open markets: {[k for k, v in market_open.items() if v] or 'none'})")
+    # Unconditional runtime invariant — a closed market with a nonzero stake is
+    # a money-losing state and must crash in every interpreter mode.
+    for row in rows:
+        if not _stands(row) and (
+                float(row.get("kelly_stake") or 0) or float(row.get("stake_gbp") or 0)):
+            raise RuntimeError("closed evidence-gate market with nonzero stake")
+    return any_open
 
 
 def bet_label(home: str, away: str, market: str, side: str, line) -> str:
@@ -440,7 +520,8 @@ def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
     BSD key: data/api_keys.json -> "bsd", or env BSD_API_KEY.
     Register free at https://sports.bzzoiro.com/register/
     """
-    from bsd_client import get_all_events, league_name as bsd_league_name
+    from bsd_client import get_all_events, league_name as bsd_league_name, \
+        event_date_utc
     from .competitions import comp_from_bsd_league
 
     key = api_key or get_key("bsd", env="BSD_API_KEY")
@@ -521,9 +602,13 @@ def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
             if odds_btts_n is None:
                 odds_btts_n = _decimal(nested.get("btts_no"))
 
+        # Kickoff comes from the LIVE event itself — the legacy fixture row
+        # predates the kickoff_utc column and would leave this blank.
+        kickoff = str(event_date_utc(ev) or "") \
+            or str(getattr(fixture, "kickoff_utc", "") or "")
         base = {
             "date": date,
-            "kickoff_utc": str(getattr(fixture, "kickoff_utc", "") or ""),
+            "kickoff_utc": kickoff,
             "competition": comp.name,
             "home": getattr(fixture, "home", home_raw),
             "away": getattr(fixture, "away", away_raw),
@@ -610,6 +695,7 @@ def fetch_the_odds_api(api_key: str | None = None) -> pd.DataFrame:
                             continue
                         market_name, side, line, decimal = mapped
                         rows.append({"date": fixture["date"].date(),
+                                     "kickoff_utc": str(event.get("commence_time") or ""),
                                      "competition": comp, "home": home, "away": away,
                                      "market": market_name, "side": side,
                                      "line": line, "odds": decimal,

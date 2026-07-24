@@ -1,0 +1,39 @@
+{
+  "phase": "P5 variance inflation for under-evidenced teams",
+  "status": "IMPLEMENTED BUT OFF \u2014 the measurement says do not enable it",
+  "flag": "model.predict(variance_inflation=True) / VARIANCE_INFLATION_DEFAULT",
+  "measured_at_utc": "2026-07-22T19:56:36.791813+00:00",
+  "original_rationale": "The P1 baseline showed thin favourites badly overconfident: 0.50-0.65 bucket predicted 0.541, observed 0.322 (error -0.221). The plan proposed widening intervals for under-evidenced clubs.",
+  "why_it_no_longer_applies": {
+    "bucket_0.40_0.50": {
+      "p1_error": -0.095,
+      "now": -0.019
+    },
+    "bucket_0.50_0.65": {
+      "p1_error": -0.221,
+      "now": -0.002
+    },
+    "overall_bias": {
+      "p1": -0.0564,
+      "now": -0.0208
+    },
+    "explanation": "P3 gave 20 leagues real domestic data, P4b seeded clubs from their own league instead of a 25-league pooled mean, and the xg gating stopped flat components diluting informative ones. The miscalibration was under-MEASUREMENT, not missing variance. Inflating now would push well-calibrated predictions away from reality."
+  },
+  "ab_walk_forward_2024_07_onward": {
+    "n": 21622,
+    "inflation_off": {
+      "brier": 0.61209,
+      "log_loss": 1.02119
+    },
+    "inflation_on": {
+      "brier": 0.61221,
+      "log_loss": 1.02146
+    },
+    "delta": {
+      "brier": 0.00012,
+      "log_loss": 0.00027
+    },
+    "verdict": "inflation is WORSE on both metrics \u2014 leave OFF"
+  },
+  "kept_because": "Coverage can degrade \u2014 a new unsourced league, a provider outage, a wave of newly promoted clubs. The mechanism and its A/B harness stay in place so the question can be re-answered with data rather than re-argued from theory."
+}

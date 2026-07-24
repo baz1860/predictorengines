@@ -8,6 +8,7 @@ import math
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -15,10 +16,19 @@ import pandas as pd
 
 from . import model as M
 from . import calibrate as CAL
+from . import walkforward_cache as WFC
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-BASELINE = DATA / "validation_baseline.json"
+# ── baseline ownership ────────────────────────────────────────────────────
+# Two files, two owners. Validation is DESCRIPTIVE: it reports where the model
+# currently stands and may freely rewrite validation_latest.json. It must never
+# move the promotion gate — a reseed that silently re-baselines can hide a
+# regression by redefining "normal". promotion_baseline.json is the gate
+# reference and is owned exclusively by the nested-holdout promoter (build 3).
+BASELINE = DATA / "validation_baseline.json"          # legacy, read-only fallback
+PROMOTION_BASELINE = DATA / "promotion_baseline.json"  # promoter-owned gate
+LATEST = DATA / "validation_latest.json"               # validation-owned, descriptive
 CALIB_FILE = DATA / "calibration.json"
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
 CALIBRATION_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
@@ -86,10 +96,18 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
                  league_adjustments: bool = False,
                  fixtures: pd.DataFrame | None = None,
                  test_from: str | None = None,
-                 test_to: str | None = None) -> tuple[list[dict], dict]:
+                 test_to: str | None = None,
+                 use_cache: bool = True,
+                 league_seed: bool | None = None,
+                 variance_inflation: bool | None = None) -> tuple[list[dict], dict]:
     """Monthly-refit walk-forward: refit once per calendar month on all prior
     matches, then predict that month. O(months) fits, not O(matches) — required
     once fixtures.csv holds real (thousands of rows) data rather than the seed.
+
+    Folds are cached (walkforward_cache.py). A fold trains only on data before
+    its test month, so on a typical day almost every fold's inputs are
+    unchanged and its result is reloaded rather than recomputed — the metric is
+    identical, not approximated. Pass use_cache=False to force a full recompute.
     """
     df = M.played(M.load_fixtures() if fixtures is None else fixtures).sort_values("date").reset_index(drop=True)
     df["_ym"] = df["date"].dt.to_period("M")
@@ -98,6 +116,22 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
     last_test = pd.Timestamp(test_to).to_period("M") if test_to else None
     rows: list[dict] = []
     skipped = 0
+    # EVERY fit option must appear here. An option absent from the cache key
+    # means the cache serves results produced under different settings — a
+    # silent wrong answer, not a slow one.
+    # Defaults to the PRODUCTION setting (model.LEAGUE_SEED_DEFAULT), so the
+    # gate measures the model that actually runs. Resolved to a concrete bool
+    # before it reaches the cache key — caching under `None` would collide two
+    # different models under one entry the moment the production default moved.
+    league_seed = M.LEAGUE_SEED_DEFAULT if league_seed is None else bool(league_seed)
+    variance_inflation = (M.VARIANCE_INFLATION_DEFAULT if variance_inflation is None
+                          else bool(variance_inflation))
+    cache_opts = {"min_train": min_train, "league_adjustments": league_adjustments,
+                  "league_seed": league_seed,
+                  "variance_inflation": variance_inflation}
+    row_hash = WFC.row_hashes(df) if use_cache else None
+    hits = misses = 0
+    seen_keys: set[tuple[str, str]] = set()
     for k, ym in enumerate(months, 1):
         if first_test is not None and ym < first_test:
             continue
@@ -107,10 +141,30 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
         train = df[df["date"] < test["date"].min()]
         if len(train) < min_train:
             continue
+
+        cache_key = None
+        if use_cache:
+            cache_key = WFC.fold_key(str(ym), row_hash[train.index.to_numpy()],
+                                     row_hash[test.index.to_numpy()], cache_opts)
+            seen_keys.add((str(ym), cache_key))
+            cached = WFC.load(str(ym), cache_key)
+            if cached is not None:
+                rows.extend(cached)
+                hits += 1
+                if verbose:
+                    print(f"  [{k:>2}/{len(months)}] {ym}  cached ({len(cached)})")
+                continue
+        misses += 1
+
         try:
-            params = M.fit(train, league_adjustments=league_adjustments)
+            # Seed from coefficients that existed at this fold's cutoff, not
+            # today's — the walk-forward must not leak future UEFA rankings.
+            cutoff = str(test["date"].min())[:10]
+            params = M.fit(train, league_adjustments=league_adjustments,
+                           league_seed=league_seed, coef_as_of=cutoff)
         except Exception:
             continue
+        fold_rows: list[dict] = []
         seen = set(params["teams"])
         kept = 0
         for r in test.itertuples(index=False):
@@ -137,6 +191,7 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
                     fixture_id=getattr(r, "fixture_id", None),
                     context_coef={},
                     ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W),
+                    variance_inflation=variance_inflation,
                 )
             except Exception:
                 skipped += 1
@@ -146,20 +201,27 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
             p = pred["probs"]
             total_goals = float(r.home_goals) + float(r.away_goals)
             btts_actual = 1.0 if (r.home_goals > 0 and r.away_goals > 0) else 0.0
-            rows.append({"date": str(r.date.date()), "home": r.home,
-                         "away": r.away, "competition": r.competition,
-                         "type": r.type,
-                         "fixture_id": getattr(r, "fixture_id", None),
-                         "xg_source": getattr(r, "xg_source", ""),
-                         "actual": actual,
-                         "p_home": p["home"], "p_draw": p["draw"], "p_away": p["away"],
-                         "p_over25": p["over25"], "p_btts": p["btts_yes"],
-                         "total_goals": total_goals, "btts_actual": btts_actual})
+            fold_rows.append({"date": str(r.date.date()), "home": r.home,
+                              "away": r.away, "competition": r.competition,
+                              "type": r.type,
+                              "fixture_id": getattr(r, "fixture_id", None),
+                              "xg_source": getattr(r, "xg_source", ""),
+                              "actual": actual,
+                              "p_home": p["home"], "p_draw": p["draw"], "p_away": p["away"],
+                              "p_over25": p["over25"], "p_btts": p["btts_yes"],
+                              "total_goals": total_goals, "btts_actual": btts_actual})
             kept += 1
+        rows.extend(fold_rows)
+        if use_cache and cache_key is not None:
+            WFC.store(str(ym), cache_key, fold_rows)
         if verbose:
             print(f"  [{k:>2}/{len(months)}] {ym}  tested {kept}")
     if verbose and skipped:
         print(f"  ({skipped} matches skipped — team unseen in its training window)")
+    if use_cache:
+        WFC.prune(seen_keys)
+        if verbose:
+            print(f"  (folds: {hits} cached, {misses} recomputed)")
     return rows, metrics(rows)
 
 
@@ -307,19 +369,17 @@ def tune_ensemble(write: bool = False, verbose: bool = True) -> dict:
         print(f"  split {r['split']} n={r['test_n']}: ΔBrier {r['delta_brier']:+.6f} weights {r['weights']}")
     print(f"  verdict: {'PROMOTE' if promotes else 'reject'}")
     if write:
-        if not promotes:
-            print("  not writing ensemble_weights.json because the promotion gate failed")
-        else:
-            payload = {"weights": chosen["weights"], "source": "club_soccer/validate.py --tune-ensemble",
-                       "metrics": {"previous_brier": current["brier"],
-                                   "chosen_brier": chosen["brier"],
-                                   "previous_log_loss": current["log_loss"],
-                                   "chosen_log_loss": chosen["log_loss"]},
-                       "splits": split_results}
-            M.ENSEMBLE_WEIGHTS.write_text(json.dumps(payload, indent=2))
-            BASELINE.write_text(json.dumps({"brier": chosen["brier"], "gate_tol": GATE_TOL}, indent=2))
-            print(f"  wrote {M.ENSEMBLE_WEIGHTS}")
-            print(f"  baseline updated -> {BASELINE}")
+        # REPORT-ONLY, permanently. This tuner selects weights on overlapping
+        # splits of the full component history — exactly the leakage pattern
+        # that got ensemble_weights.json deactivated. Writing the artifact
+        # here (with or without an "active" flag) would either reintroduce
+        # the leak or destroy the deactivation record while claiming a
+        # promotion that never deploys. Only a future nested-holdout promoter
+        # (owner memo 3: hierarchical weights, untouched final season) may
+        # write ensemble_weights.json or move the baseline.
+        print("  --write is disabled: this tuner is report-only. Promotion "
+              "requires the nested-holdout promoter (not yet built); see "
+              "ensemble_weights.json deactivated_reason.")
     return out
 
 
@@ -607,10 +667,25 @@ def cmd_calibrate(verbose=True):
           f"-> {CALIB_FILE.name}")
 
 
+def load_promotion_baseline() -> dict | None:
+    """The promotion gate reference, or None if none has been established.
+
+    Read-only from validation's perspective. Falls back to the legacy
+    validation_baseline.json so an existing gate keeps working until the
+    promoter (build 3) takes ownership."""
+    for path in (PROMOTION_BASELINE, BASELINE):
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+            except (ValueError, OSError):
+                return None
+            return data if isinstance(data, dict) else None
+    return None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gate", action="store_true")
-    ap.add_argument("--update-baseline", action="store_true")
     ap.add_argument("--calibrate", action="store_true",
                     help="fit isotonic 1X2 calibration, report held-out improvement, "
                          "and write data/calibration.json")
@@ -643,21 +718,32 @@ def main() -> None:
     print(f"OU2.5 Brier {m['brier_ou25']:.4f}  BTTS Brier {m['brier_btts']:.4f}")
     DATA.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(DATA / "validation_predictions.csv", index=False)
-    if args.update_baseline or not BASELINE.exists():
-        base = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
-        base.update({"brier": m["brier"], "log_loss": m["log_loss"], "n": m["n"],
-                     "gate_tol": base.get("gate_tol", GATE_TOL),
-                     "brier_ou25": m["brier_ou25"], "brier_btts": m["brier_btts"],
-                     "source": "deduplicated canonical match identities"})
-        BASELINE.write_text(json.dumps(base, indent=2))
-        print(f"Baseline written -> {BASELINE}")
-    elif BASELINE.exists():
-        base = json.loads(BASELINE.read_text())
-        if "brier_ou25" in base:
-            print(f"  Δ vs baseline: OU2.5 {m['brier_ou25'] - base['brier_ou25']:+.4f}  "
-                  f"BTTS {m['brier_btts'] - base.get('brier_btts', 0):+.4f}")
+    # Descriptive output: always written, owned by validation, never a gate.
+    LATEST.write_text(json.dumps(
+        {"brier": m["brier"], "log_loss": m["log_loss"], "n": m["n"],
+         "brier_ou25": m["brier_ou25"], "brier_btts": m["brier_btts"],
+         # Consumers read this instead of recomputing (season.py's weekly
+         # footer). Without a timestamp a stale file would be displayed as if
+         # current, so the reader can check age and say so.
+         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+         "source": "deduplicated canonical match identities",
+         "note": "Descriptive validation output. This file does NOT move the "
+                 "promotion gate; promotion_baseline.json is promoter-owned."},
+        indent=2))
+    print(f"Validation metrics -> {LATEST.name} "
+          "(descriptive; the promotion gate is unchanged)")
+
+    base = load_promotion_baseline()
+    if base and "brier_ou25" in base:
+        print(f"  Δ vs promotion baseline: "
+              f"OU2.5 {m['brier_ou25'] - base['brier_ou25']:+.4f}  "
+              f"BTTS {m['brier_btts'] - base.get('brier_btts', 0):+.4f}")
     if args.gate:
-        base = json.loads(BASELINE.read_text())
+        if base is None:
+            sys.exit(
+                f"--gate needs {PROMOTION_BASELINE.name}, which is owned by the "
+                "nested-holdout promoter (build 3). Validation may not create or "
+                "move it; establish it deliberately, in a commit.")
         limit = float(base["brier"]) + float(base.get("gate_tol", GATE_TOL))
         ok = m["brier"] <= limit
         print(f"[gate] Brier {m['brier']:.4f} vs baseline {base['brier']:.4f} "

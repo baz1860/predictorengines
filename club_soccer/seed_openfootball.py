@@ -34,6 +34,7 @@ for p in (str(ROOT), str(HERE)):
 
 from . import model as M
 from .competitions import BY_NAME
+from .fetch import season_for_date
 from .names import make_canon
 from . import schema
 
@@ -102,9 +103,11 @@ def parse(text, comp_name, canon):
         if not sm:
             continue
         home, away = canon(home_raw), canon(away_raw)
+        # Season label from the ONE canonical helper (July boundary for winter
+        # leagues, calendar year for calendar-season ones) — never inlined.
         row = {
             "fixture_id": fid(comp.api_id, date, home, away),
-            "date": date, "season": int(date[:4]),
+            "date": date, "season": season_for_date(date, comp),
             "competition": comp.name, "competition_id": comp.api_id,
             "country": comp.country, "type": "europe",
             "home_id": "", "home": home, "away_id": "", "away": away,
@@ -167,7 +170,8 @@ def main():
         base = pd.read_csv(FIXTURES, low_memory=False)
         merged = pd.concat([base, uefa], ignore_index=True).drop_duplicates(
             subset=["fixture_id"], keep="first")
-        merged.to_csv(FIXTURES, index=False)
+        from .fetch import write_fixtures
+        write_fixtures(merged)
         print(f"\nMerged -> {FIXTURES}  ({len(base)} -> {len(merged)} rows)")
         if args.revalidate:
             print("\nRefitting + revalidating...")
@@ -175,9 +179,17 @@ def main():
             # subprocess so the club_soccer validate (not the worldcup one) runs;
             # invoked as a package module from the repo root since Phase 4.
             import subprocess
-            subprocess.run([sys.executable, "-m", "club_soccer.validate", "--update-baseline"],
+            # Descriptive only: a reseed must NOT move the promotion gate.
+            subprocess.run([sys.executable, "-m", "club_soccer.validate"],
                            cwd=str(HERE.parent), check=False)
     else:
+        # --out must never become a side door around the write_fixtures()
+        # boundary: a raw to_csv into the production path would skip status
+        # normalization and void-result clearing.
+        if Path(args.out).resolve() == FIXTURES.resolve():
+            sys.exit("Refusing to write the production fixtures.csv via --out "
+                     "(that bypasses the write_fixtures normalization/void-"
+                     "clearing boundary). Use --merge instead.")
         uefa.to_csv(args.out, index=False)
         print(f"\nWrote UEFA-only -> {args.out} (use --merge to add into fixtures.csv)")
 

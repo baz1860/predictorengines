@@ -17,6 +17,7 @@ import pandas as pd
 
 from .competitions import get as comp_get, strength
 from . import schema
+from . import coverage as _COV
 from .identities import dedupe_fixtures
 
 HERE = Path(__file__).resolve().parent
@@ -27,6 +28,32 @@ ENSEMBLE_WEIGHTS = DATA / "ensemble_weights.json"
 _FIXTURE_CACHE: dict[tuple[str, int, int], pd.DataFrame] = {}
 MAX_GOALS = 10
 BASE_ELO = 1500.0
+# P4b league seeding: strength points -> Elo points, and the strength value
+# that maps to BASE_ELO. Calibrated on the observed Premier League / Scottish
+# Premiership Elo gap (~290 pts) across their strength gap (1.00 - 0.58).
+ELO_PER_STRENGTH = 690.0
+LEAGUE_SEED_ANCHOR = 0.62
+
+# ── PROMOTED 2026-07-22 ───────────────────────────────────────────────────
+# League-prior seeding is ON in production. Promotion is recorded here, in the
+# code, rather than toggled at runtime — the same discipline as the evidence
+# gate and the market blend.
+#
+# Evidence (data/league_seed_evidence.json), walk-forward, identical folds
+# in both arms:
+#     2025-07 ->  n=11,261   Brier 0.61799 -> 0.61600   LL 1.02952 -> 1.02675
+#     2024-07 ->  n=21,596   Brier 0.61730 -> 0.61521   LL 1.02865 -> 1.02572
+#
+# Rationale: `elo = {t: BASE_ELO ...}` seeded every club at the pooled mean of
+# whatever was loaded — after P3 that is 25 leagues from the Premier League to
+# the National League. An under-measured club was therefore rated "average of
+# everything", which is how Sturm Graz sat at 1505 before its domestic league
+# existed in the dataset.
+#
+# THIS IS THE SINGLE SOURCE OF TRUTH. validate.walk_forward reads it too, so
+# validation always measures the model production actually runs. Flipping one
+# without the other would validate a model nobody is using.
+LEAGUE_SEED_DEFAULT = True
 HOME_ADV_ELO = 55.0
 HALF_LIFE_DAYS = 365.0
 DC_RHO = -0.08
@@ -85,13 +112,22 @@ def _normalise_weights(weights: dict) -> dict[str, float]:
 
 
 def load_ensemble_weights(path: Path = ENSEMBLE_WEIGHTS) -> dict[str, float]:
-    """Champion ensemble weights, falling back to the validated hardcoded blend."""
+    """Production ensemble weights.
+
+    The stored artifact only applies when it carries "active": true. It is
+    currently DEACTIVATED: its weights were selected on the full component
+    history, so walk-forward validation cannot honestly evaluate them —
+    production applying weights that validation can't measure means the
+    validation gate describes a different predictor than the one deployed.
+    Until per-window weight selection exists, production and validation both
+    use DEFAULT_ENSEMBLE_W, so the gate measures what actually runs."""
     if path.exists():
         try:
             raw = json.loads(path.read_text())
-            weights = raw.get("weights", raw)
-            if isinstance(weights, dict):
-                return _normalise_weights(weights)
+            if isinstance(raw, dict) and raw.get("active", False):
+                weights = raw.get("weights", raw)
+                if isinstance(weights, dict):
+                    return _normalise_weights(weights)
         except Exception:
             pass
     return dict(DEFAULT_ENSEMBLE_W)
@@ -120,19 +156,33 @@ def load_fixtures(path: Path = FIXTURES) -> pd.DataFrame:
 
 
 def played(df: pd.DataFrame) -> pd.DataFrame:
-    """Fixtures with a standing result: both scores present AND the status is
-    not a void one. Score presence alone is not enough — a postponed fixture
-    that (incorrectly) retained its old score must never train the model."""
+    """TRAINING-eligible fixtures: both scores present AND the status is
+    neither void nor administrative. Score presence alone is not enough — a
+    postponed fixture that (incorrectly) retained its old score must never
+    train the model, and an awarded 3-0 is a legal result for SETTLEMENT
+    (the adapter grades from raw scores) but not evidence about how either
+    team scores goals."""
     out = df.dropna(subset=["home_goals", "away_goals"])
     if "status" in out.columns:
-        from .schema import VOID_STATUSES
-        status = out["status"].astype(str).str.strip().str.upper().str[:3]
-        out = out[~status.isin(VOID_STATUSES)]
+        from .schema import TRAINING_EXCLUDED_STATUSES
+        status = out["status"].map(schema.normalize_status)
+        out = out[~status.isin(TRAINING_EXCLUDED_STATUSES)]
     return out.copy()
 
 
 def upcoming(df: pd.DataFrame) -> pd.DataFrame:
-    return df[df["home_goals"].isna() | df["away_goals"].isna()].copy()
+    """Schedulable future fixtures: score-less AND not void. A cancelled or
+    postponed fixture must not sit in `upcoming` forever (it would keep being
+    priced); if a postponed match is rescheduled, the provider sends a fresh
+    row with a new status/date."""
+    out = df[df["home_goals"].isna() | df["away_goals"].isna()]
+    if "status" in out.columns:
+        from .schema import VOID_STATUSES, QUARANTINE_STATUSES
+        status = out["status"].map(schema.normalize_status)
+        # Quarantined rows are excluded too: an unrecognised status might mean
+        # "abandoned" for all we know, so it must not be priced or staked.
+        out = out[~status.isin(VOID_STATUSES | QUARANTINE_STATUSES)]
+    return out.copy()
 
 
 def team_names(df: pd.DataFrame | None = None) -> list[str]:
@@ -243,10 +293,33 @@ def _promo_relegation_priors(df: pd.DataFrame, teams: list[str]) -> dict[str, di
     return out
 
 
+def _primary_league_map(df: pd.DataFrame) -> dict[str, str]:
+    """Each club's most-played league competition, across the whole frame.
+
+    Used only by the P4b league-seeding path. Deliberately season-agnostic: a
+    seed is a starting point for a club with little data, and for such a club
+    the extra precision of a per-season league would be spurious.
+    """
+    counts: dict[tuple[str, str], int] = {}
+    for comp, home, away in zip(df["competition"], df["home"], df["away"]):
+        c = comp_get(comp)
+        if not c or c.kind != "league":
+            continue
+        for team in (home, away):
+            counts[(team, comp)] = counts.get((team, comp), 0) + 1
+    best: dict[str, tuple[str, int]] = {}
+    for (team, comp), n in counts.items():
+        if best.get(team, ("", 0))[1] < n:
+            best[team] = (comp, n)
+    return {team: comp for team, (comp, _n) in best.items()}
+
+
 def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         season_regress_rho: float = 0.0, half_life_days: float = HALF_LIFE_DAYS,
         elo_decay_half_life_days: float | None = None,
-        league_adjustments: bool = False) -> dict:
+        league_adjustments: bool = False,
+        league_seed: bool | None = None,
+        coef_as_of: str | None = None) -> dict:
     """
     promo_prior: optional {"pi": float, "active": bool} (P4.5). When active,
     a promoted/relegated team's attack/defence shrinkage prior (see the gf/ga
@@ -401,6 +474,32 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
     promo_pi = float((promo_prior or {}).get("pi", 1.0))
     promo_info = _promo_relegation_priors(df, teams) if promo_active else {}
 
+    # P4b: seed a team's shrinkage prior from ITS LEAGUE rather than the global
+    # pooled mean. The pooled mean spans every fitted competition — after P3
+    # that is 25 leagues from the Premier League to the National League — so a
+    # club with little data is pulled toward the average of a population it
+    # has nothing to do with. This is the mechanism behind the original
+    # complaint: Sturm Graz sat at Elo 1505 and attack -0.267, i.e. "average",
+    # where average was computed across English League Two among others.
+    #
+    # PROMOTED — see LEAGUE_SEED_DEFAULT. Pass league_seed=False explicitly to
+    # reproduce pre-promotion behaviour (the A/B arms in the evidence file).
+    league_seed_active = LEAGUE_SEED_DEFAULT if league_seed is None else bool(league_seed)
+    team_league: dict[str, str] = {}
+    league_gf: dict[str, float] = {}
+    league_ga: dict[str, float] = {}
+    if league_seed_active:
+        team_league = _primary_league_map(df)
+        sums: dict[str, list[float]] = {}
+        for r, wt in zip(df.itertuples(index=False), w):
+            comp = r.competition
+            acc = sums.setdefault(comp, [0.0, 0.0, 0.0])
+            acc[0] += (float(r.home_goals) + float(r.away_goals)) * wt
+            acc[2] += 2.0 * wt
+        for comp, (goals, _unused, weight) in sums.items():
+            if weight > 0:
+                league_gf[comp] = league_ga[comp] = goals / weight
+
     attack, defence, attack_xg, defence_xg = {}, {}, {}, {}
     attack_xpress, defence_xpress = {}, {}
     base_xf, base_xa = {}, {}
@@ -413,6 +512,9 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
             else:  # relegated: symmetric
                 gf_prior = info["prev_gf"] / promo_pi
                 ga_prior = info["prev_ga"] * promo_pi
+        elif league_seed_active:
+            comp = team_league.get(t)
+            gf_prior = ga_prior = league_gf.get(comp, global_avg) if comp else global_avg
         else:
             gf_prior = ga_prior = global_avg
         gf = (stats[t]["gf"] + gf_prior * 4) / (stats[t]["wf"] + 4)
@@ -457,7 +559,27 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         fatk[t] = float(np.clip(math.log(max(0.25, rf) / max(0.25, base_xf[t])), -0.4, 0.4))
         fdef[t] = float(np.clip(math.log(max(0.25, ra) / max(0.25, base_xa[t])), -0.4, 0.4))
 
+    # Elo seeding. The default BASE_ELO start is the pooled-average problem in
+    # its purest form: an unmeasured club begins life indistinguishable from a
+    # mid-table side of whatever mix of divisions happens to be loaded. With
+    # league seeding on, a club starts at its league's coefficient-implied
+    # level instead, so the first European match it plays is priced from
+    # "typical Austrian Bundesliga club" rather than "typical club anywhere".
     elo = {t: BASE_ELO for t in teams}
+    if league_seed_active:
+        from .uefa_registry import strength_prior as _sp
+        for t in teams:
+            comp = comp_get(team_league.get(t) or "")
+            if comp is None:
+                continue
+            # Map strength (0.15-1.10) onto an Elo offset. ELO_PER_STRENGTH is
+            # calibrated so the Premier-League-to-Scottish-Premiership gap in
+            # strength matches their observed Elo gap; see league_strength.py.
+            # coef_as_of keeps historical folds from seeding on future
+            # coefficients (the leak); None = latest snapshot, for live pricing.
+            offset = (_sp(comp.country, comp.tier or 1, as_of=coef_as_of)
+                      - LEAGUE_SEED_ANCHOR) * ELO_PER_STRENGTH
+            elo[t] = BASE_ELO + offset
     if season_regress_rho > 0:
         comp_teams: dict[str, set] = {}
         for r in df.itertuples(index=False):
@@ -596,7 +718,24 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
               "proxy_xg_coverage": round(proxy_xg_coverage, 6),
               "xg_source_counts": {str(k): int(v) for k, v in source.value_counts().items()},
               "elo": {k: float(v) for k, v in elo.items()},
-              "fitted_matches": int(len(df))}
+              "fitted_matches": int(len(df)),
+              # Provenance: a stored params file must say which model produced
+              # it, so a cached artifact can never be mistaken for the other arm.
+              "league_seed_active": bool(league_seed_active),
+              # Per-team weight of shots-on-target evidence behind the xg
+              # components. Zero means the club has NO shot data at all, so its
+              # attack_xg/defence_xg are identically 0 — league-average by
+              # construction, not by measurement. 12 competitions (~31% of
+              # fitted matches) arrive from fd.co.uk's /new/ files with no shot
+              # columns whatsoever, and the ensemble was still giving their xg
+              # and xgf components 40% of the weight.
+              "xg_evidence": {t: round(float(stats[t]["wx"]), 4) for t in teams},
+              # P0 coverage instrumentation. Every rating lookup below uses a
+              # silent .get(team, default), so a club the fit never saw is
+              # scored as exactly average. team_evidence records what the fit
+              # actually rests on, per team, so that absence of data becomes
+              # visible downstream instead of masquerading as an average team.
+              "team_evidence": _COV.build_team_evidence(df)}
     return params
 
 
@@ -1195,6 +1334,92 @@ def apply_quality_adj(M: np.ndarray, quality_adj: dict) -> np.ndarray:
                         max(0.05, xg_a * np.exp(-shift)))
 
 
+# Components built from shots on target. Useless — and actively harmful — for
+# a club with no shot data, because their attack/defence terms are then
+# identically zero and the component returns a flat league-average matrix.
+_SHOT_COMPONENTS = ("xg", "xgf", "xpress")
+# Weighted matches of shot data at which a club's xg terms earn half their
+# nominal ensemble weight. The observed spread is wide — Arsenal 71.8, Sturm
+# Graz 7.1 (European matches only), 449 clubs at exactly 0.0 — so this is a
+# smooth confidence scale rather than a cliff.
+XG_EVIDENCE_K = 8.0
+
+
+def _weights_for_match(params: dict, weights: dict, home: str, away: str) -> dict:
+    """Scale the shot-based components by how much shot data the clubs have.
+
+    Twelve competitions (~31% of fitted matches) come from fd.co.uk's /new/
+    files, which carry goals only. For those clubs attack_xg and defence_xg are
+    identically zero — league-average by construction, not by measurement — so
+    the xg and xgf components emit a flat matrix while still holding 40% of the
+    default ensemble weight. That dilutes the goals and Elo components, which
+    are the ones that actually know something, and it is the mechanism behind
+    the post-P3 OU2.5 (+0.0126) and BTTS (+0.0083) regression.
+
+    A match is only as informative as its weaker side, so confidence keys off
+    the MINIMUM of the two clubs' evidence. Clubs with full shot histories are
+    unaffected; the freed weight is renormalised onto goals and Elo.
+    """
+    evidence = params.get("xg_evidence")
+    if not evidence:
+        return weights                      # params predate this; leave as-is
+    n = min(float(evidence.get(home, 0.0)), float(evidence.get(away, 0.0)))
+    conf = n / (n + XG_EVIDENCE_K)
+    if conf > 0.99:
+        return weights
+    scaled = {k: (v * conf if k in _SHOT_COMPONENTS else v)
+              for k, v in weights.items()}
+    total = sum(scaled.values())
+    if total <= 0:
+        # Every surviving weight is zero — fall back rather than divide by
+        # zero. A diluted prediction beats no prediction.
+        return weights
+    return {k: v / total for k, v in scaled.items()}
+
+
+# ── P5: evidence-scaled variance inflation (measured, OFF) ────────────────
+# The plan proposed widening predictive intervals for under-evidenced teams,
+# on the theory that the model was overconfident about clubs it could not see.
+# That theory was true when it was written — the P1 baseline showed thin
+# favourites badly overconfident (0.50-0.65 bucket: predicted 0.541, observed
+# 0.322, error -0.221).
+#
+# It is no longer true. After P3 (domestic data for 20 leagues), P4b (league
+# seeding) and the xg gating, the same bucket reads -0.002. The fix for
+# miscalibration on thin clubs turned out to be MEASURING them, not widening
+# their intervals — and applying inflation now would push well-calibrated
+# predictions away from reality.
+#
+# The mechanism is implemented and measurable so the decision stays evidence-
+# based rather than assumed, and so it can be re-tested if coverage degrades.
+# See data/variance_inflation_evidence.json for the A/B.
+VARIANCE_INFLATION_DEFAULT = False
+INFLATION_EVIDENCE_K = 20.0     # matches at which inflation is halved
+MAX_INFLATION = 0.25            # cap: never blend more than this toward base
+
+
+def inflation_lambda(params: dict, home: str, away: str) -> float:
+    """How far to pull a prediction toward the base rate, given team evidence."""
+    store = params.get("team_evidence") or {}
+    n_home = float((store.get(home) or {}).get("n_recent", 0))
+    n_away = float((store.get(away) or {}).get("n_recent", 0))
+    n = min(n_home, n_away)
+    return MAX_INFLATION * (INFLATION_EVIDENCE_K / (n + INFLATION_EVIDENCE_K))
+
+
+def apply_variance_inflation(M_matrix, lam: float):
+    """Blend a score matrix toward its own marginal-independent form.
+
+    Widens the outcome distribution without moving its centre: the expected
+    goals are preserved, the confidence in any single scoreline is reduced.
+    """
+    if lam <= 0:
+        return M_matrix
+    flat = np.outer(M_matrix.sum(axis=1), M_matrix.sum(axis=0))
+    blended = (1.0 - lam) * M_matrix + lam * flat
+    return blended / blended.sum()
+
+
 def predict(home: str, away: str, competition: str | None = None,
             model: str = "ensemble", neutral: bool = False,
             params: dict | None = None,
@@ -1202,7 +1427,8 @@ def predict(home: str, away: str, competition: str | None = None,
             context_adj: dict | None = None,
             match_date=None,
             quality_adj: dict | None = None,
-            ensemble_weights: dict | None = None) -> dict:
+            ensemble_weights: dict | None = None,
+            variance_inflation: bool | None = None) -> dict:
     """Predict match outcome probabilities.
 
     Parameters
@@ -1243,6 +1469,7 @@ def predict(home: str, away: str, competition: str | None = None,
         # same pattern as context_coef in predict_match).
         weights = (_normalise_weights(ensemble_weights)
                    if ensemble_weights is not None else load_ensemble_weights())
+        weights = _weights_for_match(params, weights, home, away)
         M = sum(weights[k] * parts[k] for k in ENSEMBLE_COMPONENTS)
         M = M / M.sum()
     elif model == "goals":
@@ -1278,13 +1505,25 @@ def predict(home: str, away: str, competition: str | None = None,
     if context_adj:
         M = apply_context_adj(M, context_adj)
 
+    if variance_inflation is None:
+        variance_inflation = VARIANCE_INFLATION_DEFAULT
+    inflation_applied = 0.0
+    if variance_inflation:
+        inflation_applied = inflation_lambda(params, home, away)
+        M = apply_variance_inflation(M, inflation_applied)
+
     probs = probs_from_matrix(M)
     xg_h = float(sum(i * M[i, :].sum() for i in range(M.shape[0])))
     xg_a = float(sum(j * M[:, j].sum() for j in range(M.shape[1])))
     out = {"home": home, "away": away, "competition": competition or "",
            "model": model, "xg_home": round(xg_h, 2), "xg_away": round(xg_a, 2),
            "probs": {k: round(v, 4) for k, v in probs.items()},
-           "scorelines": top_scorelines(M), "matrix": M}
+           "scorelines": top_scorelines(M), "matrix": M,
+           # P0: report-only evidence tier. Probabilities above are UNCHANGED
+           # by this; it exists so a consumer can tell a price built on 300
+           # domestic matches from one built on 24 European matches against
+           # unrated opposition. Variance inflation arrives in P5.
+           "coverage": _COV.match_coverage(params, home, away)}
     if player_adj_applied:
         out["player_adj"] = {
             side: {k: v for k, v in applied_player_adj.get(side, {}).items()
@@ -1311,7 +1550,8 @@ def predict_match(home: str, away: str, competition: str | None,
                   apply_context: bool = True,
                   quality_adj: dict | None = None,
                   context_coef: dict | None = None,
-                  ensemble_weights: dict | None = None) -> dict:
+                  ensemble_weights: dict | None = None,
+                  variance_inflation: bool | None = None) -> dict:
     """Point-in-time prediction wrapper used by cards and edge pricing.
 
     This keeps the live paths aligned: if a context coefficient is promoted,
@@ -1342,7 +1582,8 @@ def predict_match(home: str, away: str, competition: str | None,
     return predict(home, away, competition, model, neutral, params=params,
                    player_adj=player_adj, context_adj=context_adj,
                    match_date=match_date, quality_adj=quality_adj,
-                   ensemble_weights=ensemble_weights)
+                   ensemble_weights=ensemble_weights,
+                   variance_inflation=variance_inflation)
 
 
 def main() -> None:

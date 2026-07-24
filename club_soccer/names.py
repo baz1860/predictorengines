@@ -49,8 +49,22 @@ FDCOUK_ALIASES: dict[str, str] = {
     "Newcastle": "Newcastle United",
     "Nott'm Forest": "Nottingham Forest",
     "Wolves": "Wolverhampton",
-    "Sheffield United": "Sheffield Utd",
     "Dortmund": "Borussia Dortmund",
+    # Realigned by P1 identity resolution (club_identity.py). fixtures.csv
+    # previously held two spellings of each of these clubs; the merge picked
+    # one canonical identity, so the fd.co.uk source spellings must now point
+    # at that identity or the market-history join silently drops the club.
+    # Verified against the alias map by test_fdcouk_alias_coverage.
+    "Sheffield Utd": "Sheffield United",
+    "Sheffield Weds": "Sheffield Wednesday",
+    "Hamburg": "Hamburger SV",
+    "St Pauli": "FC St. Pauli",
+    "Alaves": "Deportivo Alavés",
+    "Espanol": "Espanyol",
+    "Levante": "Levante UD",
+    "Oviedo": "Real Oviedo",
+    "Vallecano": "Rayo Vallecano",
+    "St Etienne": "Saint-Étienne",
     "Ein Frankfurt": "Eintracht Frankfurt",
     "Leverkusen": "Bayer Leverkusen",
     "Ath Bilbao": "Athletic Bilbao",
