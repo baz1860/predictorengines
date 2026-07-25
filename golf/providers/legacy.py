@@ -4,8 +4,8 @@ golf/providers/legacy.py  –  original round-history provider implementation.
 One interface (`RoundsProvider`) so the model never knows where its data came
 from.  Two implementations:
 
-  • EspnProvider     – free.  One scoreboard call per season returns every PGA
-                       event with full round-by-round linescores embedded.
+  • EspnProvider     – free. Season scoreboards discover event ids; per-event
+                       leaderboards supply authoritative results and metadata.
   • DataGolfProvider – retained only for backward compatibility. The production
                        free-source stack should prefer the ESPN/PGA Tour/Open-
                        Meteo providers in this package.
@@ -14,18 +14,15 @@ from.  Two implementations:
 requested capability, otherwise ESPN — so adding a key later enriches the model
 without touching `model.py` / `validate.py`.
 
-Source-of-truth store written by fetch.py --accumulate: golf/data/rounds.csv
-  tournament_id, date, tour, is_major, course, round,
-  player, dg_id, score_to_par, field_size, made_cut, finish
+Source-of-truth store written by fetch.py --accumulate: golf/data/rounds.csv.
+Season scoreboards are used only to discover event ids. Every event is then
+read from ESPN's per-event leaderboard, which is the payload that contains
+competitor statuses, real course metadata, tee times, and tournament rules.
 """
 
 from __future__ import annotations
 
-import datetime as _dt
-import json
 import sys
-import time
-import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Protocol, runtime_checkable
@@ -42,15 +39,21 @@ if str(ROOT) not in sys.path:
 from api_keys import get_key  # noqa: E402
 
 ROUNDS_COLUMNS = [
-    "tournament_id", "date", "tour", "is_major", "course", "round",
-    "player", "dg_id", "score_to_par", "field_size", "made_cut", "finish",
+    "tournament_id", "event_name", "date", "tour", "is_major",
+    "course", "course_id", "course_name", "course_par", "course_yards",
+    "round", "tee_time", "player", "dg_id", "score_to_par", "field_size",
+    "made_cut", "finish", "cut_round", "cut_score", "cut_count",
+    "total_rounds", "no_cut", "holes_scored", "birdies_or_better",
+    "bogeys", "double_bogeys_or_worse", "par3_to_par", "par3_holes",
+    "par4_to_par", "par4_holes", "par5_to_par", "par5_holes",
 ]
 
-# Name fragments that mark a men's major (rotating venues handled at fit time).
-_MAJOR_FRAGMENTS = (
+# Exact men's-major names. Substring matching misclassified the Australian PGA,
+# BMW PGA, SA Open, and other DP World Tour events as majors and dropped them.
+_MAJOR_NAMES = {
     "masters tournament", "pga championship", "u.s. open", "us open",
-    "the open championship", "the open", "open championship",
-)
+    "the open championship", "the open",
+}
 
 
 # ─────────────────────────────────────────────
@@ -65,6 +68,14 @@ class TournamentMeta:
     tour: str = "pga"
     is_major: bool = False
     course: str = ""
+    course_id: str = ""
+    course_par: int = 0
+    course_yards: int = 0
+    cut_round: int = 2
+    cut_score: float | None = None
+    cut_count: int = 65
+    total_rounds: int = 4
+    no_cut: bool = False
 
 
 @dataclass
@@ -81,6 +92,27 @@ class RoundRecord:
     field_size: int
     made_cut: int
     finish: int
+    event_name: str = ""
+    course_id: str = ""
+    course_name: str = ""
+    course_par: int = 0
+    course_yards: int = 0
+    tee_time: str = ""
+    cut_round: int = 2
+    cut_score: float | None = None
+    cut_count: int = 65
+    total_rounds: int = 4
+    no_cut: int = 0
+    holes_scored: int = 0
+    birdies_or_better: int = 0
+    bogeys: int = 0
+    double_bogeys_or_worse: int = 0
+    par3_to_par: float = 0.0
+    par3_holes: int = 0
+    par4_to_par: float = 0.0
+    par4_holes: int = 0
+    par5_to_par: float = 0.0
+    par5_holes: int = 0
 
 
 @dataclass
@@ -103,230 +135,36 @@ class RoundsProvider(Protocol):
     def sg_categories(self, player: str, asof: Optional[str] = None) -> Optional[dict]: ...
 
 
-# ─────────────────────────────────────────────
-# Shared helpers
-# ─────────────────────────────────────────────
-
-def _http_json(url: str, retries: int = 3, timeout: int = 25) -> Optional[dict]:
-    """GET JSON with retries. Returns None on persistent failure (offline-safe)."""
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.load(resp)
-        except Exception as exc:  # noqa: BLE001
-            if attempt == retries - 1:
-                print(f"  fetch failed ({url[:60]}…): {exc}", file=sys.stderr)
-                return None
-            time.sleep(1.5)
-    return None
-
-
-def _parse_to_par(disp: Optional[str]) -> Optional[float]:
-    """ESPN round displayValue → strokes vs par. 'E'→0, '-6'→-6, '+2'→2."""
-    s = (disp or "").strip()
-    if s in ("", "E", "e", "-", "--", "WD", "DQ", "CUT", "MC"):
-        return 0.0 if s in ("E", "e") else None
-    try:
-        return float(s.replace("+", ""))
-    except ValueError:
-        return None
-
-
 def _is_major(name: str) -> bool:
-    n = (name or "").lower()
-    return any(frag in n for frag in _MAJOR_FRAGMENTS)
+    n = " ".join((name or "").lower().split())
+    return n in _MAJOR_NAMES
 
 
-def _add_days(iso_date: str, days: int) -> str:
+# ─────────────────────────────────────────────
+# ESPN provider compatibility exports
+# ─────────────────────────────────────────────
+
+# Live and historical ESPN ingestion now share the implementation in espn.py.
+# These aliases preserve the original provider API used by fetch.py and callers.
+from .espn import EspnGolfProvider, TOUR_SLUGS, _hole_features  # noqa: E402
+
+EspnProvider = EspnGolfProvider
+
+
+def _int(value, default: int = 0) -> int:
     try:
-        d = _dt.date.fromisoformat(iso_date[:10])
-        return (d + _dt.timedelta(days=days)).isoformat()
-    except ValueError:
-        return iso_date[:10]
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 
-# ─────────────────────────────────────────────
-# ESPN provider (free)
-# ─────────────────────────────────────────────
-
-ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
-ESPN_LEADERBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard"
-# Tour-aware scoreboard template. ESPN carries every tour under the same JSON
-# shape; only the slug changes. `eur` is the DP World Tour (league id 7002),
-# `liv` is LIV Golf (league id 1109).
-ESPN_SCOREBOARD_TMPL = "https://site.api.espn.com/apis/site/v2/sports/golf/{tour}/scoreboard"
-# Friendly aliases → ESPN url slug. The slug is also what we store in the
-# rounds.csv `tour` column so downstream filters can tell tours apart.
-TOUR_SLUGS = {
-    "pga": "pga",
-    "liv": "liv",
-    "eur": "eur", "dpwt": "eur", "euro": "eur", "european": "eur",
-}
-
-
-class EspnProvider:
-    """Round history + current field from ESPN's unofficial API.
-
-    One call per season (`scoreboard?dates=YYYY`) returns every completed event
-    with each competitor's per-round linescores embedded, so a few calls seed
-    years of history. Raw season payloads are cached under data/api_cache/.
-
-    ``tour`` selects the circuit: ``pga`` (default), ``liv`` (LIV Golf), or
-    ``eur`` (DP World Tour). The same parser works for all three because ESPN
-    returns an identical event/competitor/linescore shape per tour. Majors are
-    only ingested from the PGA feed; on LIV/DPWT they are skipped so a player's
-    major rounds are never double-counted under two tournament ids.
-    """
-
-    name = "espn"
-    supports_history = True
-
-    def __init__(self, seasons: Optional[Iterable[int]] = None,
-                 tour: str = "pga"):
-        if seasons is None:
-            yr = _dt.date.today().year
-            seasons = [yr - 1, yr]
-        self.seasons = sorted(set(int(s) for s in seasons))
-        self.tour_slug = TOUR_SLUGS.get(str(tour).lower(), str(tour).lower())
-        self.name = f"espn-{self.tour_slug}"
-        self._events: dict[str, dict] = {}   # tournament_id → raw event payload
-        self._meta: dict[str, TournamentMeta] = {}
-
-    # -- season payloads (cached) --
-    def _season_payload(self, year: int) -> Optional[dict]:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache = CACHE_DIR / f"espn_{self.tour_slug}_{year}.json"
-        is_complete_past = year < _dt.date.today().year
-        if cache.exists() and is_complete_past:
-            try:
-                return json.loads(cache.read_text())
-            except (ValueError, OSError):
-                pass
-        url = ESPN_SCOREBOARD_TMPL.format(tour=self.tour_slug)
-        data = _http_json(f"{url}?dates={year}")
-        if data is not None and data.get("events"):
-            try:
-                cache.write_text(json.dumps(data))
-            except OSError:
-                pass
-            return data
-        # fall back to a stale cache rather than nothing (offline-safe)
-        if cache.exists():
-            try:
-                return json.loads(cache.read_text())
-            except (ValueError, OSError):
-                return None
+def _float_or_none(value) -> float | None:
+    try:
+        if value in ("", None):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
         return None
-
-    def _load_all(self) -> None:
-        if self._meta:
-            return
-        for yr in self.seasons:
-            payload = self._season_payload(yr)
-            if not payload:
-                continue
-            for ev in payload.get("events", []):
-                tid = str(ev.get("id") or "")
-                if not tid:
-                    continue
-                name = ev.get("name", "")
-                # Majors appear on the PGA feed already; skip any that surface on
-                # the LIV/DPWT feeds so the same rounds aren't ingested twice
-                # under different tournament ids.
-                if self.tour_slug != "pga" and _is_major(name):
-                    continue
-                date = (ev.get("date") or "")[:10]
-                comp = (ev.get("competitions") or [{}])[0]
-                course = _espn_course(ev, comp) or name
-                self._events[tid] = ev
-                self._meta[tid] = TournamentMeta(
-                    tournament_id=tid, name=name, date=date, tour=self.tour_slug,
-                    is_major=_is_major(name), course=course)
-
-    def recent_tournaments(self, since: Optional[str] = None) -> list[TournamentMeta]:
-        self._load_all()
-        out = [m for m in self._meta.values()
-               if (since is None or m.date >= since)]
-        return sorted(out, key=lambda m: m.date)
-
-    def rounds_for(self, tournament_id: str) -> list[RoundRecord]:
-        self._load_all()
-        ev = self._events.get(str(tournament_id))
-        meta = self._meta.get(str(tournament_id))
-        if not ev or not meta:
-            return []
-        comp = (ev.get("competitions") or [{}])[0]
-        status = str(((ev.get("status") or {}).get("type") or {}).get("name") or
-                     ((comp.get("status") or {}).get("type") or {}).get("name") or "").upper()
-        if not any(k in status for k in ("FINAL", "COMPLETE", "POST")):
-            return []  # never freeze an in-progress/suspended event into history
-        competitors = comp.get("competitors", [])
-        field_size = len(competitors)
-        out: list[RoundRecord] = []
-        for c in competitors:
-            name = (c.get("athlete") or {}).get("displayName", "").strip()
-            if not name:
-                continue
-            dg_id = str((c.get("athlete") or {}).get("id") or "")
-            try:
-                finish = int(c.get("order") or 999)
-            except (TypeError, ValueError):
-                finish = 999
-            lss = c.get("linescores") or []
-            rounds = []
-            for ls in lss:
-                rnd = int(ls.get("period") or 0)
-                stp = _parse_to_par(ls.get("displayValue"))
-                holes = ls.get("linescores") or []
-                if rnd and stp is not None and len(holes) >= 18:
-                    rounds.append((rnd, stp))
-            pstatus = str(((c.get("status") or {}).get("type") or {}).get("name") or "").upper()
-            out_status = any(k in pstatus for k in ("CUT", "WD", "WITHDR", "DQ", "DISQUAL"))
-            made_cut = 0 if out_status and len(rounds) < 3 else 1
-            for rnd, stp in rounds:
-                out.append(RoundRecord(
-                    tournament_id=meta.tournament_id,
-                    date=_add_days(meta.date, rnd - 1),
-                    tour=meta.tour, is_major=int(meta.is_major),
-                    course=meta.course, round=rnd, player=name, dg_id=dg_id,
-                    score_to_par=float(stp), field_size=field_size,
-                    made_cut=made_cut, finish=finish))
-        return out
-
-    def field_for(self, event: Optional[str] = None) -> list[FieldEntry]:
-        """Current/most-recent event field from the live leaderboard endpoint."""
-        data = _http_json(ESPN_LEADERBOARD)
-        out: list[FieldEntry] = []
-        if not data:
-            return out
-        for ev in data.get("events", []):
-            for comp in ev.get("competitions", []):
-                for c in comp.get("competitors", []):
-                    name = (c.get("athlete") or {}).get("displayName", "").strip()
-                    if not name:
-                        continue
-                    status = (c.get("status") or {}).get("type", {}).get("name", "active")
-                    out.append(FieldEntry(
-                        name=name,
-                        dg_id=str((c.get("athlete") or {}).get("id") or ""),
-                        status=status))
-        return out
-
-    def pretournament_preds(self, event: Optional[str] = None) -> Optional[dict]:
-        return None  # not available on the free tier
-
-    def sg_categories(self, player: str, asof: Optional[str] = None) -> Optional[dict]:
-        return None  # ESPN gives no strokes-gained categories
-
-
-def _espn_course(ev: dict, comp: dict) -> str:
-    for src in (comp.get("course"), ev.get("courses"), comp.get("venue")):
-        if isinstance(src, dict) and src.get("name"):
-            return src["name"]
-        if isinstance(src, list) and src and isinstance(src[0], dict) and src[0].get("name"):
-            return src[0]["name"]
-    return ""
 
 
 # ─────────────────────────────────────────────
@@ -404,6 +242,65 @@ def load_rounds() -> "list[dict]":
         return list(csv.DictReader(f))
 
 
+def _normalise_round_row(row: dict) -> dict:
+    """Canonical typed row used on both sides of accumulation comparisons."""
+    course_name = str(row.get("course_name") or row.get("course") or "")
+    return asdict(RoundRecord(
+        tournament_id=str(row.get("tournament_id") or ""),
+        event_name=str(row.get("event_name") or ""),
+        date=str(row.get("date") or "")[:10],
+        tour=str(row.get("tour") or "pga"),
+        is_major=_int(row.get("is_major"), 0),
+        course=course_name,
+        course_id=str(row.get("course_id") or ""),
+        course_name=course_name,
+        course_par=_int(row.get("course_par"), 0),
+        course_yards=_int(row.get("course_yards"), 0),
+        round=_int(row.get("round"), 0),
+        tee_time=str(row.get("tee_time") or ""),
+        player=str(row.get("player") or ""),
+        dg_id=str(row.get("dg_id") or ""),
+        score_to_par=float(row.get("score_to_par") or 0.0),
+        field_size=_int(row.get("field_size"), 0),
+        made_cut=_int(row.get("made_cut"), 0),
+        finish=_int(row.get("finish"), 999),
+        cut_round=_int(row.get("cut_round"), 2),
+        cut_score=_float_or_none(row.get("cut_score")),
+        cut_count=_int(row.get("cut_count"), 65),
+        total_rounds=_int(row.get("total_rounds"), 4),
+        no_cut=_int(row.get("no_cut"), 0),
+        holes_scored=_int(row.get("holes_scored"), 0),
+        birdies_or_better=_int(row.get("birdies_or_better"), 0),
+        bogeys=_int(row.get("bogeys"), 0),
+        double_bogeys_or_worse=_int(row.get("double_bogeys_or_worse"), 0),
+        par3_to_par=float(row.get("par3_to_par") or 0.0),
+        par3_holes=_int(row.get("par3_holes"), 0),
+        par4_to_par=float(row.get("par4_to_par") or 0.0),
+        par4_holes=_int(row.get("par4_holes"), 0),
+        par5_to_par=float(row.get("par5_to_par") or 0.0),
+        par5_holes=_int(row.get("par5_holes"), 0),
+    ))
+
+
+def _round_key(row: dict) -> tuple[str, str, str]:
+    pid = str(row.get("dg_id") or "").strip()
+    identity = f"id:{pid}" if pid else f"name:{row.get('player', '')}"
+    return str(row.get("tournament_id", "")), identity, str(row.get("round", ""))
+
+
+def _sort_rounds(rows: list[dict]) -> None:
+    rows.sort(key=lambda r: (
+        r["date"], r["tournament_id"], int(r["round"]), int(r["finish"]),
+        r["player"], r.get("dg_id", ""),
+    ))
+
+
+def _write_rounds(rows: list[dict], path: Path | None = None) -> None:
+    from ..io_utils import atomic_write_csv
+    path = path or ROUNDS_CSV
+    atomic_write_csv(path, ROUNDS_COLUMNS, rows, extrasaction="ignore")
+
+
 def accumulate_rounds(provider: Optional[RoundsProvider] = None,
                       since: Optional[str] = None,
                       verbose: bool = True) -> int:
@@ -412,17 +309,11 @@ def accumulate_rounds(provider: Optional[RoundsProvider] = None,
     Idempotent (dedupes on tournament_id+player+round) and offline-safe (writes
     nothing and returns 0 when the provider yields no data). Returns rows added.
     """
-    import csv
     provider = provider or get_provider(need="history")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    existing = load_rounds()
-    def key_of(r):
-        pid = str(r.get("dg_id") or "").strip()
-        identity = f"id:{pid}" if pid else f"name:{r.get('player', '')}"
-        return (str(r.get("tournament_id", "")), identity, str(r.get("round", "")))
-
-    merged = {key_of(r): r for r in existing}
+    existing = [_normalise_round_row(r) for r in load_rounds()]
+    merged = {_round_key(r): r for r in existing}
 
     new_rows: list[dict] = []
     tournaments = provider.recent_tournaments(since=since)
@@ -431,8 +322,8 @@ def accumulate_rounds(provider: Optional[RoundsProvider] = None,
               + (f" since {since}" if since else ""))
     for meta in tournaments:
         for rec in provider.rounds_for(meta.tournament_id):
-            row = asdict(rec)
-            key = key_of(row)
+            row = _normalise_round_row(asdict(rec))
+            key = _round_key(row)
             if merged.get(key) == row:
                 continue
             merged[key] = row
@@ -444,15 +335,48 @@ def accumulate_rounds(provider: Optional[RoundsProvider] = None,
         return 0
 
     all_rows = list(merged.values())
-    all_rows.sort(key=lambda r: (r["date"], r["tournament_id"], int(r["round"]),
-                                 int(r["finish"])))
-    with open(ROUNDS_CSV, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=ROUNDS_COLUMNS, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(all_rows)
+    _sort_rounds(all_rows)
+    _write_rounds(all_rows)
     if verbose:
         print(f"  +{len(new_rows)} rounds → {ROUNDS_CSV} ({len(all_rows)} total)")
     return len(new_rows)
+
+
+def rebuild_tours(tours: Iterable[str], seasons: Iterable[int],
+                  verbose: bool = True) -> dict[str, int]:
+    """Rebuild rounds.csv only from corrected per-event payloads.
+
+    The existing CSV is never read and is replaced atomically only after at
+    least one complete event was parsed. This is the safe repair path for
+    histories written by the old status-less season parser.
+    """
+    seasons = list(seasons)
+    all_rows: dict[tuple[str, str, str], dict] = {}
+    results: dict[str, int] = {}
+    for tour in tours:
+        slug = TOUR_SLUGS.get(str(tour).lower(), str(tour).lower())
+        provider = EspnProvider(seasons=seasons, tour=slug)
+        tournaments = provider.recent_tournaments()
+        if verbose:
+            print(f"── tour: {slug} · {len(tournaments)} event(s) ──")
+        before = len(all_rows)
+        for idx, meta in enumerate(tournaments, 1):
+            rows = provider.rounds_for(meta.tournament_id)
+            for rec in rows:
+                row = _normalise_round_row(asdict(rec))
+                all_rows[_round_key(row)] = row
+            if verbose and (idx % 10 == 0 or idx == len(tournaments)):
+                print(f"  {idx:>3}/{len(tournaments)} events · "
+                      f"{len(all_rows):,} rounds")
+        results[slug] = len(all_rows) - before
+    if not all_rows:
+        raise RuntimeError("rebuild produced no rounds; existing rounds.csv preserved")
+    rows = list(all_rows.values())
+    _sort_rounds(rows)
+    _write_rounds(rows)
+    if verbose:
+        print(f"Rebuilt {ROUNDS_CSV} atomically ({len(rows):,} rows)")
+    return results
 
 
 def accumulate_tours(tours: Iterable[str],

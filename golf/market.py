@@ -251,7 +251,6 @@ def clv_report(edge_path: Path | None = None, predictions_path: Path | None = No
             regimes = [f"market:{market_name}"]
             for key, label in (
                 ("weather_wave_adj", "weather"),
-                ("course_arch_adj", "course_arch"),
                 ("global_prior_adj", "global_prior"),
             ):
                 try:

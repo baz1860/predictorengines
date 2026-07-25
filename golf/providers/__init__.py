@@ -1,8 +1,8 @@
 """Free-source provider stack for the golf engine.
 
-The original single-file provider implementation now lives in
-``golf.providers.legacy`` and is re-exported here so existing imports keep
-working. New free-source providers sit beside it:
+Historical CSV records and accumulation helpers remain in ``legacy`` for API
+compatibility. ESPN live and history fetching share the one implementation in
+``espn``:
 
 * ``espn`` - ESPN/golfastR-style event, leaderboard, field, and score data.
 * ``pgatour_stats`` - public PGA Tour aggregate stat pages.
@@ -16,7 +16,6 @@ from .legacy import (
     DATA_DIR,
     ROUNDS_COLUMNS,
     ROUNDS_CSV,
-    EspnProvider,
     FieldEntry,
     RoundRecord,
     RoundsProvider,
@@ -25,8 +24,9 @@ from .legacy import (
     accumulate_tours,
     get_provider,
     load_rounds,
+    rebuild_tours,
 )
-from .espn import EspnGolfProvider
+from .espn import EspnGolfProvider, EspnProvider
 from .odds_manual import ManualOddsProvider
 from .odds_theoddsapi import TheOddsApiGolfProvider
 from .pgatour_stats import PgaTourStatsProvider
@@ -46,6 +46,7 @@ __all__ = [
     "accumulate_tours",
     "get_provider",
     "load_rounds",
+    "rebuild_tours",
     "EspnGolfProvider",
     "ManualOddsProvider",
     "TheOddsApiGolfProvider",

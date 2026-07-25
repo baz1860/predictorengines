@@ -108,23 +108,23 @@ def test_pgatour_stats_text_parser():
     check("parses stat value", abs(rows[0].value - 2.162) < 1e-9, str(rows[0]))
 
 
-def test_store_round_import_and_field_export():
+def test_store_is_live_only_and_exports_field():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        rounds = root / "rounds.csv"
-        with rounds.open("w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=[
-                "tournament_id", "date", "tour", "is_major", "course", "round",
-                "player", "dg_id", "score_to_par", "field_size", "made_cut", "finish",
-            ])
-            w.writeheader()
-            w.writerow({"tournament_id": "T1", "date": "2026-01-01", "tour": "pga",
-                        "is_major": 0, "course": "Test Course", "round": 1,
-                        "player": "Alex Smith", "dg_id": "", "score_to_par": -2,
-                        "field_size": 3, "made_cut": 1, "finish": 1})
         db = root / "golf.db"
-        n = store.import_rounds_csv(rounds, db_path=db)
+        store.init_db(db)
         with store.connect(db) as con:
+            tables = {
+                row[0]
+                for row in con.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            store.upsert_events(con, [{
+                "event_id": "T1",
+                "name": "Test Event",
+                "course_name": "Test Course",
+            }])
             store.upsert_field(con, "T1", [{
                 "name": "Alex Smith",
                 "status": "active",
@@ -133,7 +133,7 @@ def test_store_round_import_and_field_export():
                 "world_rank": 42,
             }])
         out = store.export_field_csv("T1", path=root / "field.csv", db_path=db)
-        check("imports rounds into store", n == 1 and db.exists(), str(n))
+        check("SQLite excludes historical rounds", "rounds" not in tables, str(tables))
         check("exports field csv from store", out.exists() and "Alex Smith" in out.read_text(),
               out.read_text())
         exported = list(csv.DictReader(out.open()))
@@ -198,17 +198,6 @@ def test_model_feature_adjustments():
         "public_stat_blend": 0.0,
         "form_weight": 0.7,
     }
-    rated = model.predict_field(
-        ["Approach Fit", "Putt Fit"],
-        params,
-        course="Augusta National Golf Club",
-        weather_features={},
-    )
-    by_name = {p.name: p for p in rated}
-    check("course archetype adjustment is applied",
-          by_name["Approach Fit"].course_arch_adj > by_name["Putt Fit"].course_arch_adj,
-          str({k: v.course_arch_adj for k, v in by_name.items()}))
-
     early = model.Player(name="Early Player", tee_time_r1="08:00", owgr=20)
     late = model.Player(name="Late Player", tee_time_r1="14:00", owgr=20)
     weather = {"rounds": {"1": {"wave_penalty": {

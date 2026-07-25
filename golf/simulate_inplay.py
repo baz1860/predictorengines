@@ -102,10 +102,14 @@ def simulate_inplay(
     base_scores  = np.array([current_scores[p.name.lower()] for p in survivors])
 
     means = -ratings
-    rc, tdf, win_rc, win_tdf = pre.load_sim_config()
+    rc, tdf, blowup_mix = pre.load_sim_config()
     shifts = pre._weather_score_shifts(survivors)
+    blowup_rates = np.array([
+        getattr(player, "blowup_rate", 0.02) for player in survivors
+    ])
     drawn = pre._draw_scores(rng, means, sigmas, n_sims, n, rc, tdf,
-                             score_shifts=shifts)
+                             score_shifts=shifts, blowup_rates=blowup_rates,
+                             blowup_mix=blowup_mix)
     future_scores = drawn[:, :, :rounds_left]
     totals = base_scores[np.newaxis, :] + future_scores.sum(axis=2)
 
@@ -121,18 +125,7 @@ def simulate_inplay(
     settlement_totals = np.where(
         np.isinf(totals), 1e6 + (r36 if cut_binds else 0.0), totals)
 
-    # The win regime remains separately configurable, matching pre-tournament.
     win_totals = totals
-    if (win_rc, win_tdf) != (rc, tdf):
-        win_drawn = pre._draw_scores(rng, means, sigmas, n_sims, n,
-                                     win_rc, win_tdf, score_shifts=shifts)
-        win_totals = base_scores[np.newaxis, :] + win_drawn[:, :, :rounds_left].sum(axis=2)
-        if cut_binds:
-            # Winners necessarily clear the cut, but retain the same simulated
-            # cut rule so pathological small fields remain coherent.
-            wr36 = base_scores[np.newaxis, :] + win_drawn[:, :, 0]
-            wline = np.partition(wr36, cut_rule - 1, axis=1)[:, cut_rule - 1]
-            win_totals = np.where(wr36 <= wline[:, np.newaxis], win_totals, np.inf)
 
     # Tournament-long matchups / 3-balls off the SAME simulated finals. Only
     # survivor-vs-survivor groups are settled here; a group naming a cut player

@@ -99,9 +99,6 @@ def run_refresh(
     checks: list[qa.SourceCheck] = []
     provider_rows = {}
 
-    rounds_rows = store.import_rounds_csv()
-    provider_rows["rounds_csv"] = rounds_rows
-
     espn = EspnGolfProvider()
     event = None
     field_rows = []

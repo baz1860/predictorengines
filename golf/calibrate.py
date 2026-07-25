@@ -1,10 +1,9 @@
 """
 golf/calibrate.py  –  Per-market probability calibration.
 
-The independent-round Monte Carlo is systematically miscalibrated (the
-make-cut backtest shows pred 0.35 → actual ~0.50). This fits an isotonic map
-per market (win, top5, top10, top20, cut) from validate.py's walk-forward
-predictions and applies them as a pure consumer in the edge/sim path.
+Only make-cut is eligible for isotonic calibration. The corrected walk-forward
+showed no out-of-sample gain for win/place maps, and fitting nested markets
+independently can make a coherent joint simulation incoherent.
 
 Same isotonic machinery and JSON shape as the root calibrate.py / validate.py,
 plus a nesting guard so a calibrated row keeps win ≤ top5 ≤ top10 ≤ top20 ≤ cut.
@@ -26,6 +25,7 @@ PRED_CSV = DATA_DIR / "validation_predictions.csv"
 CALIB_FILE = DATA_DIR / "calibration.json"
 
 MARKETS = ["win", "top5", "top10", "top20", "cut"]   # nested, widest last
+CALIBRATED_MARKETS = {"cut"}
 
 
 # ── isotonic helpers (mirror of root validate.py) ──
@@ -113,6 +113,9 @@ def fit_from_csv(path: Path | None = None) -> dict:
     promoted = []
     maps = {}
     for market in MARKETS:
+        if market not in CALIBRATED_MARKETS:
+            maps[market] = {"x": [0.0, 1.0], "y": [0.0, 1.0]}
+            continue
         train_map = fit_maps(train)[market]
         p = test[f"p_{market}"].values.astype(float)
         y = test[f"y_{market}"].values.astype(float)
@@ -141,6 +144,8 @@ def load_maps():
         maps = json.loads(CALIB_FILE.read_text())
         meta = maps.get("_meta") or {}
         if meta.get("schema_version") != 2 or not meta.get("point_in_time_safe"):
+            return None
+        if not meta.get("promoted_markets"):
             return None
         return maps
     return None

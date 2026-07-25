@@ -1,33 +1,15 @@
 {
   "round_corr": 0.3,
-  "tail_df": 6.0,
-  "source": "golf/validate.py sim sweep (walk-forward, 78 events since 2024-09-01)",
+  "tail_df": null,
+  "blowup_mix": 0.2,
+  "source": "golf.validate walk-forward, 2024-06-01 through 2026-07-16",
   "metrics": {
-    "headline_brier_legacy": 0.14974,
-    "headline_brier_champion": 0.14787,
-    "win_logloss_legacy": 0.05149,
-    "win_logloss_champion": 0.04705,
-    "win_surprise_legacy": 4.8099,
-    "win_surprise_champion": 4.5748,
-    "note": "Per-player round correlation (hot/cold week) + Student-t(6) round tails. Improves every place market and winner calibration; legacy independent-Normal rounds = round_corr 0.0, tail_df null.",
-    "win_corr_sweep": {
-      "candidates": [
-        0.0,
-        0.05,
-        0.1,
-        0.15,
-        0.2,
-        0.3
-      ],
-      "chosen": 0.0,
-      "since": "2024-01-01",
-      "split": "2025-01-01",
-      "sims": 20000,
-      "win_logloss_place_regime": 0.04525,
-      "win_logloss_chosen": 0.045,
-      "note": "Separate, lower round_corr for the win market. Place/cut markets keep round_corr and are unaffected."
-    }
-  },
-  "win_round_corr": 0.0,
-  "win_tail_df": 6.0
+    "headline_brier": 0.12551,
+    "cut_brier": 0.20182,
+    "win_logloss": 0.0425,
+    "win_surprise": 4.404,
+    "events_with_winner": 135,
+    "player_events": 22048,
+    "note": "One coherent joint draw for win, place and cut markets. Right-tail variance comes from each player's EB-shrunk double-bogey rate; blowup_mix is the transient variance share assigned to that measured skew."
+  }
 }

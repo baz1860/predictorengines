@@ -15,16 +15,31 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 from .. import provider_qa as qa
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 CACHE_DIR = DATA_DIR / "api_cache" / "espn"
-ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
-# ESPN's older /leaderboard endpoint has returned 404 in current checks. The
-# site scoreboard endpoint carries the same event/competitor/linescore payload.
-ESPN_LEADERBOARD = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard"
+HISTORY_CACHE_DIR = DATA_DIR / "api_cache"
+ESPN_SCOREBOARD_TMPL = "https://site.api.espn.com/apis/site/v2/sports/golf/{tour}/scoreboard"
+ESPN_LEADERBOARD = "https://site.web.api.espn.com/apis/site/v2/sports/golf/leaderboard"
+TOUR_SLUGS = {
+    "pga": "pga",
+    "liv": "liv",
+    "eur": "eur",
+    "dpwt": "eur",
+    "euro": "eur",
+    "european": "eur",
+}
+_MAJOR_NAMES = {
+    "masters tournament",
+    "pga championship",
+    "u.s. open",
+    "us open",
+    "the open championship",
+    "the open",
+}
 
 
 @dataclass(frozen=True)
@@ -41,6 +56,11 @@ class EspnEvent:
     cut_rule: int = 65
     no_cut: bool = False
     total_rounds: int = 4
+    course_id: str = ""
+    course_par: int = 0
+    course_yards: int = 0
+    cut_round: int = 2
+    cut_score: float | None = None
 
     def as_store_row(self) -> dict:
         row = asdict(self)
@@ -79,32 +99,54 @@ class HoleScore:
 
 
 class EspnGolfProvider:
-    name = "espn"
+    """The single ESPN implementation for live data and historical rounds.
 
-    def __init__(self, cache_dir: Path | None = None, ttl_seconds: int = 900):
+    Season scoreboards discover event ids only. Every field, leaderboard, and
+    historical result is parsed from the event-specific leaderboard payload.
+    """
+
+    name = "espn"
+    supports_history = True
+
+    def __init__(
+        self,
+        cache_dir: Path | None = None,
+        ttl_seconds: int = 900,
+        seasons: Optional[Iterable[int]] = None,
+        tour: str = "pga",
+        history_cache_dir: Path | None = None,
+    ):
         self.cache_dir = cache_dir or CACHE_DIR
+        self.history_cache_dir = history_cache_dir or HISTORY_CACHE_DIR
         self.ttl_seconds = ttl_seconds
+        if seasons is None:
+            year = dt.date.today().year
+            seasons = [year - 1, year]
+        self.seasons = sorted(set(int(season) for season in seasons))
+        self.tour_slug = TOUR_SLUGS.get(str(tour).lower(), str(tour).lower())
+        self.name = f"espn-{self.tour_slug}"
+        self._events: dict[str, dict] = {}
+        self._meta: dict[str, object] = {}
 
     def schedule(self, season: int | None = None, use_cache: bool = True) -> list[EspnEvent]:
         season = season or dt.date.today().year
-        payload = self._json("scoreboard", ESPN_SCOREBOARD, {"dates": str(season)}, use_cache)
+        scoreboard = ESPN_SCOREBOARD_TMPL.format(tour=self.tour_slug)
+        payload = self._json(
+            f"scoreboard_{self.tour_slug}",
+            scoreboard,
+            {"dates": str(season)},
+            use_cache,
+        )
         events = []
         for ev in payload.get("events", []) or []:
-            events.append(_event_from_payload(ev))
+            events.append(_event_from_payload(ev, tour=self.tour_slug))
         return sorted(events, key=lambda e: e.start_date)
 
     def current_event_payload(self, event_id: str | None = None,
                               use_cache: bool = False) -> dict:
-        # ESPN's scoreboard ignores the `event` query param — it always returns
-        # the current week. To pin a specific event (by id or name, including a
-        # finished past event) resolve it to its date and fetch the dated board.
-        if event_id:
-            dates, label = self._resolve_event_dates(str(event_id))
-            if dates:
-                return self._json(label, ESPN_SCOREBOARD, {"dates": dates}, use_cache)
-        params = {"event": event_id} if event_id else {}
-        label = "scoreboard_current" if not event_id else "scoreboard_event"
-        return self._json(label, ESPN_SCOREBOARD, params, use_cache)
+        params = {"league": self.tour_slug, "event": event_id}
+        label = "leaderboard_current" if not event_id else f"leaderboard_{event_id}"
+        return self._json(label, ESPN_LEADERBOARD, params, use_cache)
 
     def _resolve_event_dates(self, query: str) -> tuple[str, str]:
         """Map an event id or name to (YYYYMMDD, cache_label) via the season
@@ -126,7 +168,259 @@ class EspnGolfProvider:
                       use_cache: bool = False) -> EspnEvent | None:
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         events = self._events_for(payload, event_id)
-        return _event_from_payload(events[0]) if events else None
+        return _event_from_payload(events[0], tour=self.tour_slug) if events else None
+
+    # Historical provider protocol -------------------------------------------------
+
+    def _season_payload(self, year: int) -> dict | None:
+        """Cached season schedule used strictly for event-id discovery."""
+        self.history_cache_dir.mkdir(parents=True, exist_ok=True)
+        cache = self.history_cache_dir / f"espn_{self.tour_slug}_{year}.json"
+        if cache.exists() and year < dt.date.today().year:
+            try:
+                return json.loads(cache.read_text())
+            except (ValueError, OSError):
+                pass
+        url = ESPN_SCOREBOARD_TMPL.format(tour=self.tour_slug)
+        data = _http_json(url, {"dates": year})
+        if data is not None and data.get("events"):
+            try:
+                cache.write_text(json.dumps(data))
+            except OSError:
+                pass
+            return data
+        if cache.exists():
+            try:
+                return json.loads(cache.read_text())
+            except (ValueError, OSError):
+                pass
+        return None
+
+    def _load_all(self) -> None:
+        if self._meta:
+            return
+        from .legacy import TournamentMeta
+
+        for year in self.seasons:
+            payload = self._season_payload(year)
+            if not payload:
+                continue
+            for event in payload.get("events", []) or []:
+                event_id = str(event.get("id") or "")
+                if not event_id:
+                    continue
+                name = str(event.get("name") or "")
+                if self.tour_slug != "pga" and _is_major(name):
+                    continue
+                date = str(event.get("date") or "")[:10]
+                self._events[event_id] = event
+                self._meta[event_id] = TournamentMeta(
+                    tournament_id=event_id,
+                    name=name,
+                    date=date,
+                    tour=self.tour_slug,
+                    is_major=_is_major(name),
+                )
+
+    def _event_payload(self, tournament_id: str) -> dict | None:
+        """Authoritative event payload, cached permanently once final."""
+        self.history_cache_dir.mkdir(parents=True, exist_ok=True)
+        event_id = str(tournament_id)
+        cache = self.history_cache_dir / (
+            f"espn_event_{self.tour_slug}_{event_id}.json"
+        )
+        cached = None
+        if cache.exists():
+            try:
+                cached = json.loads(cache.read_text())
+            except (ValueError, OSError):
+                pass
+        cached_events = (cached or {}).get("events") or []
+        cached_final = bool(
+            cached_events
+            and (
+                ((cached_events[0].get("status") or {}).get("type") or {}).get(
+                    "completed"
+                )
+            )
+        )
+        if cached_final:
+            return cached
+        data = _http_json(
+            ESPN_LEADERBOARD,
+            {"league": self.tour_slug, "event": event_id},
+        )
+        if data is not None and data.get("events"):
+            try:
+                cache.write_text(json.dumps(data))
+            except OSError:
+                pass
+            return data
+        return cached
+
+    def recent_tournaments(self, since: Optional[str] = None) -> list:
+        self._load_all()
+        tournaments = [
+            meta
+            for meta in self._meta.values()
+            if since is None or meta.date >= since
+        ]
+        return sorted(tournaments, key=lambda meta: meta.date)
+
+    def rounds_for(self, tournament_id: str) -> list:
+        from .legacy import RoundRecord, TournamentMeta
+
+        self._load_all()
+        schedule_meta = self._meta.get(str(tournament_id))
+        payload = self._event_payload(str(tournament_id))
+        events = (payload or {}).get("events") or []
+        if not events or not schedule_meta:
+            return []
+        event = next(
+            (
+                row
+                for row in events
+                if str(row.get("id") or "") == str(tournament_id)
+            ),
+            events[0],
+        )
+        tournament = event.get("tournament") or {}
+        scoring = str((tournament.get("scoringSystem") or {}).get("name") or "")
+        if scoring and scoring.lower() != "medal":
+            return []
+        competition = _first_competition(event)
+        status = str(
+            ((event.get("status") or {}).get("type") or {}).get("name")
+            or ((competition.get("status") or {}).get("type") or {}).get("name")
+            or ""
+        ).upper()
+        if not any(token in status for token in ("FINAL", "COMPLETE", "POST")):
+            return []
+        course = _course(event, competition)
+        course_name = str(course.get("name") or schedule_meta.name)
+        total_rounds = _int(tournament.get("numberOfRounds"), 4)
+        cut_round = _int(tournament.get("cutRound"), 0)
+        cut_count = _int(tournament.get("cutCount"), 0)
+        no_cut = cut_round <= 0 or cut_count <= 0
+        meta = TournamentMeta(
+            tournament_id=schedule_meta.tournament_id,
+            name=str(
+                tournament.get("displayName")
+                or event.get("name")
+                or schedule_meta.name
+            ),
+            date=str(event.get("date") or schedule_meta.date)[:10],
+            tour=schedule_meta.tour,
+            is_major=bool(tournament.get("major", schedule_meta.is_major)),
+            course=course_name,
+            course_id=str(course.get("id") or ""),
+            course_par=_int(course.get("shotsToPar"), 0),
+            course_yards=_int(course.get("totalYards"), 0),
+            cut_round=cut_round,
+            cut_score=_safe_float(tournament.get("cutScore")),
+            cut_count=cut_count,
+            total_rounds=total_rounds,
+            no_cut=no_cut,
+        )
+        competitors = competition.get("competitors", []) or []
+        field_size = len(competitors)
+        hole_features = _hole_features(
+            self._events.get(str(tournament_id)) or {}
+        )
+        rows = []
+        for competitor in competitors:
+            athlete = competitor.get("athlete") or {}
+            name = str(athlete.get("displayName") or "").strip()
+            if not name:
+                continue
+            finish = _int(
+                competitor.get("order")
+                or (
+                    ((competitor.get("status") or {}).get("position") or {}).get(
+                        "id"
+                    )
+                ),
+                999,
+            )
+            rounds = []
+            for line in competitor.get("linescores") or []:
+                round_no = _int(line.get("period"), 0)
+                score_to_par = _to_par(line.get("displayValue"))
+                tee_time = str(line.get("teeTime") or "")
+                if (
+                    round_no
+                    and round_no <= total_rounds
+                    and score_to_par is not None
+                ):
+                    rounds.append((round_no, score_to_par, tee_time))
+            player_status = _status_name(competitor).upper()
+            if no_cut:
+                made_cut = 1
+            elif "CUT" in player_status:
+                made_cut = 0
+            elif any(
+                token in player_status
+                for token in ("WD", "WITHDR", "DQ", "DISQUAL")
+            ):
+                made_cut = int(len(rounds) > cut_round)
+            else:
+                made_cut = 1
+            for round_no, score_to_par, tee_time in rounds:
+                rows.append(
+                    RoundRecord(
+                        tournament_id=meta.tournament_id,
+                        event_name=meta.name,
+                        date=(
+                            tee_time[:10]
+                            if tee_time
+                            else _add_days(meta.date, round_no - 1)
+                        ),
+                        tour=meta.tour,
+                        is_major=int(meta.is_major),
+                        course=meta.course,
+                        course_id=meta.course_id,
+                        course_name=meta.course,
+                        course_par=meta.course_par,
+                        course_yards=meta.course_yards,
+                        round=round_no,
+                        tee_time=tee_time,
+                        player=name,
+                        dg_id=str(athlete.get("id") or ""),
+                        score_to_par=float(score_to_par),
+                        field_size=field_size,
+                        made_cut=made_cut,
+                        finish=finish,
+                        cut_round=meta.cut_round,
+                        cut_score=meta.cut_score,
+                        cut_count=meta.cut_count,
+                        total_rounds=meta.total_rounds,
+                        no_cut=int(meta.no_cut),
+                        **hole_features.get((name, round_no), {}),
+                    )
+                )
+        return rows
+
+    def field_for(self, event: Optional[str] = None) -> list:
+        """Compatibility view of :meth:`field` for the history protocol."""
+        from .legacy import FieldEntry
+
+        return [
+            FieldEntry(
+                name=row.name,
+                dg_id=row.source_player_id,
+                world_rank=row.world_rank or 0,
+                status=row.status,
+            )
+            for row in self.field(event_id=event, use_cache=False)
+        ]
+
+    def pretournament_preds(self, event: Optional[str] = None) -> None:
+        return None
+
+    def sg_categories(
+        self, player: str, asof: Optional[str] = None
+    ) -> None:
+        return None
 
     @staticmethod
     def _events_for(payload: dict, event_id: str | None) -> list[dict]:
@@ -149,7 +443,7 @@ class EspnGolfProvider:
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         out = []
         for ev in self._events_for(payload, event_id):
-            for comp in ev.get("competitions", []) or []:
+            for comp in _competitions(ev):
                 for c in comp.get("competitors", []) or []:
                     athlete = c.get("athlete") or {}
                     name = (athlete.get("displayName") or athlete.get("fullName") or "").strip()
@@ -177,7 +471,7 @@ class EspnGolfProvider:
         rows = []
         for ev in self._events_for(payload, event_id):
             eid = str(ev.get("id") or event_id or "")
-            for comp in ev.get("competitions", []) or []:
+            for comp in _competitions(ev):
                 for c in comp.get("competitors", []) or []:
                     athlete = c.get("athlete") or {}
                     lines = c.get("linescores") or []
@@ -198,7 +492,7 @@ class EspnGolfProvider:
         out = []
         for ev in self._events_for(payload, event_id):
             eid = str(ev.get("id") or event_id or "")
-            for comp in ev.get("competitions", []) or []:
+            for comp in _competitions(ev):
                 for c in comp.get("competitors", []) or []:
                     athlete = c.get("athlete") or {}
                     name = (athlete.get("displayName") or "").strip()
@@ -258,7 +552,7 @@ class EspnGolfProvider:
         payload = self.current_event_payload(event_id, use_cache=use_cache)
         players: list[dict] = []
         for ev in self._events_for(payload, event_id):
-            for comp in ev.get("competitions", []) or []:
+            for comp in _competitions(ev):
                 for c in comp.get("competitors", []) or []:
                     athlete = c.get("athlete") or {}
                     name = (athlete.get("displayName") or athlete.get("fullName") or "").strip()
@@ -267,8 +561,7 @@ class EspnGolfProvider:
                     cum = 0.0
                     completed = 0
                     for rline in c.get("linescores") or []:
-                        holes = rline.get("linescores") or []
-                        if len(holes) < 18:
+                        if not _round_complete(c, rline):
                             continue  # round in progress — don't count it
                         score = _to_par(rline.get("displayValue"))
                         if score is None:
@@ -280,12 +573,16 @@ class EspnGolfProvider:
                         "score": cum,
                         "completed": completed,
                         "_cut_flag": _is_out(c),
+                        "_status": _status_name(c).upper(),
                     })
 
-        started = [p for p in players if p["completed"] > 0]
+        active_started = [
+            p for p in players if p["completed"] > 0 and not p["_cut_flag"]
+        ]
+        started = active_started or [p for p in players if p["completed"] > 0]
         rounds_done = 0
         if started:
-            for r in (3, 2, 1):
+            for r in (4, 3, 2, 1):
                 if sum(1 for p in started if p["completed"] >= r) >= 0.5 * len(started):
                     rounds_done = r
                     break
@@ -293,7 +590,8 @@ class EspnGolfProvider:
         # After the cut round (R2), derive the cut line from the 36-hole scores,
         # since the feed won't tell us. Top `cut_size` and ties survive.
         cut_line = None
-        if rounds_done == 2 and not no_cut:
+        explicit_cut = any("CUT" in p["_status"] for p in players)
+        if rounds_done == 2 and not no_cut and not explicit_cut:
             r36 = sorted(p["score"] for p in players
                          if p["completed"] >= 2 and not p["_cut_flag"])
             if len(r36) > cut_size:
@@ -347,46 +645,81 @@ class EspnGolfProvider:
         return payload
 
 
-def _event_from_payload(ev: dict) -> EspnEvent:
-    comp = (ev.get("competitions") or [{}])[0]
+def _event_from_payload(ev: dict, tour: str = "pga") -> EspnEvent:
+    comp = _first_competition(ev)
     status = ((ev.get("status") or {}).get("type") or {}).get("name") or \
         ((comp.get("status") or {}).get("type") or {}).get("name") or ""
+    tournament = ev.get("tournament") or {}
     fmt = comp.get("format") or ev.get("format") or {}
-    no_cut = bool(
-        comp.get("noCut", ev.get("noCut", False))
-        or fmt.get("noCut", False)
-        or str(fmt.get("name") or fmt.get("description") or "").strip().lower() == "no cut"
-    )
-    try:
-        cut_rule = int(comp.get("cutRule", ev.get("cutRule", fmt.get("cutRule", 65))) or 65)
-    except (TypeError, ValueError):
-        cut_rule = 65
-    try:
-        total_rounds = int(comp.get(
-            "numberOfRounds", ev.get("numberOfRounds", fmt.get("rounds", 4))) or 4)
-    except (TypeError, ValueError):
-        total_rounds = 4
+    cut_round = _safe_int(tournament.get("cutRound"))
+    cut_count = _safe_int(tournament.get("cutCount"))
+    if tournament:
+        no_cut = cut_round == 0 or cut_count == 0
+        cut_rule = cut_count or 65
+        total_rounds = _safe_int(tournament.get("numberOfRounds")) or 4
+    else:
+        no_cut = bool(
+            comp.get("noCut", ev.get("noCut", False))
+            or fmt.get("noCut", False)
+            or str(fmt.get("name") or fmt.get("description") or "").strip().lower()
+            == "no cut"
+        )
+        cut_rule = (
+            _safe_int(comp.get("cutRule", ev.get("cutRule", fmt.get("cutRule"))))
+            or 65
+        )
+        total_rounds = (
+            _safe_int(comp.get(
+                "numberOfRounds", ev.get("numberOfRounds", fmt.get("rounds"))
+            ))
+            or 4
+        )
+        cut_round = 0 if no_cut else 2
+    course = _course(ev, comp)
     return EspnEvent(
         event_id=str(ev.get("id") or ""),
         source_event_id=str(ev.get("id") or ""),
         name=str(ev.get("name") or ev.get("shortName") or ""),
         start_date=str(ev.get("date") or comp.get("date") or "")[:10],
         end_date=str(ev.get("endDate") or "")[:10],
-        course_name=_course_name(ev, comp),
+        course_name=str(course.get("name") or ev.get("name") or ""),
         status=status,
         cut_rule=cut_rule,
         no_cut=no_cut,
         total_rounds=total_rounds,
+        course_id=str(course.get("id") or ""),
+        course_par=_safe_int(course.get("shotsToPar")) or 0,
+        course_yards=_safe_int(course.get("totalYards")) or 0,
+        cut_round=cut_round or 0,
+        cut_score=_safe_float(tournament.get("cutScore")),
+        tour=tour,
     )
 
 
 def _course_name(ev: dict, comp: dict) -> str:
-    for src in (comp.get("course"), ev.get("courses"), comp.get("venue")):
-        if isinstance(src, dict) and src.get("name"):
-            return str(src["name"])
-        if isinstance(src, list) and src and isinstance(src[0], dict) and src[0].get("name"):
-            return str(src[0]["name"])
-    return str(ev.get("name") or "")
+    return str(_course(ev, comp).get("name") or ev.get("name") or "")
+
+
+def _first_competition(ev: dict) -> dict:
+    return next(iter(_competitions(ev)), {})
+
+
+def _competitions(ev: dict):
+    for item in ev.get("competitions") or []:
+        if isinstance(item, dict):
+            yield item
+        elif isinstance(item, list):
+            yield from (row for row in item if isinstance(row, dict))
+
+
+def _course(ev: dict, comp: dict) -> dict:
+    courses = [c for c in (ev.get("courses") or []) if isinstance(c, dict)]
+    if courses:
+        return next((c for c in courses if c.get("host")), courses[0])
+    for src in (comp.get("course"), comp.get("venue")):
+        if isinstance(src, dict):
+            return src
+    return {}
 
 
 def _status_name(comp: dict) -> str:
@@ -412,6 +745,27 @@ def _is_out(competitor: dict) -> bool:
     return any(k in status for k in ("CUT", "WD", "WITHDR", "DQ", "DISQUAL"))
 
 
+def _round_complete(competitor: dict, round_line: dict) -> bool:
+    """Recognise complete rounds in both old and per-event payload shapes."""
+    holes = round_line.get("linescores") or []
+    if holes:
+        return len(holes) >= 18
+    if round_line.get("value") in ("", None):
+        return False
+    rnd = _safe_int(round_line.get("period")) or 0
+    status = competitor.get("status") or {}
+    current = _safe_int(status.get("period")) or 0
+    name = _status_name(competitor).upper()
+    display = str(status.get("displayValue") or "").upper()
+    detail = str(status.get("detail") or "").upper()
+    return (
+        rnd < current
+        or any(k in name for k in ("FINISH", "CUT"))
+        or display in {"F", "CUT"}
+        or detail.endswith("(F)")
+    )
+
+
 def _field_round_meta(comp: dict) -> dict[str, str]:
     """Best-effort tee metadata from ESPN linescore statistics.
 
@@ -424,6 +778,9 @@ def _field_round_meta(comp: dict) -> dict[str, str]:
         rnd = _safe_int(round_line.get("period"))
         if rnd not in (1, 2):
             continue
+        tee_time = str(round_line.get("teeTime") or "").strip()
+        if tee_time:
+            out[f"tee_time_r{rnd}"] = tee_time
         vals: list[str] = []
         for cat in (round_line.get("statistics") or {}).get("categories", []) or []:
             for stat in cat.get("stats", []) or []:
@@ -434,7 +791,7 @@ def _field_round_meta(comp: dict) -> dict[str, str]:
             low = val.lower()
             if ("am" in low or "pm" in low or "gmt" in low or "utc" in low
                     or _looks_like_iso_time(val)):
-                out[f"tee_time_r{rnd}"] = val
+                out.setdefault(f"tee_time_r{rnd}", val)
                 break
         for val in vals:
             if val in {"1", "10"}:
@@ -454,3 +811,96 @@ def _safe_int(value) -> int | None:
         return int(float(value))
     except (TypeError, ValueError):
         return None
+
+
+def _safe_float(value) -> float | None:
+    try:
+        if value in ("", None):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _http_json(url: str, params: dict | None = None, retries: int = 3) -> dict | None:
+    """GET JSON with retry, returning ``None`` on persistent failure."""
+    query = urllib.parse.urlencode(
+        {key: value for key, value in (params or {}).items() if value is not None}
+    )
+    full_url = f"{url}?{query}" if query else url
+    for attempt in range(retries):
+        try:
+            request = urllib.request.Request(
+                full_url, headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(request, timeout=25) as response:
+                return json.load(response)
+        except Exception:  # noqa: BLE001 - offline-safe provider boundary
+            if attempt + 1 < retries:
+                time.sleep(1.5)
+    return None
+
+
+def _is_major(name: str) -> bool:
+    return " ".join(str(name).lower().split()) in _MAJOR_NAMES
+
+
+def _add_days(iso_date: str, days: int) -> str:
+    try:
+        date = dt.date.fromisoformat(iso_date[:10])
+        return (date + dt.timedelta(days=days)).isoformat()
+    except ValueError:
+        return iso_date[:10]
+
+
+def _int(value, default: int = 0) -> int:
+    parsed = _safe_int(value)
+    return default if parsed is None else parsed
+
+
+def _hole_features(event: dict) -> dict[tuple[str, int], dict]:
+    """Round-level score-shape features from season payload scorecards."""
+    out: dict[tuple[str, int], dict] = {}
+    competition = _first_competition(event)
+    for competitor in competition.get("competitors") or []:
+        athlete = competitor.get("athlete") or {}
+        name = str(athlete.get("displayName") or "").strip()
+        for round_line in competitor.get("linescores") or []:
+            round_no = _int(round_line.get("period"), 0)
+            holes = round_line.get("linescores") or []
+            if not round_no or len(holes) < 18:
+                continue
+            features = {
+                "holes_scored": 0,
+                "birdies_or_better": 0,
+                "bogeys": 0,
+                "double_bogeys_or_worse": 0,
+                "par3_to_par": 0.0,
+                "par3_holes": 0,
+                "par4_to_par": 0.0,
+                "par4_holes": 0,
+                "par5_to_par": 0.0,
+                "par5_holes": 0,
+            }
+            for hole in holes:
+                gross = _safe_float(hole.get("value"))
+                relative = _to_par(
+                    (hole.get("scoreType") or {}).get("displayValue")
+                )
+                if gross is None or relative is None:
+                    continue
+                par = int(round(gross - relative))
+                features["holes_scored"] += 1
+                features["birdies_or_better"] += int(relative <= -1)
+                features["bogeys"] += int(relative == 1)
+                features["double_bogeys_or_worse"] += int(relative >= 2)
+                if par in (3, 4, 5):
+                    features[f"par{par}_to_par"] += float(relative)
+                    features[f"par{par}_holes"] += 1
+            if features["holes_scored"] >= 18:
+                out[(name, round_no)] = features
+    return out
+
+
+# Short compatibility name. Both names resolve to the same class object.
+EspnProvider = EspnGolfProvider

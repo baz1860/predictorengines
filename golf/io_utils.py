@@ -25,14 +25,20 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 
 def atomic_write_csv(path: Path, fieldnames: list[str], rows: Iterable[Mapping],
-                     *, extrasaction: str = "raise") -> None:
+                     *, extrasaction: str = "raise",
+                     lineterminator: str = "\n") -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, raw = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     tmp = Path(raw)
     try:
         with os.fdopen(fd, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction=extrasaction)
+            writer = csv.DictWriter(
+                f,
+                fieldnames=fieldnames,
+                extrasaction=extrasaction,
+                lineterminator=lineterminator,
+            )
             writer.writeheader()
             writer.writerows(rows)
             f.flush()

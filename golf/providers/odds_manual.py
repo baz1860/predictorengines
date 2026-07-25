@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import csv
 import re
-import time
 import datetime as dt
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -75,12 +74,14 @@ def _parse_odds(token: str) -> float | None:
     if t.lower() in {"evens", "evs", "even"}:
         return 2.0
     if NUM_RE.match(t):
-        return float(t)
+        value = float(t)
+        return value if value > 1.0 else None
     m = FRAC_RE.match(t)
     if m:
         num, den = float(m.group(1)), float(m.group(2))
         if den > 0:
-            return 1.0 + num / den
+            value = 1.0 + num / den
+            return value if value > 1.0 else None
     return None
 
 
@@ -190,20 +191,29 @@ class ManualOddsProvider:
         out = []
         with path.open() as f:
             for i, row in enumerate(csv.DictReader(f), 1):
-                # Keep only filled, validly-priced slots so a twosome (empty
-                # player_c/odds_c) loads as a 2-ball rather than being dropped.
-                pairs = [
-                    (nm, od)
-                    for x in "abc"
-                    for nm in [(row.get(f"player_{x}") or "").strip()]
-                    for od in [_safe_float(row.get(f"odds_{x}"))]
-                    if nm and od and od > 1
-                ]
+                populated = []
+                malformed = False
+                for slot in "abc":
+                    name = (row.get(f"player_{slot}") or "").strip()
+                    raw_odds = (row.get(f"odds_{slot}") or "").strip()
+                    if not name and not raw_odds:
+                        continue
+                    odds = _safe_float(raw_odds)
+                    if not name or odds is None or odds <= 1.0:
+                        malformed = True
+                        break
+                    populated.append((name, odds))
+                if malformed:
+                    continue
+                pairs = populated
                 if len(pairs) not in (2, 3):
                     continue
                 names = [nm for nm, _ in pairs]
                 odds = [od for _, od in pairs]
                 gid = row.get("group_id") or f"{_group_market(len(names))}-r{round_no}-{i}:" + "|".join(names)
+                tagged = re.search(r"(?<!\d)([23])\s*ball", gid, re.I)
+                if tagged and int(tagged.group(1)) != len(pairs):
+                    continue
                 for name, price in zip(names, odds):
                     out.append(OddsQuote(
                         event_id=event_id,
@@ -397,4 +407,4 @@ def _safe_float(value) -> float | None:
 
 
 def _ts() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%S")
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")

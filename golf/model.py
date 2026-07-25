@@ -18,6 +18,7 @@ player loses to a 150th-ranked player in a given week ~28% of the time.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import json
 import math
 import unicodedata
@@ -30,7 +31,7 @@ ROUNDS_CSV = DATA_DIR / "rounds.csv"
 PARAMS_JSON = DATA_DIR / "model_params.json"
 MODEL_CONFIG_JSON = DATA_DIR / "model_config.json"
 PUBLIC_STATS_CSV = DATA_DIR / "pgatour_stats.csv"
-COURSE_FEATURES_CSV = DATA_DIR / "course_features.csv"
+DATA_MANIFEST_JSON = DATA_DIR / "data_manifest.json"
 WEATHER_FEATURES_JSON = DATA_DIR / "weather_features.json"
 GLOBAL_PRIORS_CSV = DATA_DIR / "global_player_priors.csv"
 
@@ -70,7 +71,6 @@ class Player:
     start_hole_r2: str = ""
     weather_wave_adj: float = 0.0
     weather_round_adj: dict = field(default_factory=dict)
-    course_arch_adj: float = 0.0
     global_prior_adj: float = 0.0
     course_fit: float = 0.0     # SG at this specific course (filled by load_course_fit)
     course_rounds: int = 0      # How many rounds at this course
@@ -78,6 +78,7 @@ class Player:
     # Computed composite
     rating: float = 0.0
     sigma: float = DEFAULT_SIGMA
+    blowup_rate: float = 0.02  # double-bogey-or-worse holes / holes played
 
 
 def _safe_float(val, default: float = 0.0) -> float:
@@ -364,7 +365,6 @@ DEFAULT_MODEL_CONFIG = {
 
 PUBLIC_STAT_BLEND = 0.15
 GLOBAL_PRIOR_MAX_BLEND = 0.25
-COURSE_ARCH_MAX_ABS = 0.45
 WEATHER_WAVE_MAX_ABS = 0.35
 
 
@@ -417,6 +417,27 @@ def _looks_like_scoreboard(raw_json: str | None) -> bool:
     return any(str(k).lower() in _SCOREBOARD_KEYS for k in blob)
 
 
+def _public_stats_capture_date(path: Path) -> dt.date | None:
+    """Point-in-time date for the current public-stat snapshot."""
+    if path == PUBLIC_STATS_CSV and DATA_MANIFEST_JSON.exists():
+        try:
+            manifest = json.loads(DATA_MANIFEST_JSON.read_text())
+            raw = (((manifest.get("inputs") or {}).get("pga_stats") or {})
+                   .get("fetched_at"))
+            if raw:
+                return dt.datetime.fromisoformat(
+                    str(raw).replace("Z", "+00:00")
+                ).date()
+        except (OSError, ValueError, TypeError):
+            pass
+    try:
+        return dt.datetime.fromtimestamp(
+            path.stat().st_mtime, tz=dt.timezone.utc
+        ).date()
+    except OSError:
+        return None
+
+
 def load_public_stat_priors(path: Path | None = None, *, asof=None) -> dict[str, dict]:
     """Load current public PGA Tour stat snapshots into player rating priors.
 
@@ -427,11 +448,14 @@ def load_public_stat_priors(path: Path | None = None, *, asof=None) -> dict[str,
     path = path or PUBLIC_STATS_CSV
     if not path.exists():
         return {}
-    # This file is a current snapshot, not a point-in-time history. It is safe
-    # for a live fit only; historical fits must not see future season totals.
+    # This file is a current snapshot, not a point-in-time history. Compare the
+    # snapshot's own capture date to the fit cutoff: historical fits before the
+    # capture stay clean, while a weekday refit after the last played round does
+    # not silently discard a valid older snapshot.
     if asof is not None:
         import pandas as pd
-        if pd.Timestamp(asof).date() < pd.Timestamp.today().date():
+        captured = _public_stats_capture_date(path)
+        if captured is not None and pd.Timestamp(asof).date() < captured:
             return {}
     rows: dict[str, dict] = {}
     with open(path) as f:
@@ -482,6 +506,10 @@ def load_rounds_df(path: Path | None = None):
         raise FileNotFoundError(
             f"No {path}. Seed it first: python -m golf.fetch --seed 2022 2023 2024 2025")
     df = pd.read_csv(path)
+    if "course_name" in df:
+        # New histories carry the real venue. Keep the legacy `course` alias for
+        # downstream callers while ensuring event names can no longer win.
+        df["course"] = df["course_name"].fillna(df.get("course", "")).astype(str)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date", "player", "score_to_par"])
     df["score_to_par"] = df["score_to_par"].astype(float)
@@ -567,6 +595,30 @@ def fit(rounds_df, asof=None, config: dict | None = None,
                  (counts + sigma_shrink)
     sigma_p = np.sqrt(var_shrunk)
 
+    # ── per-player right-tail proxy from double-bogey-or-worse holes ──
+    hole_mask = (
+        df.get("holes_scored", pd.Series(0, index=df.index)).fillna(0).values > 0
+    )
+    holes = df.get(
+        "holes_scored", pd.Series(0, index=df.index)
+    ).fillna(0).values.astype(float)
+    doubles = df.get(
+        "double_bogeys_or_worse", pd.Series(0, index=df.index)
+    ).fillna(0).values.astype(float)
+    total_holes = float(holes[hole_mask].sum())
+    double_bogey_rate_field = (
+        float(doubles[hole_mask].sum() / total_holes)
+        if total_holes > 0 else 0.02
+    )
+    holes_p = np.bincount(pidx, weights=holes, minlength=np_)
+    doubles_p = np.bincount(pidx, weights=doubles, minlength=np_)
+    # Twenty rounds of field-rate pseudo-observations prevent tiny scorecards
+    # from creating extreme simulated tails.
+    blowup_prior_holes = 360.0
+    blowup_rate_p = (
+        doubles_p + blowup_prior_holes * double_bogey_rate_field
+    ) / (holes_p + blowup_prior_holes)
+
     # ── major σ multiplier ──
     is_major = df["is_major"].astype(int).values == 1
     if is_major.sum() > 200:
@@ -575,18 +627,9 @@ def fit(rounds_df, asof=None, config: dict | None = None,
     else:
         major_sigma_mult = 1.05
 
-    # ── recent form: −EB-shrunk weighted-mean recent residual (positive = hot) ──
-    recent_cut = asof - pd.Timedelta(days=FORM_WINDOW_DAYS)
-    rmask = df["date"].values >= np.datetime64(recent_cut)
-    fw = np.sqrt(0.5 ** (age / form_halflife)) * rmask
-    fsum = np.bincount(pidx, weights=-resid * fw, minlength=np_)
-    fwsum = np.bincount(pidx, weights=fw, minlength=np_)
-    fcnt = np.bincount(pidx, weights=rmask.astype(float), minlength=np_)
-    form_raw = np.divide(fsum, fwsum, out=np.zeros(np_), where=fwsum > 0)
-    form = form_raw * (fcnt / (fcnt + FORM_K))
-
     # ── course fit: −EB-shrunk mean residual per (player, course) ──
     courses: dict[str, dict[str, float]] = {}
+    course_fit_lookup: dict[tuple[str, str], float] = {}
     cdiff = df.assign(resid=resid)
     for course, grp in cdiff.groupby("course"):
         cp = grp.groupby("player")["resid"].agg(["mean", "count"])
@@ -594,12 +637,31 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         if cp.empty:
             continue
         fit_vals = (-cp["mean"]) * (cp["count"] / (cp["count"] + course_k))
+        course_fit_lookup.update(
+            {(str(course), str(player)): float(value)
+             for player, value in fit_vals.items()}
+        )
         courses[str(course)] = {p: round(float(v), 3)
                                 for p, v in fit_vals.items() if abs(v) > 0.05}
 
+    # ── recent form, after removing the fitted course term ──
+    # A course specialist's predictable venue residual is not current form.
+    course_net_resid = resid + np.array([
+        course_fit_lookup.get((str(course), str(player)), 0.0)
+        for course, player in zip(df["course"].values, df["player"].values)
+    ])
+    recent_cut = asof - pd.Timedelta(days=FORM_WINDOW_DAYS)
+    rmask = df["date"].values >= np.datetime64(recent_cut)
+    fw = np.sqrt(0.5 ** (age / form_halflife)) * rmask
+    fsum = np.bincount(pidx, weights=-course_net_resid * fw, minlength=np_)
+    fwsum = np.bincount(pidx, weights=fw, minlength=np_)
+    fcnt = np.bincount(pidx, weights=rmask.astype(float), minlength=np_)
+    form_raw = np.divide(fsum, fwsum, out=np.zeros(np_), where=fwsum > 0)
+    form = form_raw * (fcnt / (fcnt + FORM_K))
+
     default_skill = float(np.quantile(skill, DEFAULT_SKILL_QUANTILE))
     if include_public_stats is None:
-        include_public_stats = pd.Timestamp(asof).date() >= pd.Timestamp.today().date()
+        include_public_stats = True
     public_priors = load_public_stat_priors(asof=asof) if include_public_stats else {}
 
     return {
@@ -607,6 +669,7 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         "mu": round(mu, 4),
         "sigma_field": round(sigma_field, 4),
         "major_sigma_mult": major_sigma_mult,
+        "double_bogey_rate_field": round(double_bogey_rate_field, 6),
         "skill_halflife_days": skill_halflife,
         "ridge_skill": ridge_skill,
         "sigma_shrink_rounds": sigma_shrink,
@@ -624,6 +687,8 @@ def fit(rounds_df, asof=None, config: dict | None = None,
                 "sigma": round(float(sigma_p[i]), 4),
                 "form": round(float(form[i]), 4),
                 "n_rounds": int(counts[i]),
+                "blowup_rate": round(float(blowup_rate_p[i]), 6),
+                "hole_sample": int(holes_p[i]),
             } for i, p in enumerate(players)
         },
         "courses": courses,
@@ -835,38 +900,6 @@ def _public_stat_components(name: str, params: dict, canon: str | None = None) -
     return {}
 
 
-def load_course_features(path: Path | None = None) -> dict[str, dict[str, float]]:
-    """Optional course-archetype coefficients.
-
-    CSV columns:
-      course, sg_ott, sg_app, sg_arg, sg_putt, distance, accuracy, wind_exposure
-
-    Values are small multipliers, normally in [-1, +1]. `distance` and
-    `accuracy` both use public SG:OTT as the free-source proxy unless richer
-    driving sub-stats are available.
-    """
-    path = path or COURSE_FEATURES_CSV
-    if not path.exists():
-        return {}
-    out: dict[str, dict[str, float]] = {}
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            course = (row.get("course") or row.get("course_name") or "").strip()
-            if not course:
-                continue
-            vals = {}
-            for key in (
-                "sg_ott", "sg_app", "sg_arg", "sg_atg", "sg_putt",
-                "distance", "accuracy", "wind_exposure",
-            ):
-                try:
-                    vals[key] = float(row.get(key) or 0.0)
-                except (TypeError, ValueError):
-                    vals[key] = 0.0
-            out[_fold_name(course)] = vals
-    return out
-
-
 def load_weather_features(path: Path | None = None) -> dict:
     """Load optional tournament/round weather features written by refresh.py."""
     path = path or WEATHER_FEATURES_JSON
@@ -929,33 +962,6 @@ def _global_player_prior(name: str, canon: str | None = None,
     return None
 
 
-def _course_arch_adjustment(name: str, params: dict, course: str,
-                            canon: str | None = None,
-                            course_features: dict | None = None) -> float:
-    if not course:
-        return 0.0
-    features = course_features if course_features is not None else load_course_features()
-    prof = features.get(_fold_name(course), {})
-    if not prof:
-        return 0.0
-    stats = _public_stat_components(name, params, canon)
-    if not stats:
-        return 0.0
-    sg_ott = stats.get("sg_ott", stats.get("sg_t2g", 0.0) * 0.35)
-    parts = {
-        "sg_ott": sg_ott,
-        "distance": sg_ott,
-        "accuracy": sg_ott,
-        "sg_app": stats.get("sg_app", 0.0),
-        "sg_arg": stats.get("sg_arg", stats.get("sg_atg", 0.0)),
-        "sg_atg": stats.get("sg_arg", stats.get("sg_atg", 0.0)),
-        "sg_putt": stats.get("sg_putt", 0.0),
-    }
-    raw = sum(float(prof.get(k, 0.0)) * float(v) for k, v in parts.items())
-    # Course archetype is a nudge on top of durable skill, not a second model.
-    return max(-COURSE_ARCH_MAX_ABS, min(COURSE_ARCH_MAX_ABS, 0.12 * raw))
-
-
 def _tee_hour(value: str) -> float | None:
     import re
 
@@ -1008,14 +1014,13 @@ def _weather_round_adjustments(player: Player, weather_features: dict) -> dict[i
 
 def _rating_for_components(name: str, params: dict, course: str = "",
                            world_rank: int | None = None,
-                           course_features: dict | None = None,
                            global_priors: dict | None = None,
                            feature_flags: dict | None = None) -> tuple[float, float, dict]:
     """(rating, sigma, components) for one player from fitted params."""
     canon = resolve_name(name, params)
     pl = params.get("players", {}).get(canon) if canon else None
     fw = params.get("form_weight", FORM_WEIGHT)
-    flags = {"public_stat": True, "course_arch": True, "global_priors": True,
+    flags = {"public_stat": True, "global_priors": True,
              **(feature_flags or {})}
     stat_prior = _public_stat_prior(name, params, canon) if flags["public_stat"] else None
     manual_global = _global_player_prior(name, canon, global_priors) if flags["global_priors"] else None
@@ -1025,7 +1030,6 @@ def _rating_for_components(name: str, params: dict, course: str = "",
         "form": 0.0,
         "public_stat": 0.0,
         "course_fit": 0.0,
-        "course_arch": 0.0,
         "global_prior": 0.0,
     }
     if pl is None:
@@ -1064,11 +1068,8 @@ def _rating_for_components(name: str, params: dict, course: str = "",
         sigma = pl.get("sigma", params.get("sigma_field", DEFAULT_SIGMA))
     if course:
         cf = params.get("courses", {}).get(course, {}).get(canon, 0.0)
-        arch = _course_arch_adjustment(name, params, course, canon, course_features) \
-            if flags["course_arch"] else 0.0
         components["course_fit"] = cf
-        components["course_arch"] = arch
-        rating += cf + arch
+        rating += cf
     return rating, sigma, components
 
 
@@ -1089,9 +1090,8 @@ def predict_field(field_names, params: dict, course: str = "",
     field mean (= 0) so simulate.py reads them directly; σ keeps absolute scale.
     """
     maj_mult = params.get("major_sigma_mult", 1.0) if is_major else 1.0
-    flags = {"weather": True, "public_stat": True, "course_arch": True,
+    flags = {"weather": True, "public_stat": True,
              "global_priors": True, **(feature_flags or {})}
-    course_features = load_course_features() if flags["course_arch"] else {}
     global_priors = load_global_player_priors() if flags["global_priors"] else {}
     weather_features = load_weather_features() if weather_features is None else weather_features
     out: list[Player] = []
@@ -1100,7 +1100,6 @@ def predict_field(field_names, params: dict, course: str = "",
         world_rank = getattr(item, "owgr", None) if isinstance(item, Player) else None
         rating, sigma, comps = _rating_for_components(
             name, params, course, world_rank=world_rank,
-            course_features=course_features,
             global_priors=global_priors,
             feature_flags=flags)
         canon = resolve_name(name, params)
@@ -1115,10 +1114,12 @@ def predict_field(field_names, params: dict, course: str = "",
             p.start_hole_r2 = item.start_hole_r2
         p.rating = rating
         p.sigma = sigma * maj_mult
+        p.blowup_rate = float(
+            pl.get("blowup_rate", params.get("double_bogey_rate_field", 0.02))
+        )
         p.sg_baseline = pl.get("skill", rating)
         p.recent_form = pl.get("form", 0.0)
         p.course_fit = comps.get("course_fit", 0.0)
-        p.course_arch_adj = comps.get("course_arch", 0.0)
         p.global_prior_adj = comps.get("global_prior", 0.0)
         p.weather_round_adj = _weather_round_adjustments(p, weather_features) \
             if flags["weather"] else {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}

@@ -38,7 +38,7 @@ DATA_DIR.mkdir(exist_ok=True)
 # ─────────────────────────────────────────────
 
 ESPN_LEADERBOARD = (
-    "https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard"
+    "https://site.web.api.espn.com/apis/site/v2/sports/golf/leaderboard"
 )
 ESPN_SCOREBOARD = (
     "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
@@ -69,7 +69,7 @@ def fetch_espn_field() -> list[dict]:
     against field.csv), so completed events return an empty field instead.
     """
     print("Fetching ESPN field...")
-    data = _get(ESPN_SCOREBOARD)
+    data = _get(ESPN_LEADERBOARD, {"league": "pga"})
 
     players = []
     events = data.get("events", [])
@@ -113,7 +113,7 @@ def fetch_espn_leaderboard() -> list[dict]:
     Returns list of dicts: name, position, score, thru, today.
     """
     print("Fetching ESPN leaderboard...")
-    data = _get(ESPN_SCOREBOARD)
+    data = _get(ESPN_LEADERBOARD, {"league": "pga"})
 
     rows = []
     for event in data.get("events", []):
@@ -437,6 +437,9 @@ def main():
     ap.add_argument("--seed", nargs="*", type=int, metavar="YEAR",
                     help="Backfill data/rounds.csv for the given seasons "
                          "(e.g. --seed 2022 2023 2024 2025) and exit")
+    ap.add_argument("--rebuild", nargs="+", type=int, metavar="YEAR",
+                    help="Atomically rebuild rounds.csv from corrected per-event "
+                         "payloads for these seasons; never reads existing rows")
     ap.add_argument("--tours", default="pga",
                     help="Comma-separated tours to accumulate/seed: "
                          "pga, liv, eur (DP World Tour). Default: pga. "
@@ -444,10 +447,18 @@ def main():
     args = ap.parse_args()
 
     # ── Round-history accumulation (v2 data store) ──
-    if args.accumulate or args.seed is not None:
-        from .providers import accumulate_rounds, accumulate_tours, get_provider
+    if args.accumulate or args.seed is not None or args.rebuild is not None:
+        from .providers import (
+            accumulate_rounds, accumulate_tours, get_provider, rebuild_tours,
+        )
         seasons = args.seed if args.seed else None
         tours = [t.strip() for t in str(args.tours).split(",") if t.strip()]
+        if args.rebuild is not None:
+            results = rebuild_tours(tours, seasons=args.rebuild)
+            total = sum(results.values())
+            summary = ", ".join(f"{t}: {n}" for t, n in results.items())
+            print(f"Done. Rebuilt {total} round(s) ({summary}).")
+            return
         if tours == ["pga"]:
             # Unchanged default path: keyed provider (DataGolf) when available.
             provider = get_provider(seasons=seasons, need="history")

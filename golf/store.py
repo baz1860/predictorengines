@@ -1,9 +1,9 @@
-"""SQLite store for free-source PGA golf data.
+"""SQLite store for ephemeral/live golf provider state.
 
-The current model still consumes CSVs such as ``rounds.csv`` and ``field.csv``.
-This store is the durable cache and canonical merge point for the new provider
-stack; CSV exports remain the compatibility boundary for the existing engine and
-app adapter.
+``data/rounds.csv`` is the sole authoritative historical round store and is
+never mirrored into SQLite. This database is a rebuildable cache for the
+current event, field, public-stat snapshots, odds, and provider-run metadata.
+CSV exports remain the compatibility boundary for the engine and app adapter.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from typing import Iterable, Mapping
 DATA_DIR = Path(__file__).parent / "data"
 DB_PATH = DATA_DIR / "golf.db"
 FIELD_CSV = DATA_DIR / "field.csv"
-ROUNDS_CSV = DATA_DIR / "rounds.csv"
 
 # ── database location resolution ─────────────────────────────────────────────
 # golf.db normally lives next to the CSV contract in golf/data. Some filesystems
@@ -93,6 +92,10 @@ MANIFEST_JSON = DATA_DIR / "free_source_manifest.json"
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
+-- One-time cleanup for databases created before rounds.csv became the sole
+-- historical store. This table was only ever a rebuildable CSV mirror.
+DROP TABLE IF EXISTS rounds;
+
 CREATE TABLE IF NOT EXISTS events (
     event_id TEXT PRIMARY KEY,
     source TEXT NOT NULL DEFAULT '',
@@ -139,33 +142,6 @@ CREATE TABLE IF NOT EXISTS field_entries (
     world_rank INTEGER,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (event_id, player_id)
-);
-
-CREATE TABLE IF NOT EXISTS rounds (
-    event_id TEXT NOT NULL,
-    player_id TEXT NOT NULL,
-    round_no INTEGER NOT NULL,
-    date TEXT NOT NULL DEFAULT '',
-    tour TEXT NOT NULL DEFAULT 'pga',
-    course_name TEXT NOT NULL DEFAULT '',
-    score_to_par REAL,
-    field_size INTEGER,
-    made_cut INTEGER,
-    finish INTEGER,
-    strokes INTEGER,
-    tee_time TEXT NOT NULL DEFAULT '',
-    start_hole TEXT NOT NULL DEFAULT '',
-    sg_total REAL,
-    sg_ott REAL,
-    sg_app REAL,
-    sg_arg REAL,
-    sg_putt REAL,
-    wind_speed REAL,
-    wind_gust REAL,
-    precipitation REAL,
-    source TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (event_id, player_id, round_no)
 );
 
 CREATE TABLE IF NOT EXISTS stat_snapshots (
@@ -378,75 +354,6 @@ def upsert_field(con: sqlite3.Connection, event_id: str, rows: Iterable[Mapping]
             (event_id, *seen_ids),
         )
     return len(rows)
-
-
-def import_rounds_csv(path: Path | str = ROUNDS_CSV, db_path: Path | str | None = None) -> int:
-    path = Path(path)
-    if not path.exists():
-        return 0
-    db_path = active_db_path() if db_path is None else db_path
-    init_db(db_path)
-    with path.open() as f, connect(db_path) as con:
-        rows = list(csv.DictReader(f))
-        players = [{"name": r.get("player", ""), "source": "rounds_csv"} for r in rows]
-        upsert_players(con, players)
-        event_rows = {}
-        for r in rows:
-            tid = str(r.get("tournament_id") or "")
-            if not tid:
-                continue
-            event_rows.setdefault(
-                tid,
-                {
-                    "event_id": tid,
-                    "source": "rounds_csv",
-                    "tour": r.get("tour") or "pga",
-                    "name": r.get("course") or tid,
-                    "start_date": r.get("date") or "",
-                    "course_name": r.get("course") or "",
-                    "is_major": int(float(r.get("is_major") or 0)),
-                },
-            )
-        upsert_events(con, event_rows.values())
-        for r in rows:
-            name = str(r.get("player") or "").strip()
-            tid = str(r.get("tournament_id") or "")
-            rnd = _int_or_none(r.get("round"))
-            if not name or not tid or rnd is None:
-                continue
-            player_id = _pid(name)
-            con.execute(
-                """
-                INSERT INTO rounds(event_id, player_id, round_no, date, tour,
-                                   course_name, score_to_par, field_size,
-                                   made_cut, finish, source, updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-                ON CONFLICT(event_id, player_id, round_no) DO UPDATE SET
-                    date=excluded.date,
-                    tour=excluded.tour,
-                    course_name=excluded.course_name,
-                    score_to_par=excluded.score_to_par,
-                    field_size=excluded.field_size,
-                    made_cut=excluded.made_cut,
-                    finish=excluded.finish,
-                    source=excluded.source,
-                    updated_at=CURRENT_TIMESTAMP
-                """,
-                (
-                    tid,
-                    player_id,
-                    rnd,
-                    str(r.get("date") or ""),
-                    str(r.get("tour") or "pga"),
-                    str(r.get("course") or ""),
-                    _float_or_none(r.get("score_to_par")),
-                    _int_or_none(r.get("field_size")),
-                    _int_or_none(r.get("made_cut")),
-                    _int_or_none(r.get("finish")),
-                    "rounds_csv",
-                ),
-            )
-        return len(rows)
 
 
 def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
