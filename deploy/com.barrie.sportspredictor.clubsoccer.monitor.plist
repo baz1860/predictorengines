@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.barrie.sportspredictor.clubsoccer.monitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/lucky/.pyenv/versions/3.12.7/bin/python3</string>
+    <string>-m</string>
+    <string>club_soccer.monitor</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/lucky/AI Models/Soccer Prediction</string>
+  <!-- Two checks: 09:00 is the routine post-run check. 10:00 is the one that
+       actually catches a 07:30 job killed early: with MAX_RUNNING_HOURS = 2 a
+       dead 07:30 run is only 90 minutes old at 09:00 and still reports OK, but
+       is 2.5h old at 10:00 and goes red. Lower MAX_RUNNING_HOURS to 1.5h only
+       after measuring the networked run's p99 duration. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key><integer>9</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>10</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/lucky/Library/Logs/club_soccer_monitor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/lucky/Library/Logs/club_soccer_monitor.log</string>
+</dict>
+</plist>

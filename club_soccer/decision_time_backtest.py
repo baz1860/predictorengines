@@ -52,7 +52,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import model as M
 from .club_identity import canonical_name
 
 HERE = Path(__file__).resolve().parent
@@ -80,48 +79,7 @@ def _devig(odds: dict[str, float]) -> dict[str, float]:
     return {k: v / tot for k, v in inv.items()} if tot > 0 else {}
 
 
-# ── point-in-time pricing ─────────────────────────────────────────────────
-
-def _price_month(played: pd.DataFrame, month_matches: pd.DataFrame) -> dict:
-    """Model probabilities for a month's fixtures, trained on PRIOR data only.
-
-    One fit per calendar month (the walk-forward discipline in validate.py), so
-    no fixture is ever priced with knowledge of its own result or later ones.
-    """
-    cutoff = month_matches["ko"].min()
-    train = played[played["_ko"] < cutoff]
-    if len(train) < 200:
-        return {}
-    try:
-        params = M.fit(train)
-    except Exception:
-        return {}
-    seen = set(params["teams"])
-    out: dict = {}
-    # NB: columns must NOT start with an underscore — itertuples silently
-    # renames those to positional _1/_2 (namedtuple forbids leading-underscore
-    # fields), which turned every `r._ko` into an AttributeError caught below,
-    # so nothing was ever priced.
-    for r in month_matches.itertuples(index=False):
-        if r.home not in seen or r.away not in seen:
-            continue
-        try:
-            pred = M.predict_match(r.home, r.away, r.competition,
-                                   str(r.ko.date()), "ensemble",
-                                   bool(getattr(r, "neutral", 0)),
-                                   params=params, context_coef={},
-                                   ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W))
-        except Exception:
-            continue
-        p = pred["probs"]
-        out[r.mkey] = {
-            "1x2": {"home": p["home"], "draw": p["draw"], "away": p["away"]},
-            "total25": {"over": p["over25"], "under": 1.0 - p["over25"]},
-        }
-    return out
-
-
-# ── replay ────────────────────────────────────────────────────────────────
+# ── frozen-ledger replay ─────────────────────────────────────────────────
 
 def _key(date, home, away) -> str:
     return f"{str(date)[:10]}|{canonical_name(home)}|{canonical_name(away)}"
@@ -166,97 +124,20 @@ def build_bets(verbose: bool = False) -> pd.DataFrame:
     return df[[c for c in keep if c in df.columns]]
 
 
-def build_bets_reconstructed(verbose: bool = False) -> pd.DataFrame:
-    """DEPRECATED reconstruction path (kept only for the migration window /
-    diagnostics). Rebuilds decisions from today's alias map + median snapshots,
-    which the adversarial review showed is hindsight. Not used by run()."""
-    if not SNAPSHOTS.exists():
-        return pd.DataFrame()
-    snap = pd.read_csv(SNAPSHOTS)
-    snap["snap_ts"] = pd.to_datetime(snap["snapshot_time"], utc=True, errors="coerce")
-    snap["home_c"] = snap["home"].map(canonical_name)
-    snap["away_c"] = snap["away"].map(canonical_name)
-    snap["_key"] = [_key(d, h, a) for d, h, a in
-                    zip(snap["match_date"], snap["home"], snap["away"])]
+def _side_won(market: str, side: str, home_goals: float,
+              away_goals: float) -> bool:
+    """Pure settlement rule retained for diagnostics and contract tests.
 
-    # Load via the model's own loader so `date` is parsed the way fit() needs
-    # (a raw pd.read_csv leaves it as strings and fit() then fails subtracting
-    # them). Kickoff time is joined separately, since load_fixtures does not
-    # carry it typed.
-    played = M.played(M.load_fixtures()).copy()
-    ko_map = pd.read_csv(FIXTURES, low_memory=False,
-                         usecols=["fixture_id", "kickoff_utc"])
-    ko_map = dict(zip(ko_map["fixture_id"], ko_map["kickoff_utc"]))
-    played["_ko"] = pd.to_datetime(
-        played["fixture_id"].map(ko_map), utc=True, errors="coerce")
-    played = played[played["_ko"].notna()].copy()
-    played["_key"] = [_key(d, h, a) for d, h, a in
-                      zip(played["date"], played["home"], played["away"])]
-
-    settled = played.drop_duplicates("_key").set_index("_key")
-    matched_keys = [k for k in snap["_key"].unique() if k in settled.index]
-    if not matched_keys:
-        return pd.DataFrame()
-
-    # Point-in-time model, one fit per month of the matched fixtures.
-    mm = settled.loc[matched_keys].copy()
-    mm["home"] = mm.index.map(lambda k: k.split("|")[1])
-    mm["away"] = mm.index.map(lambda k: k.split("|")[2])
-    mm["mkey"] = mm.index                 # non-underscore: itertuples-safe
-    mm["ko"] = mm["_ko"]
-    mm["neutral"] = mm.get("neutral", 0)
-    mm["_month"] = mm["_ko"].dt.tz_localize(None).dt.to_period("M")
-    preds: dict = {}
-    for _period, grp in mm.groupby("_month"):
-        preds.update(_price_month(played, grp))
-
-    close_1x2, close_tot = _closing_probs()
-    rows: list[dict] = []
-    for key in matched_keys:
-        if key not in preds:
-            continue
-        fixt = settled.loc[key]
-        ko = fixt["_ko"]
-        hg, ag = float(fixt["home_goals"]), float(fixt["away_goals"])
-        deadline = ko - pd.Timedelta(minutes=MIN_LEAD_MIN)
-        for market, sides in (("1x2", ("home", "draw", "away")),
-                              ("total25", ("over", "under"))):
-            msnap = snap[(snap["_key"] == key) & (snap["market"] == market)
-                         & (snap["snap_ts"] <= deadline)]
-            if msnap.empty:
-                continue
-            dt = msnap["snap_ts"].max()          # latest quote before deadline
-            book = {}
-            for s in sides:
-                q = msnap[(msnap["snap_ts"] == dt) & (msnap["side"] == s)]
-                if not q.empty and pd.notna(q["odds_median"].iloc[0]):
-                    book[s] = float(q["odds_median"].iloc[0])
-            if len(book) < len(sides):
-                continue
-            devig = _devig(book)
-            lead = (ko - dt).total_seconds() / 60.0
-            for s in sides:
-                p_model = float(preds[key][market][s])
-                p_book = float(devig.get(s, 0.0))
-                won = _side_won(market, s, hg, ag)
-                cmap = close_1x2 if market == "1x2" else close_tot
-                clv = _clv(market, s, book[s], cmap.get(key))
-                rows.append({
-                    "key": key, "date": str(ko.date()), "kickoff": str(ko),
-                    "competition": fixt["competition"], "market": market,
-                    "side": s, "odds": book[s], "p_model": p_model,
-                    "p_book": p_book, "edge": p_model - p_book,
-                    "won": int(won), "lead_min": round(lead, 1), "clv": clv,
-                })
-    return pd.DataFrame(rows)
-
-
-def _side_won(market: str, side: str, hg: float, ag: float) -> bool:
+    It does not reconstruct any decision-time state; the frozen ledger remains
+    the only source consumed by ``build_bets``.
+    """
     if market == "1x2":
-        return ((side == "home" and hg > ag) or (side == "away" and ag > hg)
-                or (side == "draw" and hg == ag))
-    total = hg + ag
-    return (side == "over" and total > 2.5) or (side == "under" and total < 2.5)
+        return ((side == "home" and home_goals > away_goals)
+                or (side == "away" and away_goals > home_goals)
+                or (side == "draw" and home_goals == away_goals))
+    total = home_goals + away_goals
+    return ((side == "over" and total > 2.5)
+            or (side == "under" and total < 2.5))
 
 
 def _closing_probs() -> tuple[dict, dict]:
@@ -516,13 +397,10 @@ def run(verbose: bool = True) -> dict:
         "value_subset": _confidence_table(bets, value_only=True),
         "provenance": _provenance(bets),
         "note": ("Accumulates forward — a decision-time quote cannot be "
-                 "reconstructed retroactively. IMPORTANT: market_history.csv "
-                 "carries no closing TOTALS feed, so OU2.5 CLV is permanently "
-                 "None; under the current global-AND gate that means staking "
-                 "can never open on ANY market until a closing-totals source is "
-                 "added OR the gate is made per-market. 1X2 alone cannot open "
-                 "it. This is a known structural limitation, not just a volume "
-                 "one."),
+                 "reconstructed retroactively. The evidence gate is per-market "
+                 "and, where available, per-league: 1X2 can open independently "
+                 "of OU2.5. Markets or leagues without a closing reference stay "
+                 "closed; the current shared blocker is settled decision volume."),
     }
     DATA.mkdir(exist_ok=True)
     # allow_nan=False: a NaN would be written as the non-standard token `NaN`,

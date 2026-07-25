@@ -9,7 +9,8 @@ def _row(p, edge, date="2026-07-25", tier="full", match="A v B",
          bet="A win", odds=2.0, suppressed=None):
     return {"date": date, "match": match, "bet": bet, "odds": odds,
             "p_model": p, "edge": edge, "evidence_tier": tier,
-            "suppressed_reason": suppressed}
+            "suppressed_reason": suppressed,
+            "kelly_stake": 0.0 if suppressed else 0.01}
 
 
 def test_section_is_sorted_by_probability_not_edge():
@@ -37,13 +38,12 @@ def test_thin_evidence_never_leads():
     assert "ThinButConfident" not in out
 
 
-def test_evidence_gate_suppression_does_not_hide_picks():
-    """Every stake is gate-suppressed until the backtest exists, but this
-    section is informational — it must still show likely winners."""
+def test_evidence_gate_suppression_hides_lead_picks():
+    """The lead table is a betting surface and must obey the evidence gate."""
     rows = [_row(0.62, 0.05, bet="GatedButLikely",
                  suppressed="evidence-gate: no demonstrated edge")]
     out = "\n".join(S._likely_winners_section(rows, "2026-07-23"))
-    assert "GatedButLikely" in out
+    assert "GatedButLikely" not in out
 
 
 def test_do_not_bet_signal_does_hide_a_pick():
@@ -82,7 +82,7 @@ def test_past_dated_fixtures_are_dropped():
 
 def test_empty_board_gives_a_clear_message():
     out = "\n".join(S._likely_winners_section([], "2026-07-23"))
-    assert "No full-evidence pick" in out
+    assert "No gate-approved, full-evidence pick" in out
 
 
 def test_card_writer_puts_likely_winners_before_backed_bets():

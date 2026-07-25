@@ -79,12 +79,12 @@ KEY_COLUMNS = [
 # Every file whose contents change a prediction must be here, or a stale fold
 # is served after that file changes. league seeding (promoted, ON in
 # production) reads uefa_registry.py + uefa_coefficients.json and
-# league_strength.py; the identity layer (club_identity/names/club_registry)
+# the identity layer (club_identity/names/club_registry)
 # changes which team a row is priced as; schema.py governs status handling.
 # Omitting any of these is a silent correctness hole — e.g. an annual
 # coefficient refresh would otherwise be invisible to the cache.
 _CODE_FILES = ("model.py", "competitions.py", "validate.py", "coverage.py",
-               "uefa_registry.py", "league_strength.py", "club_identity.py",
+               "uefa_registry.py", "club_identity.py",
                "names.py", "club_registry.py", "schema.py")
 _DATA_FILES = ("comp_strength.json", "ensemble_weights.json",
                "uefa_coefficients.json", "uefa_coefficients_history.json",

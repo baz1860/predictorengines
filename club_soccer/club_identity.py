@@ -794,6 +794,20 @@ def canonical_name(name, country: str | None = None):
     return target
 
 
+def canonicalise(raw_name, source: str | None = None,
+                 country_hint: str | None = None):
+    """The single ingest-facing team-name canonicaliser.
+
+    ``source`` is accepted deliberately even though the current resolver does
+    not need source-specific rules: every fixture writer now has one stable
+    contract and future provider quirks cannot justify another local
+    normaliser. The canonical value remains the project's display identity
+    (fixtures.csv stores names rather than a separate canonical-id column).
+    """
+    del source
+    return canonical_name(raw_name, country=country_hint)
+
+
 def reset_country_index() -> None:
     global _country_index_cache
     _country_index_cache = None
@@ -880,7 +894,8 @@ def main() -> None:
         shutil.copy2(FIXTURES, backup)
         before_teams = len(present)
         merged = dedupe_fixtures(apply_alias_map(df, alias))
-        merged.to_csv(FIXTURES, index=False)
+        from .fetch import write_fixtures
+        write_fixtures(merged)
         after_teams = len(set(merged["home"]) | set(merged["away"]))
         print(f"backup -> {backup.name}")
         for src, dst in sorted(alias.items()):
@@ -898,7 +913,8 @@ def main() -> None:
         shutil.copy2(FIXTURES, backup)
         merged = apply_alias_map(df, alias)
         deduped = dedupe_fixtures(merged)
-        deduped.to_csv(FIXTURES, index=False)
+        from .fetch import write_fixtures
+        write_fixtures(deduped)
         print(f"backup      -> {backup.name}")
         print(f"rows before : {before}")
         print(f"rows after  : {len(deduped)}  ({before - len(deduped)} duplicate rows removed)")

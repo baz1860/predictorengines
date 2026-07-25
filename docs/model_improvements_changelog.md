@@ -47,7 +47,7 @@ This is a **no-edge** result, not a deployable weight (w=1.0 = copy the market a
 model's edge (it beats base-rate by ~0.20 log-loss over 7,138 competitive matches) lives in
 **softer markets**: less-watched internationals and specific totals where the line moves slower.
 
-## 4. Soft-market probe — club corners model (`club_soccer/corners_model.py`)
+## 4. Archived soft-market probe — club corners model
 Followed the "hunt softer markets" recommendation into corners. Built a corners model in
 the club_soccer style (recency-weighted attack/defence, per-league baseline, home adj,
 full O/U pricing) on `fixtures.csv` (16,775 matches, top leagues 2022-26), then wired the
@@ -118,7 +118,8 @@ validation are the cheapest next checks.
 - `engines/worldcup/exp_recency.py` — recency experiment (new)
 - `engines/worldcup/fit_market_blend.py` — market-blend refit (new)
 - `engines/worldcup/data/market_blend.json` → `data/market_blend.json` — refit recorded, left inactive (`.bak.preblend` = original)
-- `club_soccer/corners_model.py` — corners model + shots GLM + validation (new)
+- The implementation was removed on 2026-07-25 after remaining uncalled; its
+  findings stay in this changelog and git history.
 - `engines/worldcup/totals_probe.py` — international totals model-vs-book probe (new)
 
 ## Club Soccer Phase 4 — league structure & position (2026-07-02)

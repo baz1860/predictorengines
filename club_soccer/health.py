@@ -26,6 +26,7 @@ from .identities import (conflicting_score_identity_count,
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
+EXPERIMENTS = HERE / "experiments.json"
 
 # Off-season months (Jun/Jul): a stale "days since last result" is expected,
 # not a warning sign, since most tracked leagues are on their summer break.
@@ -81,6 +82,41 @@ def run_checks() -> dict:
     report["void_with_results"] = int((void_mask & has_result).sum())
     report["duplicate_match_identities"] = duplicate_identity_count(df)
     report["conflicting_score_identities"] = conflicting_score_identity_count(df)
+
+    # Every writer canonicalises at fetch.write_fixtures(). Detect a bypass or
+    # a stale hand-edited file before it can split a club's model history.
+    from .club_identity import canonicalise
+    from .competitions import get as get_comp
+    noncanonical = 0
+    examples: list[str] = []
+    for row in df[["competition", "home", "away"]].itertuples(index=False):
+        comp = get_comp(str(row.competition))
+        country = getattr(comp, "country", None) if comp is not None else None
+        if country in {"Europe", "World"}:
+            country = None
+        for raw in (row.home, row.away):
+            canon = canonicalise(raw, country_hint=country)
+            if canon != raw:
+                noncanonical += 1
+                if len(examples) < 10:
+                    examples.append(f"{raw!r} -> {canon!r}")
+    report["noncanonical_team_names"] = noncanonical
+    report["noncanonical_team_name_examples"] = examples
+
+    # Parked implementation has a finite life. Once an expiry lands this hard
+    # check forces a maintainer to promote it with evidence or delete the code;
+    # evidence and the originating SHA remain in the register.
+    expired_experiments: list[str] = []
+    try:
+        registry = json.loads(EXPERIMENTS.read_text())
+        expired_experiments = [
+            str(item["name"]) for item in registry.get("experiments", [])
+            if str(item.get("expires_on", "")) < str(today)
+        ]
+    except Exception as exc:
+        report["experiment_registry_error"] = str(exc)
+        expired_experiments = ["<registry unreadable>"]
+    report["expired_experiments"] = expired_experiments
 
     played = df.dropna(subset=["home_goals", "away_goals"])
     if not played.empty:
@@ -174,6 +210,8 @@ def run_checks() -> dict:
                     and report["duplicate_fixture_ids"] == 0
                     and report["duplicate_match_identities"] == 0
                     and report["conflicting_score_identities"] == 0
+                    and report["noncanonical_team_names"] == 0
+                    and not report["expired_experiments"]
                     and report.get("void_with_results", 0) == 0)
 
     print(f"Club Soccer health check ({today}):")
@@ -187,6 +225,12 @@ def run_checks() -> dict:
     print(f"  [{status}] duplicate_match_identities = {report['duplicate_match_identities']} (must be 0)")
     status = "PASS" if report["conflicting_score_identities"] == 0 else "FAIL"
     print(f"  [{status}] conflicting_score_identities = {report['conflicting_score_identities']} (must be 0)")
+    status = "PASS" if report["noncanonical_team_names"] == 0 else "FAIL"
+    print(f"  [{status}] noncanonical_team_names = "
+          f"{report['noncanonical_team_names']} (must be 0)")
+    status = "PASS" if not report["expired_experiments"] else "FAIL"
+    print(f"  [{status}] expired_experiments = "
+          f"{report['expired_experiments']} (must be empty)")
 
     if days_since is None:
         print("  [WARN] days_since_last_result: no played rows found")

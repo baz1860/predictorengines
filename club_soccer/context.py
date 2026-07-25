@@ -496,18 +496,26 @@ def validate(verbose: bool = True) -> bool:
                               + bp * (-ppg) + bf * (-fight) + bd * (-dead) + bt * (-tg) + weather_term))
         # Evaluate the correction on the production ensemble as well as the
         # historical goals-only diagnostic above. Context coefficients were
-        # originally fitted against the goals component, but predict() applies
-        # them to the blended score matrix; the ensemble gate must test that
-        # actual production path before activation.
+        # originally fitted against the goals component, but production applies
+        # them to the ensemble; the gate must test that actual production path
+        # before activation.
+        #
+        # Both arms therefore go through predict() itself. Calling
+        # apply_context_adj on the returned matrix would measure the legacy
+        # matrix-level path, which predict() no longer uses — and which is lossy
+        # on a mixture (see model._rescale_matrix). Routing the adjustment
+        # through predict(context_adj=...) keeps the gate aligned with
+        # production by construction.
         ensemble = M.predict(r.home, r.away, r.competition, "ensemble",
                              bool(r.neutral), params=params)
         ensemble_base = M.probs_from_matrix(ensemble["matrix"])
-        ensemble_context = M.probs_from_matrix(
-            M.apply_context_adj(
-                ensemble["matrix"],
-                {"home": {"mult": mult_h}, "away": {"mult": mult_a}},
-            )
-        )
+        # NB: read probabilities off ["matrix"], not ["probs"] — predict()
+        # rounds ["probs"] to 4dp, and the base arm above is unrounded.
+        ensemble_context = M.probs_from_matrix(M.predict(
+            r.home, r.away, r.competition, "ensemble", bool(r.neutral),
+            params=params,
+            context_adj={"home": {"mult": mult_h}, "away": {"mult": mult_a}},
+        )["matrix"])
         y = 0 if r.home_goals > r.away_goals else (1 if r.home_goals == r.away_goals else 2)
         y_over = 1.0 if (r.home_goals + r.away_goals) > 2.5 else 0.0
         has_weather_data = pd.notna(r.wind_high)  # a real (non-default) weather row exists

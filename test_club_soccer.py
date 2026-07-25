@@ -103,25 +103,21 @@ def test_model_math():
     check("BTTS probabilities sum to one", abs(p["btts_yes"] + p["btts_no"] - 1.0) < 0.002)
     check("score matrix normalizes", abs(float(pred["matrix"].sum()) - 1.0) < 1e-9)
     parts = M.component_matrices(params, "Arsenal", "Chelsea", "Premier League", False)
-    check("shot-pressure component is available", "xpress" in parts)
+    check("retired zero-weight shot-pressure component is absent", "xpress" not in parts)
     check("component matrices normalize",
           all(abs(float(mx.sum()) - 1.0) < 1e-9 for mx in parts.values()))
-    xp = M.predict("Arsenal", "Chelsea", "Premier League", model="xpress", params=params)
-    px = xp["probs"]
-    check("xpress probabilities sum to one",
-          abs(px["home"] + px["draw"] + px["away"] - 1.0) < 0.002)
     with tempfile.TemporaryDirectory() as td:
         f = Path(td) / "ensemble_weights.json"
         # The artifact only applies with an explicit "active": true — inactive
         # (or legacy flag-less) artifacts fall back to DEFAULT_ENSEMBLE_W so
         # production and validation stay the same predictor.
         f.write_text(json.dumps({"active": True,
-                                 "weights": {"goals": 2, "elo": 1, "xpress": 1}}))
+                                 "weights": {"goals": 2, "elo": 1, "retired": 1}}))
         w = M.load_ensemble_weights(f)
         check("ensemble weights normalize from artifact", abs(sum(w.values()) - 1.0) < 1e-12)
         check("missing ensemble components default to zero", w["xg"] == 0.0 and w["xgf"] == 0.0)
-        check("xpress artifact weight loaded", abs(w["xpress"] - 0.25) < 1e-12)
-        f.write_text(json.dumps({"weights": {"goals": 2, "elo": 1, "xpress": 1}}))
+        check("retired ensemble keys are ignored", "retired" not in w)
+        f.write_text(json.dumps({"weights": {"goals": 2, "elo": 1, "retired": 1}}))
         w_inactive = M.load_ensemble_weights(f)
         check("flag-less weights artifact is ignored (defaults used)",
               w_inactive == dict(M.DEFAULT_ENSEMBLE_W))
@@ -401,6 +397,61 @@ def test_player_quality_pit():
     check("quality probability correction stays normalized", abs(float(p.sum()) - 1.0) < 1e-12)
 
 
+def test_adjustments_enter_at_lambda_level():
+    print("10b. availability/quality/context adjustments are lambda-level")
+    params = M.fit()
+    h, a, comp = "Arsenal", "Chelsea", "Premier League"
+    base = M.predict(h, a, comp, "ensemble", params=params)
+
+    # An identity adjustment must be EXACTLY the identity. It was not: the old
+    # code rebuilt a single Poisson from the blended matrix's marginals, which
+    # discards the ensemble mixture's dispersion. All-1.0 multipliers moved
+    # BTTS by +0.0041 and Over 2.5 by +0.0031.
+    identity = (
+        ("player_adj", {"player_adj": {"home": {"attack_mult": 1.0, "defense_mult": 1.0},
+                                       "away": {"attack_mult": 1.0, "defense_mult": 1.0}}}),
+        ("context_adj", {"context_adj": {"home": {"mult": 1.0}, "away": {"mult": 1.0}}}),
+        ("quality_adj", {"quality_adj": {"active": True, "shift": 0.0}}),
+    )
+    for label, kwargs in identity:
+        out = M.predict(h, a, comp, "ensemble", params=params, **kwargs)
+        check(f"identity {label} is an exact no-op on the matrix",
+              np.allclose(out["matrix"], base["matrix"], atol=0, rtol=0))
+
+    # Corrections are multiplicative on lambdas, so they must compose exactly:
+    # two adjustments == one adjustment carrying the product of their factors.
+    p_adj = {"home": {"attack_mult": 0.90, "defense_mult": 1.10},
+             "away": {"attack_mult": 1.05, "defense_mult": 0.95}}
+    c_adj = {"home": {"mult": 1.04}, "away": {"mult": 0.97}}
+    both = M.predict(h, a, comp, "ensemble", params=params,
+                     player_adj=p_adj, context_adj=c_adj)
+    mh, ma = M._adj_multipliers(p_adj, None, c_adj)
+    combined = M.predict(h, a, comp, "ensemble", params=params,
+                         context_adj={"home": {"mult": mh}, "away": {"mult": ma}})
+    check("player+context compose into one multiplier pair",
+          np.allclose(both["matrix"], combined["matrix"], atol=0, rtol=0))
+
+    # The rebuild also dropped rho, substituting the global DC_RHO for the
+    # per-competition value. Exercise a params dict where they differ.
+    rho_params = dict(params)
+    rho_params["comp_adj_active"] = True
+    rho_params["comp_adj"] = {comp: {"hfa_mult": 1.0, "rho": -0.18}}
+    rho_base = M.predict(h, a, comp, "ensemble", params=rho_params)
+    rho_adj = M.predict(h, a, comp, "ensemble", params=rho_params,
+                        player_adj=identity[0][1]["player_adj"])
+    check("per-competition rho survives an adjustment",
+          np.allclose(rho_adj["matrix"], rho_base["matrix"], atol=0, rtol=0))
+
+    # And a real adjustment must still bite, in the right direction.
+    out = M.predict(h, a, comp, "ensemble", params=params,
+                    player_adj={"home": {"attack_mult": 0.85, "defense_mult": 1.0},
+                                "away": {"attack_mult": 1.0, "defense_mult": 1.0}})
+    check("missing home attackers lower home xG", out["xg_home"] < base["xg_home"])
+    check("missing home attackers lower P(home win)",
+          out["probs"]["home"] < base["probs"]["home"])
+    check("adjusted matrix still normalizes", abs(float(out["matrix"].sum()) - 1.0) < 1e-9)
+
+
 def test_context_apply():
     print("11. context GLM application")
     lam_h, lam_a = 1.4, 1.1
@@ -599,20 +650,20 @@ def test_do_not_bet():
 
 
 def test_card_written():
-    print("16. season.py --no-network writes card.md")
-    from club_soccer import season as S
-
-    if S.CARD.exists():
-        S.CARD.unlink()
-    proc = subprocess.run(
-        [sys.executable, "-m", "club_soccer.season", "--no-network", "--fast"],
-        cwd=str(ROOT), capture_output=True, text=True, timeout=120)
-    check("season.py --no-network --fast exits 0", proc.returncode == 0)
-    check("card.md was written", S.CARD.exists())
-    if S.CARD.exists():
-        text = S.CARD.read_text()
-        check("card.md has the freshness header", text.startswith("# Club Soccer —"))
-        check("card.md reports upcoming fixture count", "Upcoming fixtures:" in text)
+    print("16. season.py --no-network writes an isolated card.md")
+    with tempfile.TemporaryDirectory() as td:
+        card = Path(td) / "card.md"
+        env = os.environ.copy()
+        env["CLUB_SOCCER_CARD_PATH"] = str(card)
+        proc = subprocess.run(
+            [sys.executable, "-m", "club_soccer.season", "--no-network", "--fast"],
+            cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=120)
+        check("season.py --no-network --fast exits 0", proc.returncode == 0)
+        check("isolated card.md was written", card.exists())
+        if card.exists():
+            text = card.read_text()
+            check("card.md has the freshness header", text.startswith("# Club Soccer —"))
+            check("card.md reports upcoming fixture count", "Upcoming fixtures:" in text)
 
 
 def test_bsd_detail_and_player_contracts():
@@ -891,6 +942,7 @@ if __name__ == "__main__":
     test_minutes_windows()
     test_transfer_reattribution()
     test_player_quality_pit()
+    test_adjustments_enter_at_lambda_level()
     test_context_apply()
     test_standings_asof()
     test_weather_features()

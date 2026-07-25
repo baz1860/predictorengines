@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -158,10 +159,24 @@ def _run_all():
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
     passed = 0
-    for t in tests:
-        t()
-        print(f"  ok  {t.__name__}")
-        passed += 1
+    # Script mode does not execute pytest's autouse fixture. Redirect the same
+    # shared stores explicitly so `python test_v5.py` (and run_checks.py) is as
+    # hermetic as pytest instead of reading or mutating live V5 state.
+    names = ("REGISTRY", "FEATURE_SNAPSHOTS", "RECOMMENDATIONS", "REVIEWS",
+             "DRIFT_REPORT", "RESEARCH_BACKLOG")
+    original = {name: getattr(store, name) for name in names}
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name, path in original.items():
+                setattr(store, name, root / path.name)
+            for t in tests:
+                t()
+                print(f"  ok  {t.__name__}")
+                passed += 1
+    finally:
+        for name, path in original.items():
+            setattr(store, name, path)
     print(f"\n{passed}/{len(tests)} V5 tests passed.")
 
 

@@ -90,7 +90,7 @@ def test_write_fixtures_preserves_status_raw_for_quarantined_rows(tmp_path):
 
 def test_source_mappers_preserve_the_real_unknown_status(tmp_path):
     """Normalising inside a mapper must not turn status_raw into literal UNK."""
-    from club_soccer import fetch, fetch_fdorg, seed_real
+    from club_soccer import fetch, seed_real
 
     bsd_event = {"id": "bsd-1", "home_team": "A", "away_team": "B",
                  "event_date": "2027-01-01T12:00:00Z",
@@ -104,15 +104,7 @@ def test_source_mappers_preserve_the_real_unknown_status(tmp_path):
     assert seed["status"] == schema.QUARANTINE_STATUS
     assert seed["status_raw"] == "SOME_NEW_STATE"
 
-    fd = fetch_fdorg._fdorg_to_row(
-        {"id": "fd-1", "utcDate": "2027-01-01T12:00:00Z",
-         "status": "SOME_NEW_STATE", "homeTeam": {"name": "A"},
-         "awayTeam": {"name": "B"}, "score": {"fullTime": {}}},
-        "Test", 1, "X", "league")
-    assert fd["status"] == schema.QUARANTINE_STATUS
-    assert fd["status_raw"] == "SOME_NEW_STATE"
-
-    out = fetch.write_fixtures(pd.DataFrame([bsd, seed, fd]),
+    out = fetch.write_fixtures(pd.DataFrame([bsd, seed]),
                                path=tmp_path / "fixtures.csv")
     assert set(out["status_raw"]) == {"SOME_NEW_STATE"}
 

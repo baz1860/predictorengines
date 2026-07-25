@@ -15,7 +15,7 @@ import pytest
 from club_soccer import model as M
 
 
-BASE = {"goals": 0.20, "elo": 0.40, "xg": 0.20, "xgf": 0.20, "xpress": 0.0}
+BASE = {"goals": 0.20, "elo": 0.40, "xg": 0.20, "xgf": 0.20}
 
 
 def _params(**evidence):
@@ -35,7 +35,6 @@ def test_no_shot_data_removes_the_shot_components():
     out = M._weights_for_match(_params(A=0.0, B=0.0), BASE, "A", "B")
     assert out["xg"] == 0.0
     assert out["xgf"] == 0.0
-    assert out["xpress"] == 0.0
 
 
 def test_weights_always_renormalise_to_one():
@@ -80,7 +79,7 @@ def test_legacy_params_without_evidence_are_left_alone():
 
 
 def test_all_zero_weights_falls_back_rather_than_dividing_by_zero():
-    degenerate = {"goals": 0.0, "elo": 0.0, "xg": 1.0, "xgf": 0.0, "xpress": 0.0}
+    degenerate = {"goals": 0.0, "elo": 0.0, "xg": 1.0, "xgf": 0.0}
     out = M._weights_for_match(_params(A=0.0, B=0.0), degenerate, "A", "B")
     assert out == degenerate
 

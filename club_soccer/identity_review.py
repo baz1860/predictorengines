@@ -470,7 +470,8 @@ def apply(dry_run: bool = False) -> None:
         df.to_csv(backup, index=False)
         before = len(set(df["home"]) | set(df["away"]))
         merged = dedupe_fixtures(CI.apply_alias_map(df, merges))
-        merged.to_csv(CI.FIXTURES, index=False)
+        from .fetch import write_fixtures
+        write_fixtures(merged)
         after = len(set(merged["home"]) | set(merged["away"]))
         print(f"\nbackup -> {backup.name}")
         print(f"rows {len(df)} -> {len(merged)};  identities {before} -> {after}")

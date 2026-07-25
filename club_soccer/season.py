@@ -58,7 +58,9 @@ from . import fetch_fdcouk as FD
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-CARD = DATA / "card.md"
+# Tests and one-off diagnostics can redirect the card without touching the
+# live production artifact. Production keeps the historical default.
+CARD = Path(os.environ.get("CLUB_SOCCER_CARD_PATH", str(DATA / "card.md")))
 CARD_HORIZON_DAYS = 7
 FDCOUK_STALE_DAYS = 6
 # Manual odds.csv is opt-in (--allow-manual-odds); freshness/future-kickoff
@@ -374,18 +376,14 @@ def _likely_winners_section(edge_rows: list[dict], today_str: str) -> list[str]:
     spot where a likely pick is ALSO underpriced. Value is shown but never the
     sort key, because the aim is regular winners, not maximised edge.
     """
-    # NOTE: the blanket evidence-gate suppression (which zeroes every stake
-    # until a decision-time backtest exists) is deliberately NOT a filter here.
-    # This section is informational — "what does the model expect to win" — not
-    # a staking instruction, so a gated stake must not hide a likely pick. Only
-    # the per-fixture do-not-bet market signal is excluded, since that flags a
-    # specific line the model distrusts.
-    def _dnb(r):
-        reason = str(r.get("suppressed_reason", "") or "")
-        return reason and not reason.startswith("evidence-gate")
+    # The card is a betting surface, so its lead table obeys the same evidence
+    # gate as the backed-bets table. Showing odds-ranked picks above the gate
+    # while calling them merely "informational" made the safety boundary
+    # cosmetic: the most prominent content still looked backable.
     live = [r for r in edge_rows
             if str(r.get("date", ""))[:10] >= today_str
-            and not _dnb(r)
+            and not r.get("suppressed_reason")
+            and float(r.get("kelly_stake", 0) or 0) > 0
             and str(r.get("evidence_tier", "")) == "full"]
     likely = sorted((r for r in live if _bet_prob(r) >= LIKELY_MIN_P),
                     key=_bet_prob, reverse=True)
@@ -394,14 +392,13 @@ def _likely_winners_section(edge_rows: list[dict], today_str: str) -> list[str]:
                    key=_bet_prob, reverse=True)
 
     lines = ["## Most likely to land", ""]
-    lines.append("_Full-evidence picks, ranked by the model's chance the bet wins. "
+    lines.append("_Gate-approved, full-evidence picks ranked by the model's chance "
+                 "the bet wins. "
                  "`value` = also underpriced, `short` = likely but the book has it "
-                 "tight, `fair` = square. Informational — staking stays gated until "
-                 "the decision-time backtest lands, so these are expectations, not "
-                 "instructions._")
+                 "tight, `fair` = square._")
     lines.append("")
     if not likely:
-        lines.append("_No full-evidence pick clears "
+        lines.append("_No gate-approved, full-evidence pick clears "
                      f"{LIKELY_MIN_P:.0%} on the current board — typically an "
                      "off-season week with only tight fixtures priced._")
         lines.append("")
@@ -574,7 +571,7 @@ def write_card(edge_rows: list[dict], player_adj_map: dict | None,
     lines += _transfers_absences_section()
     if today.weekday() == 0:   # Monday
         lines += _weekly_footer()
-    DATA.mkdir(exist_ok=True)
+    CARD.parent.mkdir(parents=True, exist_ok=True)
     CARD.write_text("\n".join(lines))
     print(f"\nWrote {CARD}")
 

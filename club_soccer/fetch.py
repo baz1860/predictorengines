@@ -27,7 +27,8 @@ from bsd_client import (event_date_utc, fixture_detail_fields, get_all_events,
                         get_event, league_name as bsd_league_name)
 from .competitions import COMPETITIONS, comp_from_bsd_league, get as comp_get
 from . import schema
-from .club_identity import canonical_name as _canonical_name
+from .club_identity import (canonical_name as _canonical_name,
+                            canonicalise as _canonicalise)
 from .identities import dedupe_fixtures
 
 HERE = Path(__file__).resolve().parent
@@ -91,8 +92,9 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
     a fresh import that bypasses normalization can train the model on a
     void fixture's retained score before health ever runs.
 
-    Normalizes status codes, clears result/stat fields on void statuses,
-    and writes atomically (tmp + replace)."""
+    Canonicalises both team identities, normalizes status codes, clears
+    result/stat fields on void statuses, reconciles duplicates exposed by
+    canonicalisation, and writes atomically (tmp + replace)."""
     from .schema import normalize_status, QUARANTINE_STATUS
     path = FIXTURES if path is None else path
     df = df.copy()
@@ -118,6 +120,36 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
                   f"(originals kept in status_raw)")
     df = _clear_void_results(df)
 
+    # Identity is an ingest invariant, not a downstream repair job. Derive a
+    # country scope from the registered competition (including domestic cups);
+    # continental competitions remain unscoped. Every writer reaches this
+    # boundary, including the identity-review tools themselves.
+    if {"home", "away"}.issubset(df.columns):
+        country_by_comp: dict[str, str | None] = {}
+
+        def _country_hint(row) -> str | None:
+            comp_name = str(row.get("competition") or "")
+            if comp_name not in country_by_comp:
+                comp = comp_get(comp_name)
+                value = getattr(comp, "country", None) if comp is not None else None
+                country_by_comp[comp_name] = (
+                    str(value) if value and str(value) not in {"Europe", "World"} else None
+                )
+            return country_by_comp[comp_name]
+
+        changed = 0
+        for i, row in df.iterrows():
+            country_hint = _country_hint(row)
+            source = str(row.get("source") or "")
+            for side in ("home", "away"):
+                raw = row.get(side)
+                canon = _canonicalise(raw, source=source, country_hint=country_hint)
+                if canon != raw:
+                    df.at[i, side] = canon
+                    changed += 1
+        if changed:
+            print(f"   write_fixtures: canonicalised {changed} team-name value(s)")
+
     # Drop self-matches. A team cannot play itself, so home == away is always
     # corrupt — and BSD does emit it: querying event 185564 returns
     # "Stade Rennais v Stade Rennais" and 196137 "Samsunspor v Samsunspor",
@@ -132,6 +164,12 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
             print(f"   write_fixtures: dropped {int(selfmatch.sum())} self-match row(s) "
                   "(home == away — corrupt provider data)")
             df = df[~selfmatch].copy()
+
+        before_dedupe = len(df)
+        df = dedupe_fixtures(df)
+        if len(df) != before_dedupe:
+            print(f"   write_fixtures: reconciled {before_dedupe - len(df)} "
+                  "cross-provider duplicate row(s)")
 
     # Shrink guard. The write itself is atomic, which protects against a
     # partial file — but not against atomically writing the WRONG file.

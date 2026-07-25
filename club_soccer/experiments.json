@@ -1,0 +1,14 @@
+{
+  "policy_days": 60,
+  "policy": "Delete unpromoted implementation at expiry; retain this register entry, evidence artifact, and git SHA.",
+  "experiments": [
+    {"name": "competition_hfa_and_rho", "evidence": "data/model_params.json", "introduced": "2026-07-24", "expires_on": "2026-09-22", "git_sha": "d99f52e36c698a1cfe26ac0a7a25a30382ce2b56"},
+    {"name": "league_environment_and_hfa", "evidence": "data/validation_league_adjustments.json", "introduced": "2026-07-24", "expires_on": "2026-09-22", "git_sha": "d99f52e36c698a1cfe26ac0a7a25a30382ce2b56"},
+    {"name": "competition_strength", "evidence": "data/comp_strength.json", "introduced": "2026-07-24", "expires_on": "2026-09-22", "git_sha": "d99f52e36c698a1cfe26ac0a7a25a30382ce2b56"},
+    {"name": "player_quality", "evidence": "data/player_quality.json", "introduced": "2026-07-12", "expires_on": "2026-09-10", "git_sha": "f692969012e76486cb961ccbc8e3a073f2dd410a"},
+    {"name": "context_coefficients", "evidence": "data/context_coef_club.json", "introduced": "2026-07-19", "expires_on": "2026-09-17", "git_sha": "644e848433582c1dfb855c234092970745a20ad0"},
+    {"name": "ensemble_weight_tuner", "evidence": "data/ensemble_weights.json", "introduced": "2026-07-24", "expires_on": "2026-09-22", "git_sha": "d99f52e36c698a1cfe26ac0a7a25a30382ce2b56"},
+    {"name": "variance_inflation", "evidence": "data/variance_inflation_evidence.json", "introduced": "2026-07-24", "expires_on": "2026-09-22", "git_sha": "463562bab87ac456dbb93a282c227bc923f38187"},
+    {"name": "promotion_and_season_priors", "evidence": "data/model_params.json", "introduced": "2026-07-24", "expires_on": "2026-09-22", "git_sha": "463562bab87ac456dbb93a282c227bc923f38187"}
+  ]
+}

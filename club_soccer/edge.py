@@ -250,6 +250,10 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
     odds["_line_key"] = line_num.map(lambda v: "" if pd.isna(v) else f"{v:g}")
     skipped = {"unknown_market_or_line": 0, "duplicate_side_book": 0,
                "incomplete_book": 0}
+    # One fixture is normally represented by three market groups (1X2,
+    # total, BTTS). Prediction is fixture-level, so price it once and reuse it
+    # instead of refitting the same context lookup for every market.
+    prediction_cache: dict[tuple[str, str, str, str], dict] = {}
     for (date, comp, home, away, market, line_key), grp in odds.groupby(
             ["date", "competition", "home", "away", "market", "_line_key"],
             dropna=False):
@@ -310,11 +314,23 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                     "lineup_confidence": round(lineup_confidence, 3),
                 }
 
-        try:
-            pred = M.predict_match(home, away, comp, str(date), model_name,
-                                   params=params, player_adj=p_adj)
-        except ValueError:
-            continue
+        fixture_key = (str(date), str(comp), str(home), str(away))
+        pred = prediction_cache.get(fixture_key)
+        if pred is None:
+            try:
+                pred = M.predict_match(home, away, comp, str(date), model_name,
+                                       params=params, player_adj=p_adj)
+            except ValueError:
+                continue
+            if calib_maps is not None:
+                from .calibrate import apply as _apply_calib
+                ph, pdr, pa = _apply_calib(
+                    pred["probs"]["home"], pred["probs"]["draw"],
+                    pred["probs"]["away"], calib_maps
+                )
+                pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"] = \
+                    ph, pdr, pa
+            prediction_cache[fixture_key] = pred
         # P0 evidence coverage. Report-only by design: pricing continues
         # unchanged so the build can be measured against live behaviour, but
         # every suggestion carries the tier of its least-evidenced side so a
@@ -328,11 +344,6 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
             "n_matches_home": int((cov.get("home") or {}).get("n", 0)),
             "n_matches_away": int((cov.get("away") or {}).get("n", 0)),
         }
-        if calib_maps is not None:
-            from .calibrate import apply as _apply_calib
-            ph, pdr, pa = _apply_calib(pred["probs"]["home"], pred["probs"]["draw"],
-                                       pred["probs"]["away"], calib_maps)
-            pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"] = ph, pdr, pa
         for side in sorted(best_quote):
             o, r, p_book = best_quote[side]
             # Edge is measured against the EXECUTING book's own de-vigged

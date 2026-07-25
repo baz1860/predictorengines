@@ -68,21 +68,16 @@ class ClubSoccerAdapter(EngineAdapter):
             from .. import market_blend as MB
             w = MB.apply_blend_to_rows(rows, self.id, bankroll,
                                        self.KELLY_FRACTION, kelly_key="kelly_stake")
+            # rows_from_odds owns the evidence gate. The optional app-level
+            # blend is the only later operation that rewrites stakes, so it is
+            # the only reason to re-apply the idempotent gate here.
+            from club_soccer.edge import apply_evidence_gate
+            apply_evidence_gate(rows)
             result["market_blend"] = {"applied": True, "w": w, "experimental": True}
             result["note"] = (result.get("note", "")
                               + f" · market-blended (experimental, w={w:.2f})")
-        # The gate is applied UNCONDITIONALLY at this boundary — not only when
-        # the experimental blend ran. A refactored/mocked/alternate result
-        # must still pass through a final club-specific evidence check before
-        # anything is marked recommended.
-        from club_soccer.edge import apply_evidence_gate
-        apply_evidence_gate(rows)
         self._mark_recommended(rows)
         if params.get("record"):
-            # ...and again immediately before recording candidates are built:
-            # recording is the last exit, and it must not rely on upstream
-            # suppression state alone.
-            apply_evidence_gate(rows)
             today = pd.Timestamp.now(tz="UTC").date().isoformat()
             recs = [r for r in rows if r.get("recommended")
                     and not r.get("suppressed_reason")

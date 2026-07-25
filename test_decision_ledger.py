@@ -283,8 +283,8 @@ def test_a_frequent_capture_schedule_is_deployed():
 
 
 def test_backtest_no_longer_reconstructs_by_default():
-    """run() must use the frozen ledger, not the deprecated reconstruction."""
+    """Only the frozen ledger path may exist; hindsight reconstruction is gone."""
     import inspect
     from club_soccer import decision_time_backtest as B
     assert "settled_bets" in inspect.getsource(B.build_bets)
-    assert "DEPRECATED" in inspect.getsource(B.build_bets_reconstructed)
+    assert not hasattr(B, "build_bets_reconstructed")
