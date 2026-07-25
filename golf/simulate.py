@@ -67,8 +67,15 @@ _USE_CONFIG = object()   # sentinel: "fall back to load_sim_config()"
 
 def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
                  score_shifts=None, birdie_rates=None, bogey_rates=None,
-                 blowup_rates=None, blowup_mix: float = 0.0):
-    """Draw scores under the one joint round-correlation / t-tail model."""
+                 blowup_rates=None, blowup_mix: float = 0.0,
+                 persist_means=None, persist_sds=None):
+    """Draw integer round scores under the joint scoring model.
+
+    ``persist_means``/``persist_sds`` let the in-play model pass the posterior
+    week effect after observed rounds. Pretournament draws use the zero-mean
+    prior. Scores are rounded because real golf settlement occurs in strokes;
+    continuous draws erase cut ties, matchup pushes and placement dead heats.
+    """
     rc = float(min(max(round_corr, 0.0), 0.95))
     if rc <= 0.0 and tail_df is None:
         # Legacy path: independent Gaussian rounds (bit-for-bit unchanged).
@@ -78,9 +85,21 @@ def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
             size=(n_sims, n, 4),
         )
     else:
-        persist_sd = sigmas * math.sqrt(rc)          # per-player week effect
+        persist_sd = (
+            np.asarray(persist_sds, dtype=float)
+            if persist_sds is not None
+            else sigmas * math.sqrt(rc)
+        )
+        persist_mean = (
+            np.asarray(persist_means, dtype=float)
+            if persist_means is not None
+            else np.zeros(n, dtype=float)
+        )
         trans_sd = sigmas * math.sqrt(1.0 - rc)      # per-round component
-        u = rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
+        u = (
+            persist_mean[np.newaxis, :]
+            + rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
+        )
         mix = min(max(float(blowup_mix or 0.0), 0.0), 0.9)
         if (
             mix > 0.0
@@ -131,7 +150,7 @@ def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
                   + z * trans_sd[np.newaxis, :, np.newaxis])
     if score_shifts is not None:
         scores = scores + score_shifts[np.newaxis, :, :]
-    return scores
+    return np.rint(scores)
 
 
 def _weather_score_shifts(players: list[Player]) -> np.ndarray | None:
@@ -291,10 +310,10 @@ def simulate_tournament(
             + scores_all[sim, survivors, 3]
         )
 
-        # Matchup / 3-ball settlement: survivors by 72-hole total, missed-cut
-        # players ranked behind everyone, ordered by their 36-hole score.
+        # Matchup / 3-ball and expected-finish settlement: survivors by 72-hole
+        # total, missed-cut players behind everyone ordered by their 36-hole score.
+        rank_score = np.where(np.isinf(r72), 1e6 + r36_sim, r72)
         if mu_idx or tb_idx:
-            rank_score = np.where(np.isinf(r72), 1e6 + r36_sim, r72)
             for k, (ia, ib) in enumerate(mu_idx):
                 sa, sb = rank_score[ia], rank_score[ib]
                 mu_counts[k, 0 if sa < sb else 1 if sa > sb else 2] += 1
@@ -334,11 +353,19 @@ def simulate_tournament(
         if group:
             groups.append((prev_pos, group))
 
-        # Accumulate
-        for i, pos in enumerate(positions):
-            if pos <= n:  # survived
-                fin_sum[i]   += pos
-                fin_count[i] += 1
+        # Expected finish is unconditional. Missed cuts occupy positions behind
+        # every survivor rather than disappearing from the denominator.
+        settlement_order = np.argsort(rank_score)
+        settlement_positions = np.empty(n, dtype=int)
+        previous = None
+        position = 1
+        for ordinal, idx in enumerate(settlement_order, 1):
+            if rank_score[idx] != previous:
+                position = ordinal
+                previous = rank_score[idx]
+            settlement_positions[idx] = position
+        fin_sum += settlement_positions
+        fin_count += 1
         # Economic dead-heat credit: a k-way tie shares the available places.
         for start, tied in groups:
             k = len(tied)
@@ -398,12 +425,10 @@ def write_predictions(
     # Sort by win probability
     ranked = sorted(players, key=lambda p: results[p.name]["win"], reverse=True)
 
-    with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for rank, p in enumerate(ranked, 1):
-            r = results[p.name]
-            w.writerow({
+    rows = []
+    for rank, p in enumerate(ranked, 1):
+        r = results[p.name]
+        rows.append({
                 "rank":       rank,
                 "name":       p.name,
                 "rating":     f"{p.rating:+.3f}",
@@ -418,7 +443,9 @@ def write_predictions(
                 "top20_pct":  f"{r['top20']*100:.1f}",
                 "cut_pct":    f"{r['made_cut']*100:.1f}",
                 "avg_finish": f"{r['avg_finish']:.1f}",
-            })
+        })
+    from .io_utils import atomic_write_csv
+    atomic_write_csv(path, cols, rows)
 
     print(f"  Predictions → {path}")
     return path

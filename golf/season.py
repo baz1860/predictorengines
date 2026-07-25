@@ -91,11 +91,10 @@ def _mirror_inplay_predictions(sim_out: dict, path: Path = PREDICTIONS_CSV) -> N
     rows = sim_out.get("rows") or []
     cols = ["rank", "name", "rating", "sigma", "owgr", "win_pct", "top5_pct",
             "top10_pct", "top20_pct", "cut_pct", "avg_finish", "score_thru"]
-    with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for rank, r in enumerate(rows, 1):
-            w.writerow({
+    from .io_utils import atomic_write_csv
+    output_rows = []
+    for rank, r in enumerate(rows, 1):
+        output_rows.append({
                 "rank": rank, "name": r.get("name", ""),
                 "rating": f"{_num(r.get('rating')):+.3f}",
                 "sigma": "", "owgr": "",
@@ -106,7 +105,8 @@ def _mirror_inplay_predictions(sim_out: dict, path: Path = PREDICTIONS_CSV) -> N
                 "cut_pct": "100.0",
                 "avg_finish": f"{_num(r.get('avg_finish')):.1f}",
                 "score_thru": r.get("score", ""),
-            })
+        })
+    atomic_write_csv(path, cols, output_rows)
 
 
 def _is_inplay(sim_out: dict) -> bool:
@@ -159,7 +159,30 @@ def build_card(
                          else (prelim_done + 1 if prelim_done else 1))
         manifest = GREF.run_refresh(season=season, event=event_id, stats=stats,
                                     weather=weather, fit=fit, round_no=refresh_round)
+        qa_errors = ((manifest.get("qa") or {}).get("errors") or [])
+        if qa_errors:
+            detail = "; ".join(
+                str(row.get("message") or row) for row in qa_errors
+            )
+            raise RuntimeError(
+                f"current-event refresh failed QA; card not priced: {detail}"
+            )
         event = manifest.get("event") or {}
+        field_rows = _read_csv(GREF.store.FIELD_CSV)
+        field_event_ids = {
+            str(row.get("event_id") or "").strip()
+            for row in field_rows if str(row.get("event_id") or "").strip()
+        }
+        current_event_id = str(event.get("event_id") or "").strip()
+        if (
+            not field_rows
+            or not current_event_id
+            or field_event_ids != {current_event_id}
+        ):
+            raise RuntimeError(
+                "current field/event snapshot is incomplete or incoherent; "
+                "card not priced"
+            )
         notes.append("refresh: " + (event.get("name") or "current event"))
 
     # Read the live state the refresh just recorded to report the round and, when
@@ -185,7 +208,13 @@ def build_card(
         major = any(h in (event_name or "").lower() for h in _MAJOR_HINTS)
     course = course or event.get("course_name", "")
 
-    base = {"sims": sims, "course": course, "major": major, "seed": seed}
+    base = {
+        "sims": sims,
+        "course": course,
+        "major": major,
+        "seed": seed,
+        "weather": weather,
+    }
 
     # Field projection. cmd_simulate auto-routes to the in-play sim once a round
     # is complete; mirror that live-conditioned board into predictions.csv so the

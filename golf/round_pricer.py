@@ -28,6 +28,27 @@ OUT_CSV = DATA_DIR / "round_edges.csv"
 ROUND_GROUP_MARKETS = ("2ball", "3ball")
 
 
+def _kelly_for_returns(returns: np.ndarray) -> float:
+    """Log-optimal fraction for an empirical multi-outcome return distribution."""
+    profit = np.asarray(returns, dtype=float) - 1.0
+    if profit.size == 0 or float(profit.mean()) <= 0.0:
+        return 0.0
+
+    def derivative(fraction: float) -> float:
+        return float(np.mean(profit / (1.0 + fraction * profit)))
+
+    lo, hi = 0.0, 0.999999
+    if derivative(hi) > 0:
+        return hi
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        if derivative(mid) > 0:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
 def _norm_name(name: str) -> str:
     """Case/spacing-insensitive key for matching board names to the field."""
     return M._fold_name(name)
@@ -79,7 +100,7 @@ def price_round_groups(
     is_major: bool = False,
     sims: int = 200_000,
     bankroll: float = 100.0,
-    kelly: float = 0.25,
+    kelly: float = E.DEFAULT_KELLY,
     min_rounds: int = 60,
     seed: int = 7,
 ) -> list[dict]:
@@ -129,6 +150,7 @@ def price_round_groups(
         else:
             item = M.Player(
                 name=name,
+                dg_id=item.dg_id,
                 owgr=item.owgr,
                 country=item.country,
                 tee_time_r1=item.tee_time_r1,
@@ -197,7 +219,7 @@ def price_round_groups(
             expected_return = float(returns.mean())
             ev = expected_return - 1.0
             dead_heat_prob_equiv = expected_return / q.decimal_odds
-            kf = max(0.0, E.kelly_fraction(dead_heat_prob_equiv, q.decimal_odds) * kelly)
+            kf = max(0.0, _kelly_for_returns(returns) * kelly)
             thin = int(n_rounds.get(q.player_name, 0)) < min_rounds
             # Never stake a thin-sample player: with too little (or no) history the
             # rating is a default-skill guess, so a big "edge" against the book is
@@ -236,12 +258,12 @@ def write_round_edges(rows: list[dict], path: Path | None = None) -> Path:
     path = path or OUT_CSV
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
+        from .io_utils import atomic_write_text
+        atomic_write_text(path, "")
         return path
     cols = list(rows[0].keys())
-    with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        w.writerows(rows)
+    from .io_utils import atomic_write_csv
+    atomic_write_csv(path, cols, rows)
     return path
 
 
@@ -253,7 +275,7 @@ def main() -> None:
     ap.add_argument("--major", action="store_true")
     ap.add_argument("--sims", type=int, default=200_000)
     ap.add_argument("--bankroll", type=float, default=None)
-    ap.add_argument("--kelly", type=float, default=0.25)
+    ap.add_argument("--kelly", type=float, default=E.DEFAULT_KELLY)
     ap.add_argument("--min-rounds", type=int, default=60)
     ap.add_argument("--min-edge", type=float, default=0.0)
     args = ap.parse_args()

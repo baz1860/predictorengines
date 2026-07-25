@@ -25,11 +25,11 @@ DATA_DIR = Path(__file__).parent / "data"
 BLEND_JSON = DATA_DIR / "market_blend.json"
 ODDS_HISTORY = DATA_DIR / "odds_history.csv"
 
-# Default market-blend weights (weight ON the market price). Sharp longshot
-# outrights lean to the market; lower-variance model-edge markets lean to model.
+# Market blending is disabled until weights are estimated from timestamped,
+# point-in-time odds/outcome history. Guessed weights silently rewrite the model.
 DEFAULT_BLEND_W = {
-    "win": 0.60, "top5": 0.45, "top10": 0.40, "top20": 0.35,
-    "cut": 0.25, "matchup": 0.20, "3ball": 0.20,
+    "win": 0.0, "top5": 0.0, "top10": 0.0, "top20": 0.0,
+    "cut": 0.0, "matchup": 0.0, "3ball": 0.0,
 }
 
 
@@ -74,8 +74,7 @@ def devig_power(odds_list: list[float], tol: float = 1e-9) -> list[float]:
     return [p / s for p in out]
 
 
-# Typical per-line bookmaker margin baked into a single-sided place price.
-LINE_MARGIN = {"top5": 1.12, "top10": 1.10, "top20": 1.08, "cut": 1.06}
+LINE_MARKETS = {"top5", "top10", "top20", "cut"}
 
 
 def devig(odds_list: list[float], method: str = "power") -> list[float]:
@@ -89,12 +88,14 @@ def devig(odds_list: list[float], method: str = "power") -> list[float]:
 
 
 def devig_line(odds: float, market: str) -> float:
-    """Fair probability for a single-sided place line (top-N / make-cut), where
-    the book bakes a per-line margin into the 'yes' price and quotes no
-    complement. fair_p = implied / margin."""
+    """Raw implied probability for a single-sided place line.
+
+    A one-sided quote cannot be de-vigged without its complement. Do not invent
+    a margin: this value is diagnostic only and blending is disabled by default.
+    """
     if not odds or odds <= 1.0:
         return 0.0
-    return (1.0 / odds) / LINE_MARGIN.get(market, 1.10)
+    return 1.0 / odds
 
 
 def fair_prob_map(odds_by_name: dict[str, float], method: str = "power") -> dict[str, float]:
@@ -102,9 +103,6 @@ def fair_prob_map(odds_by_name: dict[str, float], method: str = "power") -> dict
     names = [n for n, o in odds_by_name.items() if o and o > 1.0]
     fair = devig([odds_by_name[n] for n in names], method=method)
     return dict(zip(names, fair))
-
-
-OUTRIGHT_MARGIN = 1.30   # assumed win-market margin when only a partial board is seen
 
 
 def devig_outright(odds_by_name: dict[str, float], complete_threshold: float = 1.10,
@@ -115,12 +113,13 @@ def devig_outright(odds_by_name: dict[str, float], complete_threshold: float = 1
     A complete board's implied probs sum to >1 (the overround) → power de-vig,
     normalising to 1 and correcting favourite-longshot bias. A partial board
     (we only pulled the top N names, implied sum <1) must NOT be normalised to
-    1 — instead strip an assumed market margin per price."""
+    1 — return raw implied probabilities because the missing overround cannot be
+    identified honestly."""
     names = [n for n, o in odds_by_name.items() if o and o > 1.0]
     imp_sum = sum(1.0 / odds_by_name[n] for n in names)
     if complete is True or (complete is None and imp_sum >= complete_threshold):
         return fair_prob_map(odds_by_name, method="power")
-    return {n: (1.0 / odds_by_name[n]) / OUTRIGHT_MARGIN for n in names}
+    return {n: 1.0 / odds_by_name[n] for n in names}
 
 
 # ─────────────────────────────────────────────
@@ -170,7 +169,7 @@ def snapshot_fair(odds_by_market: dict[str, dict[str, float]], event: str = "",
     ts = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
     rows = []
     for market, board in odds_by_market.items():
-        if market in LINE_MARGIN:
+        if market in LINE_MARKETS:
             fair = {player: devig_line(o, market) for player, o in board.items()}
         else:
             fair = fair_prob_map(board, method=method)

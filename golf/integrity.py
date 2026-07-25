@@ -27,6 +27,7 @@ def check_rounds(path: Path = ROUNDS_CSV) -> tuple[dict, list[str]]:
         return {}, [f"missing authoritative history: {path}"]
 
     seen: set[tuple[str, str, str, str]] = set()
+    seen_names: set[tuple[str, str, str, str]] = set()
     event_meta: dict[tuple[str, str], dict[str, set[str]]] = defaultdict(
         lambda: defaultdict(set)
     )
@@ -48,6 +49,12 @@ def check_rounds(path: Path = ROUNDS_CSV) -> tuple[dict, list[str]]:
             if key in seen:
                 errors.append(f"line {line_no}: duplicate round key {key}")
             seen.add(key)
+            name_key = (tour, event_id, player.casefold(), round_no)
+            if name_key in seen_names:
+                errors.append(
+                    f"line {line_no}: ambiguous duplicate display-name round {name_key}"
+                )
+            seen_names.add(name_key)
 
             if not event_id or not tour or not player:
                 errors.append(f"line {line_no}: blank event, tour, or player identity")
@@ -58,13 +65,25 @@ def check_rounds(path: Path = ROUNDS_CSV) -> tuple[dict, list[str]]:
                     errors.append(
                         f"line {line_no}: round {parsed_round} outside 1..{total_rounds}"
                     )
-                float(row["score_to_par"])
+                score = float(row["score_to_par"])
+                if not -15.0 <= score <= 30.0:
+                    errors.append(
+                        f"line {line_no}: impossible round score {score:g}"
+                    )
                 if int(row["made_cut"]) not in (0, 1):
                     raise ValueError("made_cut")
                 if int(row["no_cut"]) not in (0, 1):
                     raise ValueError("no_cut")
+                if int(row["multi_course"]) not in (0, 1):
+                    raise ValueError("multi_course")
                 if int(row["field_size"]) <= 0:
                     raise ValueError("field_size")
+                cut_rule = int(row["cut_rule"])
+                if not 1 <= cut_rule <= 70:
+                    raise ValueError("cut_rule")
+                realized = int(row["realized_cut_count"])
+                if realized < 0 or realized > int(row["field_size"]):
+                    raise ValueError("realized_cut_count")
             except (TypeError, ValueError):
                 errors.append(f"line {line_no}: invalid numeric round fields")
 
@@ -83,9 +102,11 @@ def check_rounds(path: Path = ROUNDS_CSV) -> tuple[dict, list[str]]:
                 "course_par",
                 "course_yards",
                 "cut_round",
-                "cut_count",
+                "cut_rule",
+                "realized_cut_count",
                 "total_rounds",
                 "no_cut",
+                "multi_course",
             ):
                 meta[column].add(str(row.get(column) or ""))
 
@@ -154,8 +175,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Check golf history/model integrity offline")
     parser.add_argument("--rounds", type=Path, default=ROUNDS_CSV)
     parser.add_argument("--model", type=Path, default=MODEL_PARAMS)
+    parser.add_argument(
+        "--rounds-only",
+        action="store_true",
+        help="validate authoritative history without requiring a post-refresh fit",
+    )
     args = parser.parse_args()
-    stats, errors = run(args.rounds, args.model)
+    if args.rounds_only:
+        stats, errors = check_rounds(args.rounds)
+    else:
+        stats, errors = run(args.rounds, args.model)
     if errors:
         for error in errors:
             print(f"FAIL: {error}")
@@ -163,7 +192,8 @@ def main() -> None:
     print(
         "PASS: "
         f"{stats['rows']:,} rounds · {stats['events']:,} events · "
-        f"history/model through {stats['max_date']}"
+        f"{'history' if args.rounds_only else 'history/model'} through "
+        f"{stats['max_date']}"
     )
 
 

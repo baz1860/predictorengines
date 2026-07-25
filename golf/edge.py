@@ -15,7 +15,7 @@ Output: data/edge_report.csv
 
 Usage:
   python -m golf.edge [--min-edge 3.0] [--h2h-all] [--h2h "Rory McIlroy" "Scottie Scheffler"]
-                 [--kelly 0.25] [--no-bet] [--market win|top5|top10|top20|cut|all]
+                 [--kelly 0.0] [--no-bet] [--market win|top5|top10|top20|cut|all]
 """
 
 from __future__ import annotations
@@ -36,7 +36,9 @@ PARENT_DATA = Path(__file__).parent.parent / "data"
 
 DEFAULT_API_KEY = ""  # The Odds API key (optional)
 DEFAULT_MIN_EDGE = 3.0
-DEFAULT_KELLY = 0.25
+# Historical outcome validation is not an economic odds backtest. Automatic
+# staking stays off until timestamped offered-price history validates it.
+DEFAULT_KELLY = 0.0
 EXPOSURE_CAP = 0.20    # max fraction of bankroll on any single bet
 DEFAULT_SIGMA = 2.85   # field round-to-round σ, fallback for legacy h2h approx
 
@@ -161,8 +163,9 @@ def kelly_fraction(model_prob: float, decimal_odds: float) -> float:
     return (b * model_prob - q) / b if b > 0 else 0.0
 
 
-def stake(model_prob: float, decimal_odds: float, bankroll: float, kelly_mult: float = 0.25) -> float:
-    """Quarter-Kelly stake in £, capped at EXPOSURE_CAP * bankroll."""
+def stake(model_prob: float, decimal_odds: float, bankroll: float,
+          kelly_mult: float = DEFAULT_KELLY) -> float:
+    """Opt-in Kelly stake in £, capped at EXPOSURE_CAP * bankroll."""
     kf = kelly_fraction(model_prob, decimal_odds) * kelly_mult
     kf = max(0.0, kf)
     raw = kf * bankroll
@@ -284,7 +287,7 @@ def evaluate_h2h(
     all_pairs: bool = False,
     min_edge: float = 3.0,
     bankroll: float = 100.0,
-    kelly_mult: float = 0.25,
+    kelly_mult: float = DEFAULT_KELLY,
 ) -> list[dict]:
     """Retired unsafe legacy API; tournament matchups require keyed pair odds."""
     raise RuntimeError(
@@ -404,7 +407,8 @@ def _bet_row(player, market_label, side, book, p_model, p_final, bankroll, kelly
         "player": player, "market": market_label,
         "bet": f"{market_label} — {player}", "side": side,
         "odds": round(float(book), 2),
-        "p_model": round(float(p_final), 4),
+        "p_model": round(float(p_model), 4),
+        "p_final": round(float(p_final), 4),
         "ev_per_unit": round(float(e), 3),
         "kelly_frac": round(kf, 4),
         "stake_gbp": round(kf * bankroll, 2),
@@ -534,7 +538,7 @@ def price_all(rated, results, odds_data, matchup_odds, threeball_odds,
 
 def write_edge_report(bets: list[dict], path: Path | None = None) -> Path:
     path = path or DATA_DIR / "edge_report.csv"
-    cols = ["player", "market", "side", "odds", "p_model", "p_market",
+    cols = ["player", "market", "side", "odds", "p_model", "p_market", "p_final",
             "ev_per_unit", "stake_gbp", "recommended"]
     # Always (re)write, even when empty: an empty result must clear the file so
     # the card and downstream readers never surface a previous run's stale bets

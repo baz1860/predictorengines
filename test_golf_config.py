@@ -56,7 +56,7 @@ def synthetic_rounds() -> pd.DataFrame:
 def test_config_load_save():
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "model_config.json"
-        path.write_text(json.dumps({"config": {"form_weight": 0.4, "course_k": 20}}))
+        path.write_text(json.dumps({"config": {"form_weight": 0.4}}))
         cfg = model.load_model_config(path)
         check("loads configured form weight", cfg["form_weight"] == 0.4, str(cfg))
         check("fills missing default skill half-life",
@@ -77,7 +77,6 @@ def test_fit_applies_config():
         "ridge_skill": 5.0,
         "form_halflife_days": 14.0,
         "form_weight": 0.0,
-        "course_k": 8.0,
         "sigma_shrink_rounds": 15.0,
     }
     params = model.fit(synthetic_rounds(), asof="2024-07-01", config=cfg)
@@ -85,8 +84,6 @@ def test_fit_applies_config():
           str(params["model_config"]))
     check("fit applies skill half-life", params["skill_halflife_days"] == 270.0,
           str(params["skill_halflife_days"]))
-    check("fit applies course shrinkage", params["course_k"] == 8.0,
-          str(params["course_k"]))
     check("fit returns fitted players", len(params["players"]) == 20,
           str(len(params["players"])))
 

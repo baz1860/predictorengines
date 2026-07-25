@@ -81,6 +81,8 @@ class Player:
     birdie_rate: float = 0.18  # birdie-or-better holes / holes played
     bogey_rate: float = 0.14   # exactly-bogey holes / holes played
     blowup_rate: float = 0.02  # double-bogey-or-worse holes / holes played
+    scoring_shape_sample: int = 0
+    scoring_shape_source: str = "field"
 
 
 def _safe_float(val, default: float = 0.0) -> float:
@@ -163,6 +165,7 @@ def load_field(
             p = players.get(name.lower())
             if p is None:
                 p = Player(name=name)
+            p.dg_id = str(row.get("dg_id") or p.dg_id or "")
 
             # Override sigma from field.csv if set
             sigma_override = _safe_float(row.get("course_sigma"), 0.0)
@@ -376,7 +379,6 @@ FORM_HALFLIFE_DAYS = 21.0       # short-window recency for "form"
 FORM_WINDOW_DAYS = 70           # only rounds inside this window feed form
 FORM_K = 12.0                   # EB shrink for form (equivalent rounds)
 FORM_WEIGHT = 0.7               # how much form nudges the rating (validate tunes)
-COURSE_K = 12.0                 # EB shrink for course fit
 COURSE_PROFILE_RIDGE = 40.0     # shrink player par/yardage sensitivity
 COURSE_PROFILE_WEIGHT = 0.5     # conservative general-course adjustment
 DEFAULT_SKILL_QUANTILE = 0.20   # rating for unknown players (weak-field default)
@@ -387,7 +389,6 @@ DEFAULT_MODEL_CONFIG = {
     "sigma_shrink_rounds": SIGMA_SHRINK_ROUNDS,
     "form_halflife_days": FORM_HALFLIFE_DAYS,
     "form_weight": FORM_WEIGHT,
-    "course_k": COURSE_K,
     "course_profile_ridge": COURSE_PROFILE_RIDGE,
     "course_profile_weight": COURSE_PROFILE_WEIGHT,
 }
@@ -420,7 +421,8 @@ def save_model_config(config: dict, metrics: dict | None = None,
     payload = {"config": {k: float(config[k]) for k in DEFAULT_MODEL_CONFIG},
                "metrics": metrics or {},
                "source": "golf/validate.py --tune-config"}
-    path.write_text(json.dumps(payload, indent=2))
+    from .io_utils import atomic_write_text
+    atomic_write_text(path, json.dumps(payload, indent=2))
     return path
 
 
@@ -543,6 +545,9 @@ def load_rounds_df(path: Path | None = None):
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date", "player", "score_to_par"])
     df["score_to_par"] = df["score_to_par"].astype(float)
+    # Defense in depth: provider and integrity checks reject these first, but a
+    # hand-edited CSV must not be able to explode fitted skill and variance.
+    df = df[df["score_to_par"].between(-15.0, 30.0)]
     return df
 
 
@@ -564,7 +569,6 @@ def fit(rounds_df, asof=None, config: dict | None = None,
     sigma_shrink = float(cfg["sigma_shrink_rounds"])
     form_halflife = float(cfg["form_halflife_days"])
     form_weight = float(cfg["form_weight"])
-    course_k = float(cfg["course_k"])
     course_profile_ridge = float(cfg["course_profile_ridge"])
     course_profile_weight = float(cfg["course_profile_weight"])
 
@@ -576,7 +580,21 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         raise ValueError(f"only {len(df)} rounds before {asof} — need ≥500")
     asof = asof or (df["date"].max() + pd.Timedelta(days=1))
 
-    players = sorted(df["player"].unique())
+    df = df.copy()
+    source_ids = df.get("dg_id", pd.Series("", index=df.index)).fillna("").astype(str)
+    source_ids = source_ids.str.replace(r"\.0$", "", regex=True).str.strip()
+    df["player_key"] = np.where(
+        source_ids.ne(""),
+        "source:" + source_ids,
+        "name:" + df["player"].map(_fold_name),
+    )
+    players = sorted(df["player_key"].unique())
+    display_names = (
+        df.sort_values("date")
+        .groupby("player_key")["player"]
+        .last()
+        .to_dict()
+    )
     pi = {p: i for i, p in enumerate(players)}
     np_ = len(players)
     # tournament-round group key
@@ -592,7 +610,7 @@ def fit(rounds_df, asof=None, config: dict | None = None,
 
     # Sparse design: each row has  +1·diff[tr]  −1·skill[p].  Columns 0..np-1 =
     # skill, np..np+nd-1 = difficulty. Rows scaled by w; ridge rows appended.
-    pidx = df["player"].map(pi).values
+    pidx = df["player_key"].map(pi).values
     tidx = df["tr"].map(di).values + np_
     m = len(df)
     rows = np.repeat(np.arange(m), 2)
@@ -727,29 +745,16 @@ def fit(rounds_df, asof=None, config: dict | None = None,
     else:
         major_sigma_mult = 1.05
 
-    # ── course fit: −EB-shrunk mean residual per (player, course) ──
+    # Exact-course effects failed honest ablation and are disabled. They were
+    # sparse, unbounded, and particularly unsafe for rotating multi-course events.
     courses: dict[str, dict[str, float]] = {}
-    course_fit_lookup: dict[tuple[str, str], float] = {}
-    cdiff = df.assign(resid=resid)
-    for course, grp in cdiff.groupby("course"):
-        cp = grp.groupby("player")["resid"].agg(["mean", "count"])
-        cp = cp[cp["count"] >= 4]
-        if cp.empty:
-            continue
-        fit_vals = (-cp["mean"]) * (cp["count"] / (cp["count"] + course_k))
-        course_fit_lookup.update(
-            {(str(course), str(player)): float(value)
-             for player, value in fit_vals.items()}
-        )
-        courses[str(course)] = {p: round(float(v), 3)
-                                for p, v in fit_vals.items() if abs(v) > 0.05}
-
-    # ── recent form, after removing the fitted course term ──
-    # A course specialist's predictable venue residual is not current form.
-    course_net_resid = resid + np.array([
-        course_fit_lookup.get((str(course), str(player)), 0.0)
-        for course, player in zip(df["course"].values, df["player"].values)
-    ])
+    single_course = (
+        pd.to_numeric(
+            df.get("multi_course", pd.Series(0, index=df.index)),
+            errors="coerce",
+        ).fillna(0).values == 0
+    )
+    course_net_resid = resid
 
     # ── player sensitivity to measured course par and yardage ──
     # Estimate within-player slopes on field/difficulty-adjusted residuals.
@@ -766,6 +771,7 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         np.isfinite(par_values) & np.isfinite(yard_values)
         & (par_values >= 68) & (par_values <= 75)
         & (yard_values >= 5000) & (yard_values <= 9000)
+        & single_course
     )
     if valid_course.any():
         course_weights = w[valid_course] ** 2
@@ -819,7 +825,7 @@ def fit(rounds_df, asof=None, config: dict | None = None,
 
     default_skill = float(np.quantile(skill, DEFAULT_SKILL_QUANTILE))
     if include_public_stats is None:
-        include_public_stats = True
+        include_public_stats = False
     public_priors = load_public_stat_priors(asof=asof) if include_public_stats else {}
 
     return {
@@ -841,7 +847,6 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         "sigma_shrink_rounds": sigma_shrink,
         "form_halflife_days": form_halflife,
         "form_weight": form_weight,
-        "course_k": course_k,
         "course_profile_ridge": course_profile_ridge,
         "course_profile_weight": course_profile_weight,
         "model_config": {k: float(cfg[k]) for k in DEFAULT_MODEL_CONFIG},
@@ -851,6 +856,9 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         "fitted_rounds": int(m),
         "players": {
             p: {
+                "display_name": str(display_names[p]),
+                "source_player_id": p.removeprefix("source:")
+                    if p.startswith("source:") else "",
                 "skill": round(float(skill[i]), 4),
                 "sigma": round(float(sigma_p[i]), 4),
                 "form": round(float(form[i]), 4),
@@ -893,8 +901,8 @@ def save_params(params: dict, path: Path | None = None) -> Path:
     _assert_sane_priors(params)
     path = path or PARAMS_JSON
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(params, f, indent=1)
+    from .io_utils import atomic_write_text
+    atomic_write_text(path, json.dumps(params, indent=1))
     return path
 
 
@@ -948,12 +956,12 @@ _FOLDED_ALIASES = {_fold_name(k): v for k, v in NAME_ALIASES.items()}
 
 
 def _folded_index(params: dict) -> dict[str, str | None]:
-    """Folded-name → canonical fitted name, cached on the params dict."""
+    """Folded display name → stable fitted identity, refusing ambiguity."""
     idx = params.get("_folded_index")
     if idx is None:
         idx = {}
-        for n in params.get("players", {}):
-            key = _fold_name(n)
+        for n, row in params.get("players", {}).items():
+            key = _fold_name(row.get("display_name") or n)
             if key in idx and idx[key] != n:
                 idx[key] = None  # ambiguous: never silently pick the last player
             else:
@@ -966,9 +974,12 @@ def _folded_index(params: dict) -> dict[str, str | None]:
     return idx
 
 
-def resolve_name(name: str, params: dict) -> str | None:
-    """Canonical fitted name for `name`, tolerant of accents/case. None if unknown."""
+def resolve_name(name: str, params: dict, source_player_id: str = "") -> str | None:
+    """Stable fitted identity for a source id or unambiguous display name."""
     players = params.get("players", {})
+    source_key = f"source:{str(source_player_id).strip()}"
+    if source_player_id and source_key in players:
+        return source_key
     if name in players:
         return name
     idx = _folded_index(params)
@@ -1021,10 +1032,11 @@ def _public_stat_alignment(params: dict) -> dict | None:
     fw = float(params.get("form_weight", FORM_WEIGHT))
     fits: list[float] = []
     pubs: list[float] = []
-    for name, d in players.items():
+    for identity, d in players.items():
         if "skill" not in d:
             continue
-        sp = _public_stat_prior(name, params, name)
+        display_name = str(d.get("display_name") or identity)
+        sp = _public_stat_prior(display_name, params, identity)
         if sp is None:
             continue
         fits.append(float(d["skill"]) + fw * float(d.get("form", 0.0)))
@@ -1134,13 +1146,21 @@ def _global_player_prior(name: str, canon: str | None = None,
     return None
 
 
-def _tee_hour(value: str) -> float | None:
+def _tee_hour(value: str, timezone: str = "") -> float | None:
     import re
+    from zoneinfo import ZoneInfo
 
     text = str(value or "").strip()
     if not text:
         return None
     try:
+        # ESPN tee times are commonly ISO-8601 UTC. Open-Meteo wave hours are
+        # local course time, so convert before extracting the hour.
+        if "T" in text:
+            parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None and timezone and timezone != "auto":
+                parsed = parsed.astimezone(ZoneInfo(timezone))
+            return parsed.hour + parsed.minute / 60.0
         m12 = re.search(r"\b(\d{1,2}):(\d{2})\s*([AP]M)\b", text, re.I)
         if m12:
             hour = int(m12.group(1)) % 12
@@ -1150,8 +1170,6 @@ def _tee_hour(value: str) -> float | None:
         m24 = re.search(r"\b(\d{1,2}):(\d{2})(?::\d{2})?\b", text)
         if m24:
             return int(m24.group(1)) + int(m24.group(2)) / 60.0
-        if "T" in text:
-            text = text.split("T", 1)[1]
         hh, mm = text[:5].split(":")
         return int(hh) + int(mm) / 60.0
     except Exception:
@@ -1167,7 +1185,12 @@ def _weather_wave_adjustment(player: Player, weather_features: dict,
     wave = r.get("wave_penalty") or {}
     if not wave:
         return 0.0
-    tee = _tee_hour(getattr(player, f"tee_time_r{round_no}", ""))
+    location = weather_features.get("location") or {}
+    timezone = str(location.get("timezone") or weather_features.get("timezone") or "")
+    tee = _tee_hour(
+        getattr(player, f"tee_time_r{round_no}", ""),
+        timezone=timezone,
+    )
     if tee is None:
         return 0.0
     split = float(wave.get("split_hour", 12.0))
@@ -1240,14 +1263,20 @@ def _rating_for_components(name: str, params: dict, course: str = "",
                            par3_holes: int = 0, par4_holes: int = 0,
                            par5_holes: int = 0,
                            world_rank: int | None = None,
+                           source_player_id: str = "",
                            global_priors: dict | None = None,
                            feature_flags: dict | None = None) -> tuple[float, float, dict]:
     """(rating, sigma, components) for one player from fitted params."""
-    canon = resolve_name(name, params)
+    canon = resolve_name(name, params, source_player_id)
     pl = params.get("players", {}).get(canon) if canon else None
     fw = params.get("form_weight", FORM_WEIGHT)
-    flags = {"public_stat": True, "global_priors": True, "course_profile": True,
-             **(feature_flags or {})}
+    flags = {
+        "public_stat": False,
+        "global_priors": False,
+        "exact_course": False,
+        "course_profile": True,
+        **(feature_flags or {}),
+    }
     stat_prior = _public_stat_prior(name, params, canon) if flags["public_stat"] else None
     manual_global = _global_player_prior(name, canon, global_priors) if flags["global_priors"] else None
     global_prior = _owgr_skill_prior(world_rank) if flags["global_priors"] else None
@@ -1294,7 +1323,9 @@ def _rating_for_components(name: str, params: dict, course: str = "",
             rating = (1 - blend) * rating + blend * gp
         sigma = pl.get("sigma", params.get("sigma_field", DEFAULT_SIGMA))
     course_rows = params.get("courses", {}).get(course, {}) if course else {}
-    has_exact_course = bool(canon and canon in course_rows)
+    has_exact_course = bool(
+        flags["exact_course"] and canon and canon in course_rows
+    )
     if has_exact_course:
         cf = course_rows.get(canon, 0.0)
         components["course_fit"] = cf
@@ -1340,9 +1371,10 @@ def predict_field(field_names, params: dict, course: str = "",
     """
     maj_mult = params.get("major_sigma_mult", 1.0) if is_major else 1.0
     flags = {
-        "weather": True,
-        "public_stat": True,
-        "global_priors": True,
+        "weather": False,
+        "public_stat": False,
+        "global_priors": False,
+        "exact_course": False,
         "course_profile": True,
         "scoring_shape": True,
         **(feature_flags or {}),
@@ -1353,17 +1385,22 @@ def predict_field(field_names, params: dict, course: str = "",
     for item in field_names:
         name = item.name if isinstance(item, Player) else str(item)
         world_rank = getattr(item, "owgr", None) if isinstance(item, Player) else None
+        source_player_id = (
+            getattr(item, "dg_id", "") if isinstance(item, Player) else ""
+        )
         rating, sigma, comps = _rating_for_components(
             name, params, course, course_par=course_par,
             course_yards=course_yards, par3_holes=par3_holes,
             par4_holes=par4_holes, par5_holes=par5_holes,
             world_rank=world_rank,
+            source_player_id=source_player_id,
             global_priors=global_priors,
             feature_flags=flags)
-        canon = resolve_name(name, params)
+        canon = resolve_name(name, params, source_player_id)
         pl = params.get("players", {}).get(canon, {}) if canon else {}
         p = Player(name=name)
         if isinstance(item, Player):
+            p.dg_id = item.dg_id
             p.owgr = item.owgr
             p.country = item.country
             p.tee_time_r1 = item.tee_time_r1
@@ -1372,16 +1409,24 @@ def predict_field(field_names, params: dict, course: str = "",
             p.start_hole_r2 = item.start_hole_r2
         p.rating = rating
         p.sigma = sigma * maj_mult
-        p.birdie_rate = (
-            float(pl.get("birdie_rate", params.get("birdie_rate_field", 0.18)))
-            if flags["scoring_shape"] else 0.0
+        hole_sample = int(pl.get("hole_sample", 0) or 0)
+        use_player_shape = flags["scoring_shape"] and hole_sample >= 360
+        p.scoring_shape_sample = hole_sample
+        p.scoring_shape_source = "player" if use_player_shape else "field"
+        p.birdie_rate = float(
+            pl.get("birdie_rate")
+            if use_player_shape
+            else params.get("birdie_rate_field", 0.18)
         )
-        p.bogey_rate = (
-            float(pl.get("bogey_rate", params.get("bogey_rate_field", 0.14)))
-            if flags["scoring_shape"] else 0.0
+        p.bogey_rate = float(
+            pl.get("bogey_rate")
+            if use_player_shape
+            else params.get("bogey_rate_field", 0.14)
         )
         p.blowup_rate = float(
-            pl.get("blowup_rate", params.get("double_bogey_rate_field", 0.02))
+            pl.get("blowup_rate")
+            if use_player_shape
+            else params.get("double_bogey_rate_field", 0.02)
         )
         p.sg_baseline = pl.get("skill", rating)
         p.recent_form = pl.get("form", 0.0)
@@ -1441,7 +1486,8 @@ if __name__ == "__main__":
         print("-" * 65)
         for i, (name, pl) in enumerate(ranked[:args.top], 1):
             rating = pl["skill"] + params["form_weight"] * pl["form"]
-            print(f"{i:<5}{name:<26}{rating:>+8.3f}{pl['skill']:>+8.3f}"
+            label = str(pl.get("display_name") or name)
+            print(f"{i:<5}{label:<26}{rating:>+8.3f}{pl['skill']:>+8.3f}"
                   f"{pl['form']:>+7.3f}{pl['sigma']:>6.2f}{pl['n_rounds']:>5}")
         raise SystemExit(0)
 

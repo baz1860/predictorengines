@@ -7,9 +7,12 @@ import datetime as dt
 import sqlite3
 from pathlib import Path
 
+import pandas as pd
+
 from golf import model
+from golf import validate
 from golf.providers import legacy
-from golf.providers.espn import EspnGolfProvider
+from golf.providers.espn import EspnGolfProvider, _event_from_payload
 from golf.providers.odds_manual import ManualOddsProvider, parse_skybet_threeball_text
 
 
@@ -90,7 +93,9 @@ def test_history_uses_per_event_status_course_rules_and_tee_times(monkeypatch):
         assert row.course_par == 72
         assert row.course_yards == 7600
         assert row.cut_round == 2
-        assert row.cut_count == 70
+        assert row.realized_cut_count == 70
+        assert row.cut_rule == 65
+        assert row.multi_course == 1
         assert row.total_rounds == 4
         assert row.tee_time.endswith("Z")
     assert by_player == {"Made It": 1, "Missed It": 0}
@@ -101,10 +106,74 @@ def test_espn_live_and_history_names_resolve_to_one_provider():
 
 
 def test_event_exposes_measured_course_hole_mix():
-    from golf.providers.espn import _event_from_payload
-
     event = _event_from_payload(_event_payload()["events"][0])
     assert (event.par3_holes, event.par4_holes, event.par5_holes) == (4, 10, 4)
+
+
+def test_realized_cut_count_never_becomes_pre_event_rule():
+    payload = _event_payload()["events"][0]
+    payload["tournament"]["cutCount"] = 84
+    event = _event_from_payload(payload)
+    assert event.cut_rule == 65
+    assert event.realized_cut_count == 84
+    assert not event.no_cut
+
+
+def test_history_rejects_impossible_round_display_value(monkeypatch):
+    payload = _event_payload()
+    bad = payload["events"][0]["competitions"][0]["competitors"][0]
+    bad["linescores"][0]["displayValue"] = "-70"
+    provider = legacy.EspnProvider(seasons=[2025])
+    provider._meta["E1"] = legacy.TournamentMeta("E1", "Rotating Open", "2025-01-22")
+    monkeypatch.setattr(provider, "_load_all", lambda: None)
+    monkeypatch.setattr(provider, "_event_payload", lambda _event: payload)
+    rows = provider.rounds_for("E1")
+    assert not any(
+        row.player == "Made It" and row.round == 1 for row in rows
+    )
+
+
+def test_validation_uses_official_playoff_winner():
+    event = pd.DataFrame([
+        {
+            "player": player,
+            "round": rnd,
+            "score_to_par": score,
+            "made_cut": 1,
+            "finish": finish,
+        }
+        for player, finish in (("Winner", 1), ("Playoff loser", 2))
+        for rnd, score in enumerate((-1, -1, -1, -1), 1)
+    ])
+    actual = validate._actuals(event)
+    assert actual["Winner"]["win"] == 1.0
+    assert actual["Playoff loser"]["win"] == 0.0
+
+
+def test_validation_excludes_no_cut_events_from_cut_metrics():
+    pred = pd.DataFrame([
+        {
+            "tournament_id": event,
+            "player": player,
+            "no_cut": no_cut,
+            "cut_rule": 65,
+            **{
+                f"{kind}_{market}": value
+                for market, value in (
+                    ("win", 0.5),
+                    ("top5", 0.5),
+                    ("top10", 0.5),
+                    ("top20", 0.5),
+                    ("cut", cut_value),
+                )
+                for kind in ("p", "y")
+            },
+        }
+        for event, no_cut, cut_value in (("cut", 0, 0.5), ("no-cut", 1, 1.0))
+        for player in ("A", "B")
+    ])
+    report = validate.summarize(pred)
+    assert report["cut"]["n"] == 2
 
 
 class _StaticProvider:
@@ -136,7 +205,8 @@ class _StaticProvider:
             finish=1,
             cut_round=2,
             cut_score=1.0,
-            cut_count=65,
+            cut_rule=65,
+            realized_cut_count=65,
             total_rounds=4,
             no_cut=0,
         )]
@@ -276,9 +346,11 @@ def test_integrity_rejects_duplicate_round_keys(tmp_path):
         "made_cut": "1",
         "finish": "1",
         "cut_round": "2",
-        "cut_count": "65",
+        "cut_rule": "65",
+        "realized_cut_count": "65",
         "total_rounds": "4",
         "no_cut": "0",
+        "multi_course": "0",
     })
     with rounds.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=legacy.ROUNDS_COLUMNS)

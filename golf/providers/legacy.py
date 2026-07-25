@@ -42,8 +42,9 @@ ROUNDS_COLUMNS = [
     "tournament_id", "event_name", "date", "tour", "is_major",
     "course", "course_id", "course_name", "course_par", "course_yards",
     "round", "tee_time", "player", "dg_id", "score_to_par", "field_size",
-    "made_cut", "finish", "cut_round", "cut_score", "cut_count",
-    "total_rounds", "no_cut", "holes_scored", "birdies_or_better",
+    "made_cut", "finish", "cut_round", "cut_score", "cut_rule",
+    "realized_cut_count", "total_rounds", "no_cut",
+    "multi_course", "holes_scored", "birdies_or_better",
     "bogeys", "double_bogeys_or_worse", "par3_to_par", "par3_holes",
     "par4_to_par", "par4_holes", "par5_to_par", "par5_holes",
 ]
@@ -73,9 +74,11 @@ class TournamentMeta:
     course_yards: int = 0
     cut_round: int = 2
     cut_score: float | None = None
-    cut_count: int = 65
+    cut_rule: int = 65
+    realized_cut_count: int = 0
     total_rounds: int = 4
     no_cut: bool = False
+    multi_course: bool = False
 
 
 @dataclass
@@ -100,9 +103,11 @@ class RoundRecord:
     tee_time: str = ""
     cut_round: int = 2
     cut_score: float | None = None
-    cut_count: int = 65
+    cut_rule: int = 65
+    realized_cut_count: int = 0
     total_rounds: int = 4
     no_cut: int = 0
+    multi_course: int = 0
     holes_scored: int = 0
     birdies_or_better: int = 0
     bogeys: int = 0
@@ -266,9 +271,13 @@ def _normalise_round_row(row: dict) -> dict:
         finish=_int(row.get("finish"), 999),
         cut_round=_int(row.get("cut_round"), 2),
         cut_score=_float_or_none(row.get("cut_score")),
-        cut_count=_int(row.get("cut_count"), 65),
+        cut_rule=_int(row.get("cut_rule"), 65),
+        realized_cut_count=_int(
+            row.get("realized_cut_count", row.get("cut_count")), 0
+        ),
         total_rounds=_int(row.get("total_rounds"), 4),
         no_cut=_int(row.get("no_cut"), 0),
+        multi_course=_int(row.get("multi_course"), 0),
         holes_scored=_int(row.get("holes_scored"), 0),
         birdies_or_better=_int(row.get("birdies_or_better"), 0),
         bogeys=_int(row.get("bogeys"), 0),

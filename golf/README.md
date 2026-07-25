@@ -107,14 +107,14 @@ golf/
 ├── providers/      # ESPN schedule/field/leaderboard, PGA stats, weather, odds
 ├── fetch.py        # --rebuild / --seed / --accumulate → rounds.csv (history)
 ├── refresh.py      # free-source weekly refresh → field.csv + live SQLite cache
-├── model.py        # fit(): time-decayed ridge skill + per-player σ + form +
-│                   #   venue fit + measured course profiles → model_params.json
+├── model.py        # fit(): source-ID skill + per-player σ + form +
+│                   #   measured course profiles → model_params.json
 ├── simulate.py     # 4-round Monte Carlo with cut; joint matchups / 3-balls
 ├── round_pricer.py # single-round group pricing (2-/3-balls; driven by season.py)
-├── market.py       # power de-vig, log-odds market blend, CLV tracking
+├── market.py       # complete-board de-vig + raw implied-price tracking
 ├── calibrate.py    # isotonic per-market maps (win ≤ T5 ≤ … ≤ cut guard)
-├── edge.py         # calibrated + blended EV across all markets
-├── portfolio.py    # capped fractional Kelly: player/total caps + drawdown brake
+├── edge.py         # raw model and final EV probabilities across all markets
+├── portfolio.py    # opt-in capped Kelly; automatic staking disabled by default
 ├── validate.py     # walk-forward backtest + regression gate (the yardstick)
 ├── weekly_report.py# longer narrative report (season.py is the lean version)
 └── data/
@@ -144,16 +144,15 @@ score_to_par[player, tournament, round] = mu + difficulty[t,r] − skill[player]
   fields and majors are comparable.
 - **σ (fitted, per player)** — round-to-round variance from fit residuals,
   Empirical-Bayes shrunk toward the field σ (~2.85); drives longshot value.
-- **form** — short-window residual nudge after removing the fitted course term;
-  **course fit** — shrunk per-(player, real venue) residual. At unseen venues,
-  EB-shrunk par-3/4/5 performance and within-player par/yardage sensitivities
-  provide a capped general-course adjustment.
+- **form** — short-window residual nudge. Sparse exact-venue effects are disabled;
+  EB-shrunk par-3/4/5 performance and within-player par/yardage sensitivities use
+  only single-course events and provide a capped general-course adjustment.
 - **scoring shape** — EB-shrunk birdie, bogey, and double-bogey frequencies from
   cached hole scorecards give each player a measured asymmetric round shape.
 
 `predict_field()` turns these into per-player `rating` + `σ`; `simulate.py` draws
-four correlated rounds with player-specific scoring-shape tails
-(`data/sim_config.json`: `round_corr`, `blowup_mix`). Win, top-N, make-cut,
+integer-stroke rounds. Correlation and player-specific scoring tails are disabled
+until they are retuned on the repaired cut history. Win, top-N, make-cut,
 matchup and 2-/3-ball probabilities all come from that one joint distribution,
 so market nesting is true by construction.
 
@@ -161,10 +160,11 @@ so market nesting is true by construction.
 
 - **calibrate.py** — a make-cut isotonic map is retained only when it improves a
   temporal holdout; coherent win/place probabilities remain uncalibrated.
-- **market.py** — power de-vig for outright boards, per-line place margins, a
-  log-odds blend toward the market, and CLV tracking.
-- **portfolio.py** — independent fractional-Kelly stakes scaled by a per-player cap, a
-  total weekly cap, and a drawdown brake.
+- **market.py** — power de-vig only for complete mutually exclusive boards.
+  One-sided/partial prices remain raw implied probabilities; guessed margins and
+  market blending are disabled.
+- **portfolio.py** — stake sizing is opt-in (`--kelly`); the default is zero until
+  timestamped offered-price history supports an economic backtest.
 
 ### Validating the model
 
@@ -173,8 +173,9 @@ python3 -m golf.integrity                                    # offline data/mode
 python3 -m golf.validate --since 2024-06-01 --sims 8000   # walk-forward + gate
 ```
 
-`validate.py` excludes current-only public stats, global priors, and weather
-from historical folds because point-in-time snapshots do not exist. The gate
+`validate.py` excludes current-only public stats, global priors, weather, and
+exact-course effects from historical folds because point-in-time/economic
+evidence does not exist. No-cut events are excluded from cut-market metrics. The gate
 runs before the live refit. Use `--rebaseline` only after
 reviewing an intentional model or ground-truth change; ordinary runs never move
 the frozen baseline.
@@ -193,3 +194,5 @@ python3 -m golf.fetch --rebuild 2022 2023 2024 2025 2026 \
 
 The rebuild is atomic, uses the per-event ESPN leaderboard for statuses, course,
 tee times and tournament rules, and is byte-deterministic from the same payloads.
+`cut_rule` is the rule known before play; `realized_cut_count` is stored
+separately and is never fed to simulation.

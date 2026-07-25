@@ -58,7 +58,10 @@ def apply_portfolio(rows: list[dict], bankroll: float, peak: float | None = None
     # Defensive: drop implied-certain outcomes (p_model ≥ CERTAINTY). These are
     # simulation artifacts (e.g. make-cut when the cut doesn't bind) that would
     # otherwise read as +EV at any odds > 1 and attract the largest stakes.
-    rows = [r for r in rows if float(r.get("p_model", 0.0)) < CERTAINTY]
+    rows = [
+        r for r in rows
+        if float(r.get("p_final", r.get("p_model", 0.0))) < CERTAINTY
+    ]
     if not rows:
         return rows
     peak = peak if peak and peak > 0 else bankroll

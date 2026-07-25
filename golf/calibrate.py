@@ -26,6 +26,7 @@ CALIB_FILE = DATA_DIR / "calibration.json"
 
 MARKETS = ["win", "top5", "top10", "top20", "cut"]   # nested, widest last
 CALIBRATED_MARKETS = {"cut"}
+CALIBRATION_SCHEMA_VERSION = 3
 
 
 # ── isotonic helpers (mirror of root validate.py) ──
@@ -81,8 +82,11 @@ def fit_maps(pred_df) -> dict:
     """Per-market isotonic maps from walk-forward predictions."""
     maps = {}
     for mkt in MARKETS:
-        x = pred_df[f"p_{mkt}"].values.astype(float)
-        y = pred_df[f"y_{mkt}"].values.astype(float)
+        eligible = pred_df
+        if mkt == "cut" and "no_cut" in pred_df:
+            eligible = pred_df[~pred_df["no_cut"].astype(bool)]
+        x = eligible[f"p_{mkt}"].values.astype(float)
+        y = eligible[f"y_{mkt}"].values.astype(float)
         xs, yhat = _isotonic(x, y)
         kx, ky = _knots(xs, yhat)
         maps[mkt] = {"x": kx, "y": ky}
@@ -100,6 +104,14 @@ def fit_from_csv(path: Path | None = None) -> dict:
         raise ValueError(
             "Validation predictions predate point-in-time leakage controls. "
             "Re-run python -m golf.validate before fitting calibration.")
+    if (
+        "validation_schema_version" not in pred.columns
+        or not pred["validation_schema_version"].eq(CALIBRATION_SCHEMA_VERSION).all()
+    ):
+        raise ValueError(
+            "Validation predictions predate the repaired cut/winner/eligibility "
+            "schema. Re-run python -m golf.validate before fitting calibration."
+        )
     if "date" not in pred.columns:
         raise ValueError("Calibration promotion requires dated validation predictions.")
     event_dates = (pred[["tournament_id", "date"]].drop_duplicates()
@@ -117,8 +129,11 @@ def fit_from_csv(path: Path | None = None) -> dict:
             maps[market] = {"x": [0.0, 1.0], "y": [0.0, 1.0]}
             continue
         train_map = fit_maps(train)[market]
-        p = test[f"p_{market}"].values.astype(float)
-        y = test[f"y_{market}"].values.astype(float)
+        eligible_test = test
+        if market == "cut" and "no_cut" in test:
+            eligible_test = test[~test["no_cut"].astype(bool)]
+        p = eligible_test[f"p_{market}"].values.astype(float)
+        y = eligible_test[f"y_{market}"].values.astype(float)
         calibrated = np.interp(p, train_map["x"], train_map["y"])
         raw_brier = float(np.mean((p - y) ** 2))
         cal_brier = float(np.mean((calibrated - y) ** 2))
@@ -128,13 +143,14 @@ def fit_from_csv(path: Path | None = None) -> dict:
         else:
             maps[market] = {"x": [0.0, 1.0], "y": [0.0, 1.0]}
     maps["_meta"] = {
-        "schema_version": 2,
+        "schema_version": CALIBRATION_SCHEMA_VERSION,
         "point_in_time_safe": True,
         "trained_through": str(pred["date"].max()) if "date" in pred else "",
         "temporal_holdout_from": str(cutoff),
         "promoted_markets": promoted,
     }
-    CALIB_FILE.write_text(json.dumps(maps, indent=1))
+    from .io_utils import atomic_write_text
+    atomic_write_text(CALIB_FILE, json.dumps(maps, indent=1))
     return maps
 
 
@@ -143,7 +159,10 @@ def load_maps():
     if CALIB_FILE.exists():
         maps = json.loads(CALIB_FILE.read_text())
         meta = maps.get("_meta") or {}
-        if meta.get("schema_version") != 2 or not meta.get("point_in_time_safe"):
+        if (
+            meta.get("schema_version") != CALIBRATION_SCHEMA_VERSION
+            or not meta.get("point_in_time_safe")
+        ):
             return None
         if not meta.get("promoted_markets"):
             return None
@@ -189,23 +208,26 @@ def _report(pred_df, maps, folds: int = 5, seed: int = 0) -> None:
     """
     from .validate import brier  # reuse metric
 
-    # group by tournament so a fold never splits one event across train/test
-    if "tournament_id" in pred_df.columns:
-        groups = pred_df["tournament_id"].values
-    else:
-        groups = np.arange(len(pred_df))
-    uniq = np.unique(groups)
-    rng = np.random.default_rng(seed)
-    rng.shuffle(uniq)
-    fold_of = {g: i % folds for i, g in enumerate(uniq)}
-    test_fold = np.array([fold_of[g] for g in groups])
-
     print(f"\n{'Market':<8}{'Brier raw':>11}{'Brier cal':>11}{'Δ':>9}"
           f"   (in-sample → {folds}-fold OOS)")
     print("-" * 56)
     for mkt in MARKETS:
-        p = pred_df[f"p_{mkt}"].values.astype(float)
-        y = pred_df[f"y_{mkt}"].values.astype(float)
+        eligible = pred_df
+        if mkt == "cut" and "no_cut" in pred_df:
+            eligible = pred_df[~pred_df["no_cut"].astype(bool)]
+        p = eligible[f"p_{mkt}"].values.astype(float)
+        y = eligible[f"y_{mkt}"].values.astype(float)
+        # group by tournament so a fold never splits one event across train/test
+        groups = (
+            eligible["tournament_id"].values
+            if "tournament_id" in eligible.columns
+            else np.arange(len(eligible))
+        )
+        uniq = np.unique(groups)
+        rng = np.random.default_rng(seed)
+        rng.shuffle(uniq)
+        fold_of = {group: i % folds for i, group in enumerate(uniq)}
+        test_fold = np.array([fold_of[group] for group in groups])
         # in-sample (uses production maps)
         pc_in = np.interp(p, maps[mkt]["x"], maps[mkt]["y"])
         # out-of-sample: fit on the other folds, predict the held-out fold

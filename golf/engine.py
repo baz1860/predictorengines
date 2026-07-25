@@ -86,7 +86,7 @@ def _field_names() -> list[str]:
     raise ValueError("No field — run fetch.py --espn or seed rounds.csv.")
 
 
-def _rated_field(course="", major=False):
+def _rated_field(course="", major=False, options=None):
     """Rated Player objects from the fitted model, with legacy fallback."""
     from .model import load_field, load_players
     context = model.load_field_context()
@@ -97,6 +97,13 @@ def _rated_field(course="", major=False):
         field_items = _field_names()
     params = model.load_params()
     if params:
+        options = options or {}
+        feature_flags = {
+            "weather": bool(options.get("weather", False)),
+            "public_stat": bool(options.get("public_stat", False)),
+            "global_priors": bool(options.get("global_priors", False)),
+            "exact_course": bool(options.get("exact_course", False)),
+        }
         return model.predict_field(
             field_items,
             params,
@@ -107,6 +114,7 @@ def _rated_field(course="", major=False):
             par4_holes=int(context.get("par4_holes") or 0),
             par5_holes=int(context.get("par5_holes") or 0),
             is_major=major,
+            feature_flags=feature_flags,
         ), True
     # legacy path: players.csv composite ratings
     from .model import compute_ratings, load_course_history, load_recent_form
@@ -316,7 +324,7 @@ def cmd_simulate(p):
     course = p.get("course", "") or ""
     major = bool(p.get("major", False))
     cut_rule, no_cut = _simulation_rules(p)
-    rated, fitted = _rated_field(course, major)
+    rated, fitted = _rated_field(course, major, p)
     rng = np.random.default_rng(int(p.get("seed", 0)) or None)
     results = GSIM.simulate_tournament(
         rated, n_sims=n, cut_rule=cut_rule, no_cut=no_cut, rng=rng)
@@ -366,7 +374,7 @@ def cmd_simulate_inplay(p, _state=None):
     n = _sims_arg(p)
     course = p.get("course", "") or ""
     major = bool(p.get("major", False))
-    rated, fitted = _rated_field(course, major)
+    rated, fitted = _rated_field(course, major, p)
     rng = np.random.default_rng(int(p.get("seed", 0)) or None)
     results, survivors = _inplay_results(rated, state, n, rng)
     GSIP.write_predictions_inplay(survivors, _results_for_writer(results), state["rounds_done"])
@@ -411,7 +419,7 @@ def cmd_predict(p):
         raise ValueError("predict needs player_a and player_b")
     course = p.get("course", "") or ""
     major = bool(p.get("major", False))
-    rated, _ = _rated_field(course, major)
+    rated, _ = _rated_field(course, major, p)
     n = _sims_arg(p)
     res = GSIM.simulate_tournament(rated, n_sims=n, rng=np.random.default_rng(0),
                                    matchups=[(a, b)])
@@ -429,7 +437,7 @@ def cmd_predict(p):
 def cmd_edge(p):
     course = p.get("course", "") or ""
     major = bool(p.get("major", False))
-    rated, _ = _rated_field(course, major)
+    rated, _ = _rated_field(course, major, p)
     odds_data = GE.load_odds_csv()
     # Tournament edge prices 72-hole markets only. Single-round boards
     # (group_id tagged -r1/-r2/-r3) settle on one round and are priced by the
@@ -496,8 +504,9 @@ def cmd_edge(p):
         raise ValueError("No odds. Add golf/data/odds.csv (name, odds_win, "
                          "odds_top5, odds_top10, odds_top20, odds_cut) and/or "
                          "matchups.csv / threeballs.csv.")
-    # Record accepted, event-tagged prices for future CLV analysis. Place/cut
-    # lines are de-vigged individually; only outrights are normalized as a book.
+    # Record accepted, event-tagged prices for future CLV analysis. One-sided
+    # place/cut lines remain raw implied prices; only complete outright boards
+    # can be normalized honestly.
     if current_event and odds_data:
         history_boards = {}
         for mkt, col in (("win", "odds_win"), ("top5", "odds_top5"),
@@ -575,6 +584,7 @@ def cmd_edge(p):
         {"key": "market", "label": "Market", "fmt": "text"},
         {"key": "odds", "label": "Odds", "fmt": "num"},
         {"key": "p_model", "label": "Model", "fmt": "pct"},
+        {"key": "p_final", "label": "Used", "fmt": "pct"},
         {"key": "p_market", "label": "Market", "fmt": "pct"},
         {"key": "ev_per_unit", "label": "EV", "fmt": "signed_num"},
         {"key": "stake_gbp", "label": "Stake", "fmt": "gbp"}]
@@ -660,7 +670,7 @@ def cmd_round_3balls(p):
         is_major=bool(p.get("major", False)),
         sims=_sims_arg(p),
         bankroll=bankroll,
-        kelly=float(p.get("kelly", 0.25)),
+        kelly=float(p.get("kelly", GE.DEFAULT_KELLY)),
         min_rounds=int(p.get("min_rounds", 60)),
     )
     GRP.write_round_edges(rows)

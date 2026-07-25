@@ -64,6 +64,8 @@ class EspnEvent:
     par5_holes: int = 0
     cut_round: int = 2
     cut_score: float | None = None
+    realized_cut_count: int = 0
+    multi_course: bool = False
 
     def as_store_row(self) -> dict:
         row = asdict(self)
@@ -303,8 +305,19 @@ class EspnGolfProvider:
         course_name = str(course.get("name") or schedule_meta.name)
         total_rounds = _int(tournament.get("numberOfRounds"), 4)
         cut_round = _int(tournament.get("cutRound"), 0)
-        cut_count = _int(tournament.get("cutCount"), 0)
-        no_cut = cut_round <= 0 or cut_count <= 0
+        no_cut = cut_round <= 0
+        realized_cut_count = (
+            0 if no_cut else _int(tournament.get("cutCount"), 0)
+        )
+        cut_rule = _pre_event_cut_rule(
+            str(tournament.get("displayName") or event.get("name") or schedule_meta.name),
+            schedule_meta.tour,
+            competition,
+            event,
+        )
+        multi_course = len([
+            row for row in (event.get("courses") or []) if isinstance(row, dict)
+        ]) > 1
         meta = TournamentMeta(
             tournament_id=schedule_meta.tournament_id,
             name=str(
@@ -321,9 +334,11 @@ class EspnGolfProvider:
             course_yards=_int(course.get("totalYards"), 0),
             cut_round=cut_round,
             cut_score=_safe_float(tournament.get("cutScore")),
-            cut_count=cut_count,
+            cut_rule=cut_rule,
+            realized_cut_count=realized_cut_count,
             total_rounds=total_rounds,
             no_cut=no_cut,
+            multi_course=multi_course,
         )
         competitors = competition.get("competitors", []) or []
         field_size = len(competitors)
@@ -354,6 +369,8 @@ class EspnGolfProvider:
                     round_no
                     and round_no <= total_rounds
                     and score_to_par is not None
+                    and _round_complete(competitor, line)
+                    and _valid_round_score(score_to_par)
                 ):
                     rounds.append((round_no, score_to_par, tee_time))
             player_status = _status_name(competitor).upper()
@@ -395,13 +412,29 @@ class EspnGolfProvider:
                         finish=finish,
                         cut_round=meta.cut_round,
                         cut_score=meta.cut_score,
-                        cut_count=meta.cut_count,
+                        cut_rule=meta.cut_rule,
+                        realized_cut_count=meta.realized_cut_count,
                         total_rounds=meta.total_rounds,
                         no_cut=int(meta.no_cut),
+                        multi_course=int(meta.multi_course),
                         **hole_features.get((name, round_no), {}),
                     )
                 )
-        return rows
+        # ESPN occasionally emits the same display-name competitor twice under
+        # different ids. Event outcomes are display-name keyed, so identical
+        # duplicates collapse here; contradictory duplicates are unsafe to guess.
+        deduped = {}
+        for row in rows:
+            key = (row.player.casefold(), row.round)
+            old = deduped.get(key)
+            if old is not None and old.score_to_par != row.score_to_par:
+                raise ValueError(
+                    f"conflicting ESPN identities for {row.player!r}, "
+                    f"event {row.tournament_id}, round {row.round}"
+                )
+            if old is None or (row.dg_id and row.dg_id < old.dg_id):
+                deduped[key] = row
+        return list(deduped.values())
 
     def field_for(self, event: Optional[str] = None) -> list:
         """Compatibility view of :meth:`field` for the history protocol."""
@@ -655,18 +688,23 @@ def _event_from_payload(ev: dict, tour: str = "pga") -> EspnEvent:
     tournament = ev.get("tournament") or {}
     fmt = comp.get("format") or ev.get("format") or {}
     cut_round = _safe_int(tournament.get("cutRound"))
-    cut_count = _safe_int(tournament.get("cutCount"))
     if tournament:
-        no_cut = cut_round == 0 or cut_count == 0
-        cut_rule = cut_count or 65
+        no_cut = cut_round == 0 or (
+            cut_round is None and _explicit_no_cut(comp, ev, fmt)
+        )
+        realized_cut_count = (
+            0 if no_cut else (_safe_int(tournament.get("cutCount")) or 0)
+        )
+        cut_rule = _pre_event_cut_rule(
+            str(ev.get("name") or ev.get("shortName") or ""),
+            tour,
+            comp,
+            ev,
+        )
         total_rounds = _safe_int(tournament.get("numberOfRounds")) or 4
     else:
-        no_cut = bool(
-            comp.get("noCut", ev.get("noCut", False))
-            or fmt.get("noCut", False)
-            or str(fmt.get("name") or fmt.get("description") or "").strip().lower()
-            == "no cut"
-        )
+        realized_cut_count = 0
+        no_cut = _explicit_no_cut(comp, ev, fmt)
         cut_rule = (
             _safe_int(comp.get("cutRule", ev.get("cutRule", fmt.get("cutRule"))))
             or 65
@@ -699,6 +737,10 @@ def _event_from_payload(ev: dict, tour: str = "pga") -> EspnEvent:
         par5_holes=hole_counts[5],
         cut_round=cut_round or 0,
         cut_score=_safe_float(tournament.get("cutScore")),
+        realized_cut_count=realized_cut_count or 0,
+        multi_course=len([
+            row for row in (ev.get("courses") or []) if isinstance(row, dict)
+        ]) > 1,
         tour=tour,
     )
 
@@ -753,6 +795,45 @@ def _to_par(display) -> float | None:
         return float(s.replace("+", ""))
     except ValueError:
         return None
+
+
+def _valid_round_score(score: float) -> bool:
+    """Reject impossible display-value artifacts before they reach history."""
+    return -15.0 <= float(score) <= 30.0
+
+
+def _explicit_no_cut(comp: dict, ev: dict, fmt: dict) -> bool:
+    return bool(
+        comp.get("noCut", ev.get("noCut", False))
+        or fmt.get("noCut", False)
+        or str(fmt.get("name") or fmt.get("description") or "").strip().lower()
+        == "no cut"
+    )
+
+
+def _pre_event_cut_rule(name: str, tour: str, comp: dict, ev: dict) -> int:
+    """Return a rule known before play; never derive it from cutCount.
+
+    ESPN's tournament.cutCount is the realized number of players surviving ties.
+    Explicit format cutRule is accepted when plausible, otherwise current men's
+    major and tour rules are used for the 2022+ history this project fits.
+    """
+    fmt = comp.get("format") or ev.get("format") or {}
+    explicit = _safe_int(
+        comp.get("cutRule", ev.get("cutRule", fmt.get("cutRule")))
+    )
+    if explicit is not None and 1 <= explicit <= 70:
+        return explicit
+    folded = " ".join(str(name or "").lower().split())
+    if folded == "masters tournament":
+        return 50
+    if folded in {"u.s. open", "us open"}:
+        return 60
+    if folded in {
+        "pga championship", "the open championship", "the open"
+    }:
+        return 70
+    return 65
 
 
 def _is_out(competitor: dict) -> bool:

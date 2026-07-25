@@ -104,6 +104,21 @@ def simulate_inplay(
     means = -ratings
     rc, tdf, blowup_mix = pre.load_sim_config()
     shifts = pre._weather_score_shifts(survivors)
+    observed_shift = (
+        shifts[:, :rounds_done].sum(axis=1)
+        if shifts is not None else np.zeros(n, dtype=float)
+    )
+    observed_residual = base_scores - rounds_done * means - observed_shift
+    # Common course/setup difficulty is irrelevant to player week effects.
+    observed_residual -= observed_residual.mean()
+    denom = 1.0 - rc + rounds_done * rc
+    posterior_means = (
+        (rc / denom) * observed_residual if rc > 0 else np.zeros(n)
+    )
+    posterior_sds = (
+        sigmas * np.sqrt(rc * (1.0 - rc) / denom)
+        if rc > 0 else np.zeros(n)
+    )
     birdie_rates = np.array([
         getattr(player, "birdie_rate", 0.18) for player in survivors
     ])
@@ -116,8 +131,10 @@ def simulate_inplay(
     drawn = pre._draw_scores(rng, means, sigmas, n_sims, n, rc, tdf,
                              score_shifts=shifts, birdie_rates=birdie_rates,
                              bogey_rates=bogey_rates, blowup_rates=blowup_rates,
-                             blowup_mix=blowup_mix)
-    future_scores = drawn[:, :, :rounds_left]
+                             blowup_mix=blowup_mix,
+                             persist_means=posterior_means,
+                             persist_sds=posterior_sds)
+    future_scores = drawn[:, :, rounds_done:total_rounds]
     totals = base_scores[np.newaxis, :] + future_scores.sum(axis=2)
 
     # After R1 the 36-hole cut is still uncertain. Apply it inside every draw;
@@ -166,16 +183,48 @@ def simulate_inplay(
         tres[(a, b, c)] = {a: a_w / n_sims, b: b_w / n_sims, c: c_w / n_sims,
                            "tie": float(np.mean(tie_size > 1))}
 
-    # Rank every simulation at once. Cut players (inf) rank behind survivors.
-    order = np.argsort(totals, axis=1, kind="stable")          # (n_sims, n)
-    ranks = np.empty_like(order)
-    rows = np.arange(n_sims)[:, np.newaxis]
-    ranks[rows, order] = np.arange(1, n + 1)[np.newaxis, :]     # 1 = best score
+    # Competition ranks and economic dead-heat credits. Integer score draws make
+    # ties real; assigning stable ordinal ranks would over-credit arbitrary names.
+    ranks = np.empty((n_sims, n), dtype=np.int32)
+    place_credit = {
+        5: np.zeros(n, dtype=float),
+        10: np.zeros(n, dtype=float),
+        20: np.zeros(n, dtype=float),
+    }
+    for sim in range(n_sims):
+        settle = settlement_totals[sim]
+        order = np.argsort(settle, kind="stable")
+        previous = None
+        start = 1
+        groups = []
+        group = []
+        for ordinal, idx in enumerate(order, 1):
+            score = settle[idx]
+            if score != previous:
+                if group:
+                    groups.append((start, group))
+                group = [idx]
+                start = ordinal
+                previous = score
+            else:
+                group.append(idx)
+            ranks[sim, idx] = start
+        if group:
+            groups.append((start, group))
+        for start, tied in groups:
+            # Missed-cut settlement scores are only for matchup/average-finish.
+            if np.isinf(totals[sim, tied[0]]):
+                continue
+            size = len(tied)
+            for limit, accumulator in place_credit.items():
+                credit = max(0, min(size, limit - start + 1)) / size
+                if credit:
+                    accumulator[tied] += credit
     win_best = win_totals == np.min(win_totals, axis=1, keepdims=True)
     wins = (win_best / win_best.sum(axis=1, keepdims=True)).sum(axis=0)
-    top5s   = np.count_nonzero(ranks <= 5,  axis=0)
-    top10s  = np.count_nonzero(ranks <= 10, axis=0)
-    top20s  = np.count_nonzero(ranks <= 20, axis=0)
+    top5s = place_credit[5]
+    top10s = place_credit[10]
+    top20s = place_credit[20]
     fin_sum = ranks.sum(axis=0, dtype=np.float64)
     made_cuts = survived.mean(axis=0) if cut_binds else np.ones(n)
 
@@ -213,14 +262,12 @@ def write_predictions_inplay(
         "win_pct", "top5_pct", "top10_pct", "top20_pct", "avg_finish",
     ]
     ranked = sorted(survivors, key=lambda p: results[p.name]["win"], reverse=True)
-    with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for rank, p in enumerate(ranked, 1):
-            r = results[p.name]
-            score = int(r["current_score"])
-            score_str = f"{score:+d}" if score != 0 else "E"
-            w.writerow({
+    rows = []
+    for rank, p in enumerate(ranked, 1):
+        r = results[p.name]
+        score = int(r["current_score"])
+        score_str = f"{score:+d}" if score != 0 else "E"
+        rows.append({
                 "rank":       rank,
                 "name":       p.name,
                 "score_thru": score_str,
@@ -230,7 +277,9 @@ def write_predictions_inplay(
                 "top10_pct":  f"{r['top10']*100:.1f}",
                 "top20_pct":  f"{r['top20']*100:.1f}",
                 "avg_finish": f"{r['avg_finish']:.1f}",
-            })
+        })
+    from .io_utils import atomic_write_csv
+    atomic_write_csv(path, cols, rows)
     print(f"  → {path}")
     return path
 

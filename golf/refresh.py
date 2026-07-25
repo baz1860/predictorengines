@@ -191,7 +191,8 @@ def run_refresh(
                     "timezone": loc.timezone,
                     "tee_times": tee_counts,
                 }
-                (DATA_DIR / "weather_features.json").write_text(
+                atomic_write_text(
+                    DATA_DIR / "weather_features.json",
                     json.dumps({
                         "event_id": event.event_id,
                         "event_name": event.name,
@@ -204,7 +205,7 @@ def run_refresh(
                         },
                         "tee_times": tee_counts,
                         **weather_features,
-                    }, indent=2) + "\n"
+                    }, indent=2) + "\n",
                 )
                 provider_rows["open_meteo"] = weather_summary.get("hours", 0)
                 if not has_tee_times:

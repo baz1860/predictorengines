@@ -4,7 +4,7 @@
 # step degrades to cached CSVs and the pipeline still finishes.
 #
 # Usage: bash update.sh [--course COURSE] [--major]
-#   env: DG_API_KEY, ODDS_API_KEY (optional)
+#   env: THE_ODDS_API_KEY (optional; majors only)
 
 set -euo pipefail
 # Run from the repo root so the golf package resolves (modules use package-relative
@@ -12,7 +12,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COURSE=""; MAJOR_FLAG=""
-DG_KEY="${DG_API_KEY:-}"; ODDS_KEY="${ODDS_API_KEY:-}"
 while [[ $# -gt 0 ]]; do
   case $1 in
     --course) COURSE="$2"; shift 2 ;;
@@ -34,12 +33,15 @@ GOLF_TOURS="${GOLF_TOURS:-pga,liv,eur}"
 python3 -m golf.fetch --accumulate --tours "$GOLF_TOURS" || echo "  accumulate skipped (offline)"
 
 echo ""; echo "── 2/5 Refresh current field + odds ──"
-FETCH_ARGS="--espn"
-[ -n "$DG_KEY" ]   && FETCH_ARGS="$FETCH_ARGS --dg-key $DG_KEY"
-[ -n "$ODDS_KEY" ] && FETCH_ARGS="$FETCH_ARGS --odds-key $ODDS_KEY"
-python3 -m golf.fetch $FETCH_ARGS || echo "  field/odds refresh skipped (offline)"
+# refresh.py is the one authoritative current-event writer. The legacy fetch
+# writer omitted event/course/cut/tee metadata and could silently strip field.csv.
+python3 -m golf.refresh || {
+  echo "  current-event refresh failed; refusing to price mixed/stale inputs" >&2
+  exit 2
+}
 
 echo ""; echo "── 3/5 Walk-forward validate (blocking gate) ──"
+python3 -m golf.integrity --rounds-only
 if ! python3 -m golf.validate --since 2024-06-01 --sims 8000 --gate --quiet; then
   echo "  validation gate failed; model and calibration were not replaced" >&2
   exit 2
@@ -47,6 +49,7 @@ fi
 
 echo ""; echo "── 4/5 Refit skill + variance model ──"
 python3 -m golf.model --fit --top 10
+python3 -m golf.integrity
 
 echo ""; echo "── 5/5 Refit calibration ──"
 python3 -m golf.calibrate --fit

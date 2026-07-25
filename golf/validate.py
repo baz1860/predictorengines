@@ -41,6 +41,12 @@ TOPN = {"top5": 5, "top10": 10, "top20": 20}
 GATE_TOL = 0.004          # allowed Brier regression on the headline metric
 MIN_TRAIN_ROUNDS = 4000   # don't evaluate until the model has enough history
 EPS = 1e-12
+VALIDATION_SCHEMA_VERSION = 3
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    from .io_utils import atomic_write_text
+    atomic_write_text(path, json.dumps(payload, indent=1))
 
 
 # ─────────────────────────────────────────────
@@ -69,8 +75,11 @@ def reliability(p: np.ndarray, y: np.ndarray, bins=10) -> list[tuple]:
 
 
 def _actuals(event: pd.DataFrame) -> dict[str, dict]:
-    """Per-player actual outcomes for one tournament (recompute finish from
-    72-hole totals so ties are handled, independent of ESPN's order field)."""
+    """Per-player actual outcomes for one tournament.
+
+    Placement dead heats come from final totals. Winner is the official ESPN
+    finish=1 result so a playoff loser is not mislabeled as half a winner.
+    """
     g = event.groupby("player")
     total = g["score_to_par"].sum()
     made = g["made_cut"].max()
@@ -82,6 +91,7 @@ def _actuals(event: pd.DataFrame) -> dict[str, dict]:
     finishers = total[(made == 1) & (nrounds == max_rounds)]
     rank = finishers.rank(method="min")
     score_groups = finishers.groupby(finishers).groups
+    official_finish = g["finish"].min()
 
     def credit(player: str, top_n: int) -> float:
         if player not in rank.index:
@@ -96,7 +106,7 @@ def _actuals(event: pd.DataFrame) -> dict[str, dict]:
         r = int(rank.loc[player]) if (mc == 1 and player in rank.index) else 999
         out[player] = {
             "made_cut": mc,
-            "win": credit(player, 1),
+            "win": float(official_finish.loc[player] == 1),
             "top5": credit(player, 5),
             "top10": credit(player, 10),
             "top20": credit(player, 20),
@@ -120,13 +130,19 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
     sc = sim_config or {}
     # Current feature files have no historical snapshots. Honest walk-forward
     # evaluation disables them unless the caller supplies point-in-time data.
-    safe_flags = {"public_stat": False, "global_priors": False,
-                  "weather": False}
+    safe_flags = {
+        "public_stat": False,
+        "global_priors": False,
+        "weather": False,
+        "exact_course": False,
+    }
     safe_flags.update(feature_flags or {})
-    event_columns = ["tournament_id", "date", "course", "is_major"]
+    event_columns = [
+        "tournament_id", "date", "course", "is_major", "event_name", "tour"
+    ]
     event_columns += [
         c for c in (
-            "cut_count", "total_rounds", "no_cut", "course_par", "course_yards"
+            "cut_rule", "total_rounds", "no_cut", "course_par", "course_yards"
         )
         if c in df.columns
     ]
@@ -153,7 +169,15 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
         total_rounds = int(getattr(ev, "total_rounds", 4) or 4)
         if total_rounds != 4 or int(event_rounds["round"].max()) != total_rounds:
             continue  # the production simulator is a 72-hole model
-        field = sorted(event_rounds["player"].unique())
+        field_rows = (
+            event_rounds[["player", "dg_id"]]
+            .drop_duplicates("player")
+            .sort_values("player")
+        )
+        field = [
+            model.Player(name=str(row.player), dg_id=str(row.dg_id))
+            for row in field_rows.itertuples()
+        ]
         if len(field) < 30:
             continue
         try:
@@ -170,7 +194,7 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
                                     is_major=bool(ev.is_major),
                                     feature_flags=safe_flags)
         event_no_cut = bool(int(getattr(ev, "no_cut", 0) or 0))
-        cut_rule = int(getattr(ev, "cut_count", 65) or 65)
+        cut_rule = int(getattr(ev, "cut_rule", 65) or 65)
         res = gsim.simulate_tournament(
             rated, n_sims=sims, cut_rule=cut_rule, no_cut=event_no_cut, rng=rng,
             round_corr=sc.get("round_corr"),
@@ -185,6 +209,7 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
             rows.append({
                 "tournament_id": ev.tournament_id, "date": str(start.date()),
                 "point_in_time_safe": 1,
+                "validation_schema_version": VALIDATION_SCHEMA_VERSION,
                 "cut_rule": cut_rule, "no_cut": int(event_no_cut),
                 "is_major": int(bool(ev.is_major)), "player": p.name,
                 "p_win": r["win"], "p_top5": r["top5"], "p_top10": r["top10"],
@@ -218,11 +243,13 @@ def summarize(pred: pd.DataFrame) -> dict:
     }
     for mkt in MARKETS:
         col = "cut" if mkt == "cut" else mkt
-        p = pred[f"p_{col}"].values
-        y = pred[f"y_{col}"].values.astype(float)
+        eligible = ~no_cut_event if mkt == "cut" else np.ones(len(pred), dtype=bool)
+        p = pred.loc[eligible, f"p_{col}"].values
+        y = pred.loc[eligible, f"y_{col}"].values.astype(float)
+        naive = naive_by_market[mkt][eligible]
         base = float(y.mean())
         b = brier(p, y)
-        b_base = brier(naive_by_market[mkt], y)
+        b_base = brier(naive, y)
         report[mkt] = {
             "n": int(len(y)), "base_rate": round(base, 4),
             "brier": round(b, 5), "brier_base": round(b_base, 5),
@@ -255,7 +282,6 @@ def _candidate_configs(base: dict) -> list[dict]:
         "form_weight": [0.0, 0.4, 0.7, 1.0],
         "form_halflife_days": [14, 21, 35],
         "skill_halflife_days": [270, 365, 540],
-        "course_k": [8, 12, 20],
         "sigma_shrink_rounds": [15, 25, 40],
     }
     out = [dict(base)]
@@ -376,10 +402,11 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
                 "selection_split": split,
                 "holdout": holdout,
             })
-            BASELINE_JSON.write_text(json.dumps(
+            _write_json(BASELINE_JSON,
                 {"headline_brier": rep_best["headline_brier"], "gate_tol": GATE_TOL,
-                 "asof": pred_best["date"].max(), "schema_version": 2,
-                 "point_in_time_safe": True}, indent=1))
+                 "asof": pred_best["date"].max(),
+                 "schema_version": VALIDATION_SCHEMA_VERSION,
+                 "point_in_time_safe": True})
             print(f"  wrote {model.MODEL_CONFIG_JSON}")
             print(f"  baseline updated -> {BASELINE_JSON}")
     return out
@@ -423,7 +450,8 @@ def tune_weather_coefficients(write: bool = False) -> dict:
     for k, v in coefs.items():
         print(f"  {k}: {v}")
     if write:
-        WEATHER_CONFIG_JSON.write_text(json.dumps(coefs, indent=2) + "\n")
+        from .io_utils import atomic_write_text
+        atomic_write_text(WEATHER_CONFIG_JSON, json.dumps(coefs, indent=2) + "\n")
         print(f"  wrote {WEATHER_CONFIG_JSON}")
     return coefs
 
@@ -520,23 +548,29 @@ def main():
 
     head = rep["headline_brier"]
     if args.rebaseline:
-        BASELINE_JSON.write_text(json.dumps(
+        _write_json(BASELINE_JSON,
             {"headline_brier": head, "gate_tol": GATE_TOL,
-             "asof": pred["date"].max(), "schema_version": 2,
+             "asof": pred["date"].max(),
+             "schema_version": VALIDATION_SCHEMA_VERSION,
              "point_in_time_safe": True,
-             "reason": "explicit reviewed rebaseline"}, indent=1))
+             "reason": (
+                 "repaired cut-rule leakage; official playoff winners; "
+                 "market-specific no-cut eligibility; stable source identities"
+             )})
         print(f"\nBaseline explicitly replaced → {BASELINE_JSON}")
         return
     if BASELINE_JSON.exists():
         baseline = json.loads(BASELINE_JSON.read_text())
-        safe_baseline = (baseline.get("schema_version") == 2
+        safe_baseline = (
+                         baseline.get("schema_version") == VALIDATION_SCHEMA_VERSION
                          and baseline.get("point_in_time_safe") is True)
         if not safe_baseline:
             if args.write:
-                BASELINE_JSON.write_text(json.dumps(
+                _write_json(BASELINE_JSON,
                     {"headline_brier": head, "gate_tol": GATE_TOL,
-                     "asof": pred["date"].max(), "schema_version": 2,
-                     "point_in_time_safe": True}, indent=1))
+                     "asof": pred["date"].max(),
+                     "schema_version": VALIDATION_SCHEMA_VERSION,
+                     "point_in_time_safe": True})
                 print("Legacy/leaky baseline replaced by explicit honest baseline.")
                 return
             if args.gate:
@@ -553,16 +587,18 @@ def main():
             print("GATE FAIL: model regressed beyond tolerance.")
             sys.exit(2)
         if args.write and delta < -GATE_TOL:  # explicit promotion only
-            BASELINE_JSON.write_text(json.dumps(
+            _write_json(BASELINE_JSON,
                 {"headline_brier": head, "gate_tol": GATE_TOL,
-                 "asof": pred["date"].max(), "schema_version": 2,
-                 "point_in_time_safe": True}, indent=1))
+                 "asof": pred["date"].max(),
+                 "schema_version": VALIDATION_SCHEMA_VERSION,
+                 "point_in_time_safe": True})
             print("Improved — baseline updated.")
     elif args.write:
-        BASELINE_JSON.write_text(json.dumps(
+        _write_json(BASELINE_JSON,
             {"headline_brier": head, "gate_tol": GATE_TOL,
-             "asof": pred["date"].max(), "schema_version": 2,
-             "point_in_time_safe": True}, indent=1))
+             "asof": pred["date"].max(),
+             "schema_version": VALIDATION_SCHEMA_VERSION,
+             "point_in_time_safe": True})
         print(f"\nBaseline written → {BASELINE_JSON}")
     elif args.gate:
         print("GATE FAIL: no frozen baseline; create one explicitly with --write.")

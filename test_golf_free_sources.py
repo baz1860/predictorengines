@@ -82,8 +82,18 @@ def test_market_blend_preserves_nested_probabilities(monkeypatch):
     monkeypatch.setattr(golf_edge.market, "devig_line", lambda *a, **k: .11)
     rows = golf_edge.price_all([Rated()], results, odds, {}, {}, bankroll=100,
                                calibrated=False, blended=True, min_edge=-100.0)
-    probs = {r["side"]: r["p_model"] for r in rows}
-    assert probs["win"] <= probs["top5"]
+    raw = {r["side"]: r["p_model"] for r in rows}
+    used = {r["side"]: r["p_final"] for r in rows}
+    assert raw == {"win": .1, "top5": .101}
+    assert used["win"] <= used["top5"]
+    assert used != raw
+
+
+def test_unvalidated_blending_and_staking_are_off_by_default():
+    from golf import market
+
+    assert set(market.blend_weights().values()) == {0.0}
+    assert golf_edge.DEFAULT_KELLY == 0.0
 
 
 def test_portfolio_caps_mutually_exclusive_outrights():
@@ -126,6 +136,7 @@ def test_store_is_live_only_and_exports_field():
             }])
             store.upsert_field(con, "T1", [{
                 "name": "Alex Smith",
+                "source_player_id": "P123",
                 "status": "active",
                 "tee_time_r1": "09:10",
                 "start_hole_r1": "1",
@@ -139,6 +150,8 @@ def test_store_is_live_only_and_exports_field():
         check("exports tee metadata", exported[0]["tee_time_r1"] == "09:10",
               str(exported[0]))
         check("exports world rank", exported[0]["world_rank"] == "42", str(exported[0]))
+        check("exports stable source identity", exported[0]["dg_id"] == "P123",
+              str(exported[0]))
 
 
 def test_public_stat_priors_and_round_pricer():
@@ -182,6 +195,15 @@ def test_public_stat_priors_and_round_pricer():
           "p_dead_heat_equiv" in rows[0], str(rows[0]))
 
 
+def test_empty_round_output_clears_stale_card(tmp_path):
+    from golf.round_pricer import write_round_edges
+
+    path = tmp_path / "round_edges.csv"
+    path.write_text("stale bet")
+    write_round_edges([], path)
+    assert path.read_text() == ""
+
+
 def test_model_feature_adjustments():
     params = {
         "sigma_field": 2.8,
@@ -206,7 +228,9 @@ def test_model_feature_adjustments():
         "default_skill": -0.4,
         "players": {},
         "public_stat_priors": {},
-    }, weather_features=weather)
+    }, weather_features=weather, feature_flags={
+        "weather": True, "global_priors": True,
+    })
     by_name = {p.name: p for p in rated_weather}
     check("weather wave rewards easier tee side",
           by_name["Early Player"].weather_wave_adj > by_name["Late Player"].weather_wave_adj,
@@ -237,11 +261,18 @@ def test_espn_tee_times_drive_weather_shift():
         "default_skill": 0.0,
         "players": {},
         "public_stat_priors": {},
-    }, weather_features=weather)
+    }, weather_features=weather, feature_flags={"weather": True})
     shifts = golf_sim._weather_score_shifts(rated)
     check("simulator receives round-specific weather score shifts",
           shifts is not None and shifts.shape == (2, 4) and abs(shifts[:, 0]).sum() > 0,
           str(shifts))
+
+
+def test_iso_tee_time_is_converted_to_course_timezone():
+    # 12:30 UTC is 07:30 at TPC Twin Cities in July.
+    assert model._tee_hour(
+        "2026-07-25T12:30:00Z", "America/Chicago"
+    ) == 7.5
 
 
 def test_global_player_priors_loader():
@@ -262,7 +293,7 @@ def test_global_player_priors_loader():
                 "default_skill": -0.5,
                 "players": {},
                 "public_stat_priors": {},
-            }, weather_features={})
+            }, weather_features={}, feature_flags={"global_priors": True})
         finally:
             model.GLOBAL_PRIORS_CSV = old
         check("global prior feeds unknown-player rating",

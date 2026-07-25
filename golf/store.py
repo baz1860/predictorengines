@@ -202,6 +202,7 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
 
 def init_db(path: Path | str | None = None) -> Path:
     p = Path(path) if path is not None else active_db_path()
+    should_vacuum = False
     with connect(p) as con:
         con.executescript(SCHEMA)
         # Existing live-cache databases predate the current course context.
@@ -215,6 +216,16 @@ def init_db(path: Path | str | None = None) -> Path:
             "par5_holes": "INTEGER NOT NULL DEFAULT 0",
         }.items():
             _ensure_column(con, "events", name, definition)
+        con.execute(
+            "DELETE FROM odds_quotes "
+            "WHERE datetime(timestamp) < datetime('now', '-180 days')"
+        )
+        pages = int(con.execute("PRAGMA page_count").fetchone()[0])
+        free = int(con.execute("PRAGMA freelist_count").fetchone()[0])
+        should_vacuum = pages > 100 and free / pages > 0.25
+    if should_vacuum:
+        with connect(p) as con:
+            con.execute("VACUUM")
     return Path(p)
 
 
@@ -404,7 +415,8 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
     with connect(db_path) as con:
         rows = con.execute(
             """
-            SELECT p.display_name AS name, f.world_rank, f.status,
+            SELECT p.display_name AS name, p.source_player_id AS dg_id,
+                   f.world_rank, f.status,
                    e.event_id, e.name AS event, e.course_id,
                    e.course_name AS course, e.course_par, e.course_yards,
                    e.par3_holes, e.par4_holes, e.par5_holes,
@@ -423,7 +435,7 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
             (event_id,),
         ).fetchall()
     cols = [
-        "name", "world_rank", "status", "event_id", "event",
+        "name", "dg_id", "world_rank", "status", "event_id", "event",
         "course_id", "course", "course_par", "course_yards",
         "par3_holes", "par4_holes", "par5_holes",
         "cut_rule", "no_cut",
@@ -431,11 +443,8 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
         "course_sigma",
         "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut",
     ]
-    with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for r in rows:
-            w.writerow(dict(r))
+    from .io_utils import atomic_write_csv
+    atomic_write_csv(path, cols, [dict(row) for row in rows])
     return path
 
 
@@ -548,7 +557,8 @@ def write_manifest(payload: Mapping, path: Path | str = MANIFEST_JSON) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"), **dict(payload)}
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    from .io_utils import atomic_write_text
+    atomic_write_text(path, json.dumps(data, indent=2) + "\n")
     return path
 
 

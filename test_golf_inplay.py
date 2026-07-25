@@ -5,7 +5,7 @@ import csv
 
 import pytest
 
-from golf import engine
+from golf import engine, model
 from golf.providers import espn as espn_mod
 from golf.providers.espn import EspnGolfProvider, EspnEvent
 
@@ -206,7 +206,7 @@ def test_write_edge_report_clears_on_empty(tmp_path):
     text = rep.read_text()
     assert "Old Bet" not in text
     assert text.strip().splitlines() == [
-        "player,market,side,odds,p_model,p_market,ev_per_unit,stake_gbp,recommended"]
+        "player,market,side,odds,p_model,p_market,p_final,ev_per_unit,stake_gbp,recommended"]
 
 
 # ──────────────────────────────────────────────
@@ -356,8 +356,78 @@ def test_inplay_threeball_reflects_leaderboard():
                             rng=np.random.default_rng(0),
                             threeballs=[("Alice", "Bob", "Cara")])
     t = res["__threeballs__"][("Alice", "Bob", "Cara")]
-    assert abs(sum(t.values()) - 1.0) < 1e-9
+    assert abs(t["Alice"] + t["Bob"] + t["Cara"] - 1.0) < 1e-9
     assert t["Alice"] > t["Bob"] and t["Alice"] > t["Cara"]
+
+
+def test_score_draws_are_integer_strokes_and_create_ties():
+    import numpy as np
+    from golf import simulate as S
+
+    draws = S._draw_scores(
+        np.random.default_rng(4),
+        np.zeros(3),
+        np.full(3, 2.8),
+        5000,
+        3,
+        0.0,
+        None,
+    )
+    assert np.array_equal(draws, np.rint(draws))
+    assert np.mean(draws[:, 0, 0] == draws[:, 1, 0]) > 0.05
+
+
+def test_inplay_conditions_week_effect_on_observed_rounds(monkeypatch):
+    import numpy as np
+    from golf import simulate as pre
+    from golf import simulate_inplay as S
+
+    captured = {}
+
+    def fake_draw(_rng, _means, _sigmas, n_sims, n, *_args, **kwargs):
+        captured.update(kwargs)
+        return np.zeros((n_sims, n, 4))
+
+    monkeypatch.setattr(pre, "load_sim_config", lambda: (0.4, None, 0.0))
+    monkeypatch.setattr(pre, "_draw_scores", fake_draw)
+    players = [model.Player("Leader"), model.Player("Trailer")]
+    for player in players:
+        player.sigma = 3.0
+    S.simulate_inplay(
+        players,
+        {"leader": -5.0, "trailer": 1.0},
+        rounds_done=1,
+        n_sims=10,
+        rng=np.random.default_rng(1),
+        no_cut=True,
+    )
+    posterior = captured["persist_means"]
+    assert posterior[0] < 0 < posterior[1]
+    assert np.all(captured["persist_sds"] < 3.0 * np.sqrt(0.4))
+
+
+def test_inplay_uses_actual_future_round_columns(monkeypatch):
+    import numpy as np
+    from golf import simulate as pre
+    from golf import simulate_inplay as S
+
+    def fake_draw(_rng, _means, _sigmas, n_sims, n, *_args, **_kwargs):
+        out = np.zeros((n_sims, n, 4))
+        out[:, 0, :2] = 100
+        out[:, 0, 2:] = -10
+        return out
+
+    monkeypatch.setattr(pre, "load_sim_config", lambda: (0.0, None, 0.0))
+    monkeypatch.setattr(pre, "_draw_scores", fake_draw)
+    result = S.simulate_inplay(
+        [model.Player("Alice"), model.Player("Bob")],
+        {"alice": 0.0, "bob": 0.0},
+        rounds_done=2,
+        n_sims=10,
+        rng=np.random.default_rng(1),
+        no_cut=True,
+    )
+    assert result["Alice"]["win"] == 1.0
 
 
 def test_inplay_drops_group_with_non_survivor():

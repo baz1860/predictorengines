@@ -58,55 +58,6 @@ def _get(url: str, params: dict | None = None, retries: int = 3) -> dict:
             time.sleep(2)
 
 
-def fetch_espn_field() -> list[dict]:
-    """
-    Pull current PGA Tour event field from ESPN scoreboard API.
-    Returns list of dicts with keys: name, world_rank, status.
-
-    Only considers events that are upcoming or in progress. On Mondays the
-    scoreboard still shows last week's finished event; writing that field
-    would poison downstream name checks (season.py validates matchups
-    against field.csv), so completed events return an empty field instead.
-    """
-    print("Fetching ESPN field...")
-    data = _get(ESPN_LEADERBOARD, {"league": "pga"})
-
-    players = []
-    events = data.get("events", [])
-    if not events:
-        print("  No active event found on ESPN.")
-        return players
-
-    live = [e for e in events
-            if not e.get("status", {}).get("type", {}).get("completed", False)]
-    if not live:
-        done = ", ".join(e.get("name", "?") for e in events)
-        print(f"  Scoreboard only shows completed event(s): {done}.")
-        print("  Next field not yet published — field.csv left unchanged.")
-        return players
-
-    event = live[0]
-    event_name = event.get("name", "Unknown")
-    print(f"  Event: {event_name}")
-
-    for comp in event.get("competitions", []):
-        for comp_player in comp.get("competitors", []):
-            athlete = comp_player.get("athlete", {})
-            name = athlete.get("displayName", "")
-            rank = athlete.get("displayName", "")  # ESPN doesn't expose OWGR here
-            status = comp_player.get("status", {}).get("type", {}).get("name", "active")
-            if name:
-                players.append({
-                    "name": name,
-                    "world_rank": comp_player.get("rank", ""),
-                    "status": status,
-                    "event": event_name,
-                })
-
-    print(f"  {len(players)} players found.")
-    return players
-
-
 def fetch_espn_leaderboard() -> list[dict]:
     """
     Pull live or final leaderboard from ESPN.
@@ -287,20 +238,6 @@ def fetch_odds(api_key: str, market: str = "outrights", sport: str = "") -> list
 # CSV writers
 # ─────────────────────────────────────────────
 
-def write_field_csv(players: list[dict], path: Path | None = None) -> Path:
-    """Write field.csv from a list of player dicts."""
-    import csv
-    path = path or DATA_DIR / "field.csv"
-    cols = ["name", "world_rank", "status", "event", "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut"]
-    with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        w.writeheader()
-        for p in players:
-            w.writerow({**{c: "" for c in cols}, **p})
-    print(f"  Written {len(players)} rows → {path}")
-    return path
-
-
 def write_players_csv(players: list[dict], path: Path | None = None) -> Path:
     """Write or update players.csv with SG ratings."""
     import csv
@@ -471,6 +408,30 @@ def main():
             print(f"Done. {total} new round(s) recorded ({summary}).")
         return
 
+    if args.espn or (
+        not args.list_sports
+        and not args.use_datagolf
+        and not args.leaderboard
+    ):
+        # Keep the old CLI spelling as a compatibility alias, but route it
+        # through the authoritative refresh/store exporter.
+        from .refresh import run_refresh
+        manifest = run_refresh(
+            season=None,
+            odds_api_sport=args.sport or "",
+            bovada=not args.no_odds,
+        )
+        errors = ((manifest.get("qa") or {}).get("errors") or [])
+        if errors:
+            for error in errors:
+                print(f"ESPN refresh error: {error.get('message') or error}")
+            raise SystemExit(2)
+        print(
+            f"Done. {manifest.get('provider_rows', {}).get('espn_field', 0)} "
+            "players in authoritative field snapshot."
+        )
+        return
+
     fetched_field = []
 
     # ── List sports ──
@@ -497,17 +458,6 @@ def main():
             write_players_csv(dg_preds)
         except Exception as exc:
             print(f"DataGolf predictions error: {exc}")
-
-    # ── ESPN free-source path ──
-    if args.espn or not fetched_field:
-        try:
-            espn_field = fetch_espn_field()
-            if espn_field:
-                if not fetched_field:
-                    fetched_field = espn_field
-                write_field_csv(espn_field)
-        except Exception as exc:
-            print(f"ESPN field error: {exc}")
 
     if args.leaderboard:
         try:
