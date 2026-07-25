@@ -138,7 +138,9 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
                 comp = comp_get(comp_name)
                 value = getattr(comp, "country", None) if comp is not None else None
                 country_by_comp[comp_name] = (
-                    str(value) if value and str(value) not in {"Europe", "World"} else None
+                    str(value)
+                    if (value and comp is not None and comp.kind != "europe")
+                    else None
                 )
             return country_by_comp[comp_name]
 

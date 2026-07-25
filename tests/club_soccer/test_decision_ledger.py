@@ -37,11 +37,12 @@ def test_devig_is_from_the_selected_book_only():
     assert devig["over"] == pytest.approx(0.5, abs=1e-9)
 
 
-# ── edge benchmark is selection-independent (adversarial blocker 3) ────────
+# ── cross-book consensus remains available as a diagnostic ────────────────
 
 def test_consensus_benchmark_is_the_mean_of_complete_books():
-    # Codex's breaking input: selecting our side's best book biases its own
-    # de-vig for that side LOW, inflating edge. Consensus must use every book.
+    # This is reported for diagnostics. Production selection deliberately uses
+    # the executing book's own de-vig so live and accumulated evidence measure
+    # the same strategy.
     side_odds = {
         "home": {"A": 2.10, "B": 1.90},
         "away": {"A": 1.80, "B": 2.00},
@@ -51,8 +52,7 @@ def test_consensus_benchmark_is_the_mean_of_complete_books():
     # Book A alone gives home devig 0.4615; consensus of A and B is 0.4872.
     cons = DL.market_consensus_devig(side_odds)
     assert cons["home"] == pytest.approx(0.48718, abs=1e-4)
-    # The benchmark used for edge is the consensus, not book A's optimistic devig,
-    # so a neutral p_model = 0.50 records +0.0128 edge, not +0.0385.
+    # A neutral p_model compared to the diagnostic consensus is +0.0128.
     assert 0.50 - cons["home"] == pytest.approx(0.01282, abs=1e-4)
 
 
@@ -227,6 +227,35 @@ def test_backtest_metrics_do_not_depend_on_the_alias_map(ledger, monkeypatch):
     assert "canonical_name(" not in body
     assert "club_alias_map" not in body
     assert "settled_bets" in body, "must read from the frozen ledger"
+
+
+def test_routine_model_refits_do_not_reset_the_evidence_cohort(ledger):
+    """Parameter hashes are provenance, not a new betting strategy."""
+    from club_soccer import decision_time_backtest as B
+
+    DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [
+        _decision(
+            decision_id="d1", provider_fixture_id="1",
+            decision_ts="2026-07-01T12:00:00+00:00",
+            resolver_version="resolver", code_hash="strategy",
+            model_hash="fit-one", strategy_eligible="1",
+        ),
+        _decision(
+            decision_id="d2", provider_fixture_id="2",
+            decision_ts="2026-07-02T12:00:00+00:00",
+            resolver_version="resolver", code_hash="strategy",
+            model_hash="fit-two", strategy_eligible="1",
+        ),
+    ])
+    DL._append(DL.SETTLEMENTS, DL.SETTLEMENT_FIELDS, [
+        {"provider_fixture_id": "1", "market": "1x2", "side": "home",
+         "won": 1, "clv": 0.02},
+        {"provider_fixture_id": "2", "market": "1x2", "side": "home",
+         "won": 0, "clv": -0.01},
+    ])
+    bets = B.build_bets()
+    assert len(bets) == 2
+    assert set(bets["model_hash"]) == {"fit-one", "fit-two"}
 
 
 def test_ledger_backtest_produces_a_valid_gated_artifact(ledger):

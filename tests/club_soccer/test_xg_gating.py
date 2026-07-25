@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+import pandas as pd
 import pytest
 
 from club_soccer import model as M
@@ -86,6 +87,29 @@ def test_all_zero_weights_falls_back_rather_than_dividing_by_zero():
 def test_unknown_team_is_treated_as_having_no_evidence():
     out = M._weights_for_match(_params(A=200.0), BASE, "A", "Unknown FC")
     assert out["xg"] == 0.0
+
+
+def test_sot_conversion_uses_the_same_rows_for_goals_and_shots():
+    """Goals from rows with missing shot data must not inflate the proxy."""
+    fixtures = pd.DataFrame([
+        {
+            "date": "2025-01-01", "competition": "Test League",
+            "home": "A", "away": "B", "home_goals": 1, "away_goals": 1,
+            "home_sot": 3.0, "away_sot": 7.0, "home_xg": None,
+            "away_xg": None, "neutral": 0, "status": "FIN",
+        },
+        {
+            "date": "2025-01-08", "competition": "Test League",
+            "home": "B", "away": "A", "home_goals": 5, "away_goals": 5,
+            "home_sot": None, "away_sot": None, "home_xg": None,
+            "away_xg": None, "neutral": 0, "status": "FIN",
+        },
+    ])
+    fixtures["date"] = pd.to_datetime(fixtures["date"])
+    params = M.fit(
+        fixtures, league_seed=False, opponent_adjusted_xg=False
+    )
+    assert params["conv"] == pytest.approx(0.2)
 
 
 # ── integration ───────────────────────────────────────────────────────────

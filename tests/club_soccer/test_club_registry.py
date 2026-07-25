@@ -169,6 +169,17 @@ def test_country_veto_also_scopes_the_stable_id():
     assert german != brazilian
 
 
+def test_country_scoped_alias_separates_brazilian_and_spanish_athletic():
+    from club_soccer import club_identity as CI
+
+    assert CI.canonicalise(
+        "Athletic Bilbao", country_hint="Brazil"
+    ) == "Athletic Club"
+    assert CI.canonical_id(
+        "Athletic Bilbao", country_hint="Brazil"
+    ) != CI.canonical_id("Athletic Bilbao", country_hint="Spain")
+
+
 def test_stable_ids_use_registry_confirmation_without_a_fuzzy_merge_workflow():
     from club_soccer import club_identity as CI
 

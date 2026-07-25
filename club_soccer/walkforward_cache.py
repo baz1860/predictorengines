@@ -27,8 +27,7 @@ the fingerprint deliberately covers more than seems necessary:
   * every fixture column that feeds fitting or prediction, INCLUDING row order
     (Elo is sequential, so re-ordering the same matches can change ratings)
   * the source of model.py, competitions.py and validate.py
-  * comp_strength.json and ensemble_weights.json, which are data files that
-    change behaviour without any code edit
+  * every active data artifact listed in ``_DATA_FILES``
   * the fold's own options (min_train, opponent-adjusted xG)
 
 If any of those move, every affected fold recomputes. When in doubt the cache
@@ -42,7 +41,7 @@ Folds are chronological, so invalidation cascades FORWARD:
   * a new calendar month              -> 1 new fold
   * a backfill to a match on date D   -> every fold after D recomputes, since
                                          they all train on it
-  * a model.py or comp_strength edit  -> all folds recompute
+  * a model or active data-artifact edit -> all folds recompute
 
 The third case is the one to watch. BSD backfills shot and xG data for recent
 matches, which is normal and cheap (a few trailing folds). A retroactive

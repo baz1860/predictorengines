@@ -94,7 +94,9 @@ def run_checks(network: bool = True) -> dict:
         if name not in country_cache:
             comp = get_comp(name)
             value = getattr(comp, "country", None) if comp is not None else None
-            country_cache[name] = None if value in {"Europe", "World"} else value
+            country_cache[name] = (
+                None if comp is None or comp.kind == "europe" else value
+            )
         return country_cache[name]
 
     countries = df["competition"].map(_country)
@@ -139,14 +141,18 @@ def run_checks(network: bool = True) -> dict:
     # splits one club's history. Enforce the write-boundary invariant directly.
     identity_names = pd.concat([
         df[["home_club_id", "home"]].rename(
-            columns={"home_club_id": "club_id", "home": "name"
+            columns={"home_club_id": "club_id", "home": "name"}
         ),
         df[["away_club_id", "away"]].rename(
-            columns={"away_club_id": "club_id", "away": "name"
+            columns={"away_club_id": "club_id", "away": "name"}
         ),
     ], ignore_index=True)
     names_per_id = identity_names.groupby("club_id")["name"].nunique(dropna=False)
     report["fragmented_club_ids"] = int((names_per_id > 1).sum())
+    ids_per_name = identity_names.groupby("name")["club_id"].nunique(dropna=False)
+    # model.fit() is keyed by display name, so the inverse collision is equally
+    # destructive: two IDs sharing a display name collapse distinct clubs.
+    report["colliding_club_names"] = int((ids_per_name > 1).sum())
 
     # Parked implementation has a finite life. Once an expiry lands this hard
     # check forces a maintainer to promote it with evidence or delete the code;
@@ -272,6 +278,7 @@ def run_checks(network: bool = True) -> dict:
                     and report["noncanonical_team_names"] == 0
                     and report["invalid_club_ids"] == 0
                     and report["fragmented_club_ids"] == 0
+                    and report["colliding_club_names"] == 0
                     and not report["expired_experiments"]
                     and not report.get("experiment_registry_errors")
                     and report.get("void_with_results", 0) == 0)
@@ -296,6 +303,9 @@ def run_checks(network: bool = True) -> dict:
     status = "PASS" if report["fragmented_club_ids"] == 0 else "FAIL"
     print(f"  [{status}] fragmented_club_ids = "
           f"{report['fragmented_club_ids']} (must be 0)")
+    status = "PASS" if report["colliding_club_names"] == 0 else "FAIL"
+    print(f"  [{status}] colliding_club_names = "
+          f"{report['colliding_club_names']} (must be 0)")
     status = "PASS" if not report["expired_experiments"] else "FAIL"
     print(f"  [{status}] expired_experiments = "
           f"{report['expired_experiments']} (must be empty)")

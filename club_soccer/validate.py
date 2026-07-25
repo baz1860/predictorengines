@@ -31,6 +31,7 @@ BASELINE = DATA / "validation_baseline.json"          # legacy, read-only fallba
 PROMOTION_BASELINE = DATA / "promotion_baseline.json"  # promoter-owned gate
 LATEST = DATA / "validation_latest.json"               # validation-owned, descriptive
 CALIB_FILE = DATA / "calibration.json"
+OPPONENT_XG_EVIDENCE = DATA / "opponent_adjusted_xg_evidence.json"
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
 CALIBRATION_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
 GATE_TOLERANCES = {
@@ -520,9 +521,80 @@ def gate_failures(rows: list[dict], measured: dict, baseline: dict) -> list[str]
     return failures
 
 
+def opponent_xg_ab(test_from: str, test_to: str,
+                    write: bool = False, verbose: bool = True) -> dict:
+    """Reproducible fixed-window A/B for opponent-adjusted xG.
+
+    Both arms use identical fixture identities and fold cutoffs. The artifact
+    records code, data and evaluation-population hashes so its promotion claim
+    can be reproduced rather than surviving as unauditable prose.
+    """
+    arms: dict[str, tuple[list[dict], dict]] = {}
+    for label, active in (("incumbent", False),
+                          ("opponent_adjusted_xg", True)):
+        if verbose:
+            print(f"[opponent-xg A/B] {label}")
+        arms[label] = walk_forward(
+            verbose=verbose, opponent_adjusted_xg=active,
+            test_from=test_from, test_to=test_to,
+        )
+    incumbent_rows, incumbent = arms["incumbent"]
+    adjusted_rows, adjusted = arms["opponent_adjusted_xg"]
+    incumbent_hash = _evaluation_hash(incumbent_rows)
+    adjusted_hash = _evaluation_hash(adjusted_rows)
+    if len(incumbent_rows) != len(adjusted_rows) or incumbent_hash != adjusted_hash:
+        raise RuntimeError(
+            "opponent-xG A/B arms produced different evaluation populations"
+        )
+    metric_names = ("brier", "log_loss", "brier_ou25", "brier_btts")
+    deltas = {
+        metric: float(adjusted[metric]) - float(incumbent[metric])
+        for metric in metric_names
+    }
+    promoted = all(delta < 0 for delta in deltas.values())
+    fixture_frame = M.played(M.load_fixtures()).sort_values(
+        "date"
+    ).reset_index(drop=True)
+    data_hash = hashlib.sha256(
+        WFC.row_hashes(fixture_frame).tobytes()
+    ).hexdigest()[:20]
+    payload = {
+        "status": "promoted" if promoted else "retired",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "method": "monthly walk-forward with identical fixed folds",
+        "test_from": test_from,
+        "test_to": test_to,
+        "n": len(adjusted_rows),
+        "evaluation_hash": adjusted_hash,
+        "code_hash": WFC.code_fingerprint(),
+        "fixture_data_hash": data_hash,
+        "incumbent": {metric: incumbent[metric] for metric in metric_names},
+        "opponent_adjusted_xg": {
+            metric: adjusted[metric] for metric in metric_names
+        },
+        "deltas": deltas,
+        "decision": "promote" if promoted else "retire",
+        "command": (
+            "python3 -m club_soccer.validate --opponent-xg-ab "
+            f"--test-from {test_from} --test-to {test_to} --write-evidence"
+        ),
+    }
+    if write:
+        OPPONENT_XG_EVIDENCE.write_text(json.dumps(payload, indent=2) + "\n")
+        if verbose:
+            print(f"Evidence -> {OPPONENT_XG_EVIDENCE.name}")
+    return payload
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gate", action="store_true")
+    ap.add_argument("--opponent-xg-ab", action="store_true",
+                    help="run a fixed-window opponent-adjusted-xG A/B")
+    ap.add_argument("--test-from", default="2024-07-01")
+    ap.add_argument("--test-to", default="2026-07-01")
+    ap.add_argument("--write-evidence", action="store_true",
+                    help="write the opponent-xG A/B evidence artifact")
     ap.add_argument("--calibrate", action="store_true",
                     help="fit isotonic 1X2 calibration, report held-out improvement, "
                          "and write data/calibration.json")
@@ -530,6 +602,12 @@ def main() -> None:
                     help="report-only: compare ClubElo-implied 1X2 Brier to ours "
                          "near the most recent walk-forward date; never a model input")
     args = ap.parse_args()
+    if args.opponent_xg_ab:
+        result = opponent_xg_ab(
+            args.test_from, args.test_to, write=args.write_evidence
+        )
+        print(json.dumps(result, indent=2))
+        return
     if args.calibrate:
         cmd_calibrate()
         return

@@ -43,14 +43,12 @@ python3 -m club_soccer.season --no-network    # cached data only, no API calls
   fire `./club_soccer/update.sh` on whatever cadence you configure —
   matches the pattern every other engine uses (see `golf/update.sh`).
 - **App closed** (optional): a launchd job runs it standalone at 07:30
-  local time.
+  local time, monitors the run, and captures decision-time odds every 15
+  minutes so the forward evidence ledger does not miss its pre-kickoff window.
   ```bash
-  # Edit the WorkingDirectory in the plist to this repo's absolute path first.
-  cp club_soccer/com.sportspredictor.clubsoccer.plist ~/Library/LaunchAgents/
-  launchctl load ~/Library/LaunchAgents/com.sportspredictor.clubsoccer.plist
-  # to stop: launchctl unload ~/Library/LaunchAgents/com.sportspredictor.clubsoccer.plist
+  bash deploy/install_launchagents.sh
   ```
-  Logs go to `/tmp/club_soccer_season.log`.
+  Logs go to `~/Library/Logs/club_soccer_{season,monitor,capture}.log`.
 
 `club_soccer/update.sh` is a thin wrapper around the same command for the
 app's scheduler / launchd-style invocation (`./club_soccer/update.sh --fast`).
@@ -205,7 +203,9 @@ settlement and regulation markets are not conflated.
 
 ```bash
 python3 -m club_soccer.validate            # walk-forward report (1X2, OU2.5, BTTS Brier)
-python3 -m club_soccer.validate --gate     # pass/fail vs data/validation_baseline.json
+python3 -m club_soccer.validate --gate     # fixed-window pass/fail vs promotion_baseline.json
+python3 -m club_soccer.validate --opponent-xg-ab --test-from 2024-07-01 \
+    --test-to 2026-07-01 --write-evidence  # reproducible promoted-feature A/B
 python3 -m club_soccer.validate --calibrate       # temperature calibration; activates only after multi-split gate
 python3 -m club_soccer.fit_market_blend           # diagnostic; promotion remains gated
 python3 -m club_soccer.validate --benchmark-clubelo   # report-only sanity check, never a model input

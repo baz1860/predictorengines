@@ -53,7 +53,6 @@ from .schema import QUARANTINE_STATUS, normalize_status as _norm_status
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
-BACKUP = DATA / "fixtures_prev.bak.csv"
 STATS_CACHE = DATA / "bsd_cache"
 
 # BSD stat field names -> our fixtures.csv column suffixes
@@ -319,8 +318,6 @@ def main() -> None:
                          "BSD has no rate limit)")
     ap.add_argument("--api-key", dest="api_key",
                     help="BSD API key (overrides env BSD_API_KEY / api_keys.json)")
-    ap.add_argument("--keep-backup", action="store_true",
-                    help="don't overwrite an existing backup file")
     args = ap.parse_args()
 
     key = args.api_key or get_key("bsd", env="BSD_API_KEY")
@@ -344,18 +341,13 @@ def main() -> None:
         )
         canon = make_canon(league_teams)
 
-    # Back up current fixtures before any change
-    if FIXTURES.exists() and not (args.keep_backup and BACKUP.exists()):
-        BACKUP.write_text(FIXTURES.read_text())
-        print(f"Backed up current fixtures -> {BACKUP.name}")
-
     print(f"\nFetching {len(comps)} competition(s) x seasons {args.seasons} from BSD...")
     df = fetch_fixtures(args.seasons, key, comps, canon)
 
     if df.empty:
         sys.exit(
-            "No fixtures returned — check your BSD key or the competition/season values. "
-            f"Backup left intact; restore with: cp {BACKUP} {FIXTURES}"
+            "No fixtures returned — check your BSD key or the "
+            "competition/season values."
         )
 
     if args.stats:

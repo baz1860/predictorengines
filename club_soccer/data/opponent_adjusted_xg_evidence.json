@@ -1,27 +1,31 @@
 {
   "status": "promoted",
-  "promoted_on": "2026-07-25",
-  "method": "monthly walk-forward with identical training cutoffs",
+  "generated_at_utc": "2026-07-25T20:46:27.565090+00:00",
+  "method": "monthly walk-forward with identical fixed folds",
   "test_from": "2024-07-01",
-  "n": 27363,
+  "test_to": "2026-07-01",
+  "n": 27181,
+  "evaluation_hash": "2dfbba7b5209342cf325",
+  "code_hash": "98b545f0999b6ec1",
+  "fixture_data_hash": "a165382a0e5fd7fd5de2",
   "incumbent": {
-    "brier": 0.6129961399,
-    "log_loss": 1.0223253658,
-    "brier_ou25": 0.2518762952,
-    "brier_btts": 0.2513822448
+    "brier": 0.6123710313708126,
+    "log_loss": 1.0212560381848281,
+    "brier_ou25": 0.24536112161326107,
+    "brier_btts": 0.24702642959714943
   },
   "opponent_adjusted_xg": {
-    "brier": 0.6117686032,
-    "log_loss": 1.0204494444,
-    "brier_ou25": 0.2472432248,
-    "brier_btts": 0.2481166031
+    "brier": 0.6118889338548972,
+    "log_loss": 1.020562853318792,
+    "brier_ou25": 0.24517773729185988,
+    "brier_btts": 0.24690999320297685
   },
   "deltas": {
-    "brier": -0.0012275367,
-    "log_loss": -0.0018759214,
-    "brier_ou25": -0.0046330704,
-    "brier_btts": -0.0032656417
+    "brier": -0.00048209751591543615,
+    "log_loss": -0.0006931848660360895,
+    "brier_ou25": -0.0001833843214011921,
+    "brier_btts": -0.000116436394172581
   },
   "decision": "promote",
-  "notes": "Re-run after registry-backed identity migration removed 454 cross-provider duplicates. The estimator removes home and competition offsets, then alternates shrunk attack and defence updates against the opponents each club actually faced."
+  "command": "python3 -m club_soccer.validate --opponent-xg-ab --test-from 2024-07-01 --test-to 2026-07-01 --write-evidence"
 }

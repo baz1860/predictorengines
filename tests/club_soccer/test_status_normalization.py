@@ -156,6 +156,39 @@ def test_live_and_scheduled_rows_never_train(tmp_path=None):
     assert list(M.played(df)["home"]) == ["C"]                # LIV never trains
 
 
+def test_app_settlement_requires_an_official_terminal_status(
+        tmp_path, monkeypatch):
+    """The app must not grade an in-play score as a finished bet."""
+    from app.engines import club_soccer as adapter_module
+
+    data = tmp_path / "data"
+    data.mkdir()
+    pd.DataFrame([
+        {
+            "date": "2026-08-01", "home": "Arsenal", "away": "Chelsea",
+            "home_goals": 1, "away_goals": 0, "status": "IN_PLAY",
+        },
+        {
+            "date": "2026-08-02", "home": "Arsenal", "away": "Chelsea",
+            "home_goals": 3, "away_goals": 0, "status": "AWARDED",
+        },
+    ]).to_csv(data / "fixtures.csv", index=False)
+    monkeypatch.setattr(adapter_module, "ENGINE_DIR", tmp_path)
+    open_bets = pd.DataFrame([
+        {
+            "match_date": "2026-08-01", "home": "Arsenal",
+            "away": "Chelsea", "bet": "1X2", "side": "home",
+        },
+        {
+            "match_date": "2026-08-02", "home": "Arsenal",
+            "away": "Chelsea", "bet": "1X2", "side": "home",
+        },
+    ])
+    graded = adapter_module.ClubSoccerAdapter().grade_open_bets(open_bets)
+    assert 0 not in graded
+    assert graded[1] == ("won", "3-0")
+
+
 def test_write_fixtures_normalizes_and_clears_void(tmp_path):
     from club_soccer import fetch
     df = pd.DataFrame([

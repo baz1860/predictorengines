@@ -10,10 +10,13 @@ scores, shots, shots on target, and corners — everything the model and its
 or a manual odds.csv.
 
 What it does:
-  1. Backs up the current fixtures.csv -> data/fixtures_synthetic.bak.csv
-  2. Downloads each covered league for each season and maps it onto the engine's
+  1. Downloads each covered league for each season and maps it onto the engine's
      fixtures.csv schema (with real shot/corner stats).
-  3. Refits the model and writes a fresh validation baseline from real results.
+  2. Refits the model and writes descriptive validation results.
+
+The shared fixture writer is atomic and refuses an implausibly large shrink.
+Use versioned source artifacts or source control for recovery; this seeder does
+not maintain a second, unaudited backup scheme beside them.
 """
 from __future__ import annotations
 
@@ -38,7 +41,6 @@ from .competitions import BY_NAME
 
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
-BACKUP = DATA / "fixtures_synthetic.bak.csv"
 BASE = "https://www.football-data.co.uk/mmz4281"
 
 # engine competition name -> football-data.co.uk league code
@@ -148,16 +150,11 @@ def main() -> None:
                     help="season start years (default: 2022 2023 2024 2025)")
     ap.add_argument("--leagues", nargs="+", default=list(LEAGUE_CODES),
                     help="subset of competition names to pull (default: all covered)")
-    ap.add_argument("--keep-backup", action="store_true")
     args = ap.parse_args()
 
     wanted = [l for l in args.leagues if l in LEAGUE_CODES]
     if not wanted:
         sys.exit(f"No covered leagues in {args.leagues}. Options: {list(LEAGUE_CODES)}")
-
-    if FIXTURES.exists() and not (args.keep_backup and BACKUP.exists()):
-        BACKUP.write_text(FIXTURES.read_text())
-        print(f"Backed up current fixtures -> {BACKUP.name}")
 
     print(f"\nDownloading {len(wanted)} leagues x {len(args.seasons)} seasons "
           "from football-data.co.uk...")
@@ -167,8 +164,7 @@ def main() -> None:
             rows.extend(fixtures_for(comp_name, LEAGUE_CODES[comp_name], yr))
 
     if not rows:
-        sys.exit("No data downloaded — check your connection or season values. "
-                 f"Synthetic backup left intact; restore with: cp {BACKUP} {FIXTURES}")
+        sys.exit("No data downloaded — check your connection or season values.")
 
     df = pd.DataFrame(rows).drop_duplicates(subset=["fixture_id"], keep="last")
     from .fetch import write_fixtures

@@ -66,6 +66,7 @@ _CROSS_BORDER_CLUB_LEAGUE = {
 }
 
 _resolver_cache: tuple[dict[str, str], dict[str, str]] | None = None
+_country_resolver_cache: dict[str, tuple[dict[str, str], dict[str, str]]] | None = None
 _country_index_cache: dict[str, str] | None = None
 
 
@@ -159,9 +160,35 @@ def _load_resolver() -> tuple[dict[str, str], dict[str, str]]:
     return _resolver_cache
 
 
+def _load_country_resolver() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
+    """Reviewed aliases whose spelling is ambiguous without a country."""
+    global _country_resolver_cache
+    if _country_resolver_cache is not None:
+        return _country_resolver_cache
+    out: dict[str, tuple[dict[str, str], dict[str, str]]] = {}
+    if ALIAS_MAP.exists():
+        raw = json.loads(ALIAS_MAP.read_text()).get("country_alias", {})
+        if not isinstance(raw, dict):
+            raise ValueError("club_alias_map.json country_alias must be an object")
+        for country, aliases in raw.items():
+            if not isinstance(aliases, dict):
+                raise ValueError(
+                    f"club_alias_map.json country_alias[{country!r}] "
+                    "must be an object"
+                )
+            literal = {str(source): str(target)
+                       for source, target in aliases.items()}
+            normalised = {_norm(source): target
+                          for source, target in literal.items()}
+            out[str(country)] = (literal, normalised)
+    _country_resolver_cache = out
+    return out
+
+
 def reload_resolver() -> None:
-    global _resolver_cache
+    global _resolver_cache, _country_resolver_cache
     _resolver_cache = None
+    _country_resolver_cache = None
 
 
 def team_countries(refresh: bool = False) -> dict[str, str]:
@@ -228,6 +255,13 @@ def canonical_name(name, country: str | None = None):
     if not name:
         return name
     text = str(name)
+    if country:
+        scoped = _load_country_resolver().get(str(country))
+        if scoped:
+            literal, normalised = scoped
+            target = literal.get(text) or normalised.get(_norm(text))
+            if target is not None:
+                return target
     alias, by_norm = _load_resolver()
     target = alias.get(text) or by_norm.get(_norm(text))
     record = _registry_record(text)
@@ -259,15 +293,29 @@ def canonical_id(raw_name, country_hint: str | None = None) -> str:
         # example, the German registry record for "FC Bayern München" must not
         # give a Brazilian club with that literal name the German club's ID
         # after canonical_name() correctly refused the display-name alias.
-        registry_country_allowed = _country_allows(
-            canonical, country_hint, record_country
+        # When the raw spelling resolves to a foreign registry record, an
+        # explicitly country-scoped alias must win. team_countries(canonical)
+        # describes the scoped target and cannot be used to bless adoption of
+        # the raw record (Brazilian Athletic Club vs Athletic Bilbao).
+        registry_country_allowed = (
+            not country_hint
+            or not record_country
+            or record_country == country_hint
+            or country_hint in _BORDERLESS_ASSOCIATION_LEAGUES.get(
+                str(record_country), set()
+            )
+            or _CROSS_BORDER_CLUB_LEAGUE.get(canonical) == country_hint
         )
         can_disambiguate = (
             registry_country_allowed
             and (
                 not record.get("ambiguous")
-                or bool(country_hint and country_hint in countries)
-                or bool(observed_country and observed_country in countries)
+                # An ambiguous normalised spelling can list several countries,
+                # but its single `canonical` field belongs only to
+                # record_country. Membership in `countries` does not identify
+                # which club was meant (e.g. Santos in Brazil/Costa Rica).
+                or bool(country_hint and country_hint == record_country)
+                or bool(observed_country and observed_country == record_country)
             )
         )
         if can_disambiguate:
