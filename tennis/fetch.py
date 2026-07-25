@@ -1,9 +1,10 @@
 """tennis/fetch.py — data layer CLI for the tennis engine.
 
-Source of truth is data/matches.csv, accumulated from the free TML ATP archive
-and public WTA results API (with offline historical fallbacks). Upcoming
-fixtures are pulled by tennis.season from ESPN into draw.csv. Book prices can
-be written from a manual template or fetched from The Odds API into odds.csv.
+Source of truth is data/matches.csv, accumulated from ESPN's free current ATP
+scoreboard, the cached TML ATP history, and the public WTA results API (with
+offline fallbacks). Upcoming fixtures are pulled by tennis.season from ESPN
+into draw.csv. Book prices can be written from a manual template or fetched
+from The Odds API into odds.csv.
 
 Usage:
   python -m tennis.fetch --seed 2019 2020 2021 2022 2023 2024 2025
@@ -31,12 +32,11 @@ from .providers import (
     _infer_surface,
     accumulate_matches,
 )
+from .rounds import DRAW_COLUMNS
 
 DRAW_CSV = DATA_DIR / "draw.csv"
 ODDS_CSV = DATA_DIR / "odds.csv"
 
-DRAW_COLUMNS = ["tour", "tourney_name", "event_id", "surface", "best_of", "round",
-                "player_a", "player_b", "state", "winner", "score", "match_id"]
 ODDS_COLUMNS = ["tour", "tourney_name", "event_id", "surface", "best_of",
                 "player_a", "player_b", "odds_a", "odds_b"]
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
@@ -312,8 +312,9 @@ def main() -> None:
 
     if args.seed is not None or args.accumulate:
         years = args.seed if args.seed else None
-        added = accumulate_matches(years=years, tours=tuple(args.tours))
-        print(f"Done. {added} new match(es) recorded.")
+        status = accumulate_matches(years=years, tours=tuple(args.tours))
+        print(f"Done. {status['added']} new match(es) recorded. "
+              f"Latest by tour: {status['max_dates']}")
         return
 
     ap.print_help()

@@ -33,26 +33,14 @@ from pathlib import Path
 from . import calibrate as C
 from . import market as MK
 from . import model as M
+from . import portfolio as PORT
 from .providers import DATA_DIR, fetch_draws
+from .rounds import DRAW_COLUMNS, ROUND_LABEL, is_tbd, ordered_rounds
 
 DRAW_CSV = DATA_DIR / "draw.csv"
 ODDS_CSV = DATA_DIR / "odds.csv"
 CARD_MD = DATA_DIR / "card.md"
 DEFAULT_KELLY = 0.25
-
-DRAW_COLUMNS = ["tour", "tourney_name", "event_id", "surface", "best_of", "round",
-                "player_a", "player_b", "state", "winner", "score", "match_id"]
-
-# Bracket order, earliest round first.
-_ROUND_ORDER = ["Q1", "Q2", "QF-Q", "R256", "R128", "R64", "R32", "R16",
-                "R1", "R2", "R3", "R4", "QF", "SF", "F"]
-_ROUND_LABEL = {"R128": "Round of 128", "R64": "Round of 64", "R32": "Round of 32",
-                "R16": "Round of 16", "QF": "Quarterfinals", "SF": "Semifinals",
-                "F": "Final", "Q1": "Qualifying R1", "Q2": "Qualifying R2",
-                "QF-Q": "Qualifying final", "R256": "Round of 256",
-                "R1": "Round 1", "R2": "Round 2", "R3": "Round 3",
-                "R4": "Round 4"}
-
 
 # ── schedule ──────────────────────────────────────────────────────────────────
 
@@ -87,6 +75,7 @@ def build_card(
     tourney: str = "",
     fetch: bool = True,
     bankroll: float = 100.0,
+    peak: float | None = None,
     kelly: float = DEFAULT_KELLY,
     min_edge: float = 0.0,
     calibrated: bool = True,
@@ -102,6 +91,7 @@ def build_card(
     if not params:
         raise ValueError(f"No fitted {tour.upper()} model. Run: "
                          f"python -m tennis.model --fit --tour {tour}")
+    M.assert_params_fresh(params)
 
     notes: list[str] = []
     draws = fetch_draws(tour, tourney) if fetch else []
@@ -140,7 +130,6 @@ def build_card(
 
     odds = _load_odds(tour)
     maps = C.load_maps() if calibrated else None
-    h2h_fn = _h2h_fn(tour)
     w_mkt = MK.blend_weights().get("match_winner", 0.5)
 
     by_event: dict[str, dict] = {}
@@ -156,15 +145,33 @@ def build_card(
         odds_pair = odds.get((event_name.lower(), _key(a, b)))
         if odds_pair is None:
             odds_pair = odds.get(("", _key(a, b)))
-        row = _price_match(a, b, surface, params, h2h_fn, maps,
+        row = _price_match(a, b, surface, params, maps,
                            odds_pair, w_mkt if blended else None,
                            bankroll, kelly, state=m.get("state", ""),
                            winner=m.get("winner", ""))
-        if row.get("recommended") and row["edge"] >= min_edge:
-            n_bets += 1
         event = by_event.setdefault(event_name, {
             "surface": surface, "best_of": best_of, "by_round": {}})
         event["by_round"].setdefault(rnd or "R?", []).append(row)
+
+    priced_rows = [
+        row
+        for event in by_event.values()
+        for round_rows in event["by_round"].values()
+        for row in round_rows
+        if row.get("ev_per_unit", 0.0) > 0 and row.get("stake_gbp", 0.0) > 0
+    ]
+    for row in priced_rows:
+        row["recommended"] = False
+    staked = PORT.apply_portfolio(
+        priced_rows, bankroll=bankroll, peak=peak or bankroll,
+    )
+    for row in staked:
+        row["stake"] = row["stake_gbp"]
+        row["recommended"] = (
+            row["stake_gbp"] >= 0.5 and row["ev_per_unit"] > min_edge
+        )
+    n_bets = sum(1 for row in staked if row["recommended"])
+    notes.append(f"portfolio: {PORT.summary(staked, bankroll, peak or bankroll)}")
 
     text = _render_card(tour, by_event, min_edge, notes)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -184,29 +191,34 @@ def _draw_match_row(m, draw) -> dict:
             "score": getattr(m, "score", ""), "match_id": getattr(m, "match_id", "")}
 
 
-def _is_tbd(name: str) -> bool:
-    return not str(name or "").strip() or str(name).strip().upper() == "TBD"
-
-
-def _price_match(a, b, surface, params, h2h_fn, maps, odds_pair, w_mkt,
+def _price_match(a, b, surface, params, maps, odds_pair, w_mkt,
                  bankroll, kelly, state: str = "", winner: str = "") -> dict:
     base_row = {"round_a": a, "round_b": b, "favourite": "", "p_fav": None,
                 "odds": 0.0, "p_market": 0.0, "edge": 0.0, "stake": 0.0,
+                "ev_per_unit": 0.0, "stake_gbp": 0.0,
                 "recommended": False, "completed": False, "status": ""}
     if state == "post" and winner:
         base_row.update(favourite=winner, completed=True, status="Complete")
         return base_row
-    if _is_tbd(a) or _is_tbd(b):
+    if is_tbd(a) or is_tbd(b):
         base_row.update(favourite="TBD", status="Pending")
         return base_row
 
-    h2h = h2h_fn(a, b, surface) if h2h_fn else 0.0
-    p_a = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)["p_a"]
+    prediction = M.predict_match(a, b, surface, params)
+    if prediction["unresolved"]:
+        base_row.update(
+            favourite="Unpriced",
+            status=f"Unknown: {', '.join(prediction['unresolved'])}",
+        )
+        return base_row
+    p_a = prediction["p_a"]
     if maps:
-        p_a = C.apply_one("match_winner", p_a, maps)
+        p_a = C.apply_oriented(a, b, p_a, maps)
     fav, p_fav = (a, p_a) if p_a >= 0.5 else (b, 1 - p_a)
 
+    opponent = b if fav == a else a
     row = {**base_row, "favourite": fav, "p_fav": p_fav,
+           "player": fav, "opponent": opponent, "p_model": p_fav,
            "status": "Live" if state == "in" else ""}
     if (not odds_pair or a.strip().lower() not in odds_pair
             or b.strip().lower() not in odds_pair):
@@ -218,12 +230,10 @@ def _price_match(a, b, surface, params, h2h_fn, maps, odds_pair, w_mkt,
     pm_fav = pm_a if fav == a else pm_b
     p_eff = MK.blend(p_fav, pm_fav, w_mkt) if w_mkt is not None else p_fav
     ev = p_eff * o_fav - 1.0
-    row.update(odds=o_fav, p_market=pm_fav, edge=ev * 100)
+    row.update(odds=o_fav, p_market=pm_fav, p_blend=p_eff,
+               edge=ev, ev_per_unit=ev)
     if ev > 0:
-        b_odds = o_fav - 1.0
-        f = (b_odds * p_eff - (1 - p_eff)) / b_odds if b_odds > 0 else 0.0
-        row["stake"] = round(bankroll * max(0.0, f) * kelly, 2)
-        row["recommended"] = row["stake"] >= 0.5
+        row["stake_gbp"] = PORT.kelly_stake(p_eff, o_fav, bankroll, kelly)
     return row
 
 
@@ -251,7 +261,7 @@ def _render_card(tour, by_event, min_edge, notes) -> str:
         L.append("")
         for rnd in _ordered(by_round):
             rows = by_round[rnd]
-            L.append(f"### {_ROUND_LABEL.get(rnd, rnd)}")
+            L.append(f"### {ROUND_LABEL.get(rnd, rnd)}")
             L.append("")
             L.append("| Match | Status | Model pick | P(win) | Odds | Market | Edge | Stake |")
             L.append("|---|---|---|--:|--:|--:|--:|--:|")
@@ -263,7 +273,7 @@ def _render_card(tour, by_event, min_edge, notes) -> str:
                 if r["odds"]:
                     odds = f"{r['odds']:.2f}"
                     mkt = f"{r['p_market']*100:.0f}%"
-                    edge = f"{r['edge']:+.1f}%"
+                    edge = f"{r['edge']*100:+.1f}%"
                     stake = f"£{r['stake']:.2f}" if r["recommended"] else "—"
                 else:
                     odds = mkt = edge = stake = "—"
@@ -383,17 +393,6 @@ def _key(a: str, b: str) -> tuple[str, str]:
     return tuple(sorted((a.strip().lower(), b.strip().lower())))
 
 
-def _h2h_fn(tour: str):
-    try:
-        df = M.load_matches_df()
-    except FileNotFoundError:
-        return None
-    df = df[df["tour"].astype(str).str.lower() == tour]
-    if df.empty:
-        return None
-    return lambda a, b, s: M.h2h_log_odds_from_df(a, b, s, df)
-
-
 def _by_round(matches) -> dict:
     out: dict[str, list] = {}
     for m in matches:
@@ -402,9 +401,7 @@ def _by_round(matches) -> dict:
 
 
 def _ordered(rounds) -> list[str]:
-    keys = list(rounds.keys())
-    return sorted(keys, key=lambda r: _ROUND_ORDER.index(r)
-                  if r in _ROUND_ORDER else len(_ROUND_ORDER))
+    return ordered_rounds(rounds.keys())
 
 
 def main() -> None:
@@ -417,9 +414,11 @@ def main() -> None:
     ap.add_argument("--no-fetch", action="store_true",
                     help="reprice the saved draw.csv instead of pulling ESPN")
     ap.add_argument("--bankroll", type=float, default=100.0)
+    ap.add_argument("--peak", type=float, default=None,
+                    help="peak bankroll for the drawdown staking brake")
     ap.add_argument("--kelly", type=float, default=DEFAULT_KELLY)
     ap.add_argument("--min-edge", type=float, default=0.0,
-                    help="min %% edge to count a bet as backed (default 0)")
+                    help="minimum EV fraction to back (0.02 = 2%%; default 0)")
     ap.add_argument("--odds-api", action="store_true",
                     help="fetch h2h prices from The Odds API into odds.csv before pricing")
     ap.add_argument("--api-key", default=None,
@@ -435,7 +434,7 @@ def main() -> None:
         return
 
     common = dict(tourney=args.event, fetch=not args.no_fetch,
-                  bankroll=args.bankroll, kelly=args.kelly,
+                  bankroll=args.bankroll, peak=args.peak, kelly=args.kelly,
                   min_edge=args.min_edge, fetch_odds=args.odds_api,
                   api_key=args.api_key, odds_regions=args.regions)
     if args.tour == "both":
@@ -463,7 +462,7 @@ def main() -> None:
         print(f"Index → {index}")
         return
 
-    default_output = CARD_MD if args.tour == "atp" else DATA_DIR / "card_wta.md"
+    default_output = DATA_DIR / f"card_{args.tour}.md"
     summary = build_card(tour=args.tour, output=Path(args.output) if args.output else default_output,
                          **common)
     print(f"{summary['event'] or summary['tour'].upper()} — "

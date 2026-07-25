@@ -5,8 +5,6 @@ relative to hard). Match probability is
 
     logit P(A beats B) = skill_A − skill_B
                        + offset_A[s] − offset_B[s]
-                       + form_weight · (form_A − form_B)
-                       + h2h_weight · h2h_log_odds(A, B, s)
 
 Parameters are fitted by penalised (ridge) logistic regression on the binary
 match-outcome design, with time-decay sample weights so recent matches count
@@ -30,53 +28,30 @@ MATCHES_CSV = DATA_DIR / "matches.csv"
 SURFACES = ("clay", "grass", "carpet")   # hard is the baseline (offset ≡ 0)
 SURFACE_IDX = {s: i for i, s in enumerate(SURFACES)}
 
-# ── fit hyperparameters (tuned later by validate.py) ──
+# Deliberately small parameter set. The former probability-space "form"
+# residual and tiny H2H term mixed incompatible units and did not improve the
+# validation baseline, so they are not part of the estimator.
 DEFAULT_CONFIG = {
     "skill_halflife_days": 365.0,   # ≈ 52-week half-life on the skill estimate
     "ridge_skill": 6.0,             # shrink skill toward its rank prior
     "ridge_offset": 24.0,           # shrink surface offsets toward 0 (small samples)
     "rank_prior_coef": -0.12,       # skill prior = coef · log(median_rank)
-    "form_halflife_days": 56.0,     # 8-week recency window for the form nudge
-    "form_window_days": 56,
-    "form_k": 8.0,                  # Empirical-Bayes shrink for form (equiv. matches)
-    "form_weight": 0.5,             # how much form nudges the rating
     "min_surface_matches": 12,      # keep a surface offset only above this count
-    "h2h_weight": 0.05,             # heavily shrunk head-to-head nudge
 }
 
 MIN_FIT_MATCHES = 20                # hard floor below which a fit is meaningless
 DEFAULT_RANK = 9999
+MAX_DATA_AGE_DAYS = 21
 
 # Empirical-Bayes prior strength (in service points) for per-player serve/return
 # rates, and the minimum points before a player's own rate is trusted at all.
 SERVE_SHRINK_POINTS = 600.0
 SERVE_MIN_POINTS = 250.0
-DEFAULT_SERVE_AVG = 0.635            # tour-average serve-points-won fallback
+DEFAULT_SERVE_BY_TOUR = {
+    "atp": 0.64,
+    "wta": 0.60,
+}
 GAMES_CAL_SAMPLE = 600              # training matches sampled for the games-level cal
-
-
-def _score_total_games(score: str):
-    """Total games in a completed match from its score string, or None if the
-    match was retired/walkover/empty (excluded from the games-level calibration)."""
-    if score is None:
-        return None
-    s = str(score).strip()
-    if not s or s.lower() == "nan":
-        return None
-    g = 0
-    for tok in s.split():
-        t = tok.upper()
-        if t in ("RET", "RET.", "DEF", "W/O", "WO", "ABN", "ABD", "UNK"):
-            return None
-        core = tok.split("(", 1)[0]
-        if "-" not in core:
-            continue
-        a, _, b = core.partition("-")
-        try:
-            g += int(a) + int(b)
-        except ValueError:
-            return None
-    return g if g > 0 else None
 
 
 def _fit_games_cal(df, params, tour) -> float:
@@ -89,6 +64,7 @@ def _fit_games_cal(df, params, tour) -> float:
     return Σactual / Σpredicted, clipped to a sane band. 1.0 ⇒ no correction."""
     import numpy as np
     from . import simulate as S
+    from .scores import score_total_games
 
     d = df.copy()
     d = d[d["score"].astype(str).str.strip() != ""]
@@ -108,7 +84,7 @@ def _fit_games_cal(df, params, tour) -> float:
 
     num = den = 0.0
     for r in d.itertuples(index=False):
-        tg = _score_total_games(getattr(r, "score", ""))
+        tg = score_total_games(getattr(r, "score", ""))
         if tg is None:
             continue
         a, b = sorted([str(r.winner), str(r.loser)], key=fold_name)
@@ -116,7 +92,9 @@ def _fit_games_cal(df, params, tour) -> float:
         best_of = int(r.best_of) if str(getattr(r, "best_of", "")).strip() not in ("", "nan") else 3
         base = serve_base(a, b, surface, params)
         p_a = predict_match(a, b, surface, params)["p_a"]
-        pred = exp_games(p_a, base if base is not None else S.BASE_SERVE, best_of)
+        pred = exp_games(
+            p_a, base if base is not None else S.base_serve(tour), best_of,
+        )
         if pred > 0:
             num += tg
             den += pred
@@ -125,7 +103,7 @@ def _fit_games_cal(df, params, tour) -> float:
     return float(np.clip(num / den, 0.80, 1.20))
 
 
-def _fit_serve(df, asof_ts, halflife_days: float) -> dict:
+def _fit_serve(df, asof_ts, halflife_days: float, tour: str | None) -> dict:
     """Per-player decay-weighted, EB-shrunk serve-points-won and return-points-won
     rates from the `*_sv_pts/_sv_won` columns. Returns {} when the slice carries
     no point stats (e.g. a WTA MatchCharting-only feed).
@@ -154,7 +132,8 @@ def _fit_serve(df, asof_ts, halflife_days: float) -> dict:
     # tour averages (decay-weighted), overall + per surface
     tot_sv = float(np.sum((d["w_sv_pts"] + d["l_sv_pts"]) * wt))
     tot_won = float(np.sum((d["w_sv_won"] + d["l_sv_won"]) * wt))
-    avg_spw = tot_won / tot_sv if tot_sv > 0 else DEFAULT_SERVE_AVG
+    fallback = DEFAULT_SERVE_BY_TOUR.get(str(tour or "").lower(), 0.62)
+    avg_spw = tot_won / tot_sv if tot_sv > 0 else fallback
     by_surface = {}
     for surf, g in d.assign(_w=wt).groupby("surface"):
         sv = float(np.sum((g["w_sv_pts"] + g["l_sv_pts"]) * g["_w"]))
@@ -192,6 +171,29 @@ def _fit_serve(df, asof_ts, halflife_days: float) -> dict:
 
 def _params_path(tour: str) -> Path:
     return DATA_DIR / f"{tour.lower()}_model_params.json"
+
+
+def assert_params_fresh(params: dict, asof=None) -> None:
+    """Refuse to serve a fitted model whose own as-of date is stale."""
+    import pandas as pd
+
+    if not params.get("asof"):
+        raise ValueError("Saved tennis model has no as-of date; refit before pricing.")
+    try:
+        model_asof = pd.Timestamp(params["asof"])
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Saved tennis model has an invalid as-of date; refit before pricing."
+        ) from None
+    reference = pd.Timestamp(asof) if asof is not None else pd.Timestamp.now().normalize()
+    age = (reference - model_asof).days
+    if age > MAX_DATA_AGE_DAYS:
+        tour = str(params.get("tour") or "tennis").upper()
+        raise ValueError(
+            f"{tour} model is stale: fitted through {model_asof.date()} "
+            f"({age} days old; maximum {MAX_DATA_AGE_DAYS}). Refresh results "
+            "and refit before pricing."
+        )
 
 
 # ─────────────────────────────────────────────
@@ -232,8 +234,13 @@ def resolve_name(name: str, params: dict) -> Optional[str]:
 # ─────────────────────────────────────────────
 
 def load_matches_df(path: Path | None = None):
-    """Read matches.csv → DataFrame (raises if absent)."""
+    """Read clean completed matches for modelling (raises if absent).
+
+    Retirements and walkovers remain in the source CSV for settlement/audit but
+    are excluded here so they are not trained as ordinary decisive wins.
+    """
     import pandas as pd
+    from .scores import is_retirement_or_walkover
     path = path or MATCHES_CSV
     if not path.exists():
         raise FileNotFoundError(
@@ -244,6 +251,9 @@ def load_matches_df(path: Path | None = None):
     df["winner"] = df["winner"].astype(str)
     df["loser"] = df["loser"].astype(str)
     df["surface"] = df["surface"].astype(str).str.lower()
+    if "score" in df.columns:
+        incomplete = df["score"].map(is_retirement_or_walkover)
+        df = df[~incomplete].copy()
     for col in ("winner_rank", "loser_rank"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(DEFAULT_RANK)
@@ -270,17 +280,28 @@ def fit(matches_df, tour: str | None = None, asof=None,
     from scipy.optimize import minimize
 
     cfg = {**DEFAULT_CONFIG, **(config or {})}
+    if str(tour or "").lower() == "wta":
+        cfg["rank_prior_coef"] = 0.0
     df = matches_df
     if tour:
         df = df[df["tour"].astype(str).str.lower() == tour.lower()]
+    requested_asof = pd.Timestamp(asof) if asof is not None else pd.Timestamp.now().normalize()
     if asof is not None:
-        asof = pd.Timestamp(asof)
-        df = df[df["date"] < asof]
+        df = df[df["date"] < requested_asof]
     df = df.reset_index(drop=True)
     if len(df) < MIN_FIT_MATCHES:
         raise ValueError(f"only {len(df)} matches{f' for {tour}' if tour else ''}"
                          f" before {asof} — need ≥{MIN_FIT_MATCHES}")
-    asof_ts = asof if asof is not None else (df["date"].max() + pd.Timedelta(days=1))
+    latest = pd.Timestamp(df["date"].max())
+    data_age = (requested_asof - latest).days
+    if data_age > MAX_DATA_AGE_DAYS:
+        label = f"{tour.upper()} " if tour else ""
+        raise ValueError(
+            f"{label}results are stale: newest match {latest.date()} is "
+            f"{data_age} days before fit as-of {requested_asof.date()} "
+            f"(maximum {MAX_DATA_AGE_DAYS})"
+        )
+    asof_ts = requested_asof
 
     players = sorted(set(df["winner"]) | set(df["loser"]))
     pi = {p: i for i, p in enumerate(players)}
@@ -296,6 +317,8 @@ def fit(matches_df, tour: str | None = None, asof=None,
         if r and r < DEFAULT_RANK:
             rank_lists[l].append(float(r))
     prior = np.zeros(n_cols)
+    # The current WTA feed has no ranking columns. Explicitly use a zero-centred
+    # prior instead of pretending 9999 is a meaningful rank for every player.
     coef = float(cfg["rank_prior_coef"])
     for p, i in pi.items():
         rs = rank_lists[p]
@@ -373,13 +396,10 @@ def fit(matches_df, tour: str | None = None, asof=None,
         if d:
             surface_offsets[p] = d
 
-    # ── recent-form nudge: EB-shrunk mean (actual − expected) over the window ──
-    form = _fit_form(df, skills, surface_offsets, pi, asof_ts, cfg)
-
     default_skill = float(np.quantile(skills, 0.20)) if P else 0.0
     counts = (np.bincount(widx, minlength=P) + np.bincount(lidx, minlength=P))
 
-    serve = _fit_serve(df, asof_ts, float(cfg["skill_halflife_days"]))
+    serve = _fit_serve(df, asof_ts, float(cfg["skill_halflife_days"]), tour)
 
     out = {
         "tour": (tour or "all").lower(),
@@ -387,12 +407,9 @@ def fit(matches_df, tour: str | None = None, asof=None,
         "n_matches": int(m),
         "n_players": int(P),
         "default_skill": round(default_skill, 4),
-        "form_weight": float(cfg["form_weight"]),
-        "h2h_weight": float(cfg["h2h_weight"]),
         "hyperparams": {k: float(cfg[k]) for k in DEFAULT_CONFIG},
         "skills": {p: round(float(skills[i]), 4) for p, i in pi.items()},
         "surface_offsets": surface_offsets,
-        "form": form,
         "serve": serve,
         "n_played": {p: int(counts[i]) for p, i in pi.items()},
         "meta": {"converged": bool(res.success), "iterations": int(res.nit)},
@@ -402,69 +419,18 @@ def fit(matches_df, tour: str | None = None, asof=None,
     return out
 
 
-def _fit_form(df, skills, surface_offsets, pi, asof_ts, cfg) -> dict[str, float]:
-    """Per-player momentum nudge: Empirical-Bayes-shrunk, decay-weighted mean of
-    (actual − model-expected) over recent matches. Positive = over-performing."""
-    import numpy as np
-    import pandas as pd
-
-    window = pd.Timedelta(days=int(cfg["form_window_days"]))
-    recent = df[df["date"] >= (asof_ts - window)]
-    if recent.empty:
-        return {}
-
-    P = len(pi)
-    half = float(cfg["form_halflife_days"])
-    num = np.zeros(P)   # Σ weight·residual
-    wsum = np.zeros(P)  # Σ weight
-    cnt = np.zeros(P)
-
-    def base_logit(name, surf):
-        i = pi[name]
-        s = skills[i]
-        off = surface_offsets.get(name, {}).get(surf, 0.0)
-        return s + off
-
-    for _, row in recent.iterrows():
-        w_name, l_name, s = row["winner"], row["loser"], row["surface"]
-        age = (asof_ts - row["date"]).days
-        wt = 0.5 ** (age / half)
-        lw = base_logit(w_name, s)
-        ll = base_logit(l_name, s)
-        p_w = 1.0 / (1.0 + math.exp(-(lw - ll)))
-        # winner: actual 1, expected p_w; loser: actual 0, expected p_l = 1 − p_w
-        iw, il = pi[w_name], pi[l_name]
-        num[iw] += wt * (1.0 - p_w); wsum[iw] += wt; cnt[iw] += 1
-        num[il] += wt * (0.0 - (1.0 - p_w)); wsum[il] += wt; cnt[il] += 1
-
-    k = float(cfg["form_k"])
-    out: dict[str, float] = {}
-    inv = {i: p for p, i in pi.items()}
-    for i in range(P):
-        if wsum[i] <= 0:
-            continue
-        raw = num[i] / wsum[i]
-        shrunk = raw * (cnt[i] / (cnt[i] + k))
-        if abs(shrunk) > 1e-4:
-            out[inv[i]] = round(float(shrunk), 4)
-    return out
-
-
 # ─────────────────────────────────────────────
 # Predict
 # ─────────────────────────────────────────────
 
 def _player_logit(name: str, surface: str, params: dict) -> float:
-    """skill + surface offset + form_weight·form for one player (0-centred at the
-    field default for unknowns)."""
+    """Skill plus surface offset for one player."""
     canon = resolve_name(name, params)
     if canon is None:
         return params.get("default_skill", 0.0)
     skill = params["skills"].get(canon, params.get("default_skill", 0.0))
     off = params.get("surface_offsets", {}).get(canon, {}).get(surface, 0.0)
-    fw = params.get("form_weight", 0.0)
-    form = params.get("form", {}).get(canon, 0.0)
-    return skill + off + fw * form
+    return skill + off
 
 
 def serve_base(player_a: str, player_b: str, surface: str, params: dict) -> float | None:
@@ -489,7 +455,9 @@ def serve_base(player_a: str, player_b: str, surface: str, params: dict) -> floa
     if ra.get("sv_pts", 0) < SERVE_MIN_POINTS or rb.get("sv_pts", 0) < SERVE_MIN_POINTS:
         return None
     avg_spw = float((sv.get("by_surface") or {}).get(
-        (surface or "hard").lower(), sv.get("avg_spw", DEFAULT_SERVE_AVG)))
+        (surface or "hard").lower(),
+        sv.get("avg_spw", DEFAULT_SERVE_BY_TOUR.get(params.get("tour"), 0.62)),
+    ))
     avg_rpw = 1.0 - avg_spw
     ps_a = ra["spw"] - (rb["rpw"] - avg_rpw)     # A serving vs B returning
     ps_b = rb["spw"] - (ra["rpw"] - avg_rpw)     # B serving vs A returning
@@ -497,33 +465,24 @@ def serve_base(player_a: str, player_b: str, surface: str, params: dict) -> floa
     return float(min(max(base, 0.55), 0.74))
 
 
-def predict_match(player_a: str, player_b: str, surface: str, params: dict,
-                  h2h_log_odds: float = 0.0) -> dict:
+def predict_match(player_a: str, player_b: str, surface: str, params: dict) -> dict:
     """P(A beats B) on `surface` from fitted params.
 
-    `h2h_log_odds` is an optional, already-computed head-to-head signal (see
-    `h2h_log_odds_from_df`); it is multiplied by the fitted `h2h_weight`. Returns
-    {"p_a", "p_b", "logit"}.
+    The return value includes unresolved input names so consumers can refuse to
+    stake a typo rather than presenting a confident-looking 50/50.
     """
     surface = (surface or "hard").lower()
     la = _player_logit(player_a, surface, params)
     lb = _player_logit(player_b, surface, params)
-    logit = (la - lb) + params.get("h2h_weight", 0.0) * float(h2h_log_odds)
+    logit = la - lb
     p_a = 1.0 / (1.0 + math.exp(-logit))
-    return {"p_a": p_a, "p_b": 1.0 - p_a, "logit": logit}
-
-
-def h2h_log_odds_from_df(player_a: str, player_b: str, surface: str, df,
-                         prior: float = 1.0) -> float:
-    """Laplace-smoothed log-odds of A's historical H2H vs B on `surface`.
-
-    Symmetric small-sample prior `prior` keeps an unplayed or one-sided record
-    from blowing up; the caller shrinks the whole term via `h2h_weight`.
-    """
-    sub = df[(df["surface"].astype(str).str.lower() == surface.lower())]
-    a_wins = int(((sub["winner"] == player_a) & (sub["loser"] == player_b)).sum())
-    b_wins = int(((sub["winner"] == player_b) & (sub["loser"] == player_a)).sum())
-    return math.log((a_wins + prior) / (b_wins + prior))
+    unresolved = [
+        name for name in (player_a, player_b) if resolve_name(name, params) is None
+    ]
+    return {
+        "p_a": p_a, "p_b": 1.0 - p_a, "logit": logit,
+        "unresolved": unresolved,
+    }
 
 
 # ─────────────────────────────────────────────
@@ -552,10 +511,7 @@ def load_params(tour: str = "atp", path: Path | None = None) -> dict | None:
 # ─────────────────────────────────────────────
 
 def _ranked(params: dict, top: int = 30) -> list[tuple[str, float]]:
-    fw = params.get("form_weight", 0.0)
-    forms = params.get("form", {})
-    rows = [(n, s + fw * forms.get(n, 0.0)) for n, s in params["skills"].items()]
-    return sorted(rows, key=lambda kv: -kv[1])[:top]
+    return sorted(params["skills"].items(), key=lambda kv: -kv[1])[:top]
 
 
 if __name__ == "__main__":

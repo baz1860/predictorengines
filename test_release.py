@@ -41,10 +41,11 @@ def check(name, cond, detail=""):
 
 def test_run_checks_discovery():
     suites = run_checks._suites()
+    names = [path.stem for path in suites]
     check("discovers suites", len(suites) >= 10, str(len(suites)))
-    check("contract suite runs first", suites[0] == "test_engines_contract", suites[:1])
-    check("includes this suite", "test_release" in suites)
-    check("no duplicates", len(suites) == len(set(suites)))
+    check("contract suite runs first", names[0] == "test_engines_contract", suites[:1])
+    check("includes this suite", "test_release" in names)
+    check("no duplicates", len(names) == len(set(names)))
 
 
 def test_daily_summary_offline():

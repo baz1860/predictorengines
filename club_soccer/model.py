@@ -24,7 +24,6 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 FIXTURES = DATA / "fixtures.csv"
 PARAMS = DATA / "model_params.json"
-ENSEMBLE_WEIGHTS = DATA / "ensemble_weights.json"
 _FIXTURE_CACHE: dict[tuple[str, int, int], pd.DataFrame] = {}
 MAX_GOALS = 10
 _GOAL_GRID = np.arange(MAX_GOALS + 1, dtype=float)
@@ -58,51 +57,25 @@ LEAGUE_SEED_ANCHOR = 0.62
 # validation always measures the model production actually runs. Flipping one
 # without the other would validate a model nobody is using.
 LEAGUE_SEED_DEFAULT = True
+# Promoted 2026-07-25 after an identical-cutoff walk-forward A/B on 27,363
+# deduplicated matches. Opponent adjustment improved 1X2 Brier
+# 0.61300 -> 0.61177, log-loss 1.02233 -> 1.02045, OU2.5 Brier
+# 0.25188 -> 0.24724, and BTTS Brier 0.25138 -> 0.24812.
+OPPONENT_ADJUSTED_XG_DEFAULT = True
 HOME_ADV_ELO = 55.0
 HALF_LIFE_DAYS = 365.0
 DC_RHO = -0.08
 RECENT_K = 6        # matches in the shots-on-target recency window
-# Per-competition home advantage + Dixon-Coles rho, each Empirical-Bayes shrunk
-# toward the global value (home edge and low-score clustering both vary by
-# league). K = equivalent matches of global prior; a league needs ~this many
-# fixtures before its own number dominates.
-HFA_SHRINK_K = 300.0
-RHO_SHRINK_K = 400.0
-# League-season environment estimates are deliberately more strongly shrunk
-# than the existing competition diagnostics. A season has only a few hundred
-# matches, and the estimate must survive early-season walk-forward windows.
-LEAGUE_ENV_SHRINK_K = 200.0
-LEAGUE_HFA_SHRINK_K = 200.0
+XG_RATING_PRIOR = 8.0
+XG_RATING_ITERATIONS = 12
 
 
-def _fit_comp_rho(home_goals, away_goals, lam_h: float, lam_a: float) -> float:
-    """1-D MLE of the Dixon-Coles low-score rho for one competition, holding the
-    competition's mean goals (lam_h, lam_a) fixed. Only the 0-0/1-0/0-1/1-1 cells
-    carry rho, so this isolates league-specific low-score clustering."""
-    hg = np.asarray(home_goals, dtype=int)
-    ag = np.asarray(away_goals, dtype=int)
-    n00 = int(np.sum((hg == 0) & (ag == 0)))
-    n10 = int(np.sum((hg == 1) & (ag == 0)))
-    n01 = int(np.sum((hg == 0) & (ag == 1)))
-    n11 = int(np.sum((hg == 1) & (ag == 1)))
-    best = (-np.inf, DC_RHO)
-    for rho in np.arange(-0.20, 0.0001, 0.005):
-        t00 = 1.0 - lam_h * lam_a * rho
-        t10 = 1.0 + lam_a * rho
-        t01 = 1.0 + lam_h * rho
-        t11 = 1.0 - rho
-        if min(t00, t10, t01, t11) <= 0:
-            continue
-        ll = (n00 * math.log(t00) + n10 * math.log(t10)
-              + n01 * math.log(t01) + n11 * math.log(t11))
-        if ll > best[0]:
-            best = (ll, float(rho))
-    return best[1]
-# ensemble blend (chosen by held-out walk-forward search, June 2026):
-# goals (actual-goal attack/def), elo, xg (long-run SoT expected goals),
-# xgf (xg + recent SoT form). The model-signal sprint retuned this toward Elo:
-# time-split checks showed less overfitting than the heavier SoT/form blend.
-DEFAULT_ENSEMBLE_W = {"goals": 0.20, "elo": 0.40, "xg": 0.20, "xgf": 0.20}
+# Ensemble blend (chosen by held-out walk-forward search, June 2026).
+# The former xg/xgf entries were two views of the same shot signal. They are
+# now one xg component containing their 50/50 matrix mixture. Giving that
+# component weight 0.40 is algebraically identical to the old 0.20 + 0.20
+# blend, so this removes a fake degree of freedom without changing a price.
+DEFAULT_ENSEMBLE_W = {"goals": 0.20, "elo": 0.40, "xg": 0.40}
 ENSEMBLE_W = DEFAULT_ENSEMBLE_W
 ENSEMBLE_COMPONENTS = tuple(DEFAULT_ENSEMBLE_W)
 
@@ -113,28 +86,6 @@ def _normalise_weights(weights: dict) -> dict[str, float]:
     if s <= 0:
         return dict(DEFAULT_ENSEMBLE_W)
     return {k: v / s for k, v in vals.items()}
-
-
-def load_ensemble_weights(path: Path = ENSEMBLE_WEIGHTS) -> dict[str, float]:
-    """Production ensemble weights.
-
-    The stored artifact only applies when it carries "active": true. It is
-    currently DEACTIVATED: its weights were selected on the full component
-    history, so walk-forward validation cannot honestly evaluate them —
-    production applying weights that validation can't measure means the
-    validation gate describes a different predictor than the one deployed.
-    Until per-window weight selection exists, production and validation both
-    use DEFAULT_ENSEMBLE_W, so the gate measures what actually runs."""
-    if path.exists():
-        try:
-            raw = json.loads(path.read_text())
-            if isinstance(raw, dict) and raw.get("active", False):
-                weights = raw.get("weights", raw)
-                if isinstance(weights, dict):
-                    return _normalise_weights(weights)
-        except Exception:
-            pass
-    return dict(DEFAULT_ENSEMBLE_W)
 
 
 def load_fixtures(path: Path = FIXTURES) -> pd.DataFrame:
@@ -200,14 +151,62 @@ def _weights(dates: pd.Series, half_life_days: float = HALF_LIFE_DAYS) -> np.nda
     return np.exp(-math.log(2) * age / half_life_days)
 
 
+def _opponent_adjusted_xg_ratings(
+        teams: list[str],
+        observations: list[tuple[str, str, float, float, float, float, float]],
+        global_avg: float) -> tuple[dict[str, float], dict[str, float]]:
+    """Fit attack/defence xG effects while controlling for the opponent.
+
+    Each observation is ``(home, away, home_xg, away_xg, weight,
+    home_offset, away_offset)``. Offsets remove the known home and competition
+    effects. Alternating updates then estimate each attack against the
+    defences it faced, and each defence against the attacks it faced. The
+    global prior anchors sparse clubs and resolves the attack/defence scale
+    ambiguity without a heavyweight optimiser.
+    """
+    attack = {team: 0.0 for team in teams}
+    defence = {team: 0.0 for team in teams}
+    if not observations:
+        return attack, defence
+
+    for _ in range(XG_RATING_ITERATIONS):
+        attack_sum = {team: 0.0 for team in teams}
+        attack_w = {team: 0.0 for team in teams}
+        for home, away, hxg, axg, wt, home_offset, away_offset in observations:
+            attack_sum[home] += wt * hxg / math.exp(defence[away] + home_offset)
+            attack_w[home] += wt
+            attack_sum[away] += wt * axg / math.exp(defence[home] + away_offset)
+            attack_w[away] += wt
+        attack = {
+            team: float(np.clip(math.log(max(
+                0.25,
+                (attack_sum[team] + XG_RATING_PRIOR * global_avg)
+                / (attack_w[team] + XG_RATING_PRIOR),
+            ) / global_avg), -1.2, 1.2))
+            for team in teams
+        }
+
+        defence_sum = {team: 0.0 for team in teams}
+        defence_w = {team: 0.0 for team in teams}
+        for home, away, hxg, axg, wt, home_offset, away_offset in observations:
+            defence_sum[away] += wt * hxg / math.exp(attack[home] + home_offset)
+            defence_w[away] += wt
+            defence_sum[home] += wt * axg / math.exp(attack[away] + away_offset)
+            defence_w[home] += wt
+        defence = {
+            team: float(np.clip(math.log(max(
+                0.25,
+                (defence_sum[team] + XG_RATING_PRIOR * global_avg)
+                / (defence_w[team] + XG_RATING_PRIOR),
+            ) / global_avg), -1.2, 1.2))
+            for team in teams
+        }
+    return attack, defence
+
+
 def _season_year(d) -> int:
     d = pd.Timestamp(d)
     return d.year if d.month >= 7 else d.year - 1
-
-
-def _crossed_july1(prev, curr) -> bool:
-    """True iff a July 1 boundary falls strictly between prev and curr."""
-    return _season_year(prev) != _season_year(curr)
 
 
 def _poisson_pmf(lam: float) -> np.ndarray:
@@ -243,59 +242,6 @@ def top_scorelines(M: np.ndarray, n: int = 5) -> list[dict]:
     return [{"score": f"{i}-{j}", "prob": round(p, 4)} for i, j, p in flat[:n]]
 
 
-def _promo_relegation_priors(df: pd.DataFrame, teams: list[str]) -> dict[str, dict]:
-    """team -> {"status": "promoted"|"relegated", "prev_gf": float, "prev_ga": float}
-    (previous-season goals-for/against per match, across all competitions),
-    for teams whose most recent league match's Competition.tier differs from
-    their last league match of the previous season. Point-in-time safe —
-    uses only `df`'s own contents (whatever training window the caller
-    passed), so it's safe to call from inside a walk-forward fit()."""
-    from .competitions import get as comp_get
-
-    league = df[df["type"] == "league"]
-    if league.empty:
-        return {}
-
-    rate_rows = []
-    for r in df.itertuples(index=False):
-        rate_rows.append((r.home, r.season, r.home_goals, r.away_goals))
-        rate_rows.append((r.away, r.season, r.away_goals, r.home_goals))
-    rate_df = pd.DataFrame(rate_rows, columns=["team", "season", "gf", "ga"])
-    rates = rate_df.groupby(["team", "season"]).agg(gf=("gf", "mean"), ga=("ga", "mean"))
-
-    last_league_comp: dict[tuple, str] = {}
-    for r in league.sort_values("date").itertuples(index=False):
-        last_league_comp[(r.home, r.season)] = r.competition
-        last_league_comp[(r.away, r.season)] = r.competition
-
-    seasons_by_team: dict[str, set] = {}
-    for (t, s) in rates.index:
-        seasons_by_team.setdefault(t, set()).add(s)
-
-    out: dict[str, dict] = {}
-    for t in teams:
-        seasons = seasons_by_team.get(t)
-        if not seasons or len(seasons) < 2:
-            continue
-        last_season = max(seasons)
-        prev_season = last_season - 1
-        if prev_season not in seasons:
-            continue
-        comp_last = last_league_comp.get((t, last_season))
-        comp_prev = last_league_comp.get((t, prev_season))
-        if not comp_last or not comp_prev:
-            continue
-        c_last, c_prev = comp_get(comp_last), comp_get(comp_prev)
-        if c_last is None or c_prev is None or c_last.tier <= 0 or c_prev.tier <= 0:
-            continue
-        if c_last.tier == c_prev.tier:
-            continue
-        status = "promoted" if c_last.tier < c_prev.tier else "relegated"
-        prev_gf, prev_ga = rates.loc[(t, prev_season)]
-        out[t] = {"status": status, "prev_gf": float(prev_gf), "prev_ga": float(prev_ga)}
-    return out
-
-
 def _primary_league_map(df: pd.DataFrame) -> dict[str, str]:
     """Each club's most-played league competition, across the whole frame.
 
@@ -317,44 +263,12 @@ def _primary_league_map(df: pd.DataFrame) -> dict[str, str]:
     return {team: comp for team, (comp, _n) in best.items()}
 
 
-def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
-        season_regress_rho: float = 0.0, half_life_days: float = HALF_LIFE_DAYS,
-        elo_decay_half_life_days: float | None = None,
-        competition_adjustments: bool = False,
-        league_adjustments: bool = False,
+def fit(df: pd.DataFrame | None = None,
+        half_life_days: float = HALF_LIFE_DAYS,
+        opponent_adjusted_xg: bool | None = None,
         league_seed: bool | None = None,
         coef_as_of: str | None = None) -> dict:
-    """
-    promo_prior: optional {"pi": float, "active": bool} (P4.5). When active,
-    a promoted/relegated team's attack/defence shrinkage prior (see the gf/ga
-    block below) is seeded from ITS OWN previous-season scoring rate scaled
-    by pi (promoted: attack*pi, defence/pi; relegated: symmetric) instead of
-    the league-wide global_avg. Defaults to inactive (matches model_params.json
-    if not passed).
-    season_regress_rho: (P4.6) when a team's consecutive matches straddle a
-    July 1 boundary, its Elo regresses toward the mean Elo of the upcoming
-    match's competition: elo <- (1-rho)*elo + rho*league_mean. 0.0 (default)
-    = incumbent behaviour (no regression).
-    half_life_days: recency half-life for the exponential match-weighting
-    (P4.6 re-tunes this alongside season_regress_rho). Defaults to the
-    incumbent HALF_LIFE_DAYS.
-    elo_decay_half_life_days: (P4.6b) plain Elo has no time decay — a rating
-    earned in one hot spell three years ago carries forward at full strength
-    forever, only eroding through actual match results. When set, a team's
-    Elo continuously decays toward BASE_ELO between matches: its distance
-    from BASE_ELO halves every elo_decay_half_life_days of elapsed calendar
-    time since that team's PREVIOUS match (any competition), applied once
-    right before each of its matches. None (default) = incumbent behaviour
-    (undecayed, standard sequential Elo).
-    competition_adjustments: fit and activate the experimental per-competition
-    home-advantage and Dixon-Coles rho estimates. False avoids paying to fit a
-    dormant feature on every production run.
-    league_adjustments: when true, use shrunk league-season scoring-rate and
-    home-advantage estimates for league matches. Cups and European matches
-    continue to use the existing competition-strength fallback. This is an
-    experiment flag so the incumbent production model remains unchanged until
-    a walk-forward gate promotes it.
-    """
+    """Fit the promoted goals, Elo and opponent-adjusted xG model."""
     df = played(load_fixtures() if df is None else df).sort_values("date")
     if df.empty:
         raise ValueError("No played fixtures available to fit the model.")
@@ -363,6 +277,7 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
     avg_home = float(np.average(df["home_goals"], weights=w))
     avg_away = float(np.average(df["away_goals"], weights=w))
     global_avg = max(0.8, (avg_home + avg_away) / 2)
+    global_hfa = float(max(0.02, avg_home - avg_away))
 
     rows = []
     for r, wt in zip(df.itertuples(index=False), w):
@@ -383,9 +298,24 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
     # retain the established SoT conversion as a fallback for older sources.
     has_sot = "home_sot" in df.columns and "away_sot" in df.columns
     if has_sot:
-        sot_sum = float(np.average(df["home_sot"].fillna(0) + df["away_sot"].fillna(0), weights=w))
-        goal_sum = float(np.average(df["home_goals"] + df["away_goals"], weights=w))
-        conv = goal_sum / sot_sum if sot_sum > 0 else 0.0
+        # Fit the conversion on the SAME rows in numerator and denominator.
+        # Treating missing SoT as zero while retaining those rows' goals
+        # inflated the fitted conversion by 33% on the production dataset.
+        # Missing shot data is absence of evidence, not zero shots.
+        shot_mask = df["home_sot"].notna() & df["away_sot"].notna()
+        if bool(shot_mask.any()):
+            shot_w = w[shot_mask.to_numpy()]
+            sot_sum = float(np.average(
+                df.loc[shot_mask, "home_sot"] + df.loc[shot_mask, "away_sot"],
+                weights=shot_w,
+            ))
+            goal_sum = float(np.average(
+                df.loc[shot_mask, "home_goals"] + df.loc[shot_mask, "away_goals"],
+                weights=shot_w,
+            ))
+            conv = goal_sum / sot_sum if sot_sum > 0 else 0.0
+        else:
+            conv = 0.0
     else:
         conv = 0.0
     has_real_xg = all(c in df.columns for c in ("home_xg", "away_xg"))
@@ -405,6 +335,9 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         if has_sot else pd.Series(False, index=df.index)
     real_xg_coverage = float(real_xg_mask.mean()) if len(df) else 0.0
     proxy_xg_coverage = float(proxy_xg_mask.mean()) if len(df) else 0.0
+    xg_observations: list[
+        tuple[str, str, float, float, float, float, float]
+    ] = []
     if conv > 0 or bool(real_xg_mask.any()):
         for r, wt in zip(df.itertuples(index=False), w):
             hs, as_ = getattr(r, "home_sot", np.nan), getattr(r, "away_sot", np.nan)
@@ -422,10 +355,12 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
             stats[r.away]["xa"] += xf_h * wt
             stats[r.home]["wx"] += wt
             stats[r.away]["wx"] += wt
-
-    promo_active = bool((promo_prior or {}).get("active", False))
-    promo_pi = float((promo_prior or {}).get("pi", 1.0))
-    promo_info = _promo_relegation_priors(df, teams) if promo_active else {}
+            home_adv = 0.0 if int(getattr(r, "neutral", 0)) else global_hfa / 2
+            comp_offset = (strength(r.competition) - 0.75) * 0.12
+            xg_observations.append((
+                r.home, r.away, xf_h, xf_a, float(wt),
+                home_adv + comp_offset, -home_adv + comp_offset,
+            ))
 
     # P4b: seed a team's shrinkage prior from ITS LEAGUE rather than the global
     # pooled mean. The pooled mean spans every fitted competition — after P3
@@ -438,9 +373,12 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
     # PROMOTED — see LEAGUE_SEED_DEFAULT. Pass league_seed=False explicitly to
     # reproduce pre-promotion behaviour (the A/B arms in the evidence file).
     league_seed_active = LEAGUE_SEED_DEFAULT if league_seed is None else bool(league_seed)
+    opponent_adjusted_xg = (
+        OPPONENT_ADJUSTED_XG_DEFAULT
+        if opponent_adjusted_xg is None else bool(opponent_adjusted_xg)
+    )
     team_league: dict[str, str] = {}
     league_gf: dict[str, float] = {}
-    league_ga: dict[str, float] = {}
     if league_seed_active:
         team_league = _primary_league_map(df)
         sums: dict[str, list[float]] = {}
@@ -451,20 +389,12 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
             acc[2] += 2.0 * wt
         for comp, (goals, _unused, weight) in sums.items():
             if weight > 0:
-                league_gf[comp] = league_ga[comp] = goals / weight
+                league_gf[comp] = goals / weight
 
     attack, defence, attack_xg, defence_xg = {}, {}, {}, {}
     base_xf, base_xa = {}, {}
     for t in teams:
-        info = promo_info.get(t)
-        if info is not None:
-            if info["status"] == "promoted":
-                gf_prior = info["prev_gf"] * promo_pi
-                ga_prior = info["prev_ga"] / promo_pi
-            else:  # relegated: symmetric
-                gf_prior = info["prev_gf"] / promo_pi
-                ga_prior = info["prev_ga"] * promo_pi
-        elif league_seed_active:
+        if league_seed_active:
             comp = team_league.get(t)
             gf_prior = ga_prior = league_gf.get(comp, global_avg) if comp else global_avg
         else:
@@ -479,24 +409,36 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         defence_xg[t] = float(math.log(max(0.25, xa) / global_avg))
         base_xf[t], base_xa[t] = xf, xa
 
+    if opponent_adjusted_xg:
+        attack_xg, defence_xg = _opponent_adjusted_xg_ratings(
+            teams, xg_observations, global_avg
+        )
+        base_xf = {
+            team: global_avg * math.exp(attack_xg[team]) for team in teams
+        }
+        base_xa = {
+            team: global_avg * math.exp(defence_xg[team]) for team in teams
+        }
+
     # recency form: last RECENT_K matches' xG signal vs the team's season
     # baseline, as a log-ratio attack/defence nudge (the part long-run rates
     # miss). Prefer BSD's observed xG and fall back to the SoT conversion for
     # older sources/competitions where xG is absent.
     recent = {t: [] for t in teams}
-    if conv > 0:
-        for r in df.sort_values("date").itertuples(index=False):
-            hs, as_ = getattr(r, "home_sot", np.nan), getattr(r, "away_sot", np.nan)
-            hxg, axg = getattr(r, "home_xg", np.nan), getattr(r, "away_xg", np.nan)
-            xg_src = str(getattr(r, "xg_source", "")).strip().lower()
-            if not pd.isna(hxg) and not pd.isna(axg) and xg_src != "proxy":
-                xf_h, xf_a = float(hxg), float(axg)
-            elif not pd.isna(hs) and not pd.isna(as_):
-                xf_h, xf_a = float(hs) * conv, float(as_) * conv
+    if xg_observations:
+        for home, away, xf_h, xf_a, _wt, home_offset, away_offset in xg_observations:
+            if opponent_adjusted_xg:
+                recent[home].append((
+                    xf_h / math.exp(defence_xg[away] + home_offset),
+                    xf_a / math.exp(attack_xg[away] + away_offset),
+                ))
+                recent[away].append((
+                    xf_a / math.exp(defence_xg[home] + away_offset),
+                    xf_h / math.exp(attack_xg[home] + home_offset),
+                ))
             else:
-                continue
-            recent[r.home].append((xf_h, xf_a))
-            recent[r.away].append((xf_a, xf_h))
+                recent[home].append((xf_h, xf_a))
+                recent[away].append((xf_a, xf_h))
     fatk, fdef = {}, {}
     for t in teams:
         last = recent[t][-RECENT_K:]
@@ -529,31 +471,8 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
             offset = (_sp(comp.country, comp.tier or 1, as_of=coef_as_of)
                       - LEAGUE_SEED_ANCHOR) * ELO_PER_STRENGTH
             elo[t] = BASE_ELO + offset
-    if season_regress_rho > 0:
-        comp_teams: dict[str, set] = {}
-        for r in df.itertuples(index=False):
-            comp_teams.setdefault(r.competition, set()).update((r.home, r.away))
-    last_date: dict[str, pd.Timestamp] = {}
     for r in df.itertuples(index=False):
         h, a = r.home, r.away
-        if elo_decay_half_life_days:
-            for team in (h, a):
-                prev = last_date.get(team)
-                if prev is not None:
-                    gap_days = (r.date - prev).days
-                    if gap_days > 0:
-                        decay = 0.5 ** (gap_days / elo_decay_half_life_days)
-                        elo[team] = BASE_ELO + (elo[team] - BASE_ELO) * decay
-        if season_regress_rho > 0:
-            for team in (h, a):
-                prev = last_date.get(team)
-                if prev is not None and _crossed_july1(prev, r.date):
-                    members = comp_teams.get(r.competition, set())
-                    vals = [elo[t] for t in members if t in elo]
-                    league_mean = float(np.mean(vals)) if vals else BASE_ELO
-                    elo[team] = (1 - season_regress_rho) * elo[team] + season_regress_rho * league_mean
-        last_date[h] = r.date
-        last_date[a] = r.date
         adv = 0.0 if int(r.neutral) else HOME_ADV_ELO
         exp_h = 1.0 / (1.0 + 10 ** ((elo[a] - (elo[h] + adv)) / 400.0))
         actual_h = 1.0 if r.home_goals > r.away_goals else (0.5 if r.home_goals == r.away_goals else 0.0)
@@ -564,102 +483,10 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
         elo[h] += delta
         elo[a] -= delta
 
-    # ── per-competition home advantage (multiplier vs global) + rho, shrunk ──
-    global_hfa = float(max(0.02, avg_home - avg_away))
-    comp_adj: dict[str, dict[str, float]] = {}
-    if competition_adjustments:
-        for comp, grp in df.groupby("competition"):
-            n_c = len(grp)
-            if n_c < 30:
-                continue
-            ah_c = float(grp["home_goals"].mean())
-            aa_c = float(grp["away_goals"].mean())
-            hfa_c = ah_c - aa_c
-            # EB-shrink the league HFA toward the global value, then express as
-            # a multiplier so it scales every component's home term consistently.
-            hfa_shr = (n_c * hfa_c + HFA_SHRINK_K * global_hfa) / (n_c + HFA_SHRINK_K)
-            mult = float(np.clip(hfa_shr / global_hfa, 0.3, 2.5))
-            rho_c = _fit_comp_rho(grp["home_goals"], grp["away_goals"],
-                                  max(0.2, ah_c), max(0.2, aa_c))
-            rho_shr = float(np.clip((n_c * rho_c + RHO_SHRINK_K * DC_RHO)
-                                    / (n_c + RHO_SHRINK_K), -0.20, 0.0))
-            comp_adj[str(comp)] = {
-                "hfa_mult": round(mult, 4), "rho": round(rho_shr, 4), "n": int(n_c)
-            }
-
-    # ── hierarchical league-season scoring environment (experimental) ──────
-    # The environment is separate from team attack/defence. This prevents a
-    # high-scoring league or season from being absorbed into every team's
-    # strength, and lets a newly promoted team retain a sensible absolute
-    # scoring baseline. Only league rows are included; cup/European fixtures
-    # retain the existing static competition-strength treatment.
-    league_env: dict[str, dict[str, float]] = {}
-    league_env_by_comp: dict[str, dict[str, float]] = {}
-    league_hfa: dict[str, dict[str, float]] = {}
-    league_hfa_by_comp: dict[str, dict[str, float]] = {}
-    if league_adjustments and "type" in df.columns:
-        league = df[df["type"].astype(str).str.lower().eq("league")].copy()
-    else:
-        league = df.iloc[0:0].copy()
-    league_hfa_prior = global_hfa
-    if not league.empty:
-        # Align the recency weights to the sorted training frame's original
-        # positions. This avoids accidental reindexing after groupby operations.
-        weighted = df.copy()
-        weighted["_wt"] = w
-        weighted["_season"] = weighted["date"].map(_season_year)
-        weighted = weighted[weighted["type"].astype(str).str.lower().eq("league")]
-        weighted["_goals_per_match"] = weighted["home_goals"] + weighted["away_goals"]
-        weighted["_hfa"] = weighted["home_goals"] - weighted["away_goals"]
-
-        league_hfa_prior = float(np.average(weighted["_hfa"], weights=weighted["_wt"]))
-        for (comp, season), grp in weighted.groupby(["competition", "_season"]):
-            n_eff = float(grp["_wt"].sum())
-            if n_eff <= 0:
-                continue
-            raw_rate = float(np.average(grp["_goals_per_match"], weights=grp["_wt"]) / 2.0)
-            rate = (n_eff * raw_rate + LEAGUE_ENV_SHRINK_K * global_avg) / (n_eff + LEAGUE_ENV_SHRINK_K)
-            raw_hfa = float(np.average(grp["_hfa"], weights=grp["_wt"]))
-            hfa = (n_eff * raw_hfa + LEAGUE_HFA_SHRINK_K * league_hfa_prior) / (n_eff + LEAGUE_HFA_SHRINK_K)
-            key = f"{comp}|{int(season)}"
-            league_env[key] = {
-                "rate": round(float(rate), 6),
-                "mult": round(float(np.clip(rate / max(global_avg, 0.1), 0.75, 1.30)), 6),
-                "n": int(len(grp)), "n_eff": round(n_eff, 3),
-            }
-            league_hfa[key] = {
-                "hfa": round(float(np.clip(hfa, 0.05, 0.60)), 6),
-                "n": int(len(grp)), "n_eff": round(n_eff, 3),
-            }
-
-        for comp, grp in weighted.groupby("competition"):
-            n_eff = float(grp["_wt"].sum())
-            if n_eff <= 0:
-                continue
-            raw_rate = float(np.average(grp["_goals_per_match"], weights=grp["_wt"]) / 2.0)
-            rate = (n_eff * raw_rate + LEAGUE_ENV_SHRINK_K * global_avg) / (n_eff + LEAGUE_ENV_SHRINK_K)
-            raw_hfa = float(np.average(grp["_hfa"], weights=grp["_wt"]))
-            hfa = (n_eff * raw_hfa + LEAGUE_HFA_SHRINK_K * league_hfa_prior) / (n_eff + LEAGUE_HFA_SHRINK_K)
-            league_env_by_comp[str(comp)] = {
-                "rate": round(float(rate), 6),
-                "mult": round(float(np.clip(rate / max(global_avg, 0.1), 0.75, 1.30)), 6),
-                "n": int(len(grp)), "n_eff": round(n_eff, 3),
-            }
-            league_hfa_by_comp[str(comp)] = {
-                "hfa": round(float(np.clip(hfa, 0.05, 0.60)), 6),
-                "n": int(len(grp)), "n_eff": round(n_eff, 3),
-            }
-
     params = {"teams": teams, "global_avg": global_avg,
               "home_goal_adv": global_hfa,
-              "global_hfa": global_hfa, "comp_adj": comp_adj,
-              "comp_adj_active": bool(competition_adjustments),
-              "league_adjustments_active": bool(league_adjustments),
-              "league_env": league_env,
-              "league_env_by_comp": league_env_by_comp,
-              "league_hfa": league_hfa,
-              "league_hfa_by_comp": league_hfa_by_comp,
-              "league_hfa_prior": round(float(league_hfa_prior), 6),
+              "global_hfa": global_hfa,
+              "opponent_adjusted_xg_active": bool(opponent_adjusted_xg),
               "attack": attack, "defence": defence,
               "attack_xg": attack_xg, "defence_xg": defence_xg,
               "fatk": fatk, "fdef": fdef, "conv": float(conv),
@@ -672,12 +499,12 @@ def fit(df: pd.DataFrame | None = None, promo_prior: dict | None = None,
               # it, so a cached artifact can never be mistaken for the other arm.
               "league_seed_active": bool(league_seed_active),
               # Per-team weight of shots-on-target evidence behind the xg
-              # components. Zero means the club has NO shot data at all, so its
+              # component. Zero means the club has NO shot data at all, so its
               # attack_xg/defence_xg are identically 0 — league-average by
               # construction, not by measurement. 12 competitions (~31% of
               # fitted matches) arrive from fd.co.uk's /new/ files with no shot
               # columns whatsoever, and the ensemble was still giving their xg
-              # and xgf components 40% of the weight.
+              # xg component held 40% of the weight.
               "xg_evidence": {t: round(float(stats[t]["wx"]), 4) for t in teams},
               # P0 coverage instrumentation. Every rating lookup below uses a
               # silent .get(team, default), so a club the fit never saw is
@@ -701,442 +528,15 @@ def load_params() -> dict:
     return params
 
 
-# ── P4.4: fitted competition strength (replaces hand-set constants, gated) ────
-COMP_STRENGTH = DATA / "comp_strength.json"
-
-# Cup -> parent top-flight league, for the "0.95 x parent's fitted strength"
-# rule. Domestic cups only; European competitions are priced on their own
-# hand-set constant (no single "parent league").
-_CUP_PARENT_LEAGUE = {
-    "FA Cup": "Premier League", "EFL Cup": "Premier League",
-    "Scottish Cup": "Scottish Premiership", "Scottish League Cup": "Scottish Premiership",
-    "DFB-Pokal": "Bundesliga", "Coppa Italia": "Serie A",
-    "Coupe de France": "Ligue 1", "Copa del Rey": "La Liga",
-}
-
-
-def fit_comp_strength(verbose: bool = True, save: bool = True) -> dict:
-    """Fitted per-competition strength from the shared Elo scale, replacing
-    the hand-set `Competition.strength` constants.
-
-    For each LEAGUE competition: mean end-of-fit Elo of teams that played
-    >= 6 matches in it during the last completed season (today's season - 1;
-    Elo is shared across competitions in fit(), so cross-league cup/Europe
-    matches and promoted teams already propagate information into it).
-    Mapped to [0.15, 1.10] via a min-max rescale over league competitions
-    only. Domestic cups take 0.95x their parent league's fitted value.
-
-    Written to data/comp_strength.json with "active": false — inactive
-    until promoted per plan Sec 12 (competitions.strength() ignores this
-    file unless "active" is true).
-    """
-    from datetime import datetime, timezone
-    from .competitions import COMPETITIONS
-
-    df = played(load_fixtures())
-    params = fit(df)
-    elo = params["elo"]
-
-    today = datetime.now(timezone.utc).date()
-    current_season = today.year if today.month >= 7 else today.year - 1
-    last_completed = current_season - 1
-
-    league_elo: dict[str, float] = {}
-    for comp in COMPETITIONS:
-        if comp.kind != "league":
-            continue
-        sub = df[(df["competition"] == comp.name) & (df["season"] == last_completed)]
-        if sub.empty:
-            continue
-        counts = pd.concat([sub["home"], sub["away"]]).value_counts()
-        teams = [t for t, c in counts.items() if c >= 6]
-        if not teams:
-            continue
-        league_elo[comp.name] = float(np.mean([elo.get(t, BASE_ELO) for t in teams]))
-
-    if not league_elo:
-        raise ValueError(
-            f"No league had a team with >=6 matches in season {last_completed} "
-            "— nothing to fit competition strength from.")
-
-    min_e, max_e = min(league_elo.values()), max(league_elo.values())
-    span = (max_e - min_e) or 1.0
-    strengths: dict[str, float] = {}
-    for name, mean_elo in league_elo.items():
-        s = 0.15 + 0.85 * (mean_elo - min_e) / span
-        strengths[name] = round(float(np.clip(s, 0.15, 1.10)), 4)
-
-    for comp in COMPETITIONS:
-        if comp.kind == "cup":
-            parent = _CUP_PARENT_LEAGUE.get(comp.name)
-            if parent and parent in strengths:
-                strengths[comp.name] = round(0.95 * strengths[parent], 4)
-
-    payload = dict(strengths)
-    payload["active"] = False
-    payload["_fit_season"] = last_completed
-    if verbose:
-        print(f"Fitted competition strength (season {last_completed} Elo, "
-              f">=6-match teams):")
-        for name in sorted(strengths):
-            hand_set = next((c.strength for c in COMPETITIONS if c.name == name), None)
-            print(f"  {name:25s} fitted={strengths[name]:.4f}  hand-set={hand_set}")
-    if save:
-        COMP_STRENGTH.parent.mkdir(exist_ok=True)
-        COMP_STRENGTH.write_text(json.dumps(payload, indent=2))
-        if verbose:
-            print(f"  saved -> {COMP_STRENGTH.name} (active=false; promote per plan Sec 12)")
-    return payload
-
-
-# ── P4.5: promoted/relegated-team shrinkage-prior multiplier (gated) ──────────
-PROMO_PI_GRID = (0.80, 0.85, 0.90, 0.95, 1.00)
-PROMO_EVAL_SEASONS = (2023, 2024, 2025, 2026)
-PROMO_FIRST_N_ROUNDS = 10
-
-
-def tune_promo_prior(verbose: bool = True, save: bool = False) -> dict:
-    """Grid-search the promotion/relegation shrinkage-prior multiplier pi
-    (P4.5), on walk-forward Brier restricted to promoted/relegated teams'
-    first PROMO_FIRST_N_ROUNDS league matches of seasons in
-    PROMO_EVAL_SEASONS. Report-only: writes model_params.json's
-    "promo_prior" key with "active": false regardless of outcome — a code
-    change (mirroring comp_adj_active's pattern) is what actually promotes
-    a gated term to the default path.
-    """
-    df_all = played(load_fixtures()).sort_values("date").reset_index(drop=True)
-    df_all["_ym"] = df_all["date"].dt.to_period("M")
-    months = sorted(df_all["_ym"].unique())
-
-    def _eval(pi: float, active: bool) -> tuple[float, int]:
-        brier_sum, n = 0.0, 0
-        for ym in months:
-            test = df_all[df_all["_ym"] == ym]
-            train_cut = test["date"].min()
-            train = df_all[df_all["date"] < train_cut]
-            if len(train) < 200:
-                continue
-            try:
-                params = fit(train, promo_prior={"pi": pi, "active": active})
-            except Exception:
-                continue
-            seen = set(params["teams"])
-            info = _promo_relegation_priors(train, params["teams"]) if active else \
-                _promo_relegation_priors(train, list(seen))
-            if not info:
-                continue
-            round_counts: dict[tuple, int] = {}
-            for r in train[train["type"] == "league"].itertuples(index=False):
-                round_counts[(r.home, r.season)] = round_counts.get((r.home, r.season), 0) + 1
-                round_counts[(r.away, r.season)] = round_counts.get((r.away, r.season), 0) + 1
-            for r in test.itertuples(index=False):
-                if r.type != "league" or r.season not in PROMO_EVAL_SEASONS:
-                    continue
-                if r.home not in seen or r.away not in seen:
-                    continue
-                h_elig = r.home in info and round_counts.get((r.home, r.season), 0) < PROMO_FIRST_N_ROUNDS
-                a_elig = r.away in info and round_counts.get((r.away, r.season), 0) < PROMO_FIRST_N_ROUNDS
-                if not (h_elig or a_elig):
-                    continue
-                try:
-                    pred = predict(r.home, r.away, r.competition, "ensemble",
-                                   bool(r.neutral), params)
-                except ValueError:
-                    continue
-                actual = 0 if r.home_goals > r.away_goals else (
-                    1 if r.home_goals == r.away_goals else 2)
-                p = np.array([pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"]])
-                brier_sum += float(np.sum((p - np.eye(3)[actual]) ** 2))
-                n += 1
-        return (brier_sum / n if n else float("nan")), n
-
-    baseline_brier, baseline_n = _eval(pi=1.0, active=False)
-    if verbose:
-        print(f"Promo-prior tuning (promoted/relegated teams' first "
-              f"{PROMO_FIRST_N_ROUNDS} league rounds, seasons {PROMO_EVAL_SEASONS}):")
-        print(f"  baseline (inactive, global_avg prior): n={baseline_n} brier={baseline_brier:.4f}")
-
-    grid_results = {}
-    for pi in PROMO_PI_GRID:
-        brier, n = _eval(pi=pi, active=True)
-        grid_results[pi] = {"brier": brier, "n": n}
-        if verbose:
-            print(f"  pi={pi:.2f}  n={n}  brier={brier:.4f}")
-
-    valid = {pi: r for pi, r in grid_results.items() if r["n"] > 0}
-    best_pi = min(valid, key=lambda k: valid[k]["brier"]) if valid else 1.0
-    best_brier = valid[best_pi]["brier"] if valid else float("nan")
-    promotes = bool(valid) and baseline_n > 0 and best_brier < baseline_brier
-
-    payload = {"pi": best_pi, "active": False,
-               "baseline_brier": round(baseline_brier, 6) if baseline_n else None,
-               "best_brier": round(best_brier, 6) if valid else None,
-               "would_promote": promotes,
-               "grid": {f"{k:.2f}": v for k, v in grid_results.items()}}
-    if verbose:
-        print(f"  best pi={best_pi} vs baseline: "
-              f"{'would PROMOTE' if promotes else 'reject — keep prior OFF'}")
-    if save:
-        params = load_params()
-        params["promo_prior"] = payload
-        save_params(params)
-        if verbose:
-            print(f"  saved diagnostic -> {PARAMS.name}['promo_prior'] (active=false)")
-    return payload
-
-
-# ── P4.6: season-boundary Elo regression + recency half-life re-tune (gated) ──
-SEASON_REGRESS_RHO_GRID = (0.0, 0.1, 0.2, 0.3, 0.4)   # 0.0 = incumbent
-HALF_LIFE_GRID = (180.0, 270.0, 365.0)                # 365 = incumbent
-AUG_OCT_MONTHS = (8, 9, 10)
-
-
-def tune_season_boundary(verbose: bool = True, save: bool = False) -> dict:
-    """Grid-search season_regress_rho x half_life_days (P4.6) on walk-forward
-    Brier restricted to August-October fixtures (where a season-boundary
-    effect would live). Only refits for Aug/Sep/Oct test months — a given
-    month's fit() call only depends on its own train cutoff, so skipping
-    months we don't score is exact, not an approximation, and cuts the grid
-    search to a fraction of a full walk-forward's fit() calls.
-
-    Report-only: writes model_params.json's "season_regress_rho"/
-    "half_life_days" keys with "active": false regardless of outcome — a
-    code change to fit()'s defaults is what actually promotes this.
-    """
-    df_all = played(load_fixtures()).sort_values("date").reset_index(drop=True)
-    df_all["_ym"] = df_all["date"].dt.to_period("M")
-    months = [ym for ym in sorted(df_all["_ym"].unique()) if ym.month in AUG_OCT_MONTHS]
-
-    def _eval(rho: float, hl: float) -> tuple[float, int]:
-        brier_sum, n = 0.0, 0
-        for ym in months:
-            test = df_all[df_all["_ym"] == ym]
-            train = df_all[df_all["date"] < test["date"].min()]
-            if len(train) < 200:
-                continue
-            try:
-                params = fit(train, season_regress_rho=rho, half_life_days=hl)
-            except Exception:
-                continue
-            seen = set(params["teams"])
-            for r in test.itertuples(index=False):
-                if r.home not in seen or r.away not in seen:
-                    continue
-                try:
-                    pred = predict(r.home, r.away, r.competition, "ensemble",
-                                   bool(r.neutral), params)
-                except ValueError:
-                    continue
-                actual = 0 if r.home_goals > r.away_goals else (
-                    1 if r.home_goals == r.away_goals else 2)
-                p = np.array([pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"]])
-                brier_sum += float(np.sum((p - np.eye(3)[actual]) ** 2))
-                n += 1
-        return (brier_sum / n if n else float("nan")), n
-
-    if verbose:
-        print(f"Season-boundary tuning (Aug-Oct fixtures only, {len(months)} months):")
-
-    grid: dict[tuple, dict] = {}
-    for hl in HALF_LIFE_GRID:
-        for rho in SEASON_REGRESS_RHO_GRID:
-            brier, n = _eval(rho, hl)
-            grid[(rho, hl)] = {"brier": brier, "n": n}
-            if verbose:
-                print(f"  rho={rho:.1f} half_life={hl:.0f}  n={n}  brier={brier:.4f}")
-
-    incumbent = grid.get((0.0, 365.0))
-    valid = {k: v for k, v in grid.items() if v["n"] > 0}
-    best_key = min(valid, key=lambda k: valid[k]["brier"]) if valid else (0.0, 365.0)
-    best = valid.get(best_key)
-    promotes = bool(incumbent and best and best["brier"] < incumbent["brier"]
-                    and best_key != (0.0, 365.0))
-
-    payload = {
-        "season_regress_rho": {"value": best_key[0], "active": False},
-        "half_life_days": {"value": best_key[1], "active": False},
-        "incumbent_brier": round(incumbent["brier"], 6) if incumbent else None,
-        "best_brier": round(best["brier"], 6) if best else None,
-        "would_promote": promotes,
-        "grid": {f"rho={k[0]:.1f},hl={k[1]:.0f}": v for k, v in grid.items()},
-    }
-    if verbose:
-        print(f"  best rho={best_key[0]}, half_life={best_key[1]} vs incumbent "
-              f"(rho=0, hl=365): {'would PROMOTE' if promotes else 'reject — keep incumbent'}")
-    if save:
-        params = load_params()
-        params["season_regress_rho"] = payload["season_regress_rho"]
-        params["half_life_days"] = payload["half_life_days"]
-        save_params(params)
-        if verbose:
-            print(f"  saved diagnostic -> {PARAMS.name} (both active=false)")
-    return payload
-
-
-# ── P4.6b: continuous Elo time-decay (gated) ──────────────────────────────────
-# None = incumbent (undecayed). Values are days for the rating's distance from
-# BASE_ELO to halve since a team's previous match — 90d is aggressive (a full
-# summer break alone nearly wipes the rating), 1095d (3y) is barely-there decay.
-ELO_DECAY_GRID = (None, 1095.0, 730.0, 365.0, 180.0, 90.0)
-
-
-def tune_elo_decay(verbose: bool = True, save: bool = False) -> dict:
-    """Grid-search elo_decay_half_life_days (P4.6b) on the FULL walk-forward
-    Brier (unlike season_regress_rho, decay can matter at any point in the
-    season, not just Aug-Oct, so every month has to be scored).
-
-    Report-only: writes model_params.json's "elo_decay_half_life_days" key
-    with "active": false regardless of outcome — a code change to fit()'s
-    default is what actually promotes this.
-    """
-    df_all = played(load_fixtures()).sort_values("date").reset_index(drop=True)
-    df_all["_ym"] = df_all["date"].dt.to_period("M")
-    months = sorted(df_all["_ym"].unique())
-
-    def _eval(half_life: float | None) -> tuple[float, int]:
-        brier_sum, n = 0.0, 0
-        for ym in months:
-            test = df_all[df_all["_ym"] == ym]
-            train = df_all[df_all["date"] < test["date"].min()]
-            if len(train) < 200:
-                continue
-            try:
-                params = fit(train, elo_decay_half_life_days=half_life)
-            except Exception:
-                continue
-            seen = set(params["teams"])
-            for r in test.itertuples(index=False):
-                if r.home not in seen or r.away not in seen:
-                    continue
-                try:
-                    pred = predict(r.home, r.away, r.competition, "ensemble",
-                                   bool(r.neutral), params)
-                except ValueError:
-                    continue
-                actual = 0 if r.home_goals > r.away_goals else (
-                    1 if r.home_goals == r.away_goals else 2)
-                p = np.array([pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"]])
-                brier_sum += float(np.sum((p - np.eye(3)[actual]) ** 2))
-                n += 1
-        return (brier_sum / n if n else float("nan")), n
-
-    if verbose:
-        print(f"Elo decay tuning (full walk-forward, {len(months)} months):")
-
-    grid: dict[float | None, dict] = {}
-    for hl in ELO_DECAY_GRID:
-        brier, n = _eval(hl)
-        grid[hl] = {"brier": brier, "n": n}
-        if verbose:
-            label = "none (incumbent)" if hl is None else f"{hl:.0f}d"
-            print(f"  half_life={label:18s}  n={n}  brier={brier:.4f}")
-
-    incumbent = grid.get(None)
-    valid = {k: v for k, v in grid.items() if v["n"] > 0}
-    best_key = min(valid, key=lambda k: valid[k]["brier"]) if valid else None
-    best = valid.get(best_key)
-    promotes = bool(incumbent and best and best["brier"] < incumbent["brier"]
-                    and best_key is not None)
-
-    payload = {
-        "elo_decay_half_life_days": {"value": best_key, "active": False},
-        "incumbent_brier": round(incumbent["brier"], 6) if incumbent else None,
-        "best_brier": round(best["brier"], 6) if best else None,
-        "would_promote": promotes,
-        "grid": {("none" if k is None else f"{k:.0f}d"): v for k, v in grid.items()},
-    }
-    if verbose:
-        best_label = "none" if best_key is None else f"{best_key:.0f}d"
-        print(f"  best half_life={best_label} vs incumbent (no decay): "
-              f"{'would PROMOTE' if promotes else 'reject — keep incumbent'}")
-    if save:
-        params = load_params()
-        params["elo_decay_half_life_days"] = payload["elo_decay_half_life_days"]
-        save_params(params)
-        if verbose:
-            print(f"  saved diagnostic -> {PARAMS.name} (active=false)")
-    return payload
-
-
-def _home_mult(params: dict, competition: str | None) -> float:
-    """Per-competition home-advantage multiplier (1.0 = global), shrunk at fit.
-
-    Gated by `comp_adj_active` (default False): walk-forward over ~16.5k
-    predictions showed per-competition HFA + rho is neutral-to-slightly-worse on
-    held-out Brier (0.61207 global vs 0.61216–0.61234), so the validated global
-    constants stay the default. The fitted table is still stored for inspection
-    and auto-activates if a future gate flips the flag."""
-    if not params.get("comp_adj_active", False):
-        return 1.0
-    return float(params.get("comp_adj", {}).get(str(competition), {}).get("hfa_mult", 1.0))
-
-
-def _comp_rho(params: dict, competition: str | None) -> float:
-    """Per-competition Dixon-Coles rho (falls back to global DC_RHO). Gated by
-    `comp_adj_active` — see `_home_mult`."""
-    if not params.get("comp_adj_active", False):
-        return DC_RHO
-    return float(params.get("comp_adj", {}).get(str(competition), {}).get("rho", DC_RHO))
-
-
-def _is_league(competition: str | None) -> bool:
-    comp = comp_get(competition)
-    return bool(comp and comp.kind == "league")
-
-
-def _season_key(competition: str | None, match_date=None) -> str | None:
-    if not competition or match_date is None:
-        return None
-    try:
-        return f"{competition}|{int(_season_year(match_date))}"
-    except (TypeError, ValueError, OverflowError):
-        return None
-
-
-def _league_env_mult(params: dict, competition: str | None, match_date=None) -> float:
-    """Return a shrunk league-season scoring-environment multiplier.
-
-    The feature is opt-in via the fitted params flag. If a season has no
-    observations yet, the competition-level hierarchy is used; if the
-    competition is not a registered league, the incumbent multiplier is 1.
-    """
-    if not params.get("league_adjustments_active", False) or not _is_league(competition):
-        return 1.0
-    by_season = params.get("league_env", {})
-    row = by_season.get(_season_key(competition, match_date)) if match_date is not None else None
-    if row is None:
-        row = params.get("league_env_by_comp", {}).get(str(competition))
-    return float(np.clip((row or {}).get("mult", 1.0), 0.75, 1.30))
-
-
-def _effective_hfa(params: dict, competition: str | None, match_date=None) -> float:
-    """Point-in-time home-goal advantage for the requested competition."""
-    base = float(params.get("home_goal_adv", 0.25))
-    if not params.get("league_adjustments_active", False) or not _is_league(competition):
-        return base * _home_mult(params, competition)
-    by_season = params.get("league_hfa", {})
-    row = by_season.get(_season_key(competition, match_date)) if match_date is not None else None
-    if row is None:
-        row = params.get("league_hfa_by_comp", {}).get(str(competition))
-    return float(np.clip((row or {}).get("hfa", base), 0.05, 0.60))
-
-
-def _effective_elo_home_adv(params: dict, competition: str | None,
-                            match_date=None) -> float:
-    """Map league goal HFA onto Elo's rating-point home advantage."""
-    if not params.get("league_adjustments_active", False) or not _is_league(competition):
-        return HOME_ADV_ELO * _home_mult(params, competition)
-    base_hfa = max(float(params.get("global_hfa", params.get("home_goal_adv", 0.25))), 0.05)
-    ratio = _effective_hfa(params, competition, match_date) / base_hfa
-    return HOME_ADV_ELO * float(np.clip(ratio, 0.70, 1.30))
+def _comp_rho(_params: dict, _competition: str | None) -> float:
+    return DC_RHO
 
 
 def _lambdas_goals(params: dict, home: str, away: str, competition: str | None,
                    neutral: bool, match_date=None) -> tuple[float, float]:
-    base = float(params["global_avg"]) * _league_env_mult(params, competition, match_date)
-    home_adv = 0.0 if neutral else _effective_hfa(params, competition, match_date) / 2
-    comp_adj = 0.0 if (params.get("league_adjustments_active", False) and _is_league(competition)) \
-        else (strength(competition) - 0.75) * 0.12
+    base = float(params["global_avg"])
+    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2
+    comp_adj = (strength(competition) - 0.75) * 0.12
     ah = params["attack"].get(home, 0.0); da = params["defence"].get(away, 0.0)
     aa = params["attack"].get(away, 0.0); dh = params["defence"].get(home, 0.0)
     # defence[t] = log(goals_conceded / global_avg): POSITIVE means a team concedes
@@ -1151,7 +551,7 @@ def _lambdas_elo(params: dict, home: str, away: str, neutral: bool,
                  competition: str | None = None, match_date=None) -> tuple[float, float]:
     eh = params["elo"].get(home, BASE_ELO)
     ea = params["elo"].get(away, BASE_ELO)
-    home_elo = 0.0 if neutral else _effective_elo_home_adv(params, competition, match_date)
+    home_elo = 0.0 if neutral else HOME_ADV_ELO
     diff = (eh + home_elo - ea) / 400.0
     total = 2.55 + 0.20 * abs(diff)
     share = 1.0 / (1.0 + math.exp(-1.2 * diff))
@@ -1163,10 +563,9 @@ def _lambdas_xg(params: dict, home: str, away: str, competition: str | None,
     """SoT-based expected-goals lambdas. With form=True, add the recent-SoT
     attack/defence nudge. Falls back to the goals attack/defence maps if a
     cached params dict predates the xg fields."""
-    base = float(params["global_avg"]) * _league_env_mult(params, competition, match_date)
-    home_adv = 0.0 if neutral else _effective_hfa(params, competition, match_date) / 2
-    comp_adj = 0.0 if (params.get("league_adjustments_active", False) and _is_league(competition)) \
-        else (strength(competition) - 0.75) * 0.12
+    base = float(params["global_avg"])
+    home_adv = 0.0 if neutral else float(params.get("home_goal_adv", 0.25)) / 2
+    comp_adj = (strength(competition) - 0.75) * 0.12
     ax = params.get("attack_xg", params["attack"])
     dx = params.get("defence_xg", params["defence"])
     ah = ax.get(home, 0.0); da = dx.get(away, 0.0)
@@ -1197,29 +596,33 @@ def component_matrices(params: dict, home: str, away: str,
     def _m(lams: tuple[float, float]) -> np.ndarray:
         return score_matrix(lams[0] * mult_h, lams[1] * mult_a, rho)
 
+    xg_long = _m(_lambdas_xg(
+        params, home, away, competition, neutral, match_date=match_date
+    ))
+    xg_form = _m(_lambdas_xg(
+        params, home, away, competition, neutral, form=True,
+        match_date=match_date
+    ))
     return {
-        "goals": _m(_lambdas_goals(params, home, away, competition, neutral, match_date)),
-        "elo": _m(_lambdas_elo(params, home, away, neutral, competition, match_date)),
-        "xg": _m(_lambdas_xg(params, home, away, competition, neutral, match_date=match_date)),
-        "xgf": _m(_lambdas_xg(params, home, away, competition, neutral,
-                              form=True, match_date=match_date)),
+        "goals": _m(_lambdas_goals(
+            params, home, away, competition, neutral, match_date
+        )),
+        "elo": _m(_lambdas_elo(
+            params, home, away, neutral, competition, match_date
+        )),
+        # Exact collapse of the former 20% long-run + 20% recent-form pair.
+        "xg": (xg_long + xg_form) / 2.0,
     }
 
 
-def _adj_multipliers(player_adj: dict | None = None,
-                     quality_adj: dict | None = None,
-                     context_adj: dict | None = None) -> tuple[float, float]:
-    """Collapse every lambda-scaling correction into one (home, away) pair.
+def _adj_multipliers(player_adj: dict | None = None) -> tuple[float, float]:
+    """Collapse availability corrections into one (home, away) pair.
 
-    Player availability, point-in-time player quality and the context GLM are
-    all multiplicative on a side's expected goals, so they compose exactly and
-    order does not matter. Returning them together lets predict() push a single
-    pair down into each component's lambdas.
+    Player availability terms are multiplicative on a side's expected goals.
 
     Sign conventions, unchanged from the individual appliers:
       * attack_mult  < 1.0 → that team scores less
       * defense_mult > 1.0 → the OPPONENT scores more
-      * quality shift is a home/away antisymmetric log-shift, clipped to ±0.20
     """
     mult_h = mult_a = 1.0
     if player_adj:
@@ -1231,86 +634,13 @@ def _adj_multipliers(player_adj: dict | None = None,
         def_a = float(a.get("defense_mult", 1.0))
         mult_h *= att_h * def_a
         mult_a *= att_a * def_h
-    if quality_adj and quality_adj.get("active"):
-        shift = float(np.clip(float(quality_adj.get("shift", 0.0)), -0.20, 0.20))
-        mult_h *= math.exp(shift)
-        mult_a *= math.exp(-shift)
-    if context_adj:
-        mult_h *= float((context_adj.get("home") or {}).get("mult", 1.0))
-        mult_a *= float((context_adj.get("away") or {}).get("mult", 1.0))
     return mult_h, mult_a
-
-
-def _rescale_matrix(M: np.ndarray, mult_h: float, mult_a: float,
-                    rho: float = DC_RHO) -> np.ndarray:
-    """LEGACY, LOSSY: rescale a finished matrix by reading off its marginals.
-
-    Only correct when M really is a single Dixon-Coles matrix. The ensemble
-    matrix is a mixture of several of them, so extracting its marginal means and
-    rebuilding discards the mixture's extra dispersion — the part that prices
-    totals and BTTS. Measured on a live fixture, an identity adjustment (every
-    multiplier 1.0) moved BTTS by +0.0041 and Over 2.5 by +0.0031.
-
-    predict() no longer routes through this; it scales component lambdas
-    instead, which makes an identity adjustment exactly the identity. This
-    stays for callers that hold a matrix and nothing else.
-    """
-    if mult_h == 1.0 and mult_a == 1.0:
-        return M
-    xg_h = float(sum(i * float(M[i, :].sum()) for i in range(M.shape[0])))
-    xg_a = float(sum(j * float(M[:, j].sum()) for j in range(M.shape[1])))
-    return score_matrix(max(0.05, xg_h * mult_h), max(0.05, xg_a * mult_a), rho)
-
-
-# The three appliers below are the LEGACY matrix-level path, kept for callers
-# that hold a finished matrix and nothing else. predict() does not use them —
-# see _adj_multipliers / component_matrices for the lossless path, and
-# _rescale_matrix for why this one is lossy on an ensemble matrix.
-def apply_player_adj(M: np.ndarray, player_adj: dict,
-                     rho: float = DC_RHO) -> np.ndarray:
-    """Re-scale a score matrix using player availability multipliers.
-
-    player_adj format
-    -----------------
-    {
-      "home": {"attack_mult": float, "defense_mult": float},
-      "away": {"attack_mult": float, "defense_mult": float},
-    }
-
-    attack_mult  < 1.0  → team's scoring rate reduced (key attackers out)
-    defense_mult > 1.0  → opponent's scoring rate raised (key defenders out)
-    """
-    if not player_adj:
-        return M
-    return _rescale_matrix(M, *_adj_multipliers(player_adj=player_adj), rho)
-
-
-def apply_context_adj(M: np.ndarray, context_adj: dict,
-                      rho: float = DC_RHO) -> np.ndarray:
-    """Re-scale a score matrix by a fitted context correction (rest,
-    congestion, minutes-load — see context.py).
-
-    context_adj format
-    -------------------
-    {"home": {"mult": float}, "away": {"mult": float}}
-    """
-    if not context_adj:
-        return M
-    return _rescale_matrix(M, *_adj_multipliers(context_adj=context_adj), rho)
-
-
-def apply_quality_adj(M: np.ndarray, quality_adj: dict,
-                      rho: float = DC_RHO) -> np.ndarray:
-    """Apply a gated point-in-time player-quality home/away shift."""
-    if not quality_adj or not quality_adj.get("active"):
-        return M
-    return _rescale_matrix(M, *_adj_multipliers(quality_adj=quality_adj), rho)
 
 
 # Components built from shots on target. Useless — and actively harmful — for
 # a club with no shot data, because their attack/defence terms are then
 # identically zero and the component returns a flat league-average matrix.
-_SHOT_COMPONENTS = ("xg", "xgf")
+_SHOT_COMPONENTS = ("xg",)
 # Weighted matches of shot data at which a club's xg terms earn half their
 # nominal ensemble weight. The observed spread is wide — Arsenal 71.8, Sturm
 # Graz 7.1 (European matches only), 449 clubs at exactly 0.0 — so this is a
@@ -1324,7 +654,7 @@ def _weights_for_match(params: dict, weights: dict, home: str, away: str) -> dic
     Twelve competitions (~31% of fitted matches) come from fd.co.uk's /new/
     files, which carry goals only. For those clubs attack_xg and defence_xg are
     identically zero — league-average by construction, not by measurement — so
-    the xg and xgf components emit a flat matrix while still holding 40% of the
+    the xg component emits a flat matrix while still holding 40% of the
     default ensemble weight. That dilutes the goals and Elo components, which
     are the ones that actually know something, and it is the mechanism behind
     the post-P3 OU2.5 (+0.0126) and BTTS (+0.0083) regression.
@@ -1350,58 +680,12 @@ def _weights_for_match(params: dict, weights: dict, home: str, away: str) -> dic
     return {k: v / total for k, v in scaled.items()}
 
 
-# ── P5: evidence-scaled variance inflation (measured, OFF) ────────────────
-# The plan proposed widening predictive intervals for under-evidenced teams,
-# on the theory that the model was overconfident about clubs it could not see.
-# That theory was true when it was written — the P1 baseline showed thin
-# favourites badly overconfident (0.50-0.65 bucket: predicted 0.541, observed
-# 0.322, error -0.221).
-#
-# It is no longer true. After P3 (domestic data for 20 leagues), P4b (league
-# seeding) and the xg gating, the same bucket reads -0.002. The fix for
-# miscalibration on thin clubs turned out to be MEASURING them, not widening
-# their intervals — and applying inflation now would push well-calibrated
-# predictions away from reality.
-#
-# The mechanism is implemented and measurable so the decision stays evidence-
-# based rather than assumed, and so it can be re-tested if coverage degrades.
-# See data/variance_inflation_evidence.json for the A/B.
-VARIANCE_INFLATION_DEFAULT = False
-INFLATION_EVIDENCE_K = 20.0     # matches at which inflation is halved
-MAX_INFLATION = 0.25            # cap: never blend more than this toward base
-
-
-def inflation_lambda(params: dict, home: str, away: str) -> float:
-    """How far to pull a prediction toward the base rate, given team evidence."""
-    store = params.get("team_evidence") or {}
-    n_home = float((store.get(home) or {}).get("n_recent", 0))
-    n_away = float((store.get(away) or {}).get("n_recent", 0))
-    n = min(n_home, n_away)
-    return MAX_INFLATION * (INFLATION_EVIDENCE_K / (n + INFLATION_EVIDENCE_K))
-
-
-def apply_variance_inflation(M_matrix, lam: float):
-    """Blend a score matrix toward its own marginal-independent form.
-
-    Widens the outcome distribution without moving its centre: the expected
-    goals are preserved, the confidence in any single scoreline is reduced.
-    """
-    if lam <= 0:
-        return M_matrix
-    flat = np.outer(M_matrix.sum(axis=1), M_matrix.sum(axis=0))
-    blended = (1.0 - lam) * M_matrix + lam * flat
-    return blended / blended.sum()
-
-
 def predict(home: str, away: str, competition: str | None = None,
             model: str = "ensemble", neutral: bool = False,
             params: dict | None = None,
             player_adj: dict | None = None,
-            context_adj: dict | None = None,
             match_date=None,
-            quality_adj: dict | None = None,
-            ensemble_weights: dict | None = None,
-            variance_inflation: bool | None = None) -> dict:
+            ensemble_weights: dict | None = None) -> dict:
     """Predict match outcome probabilities.
 
     Parameters
@@ -1416,12 +700,6 @@ def predict(home: str, away: str, competition: str | None = None,
                    Format: {"home": {"attack_mult": float, "defense_mult": float},
                              "away": {"attack_mult": float, "defense_mult": float}}
                    Values outside [0.80, 1.25] are silently clamped.
-    context_adj:   Optional rest/congestion/minutes-load correction from
-                   club_soccer.context (report-only/gated — see context.py).
-                   Format: {"home": {"mult": float}, "away": {"mult": float}}
-    quality_adj:   Optional point-in-time player-quality correction from
-                   club_soccer.player_quality; inactive unless its fixed
-                   walk-forward gate passes.
     match_date:     Optional fixture date used by league-season adjustments.
     """
     params = load_params() if params is None else params
@@ -1434,9 +712,9 @@ def predict(home: str, away: str, competition: str | None = None,
         raise ValueError("Pick two different teams.")
     rho = _comp_rho(params, competition)
 
-    # Every availability / quality / context correction is multiplicative on a
-    # side's expected goals, so they collapse into one (home, away) pair and are
-    # pushed into the LAMBDAS below — before any Dixon-Coles matrix is built.
+    # Availability corrections are multiplicative on each side's expected
+    # goals and are pushed into the lambdas before a Dixon-Coles matrix is
+    # built.
     #
     # They used to be applied to the finished matrix instead, by reading off its
     # marginal means and rebuilding. That is only valid when the matrix is a
@@ -1459,7 +737,7 @@ def predict(home: str, away: str, competition: str | None = None,
                     "attack_mult": max(0.80, min(1.25, float(src.get("attack_mult", 1.0)))),
                     "defense_mult": max(0.80, min(1.25, float(src.get("defense_mult", 1.0)))),
                 }
-    mult_h, mult_a = _adj_multipliers(applied_player_adj, quality_adj, context_adj)
+    mult_h, mult_a = _adj_multipliers(applied_player_adj)
 
     def _scaled(lams: tuple[float, float]) -> np.ndarray:
         return score_matrix(lams[0] * mult_h, lams[1] * mult_a, rho)
@@ -1467,13 +745,9 @@ def predict(home: str, away: str, competition: str | None = None,
     if model == "ensemble":
         parts = component_matrices(params, home, away, competition, neutral,
                                    match_date, mult_h=mult_h, mult_a=mult_a)
-        # ensemble_weights=None loads the production artifact — correct for
-        # LIVE pricing only. Historical evaluation must pass explicit weights:
-        # ensemble_weights.json was selected using the full component history,
-        # so letting it leak into past predictions is look-ahead bias (the
-        # same pattern as context_coef in predict_match).
         weights = (_normalise_weights(ensemble_weights)
-                   if ensemble_weights is not None else load_ensemble_weights())
+                   if ensemble_weights is not None
+                   else dict(DEFAULT_ENSEMBLE_W))
         weights = _weights_for_match(params, weights, home, away)
         M = sum(weights[k] * parts[k] for k in ENSEMBLE_COMPONENTS)
         M = M / M.sum()
@@ -1487,13 +761,6 @@ def predict(home: str, away: str, competition: str | None = None,
     else:
         raise ValueError("Unknown model: use ensemble, goals, elo, or xg.")
 
-    if variance_inflation is None:
-        variance_inflation = VARIANCE_INFLATION_DEFAULT
-    inflation_applied = 0.0
-    if variance_inflation:
-        inflation_applied = inflation_lambda(params, home, away)
-        M = apply_variance_inflation(M, inflation_applied)
-
     probs = probs_from_matrix(M)
     xg_h = float(sum(i * M[i, :].sum() for i in range(M.shape[0])))
     xg_a = float(sum(j * M[:, j].sum() for j in range(M.shape[1])))
@@ -1504,23 +771,13 @@ def predict(home: str, away: str, competition: str | None = None,
            # P0: report-only evidence tier. Probabilities above are UNCHANGED
            # by this; it exists so a consumer can tell a price built on 300
            # domestic matches from one built on 24 European matches against
-           # unrated opposition. Variance inflation arrives in P5.
+           # unrated opposition.
            "coverage": _COV.match_coverage(params, home, away)}
     if player_adj_applied:
         out["player_adj"] = {
             side: {k: v for k, v in applied_player_adj.get(side, {}).items()
                    if k in ("attack_mult", "defense_mult", "n_missing")}
             for side in ("home", "away")
-        }
-    if context_adj:
-        out["context_adj"] = {
-            side: round(float((context_adj.get(side) or {}).get("mult", 1.0)), 4)
-            for side in ("home", "away")
-        }
-    if quality_adj and quality_adj.get("active"):
-        out["quality_adj"] = {
-            "shift": round(float(quality_adj.get("shift", 0.0)), 4),
-            "coverage": round(float(quality_adj.get("coverage", 0.0)), 4),
         }
     return out
 
@@ -1529,43 +786,13 @@ def predict_match(home: str, away: str, competition: str | None,
                   match_date: str, model: str = "ensemble",
                   neutral: bool = False, params: dict | None = None,
                   player_adj: dict | None = None, fixture_id=None,
-                  apply_context: bool = True,
-                  quality_adj: dict | None = None,
-                  context_coef: dict | None = None,
-                  ensemble_weights: dict | None = None,
-                  variance_inflation: bool | None = None) -> dict:
-    """Point-in-time prediction wrapper used by cards and edge pricing.
-
-    This keeps the live paths aligned: if a context coefficient is promoted,
-    rest/congestion/motivation/weather/minutes corrections are applied to both
-    the displayed prediction and the priced prediction. With inactive context
-    coefficients this is exactly the legacy model plus any supplied player
-    availability adjustment.
-
-    context_coef: explicit context coefficients. None (default) loads the
-    production artifact — correct for LIVE pricing only. Historical
-    evaluation (walk-forward validation) MUST pass its own coefficients
-    (or {} to disable): the production artifact is fitted on full history,
-    so letting it leak into past predictions is look-ahead bias.
-    """
-    context_adj = {}
-    if apply_context and match_date:
-        from . import context as CTX
-        comp = CTX.comp_get(competition) if competition else None
-        context_adj = CTX.context_adj_for_match(
-            home, away, str(match_date),
-            is_domestic=bool(comp and comp.kind in ("league", "cup")),
-            competition=competition,
-            season=_season_year(match_date),
-            is_cup=bool(comp and comp.kind == "cup"),
-            fixture_id=fixture_id,
-            coef=context_coef,
-        )
+                  ensemble_weights: dict | None = None) -> dict:
+    """Point-in-time prediction wrapper used by cards and edge pricing."""
+    del fixture_id
     return predict(home, away, competition, model, neutral, params=params,
-                   player_adj=player_adj, context_adj=context_adj,
-                   match_date=match_date, quality_adj=quality_adj,
-                   ensemble_weights=ensemble_weights,
-                   variance_inflation=variance_inflation)
+                   player_adj=player_adj,
+                   match_date=match_date,
+                   ensemble_weights=ensemble_weights)
 
 
 def main() -> None:
@@ -1576,39 +803,11 @@ def main() -> None:
     ap.add_argument("--model", choices=["ensemble", "goals", "elo", "xg"], default="ensemble")
     ap.add_argument("--neutral", action="store_true")
     ap.add_argument("--fit", action="store_true")
-    ap.add_argument("--fit-comp-strength", action="store_true",
-                    help="fit competition strength from shared Elo (P4.4); "
-                         "writes data/comp_strength.json, inactive by default")
-    ap.add_argument("--tune-promo-prior", action="store_true",
-                    help="grid-search the promoted/relegated-team shrinkage "
-                         "prior pi (P4.5), report-only")
-    ap.add_argument("--tune-season-boundary", action="store_true",
-                    help="grid-search season_regress_rho x half_life_days "
-                         "on Aug-Oct fixtures (P4.6), report-only")
-    ap.add_argument("--tune-elo-decay", action="store_true",
-                    help="grid-search continuous Elo time-decay half-life "
-                         "(P4.6b) on the full walk-forward, report-only")
-    ap.add_argument("--write", action="store_true",
-                    help="with --tune-promo-prior/--tune-season-boundary/"
-                         "--tune-elo-decay, save the diagnostic to "
-                         "model_params.json (still inactive)")
     args = ap.parse_args()
     if args.fit:
         params = fit()
         save_params(params)
         print(f"Saved {len(params['teams'])} teams from {params['fitted_matches']} matches -> {PARAMS}")
-        return
-    if args.tune_season_boundary:
-        tune_season_boundary(save=args.write)
-        return
-    if args.tune_elo_decay:
-        tune_elo_decay(save=args.write)
-        return
-    if args.fit_comp_strength:
-        fit_comp_strength()
-        return
-    if args.tune_promo_prior:
-        tune_promo_prior(save=args.write)
         return
     if not args.home or not args.away:
         ap.print_help()

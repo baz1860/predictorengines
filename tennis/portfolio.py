@@ -22,6 +22,16 @@ MIN_STAKE = 0.10
 CERTAINTY = 0.99        # never stake an implied-certain outcome
 
 
+def kelly_stake(probability: float, decimal_odds: float, bankroll: float,
+                fraction: float = 0.25) -> float:
+    """Raw fractional-Kelly stake before portfolio-level exposure caps."""
+    net_odds = decimal_odds - 1.0
+    if net_odds <= 0:
+        return 0.0
+    kelly = (net_odds * probability - (1.0 - probability)) / net_odds
+    return round(bankroll * max(0.0, kelly) * fraction, 2)
+
+
 def drawdown_factor(bankroll: float, peak: float) -> float:
     """Linear staking brake between DD_FLOOR and DD_FULL of the peak."""
     if peak <= 0:

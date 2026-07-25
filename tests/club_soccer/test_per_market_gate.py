@@ -44,6 +44,18 @@ def _artifact(one_x_two, totals):
             "1x2": {t: dict(one_x_two) for t in ("2%", "4%", "6%")},
             "total_over_under_2_5": {t: dict(totals) for t in ("2%", "4%", "6%")},
         },
+        "simulated_betting_by_league": {
+            "1x2": {
+                "Test League": {
+                    t: dict(one_x_two) for t in ("2%", "4%", "6%")
+                }
+            },
+            "total_over_under_2_5": {
+                "Test League": {
+                    t: dict(totals) for t in ("2%", "4%", "6%")
+                }
+            },
+        },
         "model_log_loss_1x2": 0.98,
         "market_log_loss_1x2_devigged_pinnacle_closing": 1.00,
     }
@@ -113,9 +125,12 @@ def test_stake_zeroing_is_per_market(gate, monkeypatch):
     gate(_pass(), _empty())
     monkeypatch.setattr("club_soccer.evidence_gate.BACKTEST_JSON", G.BACKTEST_JSON)
     rows = [
-        {"market": "1x2", "kelly_stake": 0.02, "stake_gbp": 2.0},
-        {"market": "total", "kelly_stake": 0.02, "stake_gbp": 2.0},
-        {"market": "btts", "kelly_stake": 0.02, "stake_gbp": 2.0},
+        {"market": "1x2", "competition": "Test League",
+         "kelly_stake": 0.02, "stake_gbp": 2.0},
+        {"market": "total", "competition": "Test League",
+         "kelly_stake": 0.02, "stake_gbp": 2.0},
+        {"market": "btts", "competition": "Test League",
+         "kelly_stake": 0.02, "stake_gbp": 2.0},
     ]
     E.apply_evidence_gate(rows)
     by = {r["market"]: r for r in rows}
@@ -186,15 +201,18 @@ def test_stake_zeroing_honours_the_per_league_gate(gate_path):
     assert by["Brazil Serie A"]["stake_gbp"] == 0.0, "CLV-less league is zeroed"
 
 
-def test_no_by_league_section_falls_back_to_market_gate(gate):
-    """Backward compatibility: an artifact without per-league metrics is gated
-    at the market level, so existing behaviour is preserved."""
-    gate(_pass(), _empty())
+def test_no_by_league_section_fails_closed(gate_path):
+    """decision_time_v2 promises per-league evidence; omission cannot authorize
+    every competition through a pooled market pass."""
+    art = _artifact(_pass(), _empty())
+    art.pop("simulated_betting_by_league")
+    gate_path.write_text(json.dumps(art))
+    assert G.market_staking_allowed()["1x2"] is False
     assert G.market_league_staking_allowed() == {}
     rows = [{"market": "1x2", "competition": "Anything",
              "kelly_stake": 0.02, "stake_gbp": 2.0}]
     E.apply_evidence_gate(rows)
-    assert rows[0]["stake_gbp"] == 2.0
+    assert rows[0]["stake_gbp"] == 0.0
 
 
 def test_closed_market_with_nonzero_stake_raises(gate, monkeypatch):

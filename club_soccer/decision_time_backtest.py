@@ -3,9 +3,8 @@
 
 Why this exists
 ---------------
-`backtest_market.py` selects and executes at the CLOSING price. That is not a
-strategy you can run: you don't know the close until kick-off. So its evidence
-can never open staking, and `evidence_gate.py` is written to refuse it.
+The retired closing-price backtest selected and executed at a price unavailable
+until kick-off. Its evidence could never justify a live staking decision.
 
 This backtest replays only what a bettor could actually have done:
 
@@ -46,21 +45,21 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from .club_identity import canonical_name
-
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
+RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
 SNAPSHOTS = DATA / "odds_history_club.csv"
 MARKET_HISTORY = DATA / "market_history.csv"
 FIXTURES = DATA / "fixtures.csv"
-ARTIFACT = DATA / "backtest_market.json"       # the file the gate reads
-LEDGER = DATA / "decision_time_ledger.csv"     # append-only settled-bet record
+ARTIFACT = RUNTIME / "backtest_market.json"    # the file the gate reads
+LEDGER = RUNTIME / "decision_time_ledger.csv"  # settled-bet replay snapshot
 
 MIN_LEAD_MIN = 60                # gate floor: decision >= 60 min pre-kickoff
 MAX_LEAD_MIN = 7 * 24 * 60       # gate ceiling: within a week
@@ -70,19 +69,7 @@ CONF_BUCKETS = [(0.50, 0.55), (0.55, 0.60), (0.60, 0.65), (0.65, 1.01)]
 KELLY_FRACTION = 0.25
 
 
-# ── de-vigging ────────────────────────────────────────────────────────────
-
-def _devig(odds: dict[str, float]) -> dict[str, float]:
-    """Proportional de-vig: raw implied probs renormalised to sum to 1."""
-    inv = {k: 1.0 / v for k, v in odds.items() if v and v > 1.0}
-    tot = sum(inv.values())
-    return {k: v / tot for k, v in inv.items()} if tot > 0 else {}
-
-
 # ── frozen-ledger replay ─────────────────────────────────────────────────
-
-def _key(date, home, away) -> str:
-    return f"{str(date)[:10]}|{canonical_name(home)}|{canonical_name(away)}"
 
 
 def build_bets(verbose: bool = False) -> pd.DataFrame:
@@ -99,13 +86,11 @@ def build_bets(verbose: bool = False) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
-    # One version cohort per artifact. Decisions carry the resolver / model /
-    # code hashes frozen at decision time; pooling across them mixes evidence
-    # from different identity, model and code regimes, which defeats the
-    # clock-reset the whole ledger exists to enforce. Keep only the cohort of
-    # the MOST RECENT decision — a change of any hash starts a fresh cohort that
-    # must re-accumulate its own evidence.
-    cohort_cols = [c for c in ("resolver_version", "model_hash", "code_hash")
+    # One strategy cohort per artifact. The fitted-parameter hash remains
+    # provenance but is NOT a cohort boundary: routine refits are the intended
+    # operation of the same model and must not reset a 1,000-bet evidence clock.
+    # Resolver/code changes do alter the strategy and start a fresh cohort.
+    cohort_cols = [c for c in ("resolver_version", "code_hash")
                    if c in df.columns]
     if cohort_cols and "decision_ts" in df.columns and len(df):
         latest = df.sort_values("decision_ts").iloc[-1]
@@ -113,6 +98,9 @@ def build_bets(verbose: bool = False) -> pd.DataFrame:
         for c in cohort_cols:
             mask &= (df[c] == latest[c])
         df = df[mask]
+    if "strategy_eligible" in df.columns:
+        eligible = df["strategy_eligible"].astype(str).str.strip().str.lower()
+        df = df[eligible.isin({"", "1", "true", "yes"})]
     df = df.rename(columns={"odds_executed": "odds", "p_book_devig": "p_book",
                             "kickoff_utc": "kickoff"})
     df["date"] = df["kickoff"].astype(str).str[:10]
@@ -120,71 +108,8 @@ def build_bets(verbose: bool = False) -> pd.DataFrame:
     df["lead_min"] = df["decision_lead_min"]
     keep = ["key", "date", "kickoff", "competition", "market", "side", "odds",
             "p_model", "p_book", "p_close", "edge", "won", "lead_min", "clv",
-            "resolver_version", "model_hash", "code_hash"]
+            "lineup_confidence", "resolver_version", "model_hash", "code_hash"]
     return df[[c for c in keep if c in df.columns]]
-
-
-def _side_won(market: str, side: str, home_goals: float,
-              away_goals: float) -> bool:
-    """Pure settlement rule retained for diagnostics and contract tests.
-
-    It does not reconstruct any decision-time state; the frozen ledger remains
-    the only source consumed by ``build_bets``.
-    """
-    if market == "1x2":
-        return ((side == "home" and home_goals > away_goals)
-                or (side == "away" and away_goals > home_goals)
-                or (side == "draw" and home_goals == away_goals))
-    total = home_goals + away_goals
-    return ((side == "over" and total > 2.5)
-            or (side == "under" and total < 2.5))
-
-
-def _closing_probs() -> tuple[dict, dict]:
-    """De-vigged Pinnacle closing probs per fixture, for CLV.
-
-    Returns (one_x_two, totals). 1X2 covers everywhere Pinnacle quotes; totals
-    (psc_over25/psc_under25) exist only for the European leagues, so the totals
-    map is empty for the non-UEFA ones — those OU2.5 bets get no CLV and stay
-    information-only, which is correct.
-    """
-    if not MARKET_HISTORY.exists():
-        return {}, {}
-    m = pd.read_csv(MARKET_HISTORY, low_memory=False)
-    one, tot = {}, {}
-    has_1x2 = {"psc_h", "psc_d", "psc_a"}.issubset(m.columns)
-    has_tot = {"psc_over25", "psc_under25"}.issubset(m.columns)
-
-    def _ok(*xs):
-        return all(isinstance(x, (int, float)) and x and x > 1 for x in xs)
-
-    for r in m.itertuples(index=False):
-        key = _key(r.match_date, r.home, r.away)
-        if has_1x2:
-            oh, od, oa = getattr(r, "psc_h", None), getattr(r, "psc_d", None), getattr(r, "psc_a", None)
-            if _ok(oh, od, oa):
-                one[key] = _devig({"home": oh, "draw": od, "away": oa})
-        if has_tot:
-            ov, un = getattr(r, "psc_over25", None), getattr(r, "psc_under25", None)
-            if _ok(ov, un):
-                tot[key] = _devig({"over": ov, "under": un})
-    return one, tot
-
-
-def _clv(market: str, side: str, odds_exec: float, close: dict | None) -> float | None:
-    """CLV = log(odds_executed * p_close_devigged). Positive = beat the close.
-
-    Both 1X2 and OU2.5 now have a Pinnacle closing reference for the European
-    leagues. `close` is the right de-vigged closing map for the market, or None
-    where no closing feed exists (non-UEFA totals) — then CLV is None and the
-    market cannot open the gate, which is the correct conservatism.
-    """
-    if market not in ("1x2", "total25") or not close:
-        return None
-    p = close.get(side)
-    if not p or p <= 0 or odds_exec <= 1:
-        return None
-    return float(math.log(odds_exec * p))
 
 
 # ── metrics ───────────────────────────────────────────────────────────────
@@ -215,8 +140,13 @@ def _rows_for_market(mbets: pd.DataFrame) -> dict:
             continue
         profit = np.where(sel["won"] == 1, sel["odds"] - 1.0, -1.0)
         flat_roi = float(profit.mean())
+        confidence = (
+            pd.to_numeric(sel["lineup_confidence"], errors="coerce").fillna(1.0)
+            if "lineup_confidence" in sel.columns
+            else pd.Series(1.0, index=sel.index)
+        ).clip(0.0, 1.0).to_numpy()
         kstakes = np.array([_kelly(p, o) * KELLY_FRACTION
-                            for p, o in zip(sel["p_model"], sel["odds"])])
+                            for p, o in zip(sel["p_model"], sel["odds"])]) * confidence
         kprofit = np.where(sel["won"] == 1, kstakes * (sel["odds"] - 1.0), -kstakes)
         kelly_roi = float(kprofit.sum() / kstakes.sum()) if kstakes.sum() > 0 else 0.0
         clv = sel["clv"].dropna() if "clv" in sel.columns else pd.Series([], dtype=float)
@@ -402,7 +332,7 @@ def run(verbose: bool = True) -> dict:
                  "of OU2.5. Markets or leagues without a closing reference stay "
                  "closed; the current shared blocker is settled decision volume."),
     }
-    DATA.mkdir(exist_ok=True)
+    ARTIFACT.parent.mkdir(parents=True, exist_ok=True)
     # allow_nan=False: a NaN would be written as the non-standard token `NaN`,
     # producing an artifact that is not valid JSON and a metric that slips
     # through every finite-comparison guard. Metrics are None where undefined.

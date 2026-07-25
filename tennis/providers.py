@@ -3,9 +3,11 @@
 One interface (`MatchProvider`) so the model never knows where its rows came
 from. Free, no-key implementations:
 
-  - `TMLProvider` (ATP): Tennismylife/TML-Database on GitHub — per-season CSVs
-    in the same column format as the former Sackmann ATP repo (1968–present).
-    https://github.com/Tennismylife/TML-Database
+  - `ESPNResultsProvider` (ATP current season): ESPN's public, no-key
+    scoreboard JSON, incrementally cached with an overlap window.
+
+  - `TMLProvider` (ATP historical): Tennismylife/TML-Database on GitHub —
+    retained for completed seasons already present in the local cache.
 
   - `MatchChartingProvider` (ATP + WTA supplementary): JeffSackmann's
     tennis_MatchChartingProject — a single flat CSV per tour with hand-charted
@@ -13,8 +15,8 @@ from. Free, no-key implementations:
     ranks are not available; Player 1 is treated as the winner (heuristic).
     https://github.com/JeffSackmann/tennis_MatchChartingProject
 
-  - `CompositeProvider` (default): routes ATP → TMLProvider and WTA → the
-    public WTA results API, with Sackmann/MatchCharting as fallbacks.
+  - `CompositeProvider` (default): routes current ATP → ESPN, historical ATP →
+    TML, and WTA → the public WTA results API, with offline fallbacks.
 
   - `SackmannProvider`: Jeff Sackmann's complete tour-level ATP/WTA season
     files.  It remains a historical fallback when the primary feed is
@@ -37,11 +39,15 @@ import io
 import json
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Protocol, runtime_checkable
+
+from .rounds import ESPN_MAJOR_ROUND_MAP, ESPN_ROUND_MAP
+from .scores import parse_set_score
 
 DATA_DIR = Path(__file__).parent / "data"
 CACHE_DIR = DATA_DIR / "api_cache"
@@ -166,36 +172,39 @@ def _serve_aggs(row: dict, side: str) -> tuple[object, object]:
     return (int(svpt), int(first + second))
 
 
-def parse_set_score(score: Optional[str]) -> tuple[int, int]:
-    """Sets won by (winner, loser) from a Sackmann score string.
+def _fold_identity_name(value: object) -> str:
+    """Provider-neutral player key used only for cross-feed deduplication."""
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(ch for ch in text if not unicodedata.combining(ch)).casefold().strip()
 
-    Handles tiebreak annotations ("7-6(5)"), retirements/walkovers ("6-3 RET",
-    "W/O"), and unfinished strings by counting only completed sets where one
-    side has strictly more games. The winner is always listed first per set, so
-    a set counts for whoever has the higher game count.
+
+def _result_identity(row: object) -> Optional[tuple[str, str, str, str]]:
+    """A conservative identity shared by TML and ESPN rows.
+
+    Provider tournament IDs cannot be compared. A completed singles pair on a
+    specific date and tour is stable across feeds and avoids duplicating the
+    overlap when the current ATP season moves from TML to ESPN.
     """
-    s = (score or "").strip()
-    if not s or s.upper() in ("W/O", "WO", "DEF", "WALKOVER"):
-        return (0, 0)
-    w = l = 0
-    for tok in s.split():
-        t = tok.upper()
-        if t in ("RET", "RET.", "DEF", "DEF.", "W/O", "WO", "ABN", "ABD", "UNK"):
-            break
-        # Strip a trailing tiebreak annotation: "7-6(5)" -> "7-6"
-        core = tok.split("(", 1)[0]
-        if "-" not in core:
-            continue
-        a, _, b = core.partition("-")
-        try:
-            ga, gb = int(a), int(b)
-        except ValueError:
-            continue
-        if ga > gb:
-            w += 1
-        elif gb > ga:
-            l += 1
-    return (w, l)
+    if isinstance(row, MatchRecord):
+        tour, date = row.tour, row.date
+        names = (row.winner, row.loser)
+    else:
+        data = row if isinstance(row, dict) else {}
+        tour, date = data.get("tour", ""), data.get("date", "")
+        names = (data.get("winner", ""), data.get("loser", ""))
+    folded = sorted(_fold_identity_name(name) for name in names)
+    if not tour or not date or len(folded) != 2 or not all(folded):
+        return None
+    return (str(tour).lower(), str(date), folded[0], folded[1])
+
+
+def _result_source_family(row: object) -> str:
+    """Coarse source family for cross-feed overlap checks."""
+    tourney_id = (
+        row.tourney_id if isinstance(row, MatchRecord)
+        else (row.get("tourney_id", "") if isinstance(row, dict) else "")
+    )
+    return "espn" if str(tourney_id).startswith("espn-") else "archive"
 
 
 # ─────────────────────────────────────────────
@@ -233,7 +242,7 @@ class SackmannProvider:
     name = "sackmann"
 
     def __init__(self, tours: Iterable[str] = ("atp", "wta")):
-        self.tours = [t.lower() for t in tours if t.lower() in _SACKMANN_BASE]
+        self.tours = [t.lower() for t in tours if t.lower() in _FILE_PREFIX]
 
     def seasons_available(self) -> list[int]:
         # Sackmann data runs 1968→present; callers pass explicit --seed years.
@@ -635,33 +644,307 @@ class WTAOfficialProvider:
 
 
 # ─────────────────────────────────────────────
-# Composite provider (default: TML for ATP, official WTA API for WTA)
+# ESPN completed-results provider (free, no key, current ATP)
+# ─────────────────────────────────────────────
+
+def _espn_selected_competitions(event: dict, tour: str) -> list[dict]:
+    """Return only the tour-specific singles competitions from an ESPN event."""
+    tour = tour.lower()
+    target_slug = "mens-singles" if tour == "atp" else "womens-singles"
+    groupings = event.get("groupings") or []
+    selected = [
+        grouping for grouping in groupings
+        if str((grouping.get("grouping") or {}).get("slug") or "").lower()
+        == target_slug
+    ]
+    if not selected:
+        target_label = target_slug.replace("-", " ")
+        selected = [
+            grouping for grouping in groupings
+            if target_label in str(
+                (grouping.get("grouping") or {}).get("displayName") or ""
+            ).lower().replace("'", "")
+        ]
+    if not selected:
+        # Compatibility with older/minimal payloads. Never knowingly select
+        # doubles; if metadata is absent there is no safer discriminator.
+        selected = [
+            grouping for grouping in groupings
+            if "double" not in str(
+                (grouping.get("grouping") or {}).get("displayName") or ""
+            ).lower()
+        ] or groupings[:1]
+    return [
+        competition
+        for grouping in selected
+        for competition in (grouping.get("competitions") or [])
+    ]
+
+
+def _espn_round_code(event: dict, competition: dict) -> str:
+    raw = str((competition.get("round") or {}).get("displayName") or "")
+    if event.get("major"):
+        return ESPN_MAJOR_ROUND_MAP.get(raw) or ESPN_ROUND_MAP.get(raw, raw)
+    return ESPN_ROUND_MAP.get(raw, raw)
+
+
+def _score_number(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+def _espn_score(winner: dict, loser: dict, competition: dict) -> str:
+    """Build a winner-first canonical score from ESPN line-score arrays."""
+    winner_sets = winner.get("linescores") or []
+    loser_sets = loser.get("linescores") or []
+    tokens: list[str] = []
+    for winner_set, loser_set in zip(winner_sets, loser_sets):
+        winner_games = _score_number(winner_set.get("value"))
+        loser_games = _score_number(loser_set.get("value"))
+        if not winner_games or not loser_games:
+            continue
+        token = f"{winner_games}-{loser_games}"
+        try:
+            winner_value, loser_value = float(winner_games), float(loser_games)
+        except ValueError:
+            winner_value = loser_value = 0.0
+        set_loser = loser_set if winner_value > loser_value else winner_set
+        tiebreak = _score_number(set_loser.get("tiebreak"))
+        if tiebreak:
+            token += f"({tiebreak})"
+        tokens.append(token)
+
+    detail = str(
+        ((competition.get("status") or {}).get("type") or {}).get("detail") or ""
+    ).lower()
+    if "retir" in detail:
+        tokens.append("RET")
+    elif "walkover" in detail:
+        tokens.append("W/O")
+    elif "default" in detail:
+        tokens.append("DEF")
+    return " ".join(tokens)
+
+
+def _espn_best_of(event: dict, competition: dict, tour: str) -> int:
+    """ESPN marks Slam qualifying as five periods, so use tournament rules."""
+    if tour.lower() != "atp":
+        return 3
+    round_code = _espn_round_code(event, competition)
+    if event.get("major") and not round_code.startswith("Q"):
+        return 5
+    if "next gen atp finals" in str(event.get("name") or "").lower():
+        return 5
+    return 3
+
+
+class ESPNResultsProvider:
+    """Current ATP completed singles from ESPN's public scoreboard JSON.
+
+    The first run fetches the current season to date. Later runs replace events
+    in a rolling overlap window, which captures result corrections while keeping
+    the local season cache usable during a temporary network outage.
+    """
+
+    name = "espn_atp"
+
+    def __init__(self, overlap_days: int = 21, refresh_hours: float = 1.0,
+                 today: Optional[_dt.date] = None) -> None:
+        self.overlap_days = max(1, int(overlap_days))
+        self.refresh_seconds = max(0.0, float(refresh_hours) * 3600.0)
+        self.today = today or _dt.date.today()
+
+    def seasons_available(self) -> list[int]:
+        return [self.today.year]
+
+    def _cache_path(self, year: int) -> Path:
+        return CACHE_DIR / f"espn_atp_{year}.json"
+
+    @staticmethod
+    def _read_cache(path: Path) -> Optional[dict]:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload.get("events"), list) else None
+
+    @staticmethod
+    def _event_key(event: dict) -> str:
+        return str(
+            event.get("id") or event.get("uid")
+            or f"{event.get('name', '')}|{event.get('date', '')}"
+        )
+
+    def _season_payload(self, year: int) -> Optional[dict]:
+        if year > self.today.year:
+            return None
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path = self._cache_path(year)
+        cached = self._read_cache(cache_path) if cache_path.exists() else None
+
+        complete_past = year < self.today.year
+        cache_fresh = (
+            cache_path.exists()
+            and (time.time() - cache_path.stat().st_mtime) < self.refresh_seconds
+        )
+        if cached and (complete_past or cache_fresh):
+            return cached
+
+        year_start = _dt.date(year, 1, 1)
+        year_end = _dt.date(year, 12, 31)
+        end = min(self.today, year_end)
+        start = year_start
+        if cached:
+            try:
+                through = _dt.date.fromisoformat(str(cached.get("fetched_through")))
+                start = max(year_start, through - _dt.timedelta(days=self.overlap_days))
+            except (TypeError, ValueError):
+                pass
+
+        dates = f"{start:%Y%m%d}-{end:%Y%m%d}"
+        query = urllib.parse.urlencode({"dates": dates, "limit": 1000})
+        text = _http_text(f"{_ESPN_ATP_URL}?{query}", retries=3, timeout=45)
+        if not text:
+            return cached
+        try:
+            fresh = json.loads(text)
+        except json.JSONDecodeError:
+            return cached
+        fresh_events = fresh.get("events")
+        if not isinstance(fresh_events, list):
+            return cached
+
+        merged = {
+            self._event_key(event): event
+            for event in ((cached or {}).get("events") or [])
+        }
+        merged.update({self._event_key(event): event for event in fresh_events})
+        payload = {
+            "source": _ESPN_ATP_URL,
+            "year": year,
+            "fetched_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "fetched_through": end.isoformat(),
+            "events": list(merged.values()),
+        }
+        temporary = cache_path.with_suffix(".json.tmp")
+        try:
+            temporary.write_text(json.dumps(payload), encoding="utf-8")
+            temporary.replace(cache_path)
+        except OSError:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return payload
+
+    @staticmethod
+    def _competitor_name(competitor: dict) -> str:
+        athlete = competitor.get("athlete") or {}
+        return str(athlete.get("fullName") or athlete.get("displayName") or "").strip()
+
+    def matches_for(self, year: int, tour: str) -> list[MatchRecord]:
+        if tour.lower() != "atp":
+            return []
+        payload = self._season_payload(int(year))
+        if not payload:
+            return []
+
+        output: list[MatchRecord] = []
+        seen_competitions: set[str] = set()
+        for event in payload.get("events") or []:
+            event_id = str(event.get("id") or event.get("uid") or "")
+            tourney_name = str(event.get("name") or event.get("shortName") or "").strip()
+            for competition in _espn_selected_competitions(event, "atp"):
+                competition_id = str(competition.get("id") or "")
+                unique_id = f"{event_id}:{competition_id}"
+                if unique_id in seen_competitions:
+                    continue
+                seen_competitions.add(unique_id)
+
+                status = ((competition.get("status") or {}).get("type") or {})
+                if status.get("state") != "post" or not status.get("completed", True):
+                    continue
+                competitors = competition.get("competitors") or []
+                winners = [item for item in competitors if item.get("winner") is True]
+                losers = [item for item in competitors if item.get("winner") is False]
+                if len(winners) != 1 or len(losers) != 1:
+                    continue
+                winner, loser = winners[0], losers[0]
+                winner_name = self._competitor_name(winner)
+                loser_name = self._competitor_name(loser)
+                if not winner_name or not loser_name:
+                    continue
+
+                date = str(
+                    competition.get("date") or competition.get("startDate") or ""
+                )[:10]
+                if not date.startswith(f"{year:04d}-"):
+                    continue
+                try:
+                    if _dt.date.fromisoformat(date) > self.today:
+                        continue
+                except ValueError:
+                    continue
+
+                score = _espn_score(winner, loser, competition)
+                winner_sets, loser_sets = parse_set_score(score)
+                output.append(MatchRecord(
+                    date=date,
+                    tourney_id=f"espn-{event_id}",
+                    tourney_name=tourney_name,
+                    tour="atp",
+                    surface=_infer_surface(tourney_name),
+                    round=_espn_round_code(event, competition),
+                    best_of=_espn_best_of(event, competition, "atp"),
+                    winner=winner_name,
+                    loser=loser_name,
+                    winner_rank=9999,
+                    loser_rank=9999,
+                    winner_sets=winner_sets,
+                    loser_sets=loser_sets,
+                    score=score,
+                ))
+        output.sort(key=lambda row: (row.date, row.tourney_id, row.round,
+                                     row.winner, row.loser))
+        return output
+
+
+# ─────────────────────────────────────────────
+# Composite provider (ESPN current ATP, TML history, official WTA)
 # ─────────────────────────────────────────────
 
 class CompositeProvider:
-    """Routes ATP → TMLProvider and WTA → WTAOfficialProvider.
+    """Routes current ATP → ESPN and historical ATP → TML.
 
     WTA falls back to Sackmann, then MatchCharting, when the public WTA API is
-    unavailable for a season.
+    unavailable for a season. Current ATP falls back to TML's local cache if
+    ESPN is temporarily unavailable on a first run.
     """
 
     name = "composite"
 
     def __init__(self) -> None:
-        self._atp = TMLProvider()
+        self._atp_live = ESPNResultsProvider()
+        self._atp_history = TMLProvider()
         self._wta = WTAOfficialProvider()
         self._wta_sackmann = SackmannProvider(tours=("wta",))
         self._wta_fallback = MatchChartingProvider(tours=("wta",))
 
     def seasons_available(self) -> list[int]:
-        atp = set(self._atp.seasons_available())
+        atp = set(self._atp_history.seasons_available())
         wta = set(self._wta.seasons_available())
         return sorted(atp | wta)
 
     def matches_for(self, year: int, tour: str) -> list[MatchRecord]:
         t = tour.lower()
         if t == "atp":
-            return self._atp.matches_for(year, tour)
+            if int(year) >= _dt.date.today().year:
+                rows = self._atp_live.matches_for(year, tour)
+                return rows or self._atp_history.matches_for(year, tour)
+            return self._atp_history.matches_for(year, tour)
         if t == "wta":
             rows = self._wta.matches_for(year, tour)
             if rows:
@@ -686,12 +969,12 @@ def load_matches() -> list[dict]:
 def accumulate_matches(provider: Optional[MatchProvider] = None,
                        years: Optional[Iterable[int]] = None,
                        tours: Iterable[str] = ("atp", "wta"),
-                       verbose: bool = True) -> int:
+                       verbose: bool = True) -> dict:
     """Append any new completed matches to matches.csv.
 
     Idempotent (dedupes on tour+tourney_id+winner+loser+round) and offline-safe
-    (writes nothing, returns 0 when the provider yields no rows). When `years`
-    is None, refreshes the current and previous season. Returns rows added.
+    (writes nothing when the provider yields no rows). Returns the number added
+    and the maximum stored date per requested tour, making a dead feed visible.
     """
     provider = provider or CompositeProvider()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -738,6 +1021,13 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
          r.get("loser", ""), r.get("round", ""))
         for r in existing
     }
+    result_sources: dict[tuple[str, str, str, str], set[str]] = {}
+    for row in existing:
+        identity = _result_identity(row)
+        if identity is not None:
+            result_sources.setdefault(identity, set()).add(
+                _result_source_family(row)
+            )
 
     new_rows: list[dict] = []
     for tour in tours:
@@ -749,28 +1039,55 @@ def accumulate_matches(provider: Optional[MatchProvider] = None,
                 print(f"[{provider.name}] {tour} {year}: {len(recs)} match(es)")
             for rec in recs:
                 key = (rec.tour, rec.tourney_id, rec.winner, rec.loser, rec.round)
-                if key in seen:
+                identity = _result_identity(rec)
+                source_family = _result_source_family(rec)
+                cross_source_duplicate = (
+                    identity is not None
+                    and bool(result_sources.get(identity, set()) - {source_family})
+                )
+                if key in seen or cross_source_duplicate:
                     continue
                 seen.add(key)
+                if identity is not None:
+                    result_sources.setdefault(identity, set()).add(source_family)
                 new_rows.append(asdict(rec))
+
+    def result(rows: list[dict]) -> dict:
+        return {
+            "added": len(new_rows),
+            "max_dates": {
+                tour: max(
+                    (str(row.get("date") or "") for row in rows
+                     if str(row.get("tour") or "").lower() == tour),
+                    default="",
+                )
+                for tour in tours
+            },
+        }
 
     legacy_removed = original_count - len(existing)
     if not new_rows and not legacy_removed:
         if verbose:
-            print("  no new matches")
-        return 0
+            status = result(existing)
+            for tour, max_date in status["max_dates"].items():
+                print(f"  {tour.upper()}: no new matches "
+                      f"(latest stored {max_date or 'none'})")
+        return result(existing)
 
     all_rows = existing + new_rows
     all_rows.sort(key=lambda r: (str(r.get("date", "")), str(r.get("tour", "")),
                                  str(r.get("tourney_id", "")), str(r.get("round", ""))))
     with open(MATCHES_CSV, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=MATCH_COLUMNS, extrasaction="ignore")
+        w = csv.DictWriter(
+            f, fieldnames=MATCH_COLUMNS, extrasaction="ignore",
+            lineterminator="\n",
+        )
         w.writeheader()
         w.writerows(all_rows)
     if verbose:
         print(f"  +{len(new_rows)} new matches, {legacy_removed} legacy rows replaced "
               f"→ {MATCHES_CSV} ({len(all_rows)} total)")
-    return len(new_rows)
+    return result(all_rows)
 
 
 # ─────────────────────────────────────────────
@@ -790,7 +1107,23 @@ _KNOWN_SURFACES: dict[str, str] = {
     "iasi": "clay",
     "kitzbuhel": "clay",
     "kitzbühel": "clay",
+    "generali open": "clay",
+    "estoril": "clay",
+    "argentina open": "clay",
+    "buenos aires": "clay",
+    "rio open": "clay",
+    "chile open": "clay",
+    "men's clay court": "clay",
+    "mens clay court": "clay",
+    "hassan ii": "clay",
+    "tiriac open": "clay",
+    "bmw open": "clay",
     "wimbledon": "grass",
+    "boss open": "grass",
+    "libéma open": "grass",
+    "libema open": "grass",
+    "terra wortmann": "grass",
+    "hsbc championships": "grass",
     "eastbourne": "grass",
     "birmingham": "grass",
     "nottingham": "grass",
@@ -830,30 +1163,6 @@ _KNOWN_SURFACES: dict[str, str] = {
 }
 
 # Round display name → short code used in draw.csv
-_ROUND_MAP: dict[str, str] = {
-    "Qualifying 1st Round": "Q1",
-    "Qualifying 2nd Round": "Q2",
-    "Qualifying Final": "QF-Q",
-    "Round 1": "R1",
-    "Round 2": "R2",
-    "Round 3": "R3",
-    "Round 4": "R4",
-    "Round of 128": "R128",
-    "Round of 64": "R64",
-    "Round of 32": "R32",
-    "Round of 16": "R16",
-    "Quarterfinal": "QF",
-    "Semifinal": "SF",
-    "Final": "F",
-}
-
-_MAJOR_ROUND_MAP: dict[str, str] = {
-    "Round 1": "R128",
-    "Round 2": "R64",
-    "Round 3": "R32",
-    "Round 4": "R16",
-}
-
 _ESPN_ATP_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard"
 _ESPN_WTA_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard"
 
@@ -904,39 +1213,13 @@ def _espn_draw(tour: str) -> list[TournamentDraw]:
 
     results: list[TournamentDraw] = []
     tour = tour.lower()
-    target_slug = "mens-singles" if tour == "atp" else "womens-singles"
     for event in data.get("events", []):
         tourney_name = event.get("name") or event.get("shortName") or ""
         surface = _infer_surface(tourney_name)
 
-        groupings = event.get("groupings", [])
-        if not groupings:
+        competitions = _espn_selected_competitions(event, tour)
+        if not competitions:
             continue
-        # Joint ATP/WTA events expose four groupings.  The old implementation
-        # blindly used groupings[0], which made the ATP feed price women's
-        # singles at events such as Bastad.  Prefer the tour-specific slug and
-        # retain a display-name fallback for older ESPN payloads.
-        selected = [
-            g for g in groupings
-            if str((g.get("grouping") or {}).get("slug") or "").lower()
-            == target_slug
-        ]
-        if not selected:
-            selected = [
-                g for g in groupings
-                if target_slug.replace("-", " ") in str(
-                    (g.get("grouping") or {}).get("displayName") or ""
-                ).lower().replace("'", "")
-            ]
-        if not selected:
-            # Keep compatibility with minimal test fixtures that omit grouping
-            # metadata, but never choose a doubles grouping when one is marked.
-            selected = [
-                g for g in groupings
-                if "double" not in str((g.get("grouping") or {}).get(
-                    "displayName") or "").lower()
-            ] or groupings[:1]
-        competitions = selected[0].get("competitions", [])
 
         # best_of: ATP Grand Slams are best-of-5; everything else (incl. WTA Slams) is best-of-3.
         # ESPN's format.regulation.periods is not reliable for this — use the major flag only.
@@ -955,9 +1238,7 @@ def _espn_draw(tour: str) -> list[TournamentDraw]:
             if len(names) < 2:
                 continue
             names = names[:2]
-            round_raw = comp.get("round", {}).get("displayName", "")
-            round_code = (_MAJOR_ROUND_MAP.get(round_raw) if major else None) \
-                or _ROUND_MAP.get(round_raw, round_raw)
+            round_code = _espn_round_code(event, comp)
             winner = ""
             for c, name in zip(ordered, names):
                 if c.get("winner") is True and name.upper() != "TBD":
@@ -973,7 +1254,15 @@ def _espn_draw(tour: str) -> list[TournamentDraw]:
                 player_b=names[1],
                 state=state,
                 winner=winner,
-                score=comp.get("status", {}).get("type", {}).get("detail", "") or "",
+                score=(
+                    _espn_score(
+                        next((c for c in competitors if c.get("winner") is True), {}),
+                        next((c for c in competitors if c.get("winner") is False), {}),
+                        comp,
+                    )
+                    if state == "post" else
+                    comp.get("status", {}).get("type", {}).get("detail", "") or ""
+                ),
                 match_id=str(comp.get("id") or ""),
             ))
 
@@ -999,21 +1288,8 @@ def fetch_draws(tour: str = "atp", tourney_filter: str = "") -> list[TournamentD
     return draws
 
 
-def fetch_draw(tour: str = "atp", tourney_filter: str = "") -> Optional[TournamentDraw]:
-    """Backward-compatible singular draw helper.
-
-    New callers should use :func:`fetch_draws`; this function retains the old
-    first-match behavior for the UI and integrations that explicitly expect a
-    single tournament.
-    """
-    draws = fetch_draws(tour, tourney_filter)
-    if not draws:
-        return None
-    return draws[0]
-
-
 if __name__ == "__main__":
     # quick manual check: python -m tennis.providers 2023 2024
     yrs = [int(a) for a in sys.argv[1:]] or None
     n = accumulate_matches(years=yrs)
-    print(f"added {n} matches")
+    print(f"added {n['added']} matches; latest by tour: {n['max_dates']}")

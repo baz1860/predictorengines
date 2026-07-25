@@ -15,7 +15,7 @@ from pathlib import Path
 
 from club_soccer import validate as V
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 SEEDERS = ["club_soccer/seed_footballdata.py",
            "club_soccer/seed_real.py",
            "club_soccer/seed_openfootball.py"]

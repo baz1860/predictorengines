@@ -29,7 +29,7 @@ the fingerprint deliberately covers more than seems necessary:
   * the source of model.py, competitions.py and validate.py
   * comp_strength.json and ensemble_weights.json, which are data files that
     change behaviour without any code edit
-  * the fold's own options (min_train, league_adjustments)
+  * the fold's own options (min_train, opponent-adjusted xG)
 
 If any of those move, every affected fold recomputes. When in doubt the cache
 misses — an unnecessary recompute costs seconds, a false hit costs correctness.
@@ -86,8 +86,7 @@ KEY_COLUMNS = [
 _CODE_FILES = ("model.py", "competitions.py", "validate.py", "coverage.py",
                "uefa_registry.py", "club_identity.py",
                "names.py", "club_registry.py", "schema.py")
-_DATA_FILES = ("comp_strength.json", "ensemble_weights.json",
-               "uefa_coefficients.json", "uefa_coefficients_history.json",
+_DATA_FILES = ("uefa_coefficients.json", "uefa_coefficients_history.json",
                "club_alias_map.json")
 
 # (signature, hash): the memo is keyed on a cheap (path, mtime, size) signature

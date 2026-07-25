@@ -33,6 +33,8 @@ class ClubSoccerAdapter(EngineAdapter):
         return {**self._schema, "freshness": provenance.freshness_warnings(self.id)}
 
     def edge_schema(self) -> dict[str, Any]:
+        from ..market_blend import is_default_on
+        blend_default = is_default_on(self.id)
         return {"models": ["ensemble", "goals", "elo"],
                 "odds_sources": [
                     {"id": "manual", "label": "Manual club_soccer/data/odds.csv"},
@@ -40,8 +42,9 @@ class ClubSoccerAdapter(EngineAdapter):
                     {"id": "the-odds-api", "label": "The Odds API"}],
                 "has_template": True,
                 "options": [{"id": "market_blend",
-                             "label": "Market blend (experimental)",
-                             "default": False}],
+                             "label": ("Market blend" if blend_default
+                                       else "Market blend (experimental)"),
+                             "default": blend_default}],
                 "filters": self.predict_schema().get("filters", [])}
 
     KELLY_FRACTION = 0.25
@@ -64,18 +67,6 @@ class ClubSoccerAdapter(EngineAdapter):
             if issues:
                 result["odds_issues"] = [e["message"] for e in issues]
         rows = result.get("rows") or []
-        if params.get("market_blend"):
-            from .. import market_blend as MB
-            w = MB.apply_blend_to_rows(rows, self.id, bankroll,
-                                       self.KELLY_FRACTION, kelly_key="kelly_stake")
-            # rows_from_odds owns the evidence gate. The optional app-level
-            # blend is the only later operation that rewrites stakes, so it is
-            # the only reason to re-apply the idempotent gate here.
-            from club_soccer.edge import apply_evidence_gate
-            apply_evidence_gate(rows)
-            result["market_blend"] = {"applied": True, "w": w, "experimental": True}
-            result["note"] = (result.get("note", "")
-                              + f" · market-blended (experimental, w={w:.2f})")
         self._mark_recommended(rows)
         if params.get("record"):
             today = pd.Timestamp.now(tz="UTC").date().isoformat()
@@ -115,22 +106,31 @@ class ClubSoccerAdapter(EngineAdapter):
 
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:
         from club_soccer import edge as CE
+        from club_soccer.club_identity import canonical_name
+        from club_soccer.schema import (OFFICIAL_RESULT_STATUSES,
+                                        normalize_status)
         fixtures = pd.read_csv(ENGINE_DIR / "data" / "fixtures.csv")
         fixtures["home_goals"] = pd.to_numeric(fixtures["home_goals"], errors="coerce")
         fixtures["away_goals"] = pd.to_numeric(fixtures["away_goals"], errors="coerce")
         played = fixtures.dropna(subset=["home_goals", "away_goals"])
         # Settlement deliberately bypasses model.played() so an AWARDED (AWD)
-        # result still settles, but it must NOT settle a row whose status we
-        # could not map: an unrecognised status may well mean abandoned.
+        # result still settles. It nevertheless requires a terminal official
+        # result: live scores, postponed rows and unknown statuses cannot grade.
         if "status" in played.columns:
-            from club_soccer.schema import normalize_status, QUARANTINE_STATUSES
-            played = played[~played["status"].map(normalize_status)
-                            .isin(QUARANTINE_STATUSES)]
+            played = played[
+                played["status"].map(normalize_status)
+                .isin(OFFICIAL_RESULT_STATUSES)
+            ]
+        played = played.copy()
+        played["_home_identity"] = played["home"].map(canonical_name)
+        played["_away_identity"] = played["away"].map(canonical_name)
         out = {}
         for i, r in rows.iterrows():
+            home = canonical_name(str(r["home"]))
+            away = canonical_name(str(r["away"]))
             match = played[(played["date"].astype(str) == str(r["match_date"]))
-                           & (played["home"] == r["home"])
-                           & (played["away"] == r["away"])]
+                           & (played["_home_identity"] == home)
+                           & (played["_away_identity"] == away)]
             if match.empty:
                 continue
             g = match.iloc[0]

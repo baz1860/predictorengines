@@ -311,7 +311,6 @@ def _market_and_portfolio() -> None:
 
 
 def _outright_backtest() -> None:
-    from tennis import calibrate as C
     from tennis import model as M
     from tennis import simulate as S
     from tennis import validate as V
@@ -330,14 +329,6 @@ def _outright_backtest() -> None:
     assert len(outp) > 100, f"too few outright rows: {len(outp)}"
     rep = V.summarize(outp)
     assert rep["win"]["skill"] > 0.02, f"no outright win skill: {rep['win']['skill']}"
-
-    # outright calibration fits and the nesting guard keeps win ≤ final ≤ sf ≤ qf
-    maps = C.fit_maps(outp)
-    assert "win" in maps, "outright calibration did not fit win"
-    cal = C.apply_outright({"win": 0.5, "final": 0.2, "sf": 0.9, "qf": 0.1}, maps)
-    assert cal["win"] <= cal["final"] + 1e-9 <= cal["sf"] + 1e-9 <= cal["qf"] + 1e-9, \
-        f"nesting guard violated: {cal}"
-
 
 def _edge_blend_portfolio() -> None:
     from app.engines import registry
@@ -375,6 +366,7 @@ def _settlement() -> None:
 
 def main() -> int:
     global DATA
+    _results.clear()
     # Fingerprint the real source-of-truth file so we can prove the test never
     # touched it, regardless of how the run ends.
     real_matches = REAL_DATA / "matches.csv"
@@ -388,8 +380,13 @@ def main() -> int:
         _write_fixture()
         from tennis import model as M
         df = M.load_matches_df()
+        fit_asof = df["date"].max() + pd.Timedelta(days=1)
         for tour in ("atp", "wta"):
-            M.save_params(M.fit(df, tour=tour), tour=tour)
+            fitted = M.fit(df, tour=tour, asof=fit_asof)
+            # Adapter freshness is covered separately; this historical synthetic
+            # fixture is intentionally presented as a current saved model.
+            fitted["asof"] = str(pd.Timestamp.now().date())
+            M.save_params(fitted, tour=tour)
         _check("model_behaviour", _model_behaviour)
         _check("adapter_contract", _adapter_contract)
         _check("multi_event_simulation", _multi_event_simulation)
@@ -424,3 +421,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_contract() -> None:
+    """Real pytest entry point so CI cannot collect this suite as zero tests."""
+    assert main() == 0

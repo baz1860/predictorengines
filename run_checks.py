@@ -30,9 +30,15 @@ ORDERED = [
 ]
 
 
-def _suites() -> list[str]:
-    found = sorted(p.stem for p in ROOT.glob("test_*.py"))
-    return [s for s in ORDERED if s in found] + [s for s in found if s not in ORDERED]
+def _suites() -> list[Path]:
+    found = sorted(
+        ROOT.glob("test_*.py")
+    ) + sorted(
+        ROOT.glob("tests/**/test_*.py")
+    )
+    by_stem = {path.stem: path for path in found}
+    ordered = [by_stem[name] for name in ORDERED if name in by_stem]
+    return ordered + [path for path in found if path.stem not in ORDERED]
 
 
 def _run(cmd: list[str], cwd: Path) -> tuple[bool, float, str]:
@@ -49,15 +55,22 @@ def main() -> None:
 
     print("Running fast test suites…\n")
     results, failures = [], 0
-    for suite in _suites():
-        ok, secs, out = _run([sys.executable, f"{suite}.py"], ROOT)
-        results.append((suite, ok, secs))
-        if not ok:
-            failures += 1
-            print(f"  FAIL  {suite}  ({secs:.1f}s)")
-            print("    " + "\n    ".join(out.strip().splitlines()[-6:]))
-        else:
-            print(f"  PASS  {suite}  ({secs:.1f}s)")
+    suites = _suites()
+    # One pytest process is both faster and unambiguous. The root conftest also
+    # converts legacy check()-counter failures into real pytest failures.
+    ok, secs, out = _run(
+         [sys.executable, "-m", "pytest", "-q",
+         *(str(suite.relative_to(ROOT)) for suite in suites)],
+        ROOT,
+    )
+    results.append(("pytest", ok, secs))
+    if not ok:
+        failures += 1
+        print(f"  FAIL  pytest ({len(suites)} files, {secs:.1f}s)")
+        print("    " + "\n    ".join(out.strip().splitlines()[-20:]))
+    else:
+        tail = out.strip().splitlines()[-1] if out.strip() else "passed"
+        print(f"  PASS  pytest ({len(suites)} files, {secs:.1f}s) · {tail}")
 
     if args.gates:
         print("\nRunning validation gates (validate_all.py --gate)…")

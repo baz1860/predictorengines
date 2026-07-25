@@ -1,4815 +1,5109 @@
 {
  "tour": "atp",
- "asof": "2026-01-18",
- "n_matches": 9150,
- "n_players": 684,
- "default_skill": -0.8783,
- "form_weight": 0.5,
- "h2h_weight": 0.05,
+ "asof": "2026-07-25",
+ "n_matches": 11270,
+ "n_players": 823,
+ "default_skill": -1.1138,
  "hyperparams": {
   "skill_halflife_days": 365.0,
   "ridge_skill": 6.0,
   "ridge_offset": 24.0,
   "rank_prior_coef": -0.12,
-  "form_halflife_days": 56.0,
-  "form_window_days": 56.0,
-  "form_k": 8.0,
-  "form_weight": 0.5,
-  "min_surface_matches": 12.0,
-  "h2h_weight": 0.05
+  "min_surface_matches": 12.0
  },
  "skills": {
-  "Aaron Gil Garcia": -0.9176,
-  "Abdullah Shelbayh": -0.793,
-  "Abdulmajeed Bukhari": -1.1413,
-  "Abdulmalek Burasais": -1.1418,
-  "Adam Moundir": -0.8212,
-  "Adam Neff": -0.8229,
-  "Adam Walton": -0.7354,
-  "Adolfo Daniel Vallejo": -0.6188,
-  "Adria Soriano Barrera": -0.6996,
-  "Adrian Andreev": -0.6137,
-  "Adrian Mannarino": -0.4586,
-  "Ahmad Nael Qureshi": -1.1378,
-  "Aisam-Ul-Haq Qureshi": -1.1051,
-  "Ajeet Rai": -0.8616,
-  "Akram El Sallaly": -1.1694,
-  "Alan Fernando Rubio Fierros": -0.7868,
-  "Alan Magadan": -0.8713,
-  "Albert Ramos-Vinolas": -0.7824,
-  "Alec Beckley": -0.8796,
-  "Alejandro Davidovich Fokina": -0.0099,
-  "Alejandro Moro Canas": -0.6902,
-  "Alejandro Tabilo": -0.3948,
-  "Aleksa Krivokapic": -1.1358,
-  "Aleksandar Kovacevic": -0.8132,
-  "Aleksandar Vukic": -0.6652,
-  "Aleksandre Bakshi": -0.7227,
-  "Alessandro Giannessi": -0.6619,
-  "Alex Bolt": -0.7025,
-  "Alex Hernandez": -0.7623,
-  "Alex Knaff": -0.7178,
-  "Alex Michelsen": -0.3255,
-  "Alex Molcan": -0.4426,
-  "Alex Rybakov": -0.7209,
-  "Alex Santino Nu\u00f1ez Vera": -0.8273,
-  "Alex de Minaur": 0.4847,
-  "Alexandar Lazarov": -0.7702,
-  "Alexander Blockx": -0.5794,
-  "Alexander Bublik": 0.0391,
-  "Alexander Ritschard": -0.6947,
-  "Alexander Shevchenko": -0.4984,
-  "Alexander Vasilev": -0.6933,
-  "Alexander Zverev": 0.6094,
-  "Alexandre Muller": -0.5341,
-  "Alexandros Skorilas": -0.8104,
-  "Alexei Popyrin": -0.3956,
-  "Alexey Vatutin": -0.7371,
-  "Alexis Galarneau": -0.6539,
-  "Alexis Klegou": -1.1855,
-  "Alibek Kachmazov": -0.6902,
-  "Altug Celikbilek": -0.6507,
-  "Alvaro Guillen Meza": -0.6553,
-  "Alvaro Lopez San Martin": -0.6966,
-  "Amir Milushev": -1.1134,
-  "Amir Omarkhanov": -0.8934,
-  "Ammar Alhogbani": -0.9325,
-  "Ammar Elamin": -0.8303,
-  "Amr Elsayed Abdou Ah Mohamed": -1.1499,
-  "Andrea Collarini": -0.6988,
-  "Andrea Pellegrino": -0.6122,
-  "Andrea Vavassori": -0.5508,
-  "Andreas Timini": -0.8734,
-  "Andrei Gorban": -1.1454,
-  "Andrej Nedic": -0.8588,
-  "Andreja Petrovic": -0.8661,
-  "Andres Andrade": -0.6385,
-  "Andres Martin": -0.8065,
-  "Andrey Kuznetsov": -0.8579,
-  "Andrey Rublev": 0.1383,
-  "Andy Murray": -0.5189,
-  "Anthony Susanto": -0.9692,
-  "Antoine Bellier": -0.6403,
-  "Antoine Escoffier": -0.6378,
-  "Aqeel Khan": -1.0707,
-  "Arda Azkara": -0.6976,
-  "Aristotelis Thanos": -0.7967,
-  "Arklon Huertas Del Pino Cordova": -1.093,
-  "Arthur Cazaux": -0.4665,
-  "Arthur Fery": -0.7105,
-  "Arthur Fils": 0.0194,
-  "Arthur Gea": -0.7294,
-  "Arthur Rinderknech": -0.3584,
-  "Aslan Karatsev": -0.5579,
-  "Atakan Karahan": -0.8292,
-  "Atilio Jose Flores": -1.1194,
-  "Attila Balazs": -0.8315,
-  "August Holmgren": -0.5911,
-  "Aziz Dougaz": -0.8419,
-  "Aziz Ouakaa": -0.8944,
-  "Beibit Zhukayev": -0.7156,
-  "Ben Shelton": 0.1432,
-  "Benedict Badza": -1.0842,
-  "Benjamin Balleret": -1.1136,
-  "Benjamin Bonzi": -0.4873,
-  "Benjamin Hassan": -0.6691,
-  "Benjamin Lock": -0.7419,
-  "Benoit Paire": -0.6642,
-  "Bernabe Zapata Miralles": -0.6583,
-  "Bernard Tomic": -0.7085,
-  "Billy Harris": -0.7764,
-  "Bjorn Fratangelo": -0.7966,
-  "Blaise Bicknell": -0.7578,
-  "Blaz Rola": -0.7033,
-  "Bor Artnak": -0.6753,
-  "Boris Arias": -1.0817,
-  "Borna Coric": -0.6549,
-  "Borna Gojo": -0.6744,
-  "Botic Van De Zandschulp": -1.1436,
-  "Botic van de Zandschulp": -0.4961,
-  "Bradley Klahn": -0.8138,
-  "Brandon Holt": -0.8966,
-  "Brandon Nakashima": -0.2018,
-  "Branko Djuric": -0.8667,
-  "Calvin Hemery": -0.7011,
-  "Cameron Norrie": -0.1254,
-  "Camilo Ugo Carabelli": -0.7274,
-  "Carlos Alcaraz": 1.2275,
-  "Carlos Taberner": -0.4859,
-  "Casper Ruud": 0.1886,
-  "Cem Ilkel": -0.6893,
-  "Cesar Cruz": -1.0213,
-  "Cezar Cretu": -0.5823,
-  "Charles Broom": -0.7176,
-  "Chris Rodesch": -0.7907,
-  "Christopher Bulus": -0.8276,
-  "Christopher Eubanks": -0.6258,
-  "Christopher O'Connell": -0.6003,
-  "Christopher Rungkat": -1.0946,
-  "Christos Antonopoulos": -0.926,
-  "Chun Hun Wong": -1.1416,
-  "Chun-Hsin Tseng": -0.9636,
-  "Cleeve Harper": -0.7722,
-  "Clement Chidekh": -0.7328,
-  "Clement Mainguy": -1.1251,
-  "Clement Tabur": -0.6332,
-  "Codie Schalk Van Schalkwyk": -1.0942,
-  "Coleman Wong": -0.456,
-  "Colin Sinclair": -0.7385,
-  "Colton Smith": -0.7448,
-  "Conner Huertas del Pino": -1.0459,
-  "Connor Doig": -0.9355,
-  "Connor Henry Van Schalkwyk": -0.8412,
-  "Conor Gannon": -0.9061,
-  "Constant Lestienne": -0.8287,
-  "Corentin Denolly": -0.7034,
-  "Corentin Moutet": -0.2919,
-  "Courtney John Lock": -0.9688,
-  "Cristian Garin": -0.5178,
-  "Dac Thien Nguyen": -1.1159,
-  "Dalibor Svrcina": -0.5097,
-  "Damir Dzumhur": -0.7506,
-  "Dan Added": -0.7004,
-  "Dan Martin": -1.143,
-  "Dane Sweeny": -0.7598,
-  "Daniel Altmaier": -0.6248,
-  "Daniel Antonio Nunez": -0.742,
-  "Daniel Azar": -1.1213,
-  "Daniel Cukierman": -0.7531,
-  "Daniel Elahi Galan": -0.8172,
-  "Daniel Evans": -0.5356,
-  "Daniel Masur": -0.7463,
-  "Daniel Michalski": -0.6937,
-  "Daniel Rincon": -0.7198,
-  "Daniel Vallejo": -1.0822,
-  "Daniels Tens": -1.2593,
-  "Daniil Glinka": -0.7519,
-  "Daniil Medvedev": 0.5185,
-  "Darian King": -0.7508,
-  "Darwin Blanch": -0.8014,
-  "David Agung Susanto": -0.95,
-  "David Ekpenyong": -1.1388,
-  "David Goffin": -0.6602,
-  "David Jorda Sanchis": -0.6971,
-  "Davis Rolis": -1.1529,
-  "Denis Kudla": -0.6227,
-  "Denis Shapovalov": -0.2506,
-  "Denis Yevseyev": -0.6493,
-  "Dennis Novak": -0.6636,
-  "Devin Badenhorst": -0.9055,
-  "Dhakshineswar Suresh": -0.7619,
-  "Diego Dedura-Palomero": -0.7739,
-  "Diego Duran": -1.1075,
-  "Diego Schwartzman": -0.7327,
-  "Digvijaypratap Singh": -0.7404,
-  "Dimitar Kuzmanov": -0.6774,
-  "Dimitris Azoidis": -1.0656,
-  "Dino Prizmic": -0.6904,
-  "Dmitry Popko": -0.8012,
-  "Dominic Stricker": -0.6999,
-  "Dominic Thiem": -0.6748,
-  "Dominik Koepfer": -0.486,
-  "Dragos Nicolae Madaras": -0.6455,
-  "Duje Ajdukovic": -0.5863,
-  "Dusan Lajovic": -0.6403,
-  "Edan Leshem": -0.7175,
-  "Edas Butvilas": -0.658,
-  "Eero Vasa": -0.8838,
-  "Egor Gerasimov": -0.8047,
-  "Elias Ymer": -0.6797,
-  "Eliot Spizzirri": -0.4529,
-  "Elliot Benchetrit": -0.8169,
-  "Elmer Moller": -0.723,
-  "Emil Ruusuvuori": -0.4603,
-  "Emilio Gomez": -0.5906,
-  "Emilio Nava": -0.624,
-  "Enmanuel Munoz": -1.1543,
-  "Enzo Couacaud": -0.6844,
-  "Ergi Kirkin": -0.7198,
-  "Ernesto Escobedo": -0.8316,
-  "Ernests Gulbis": -0.6697,
-  "Ethan Denzel Sibanda": -1.1411,
-  "Ethan Quinn": -0.7219,
-  "Eugenio Gonzalez Fitzmaurice": -1.1404,
-  "Fabian Marozsan": -0.3413,
-  "Fabio Fognini": -0.746,
-  "Facundo Bagnis": -0.6483,
-  "Facundo Diaz Acosta": -0.6033,
-  "Fadi Bidan": -0.8404,
-  "Fajing Sun": -0.8048,
-  "Fares Zakaria": -0.7356,
-  "Federico Agustin Gomez": -0.6828,
-  "Federico Cina": -0.7743,
-  "Federico Coria": -0.7293,
-  "Federico Delbonis": -0.5809,
-  "Federico Zeballos": -0.9595,
-  "Feliciano Lopez": -0.7726,
-  "Felipe Meligeni Alves": -0.7523,
-  "Felix Auger-Aliassime": 0.2307,
-  "Fernando Verdasco": -0.6606,
-  "Filip Cristian Jianu": -0.7199,
-  "Filip Jeff Planinsek": -0.6799,
-  "Filip Krajinovic": -0.6019,
-  "Filip Misolic": -0.6387,
-  "Flavio Cobolli": -0.1512,
-  "Frances Tiafoe": -0.1546,
-  "Francesco Passaro": -0.6882,
-  "Francisco Cabral": -1.1243,
-  "Francisco Cerundolo": -0.0646,
-  "Francisco Comesana": -0.5729,
-  "Francisco Llanes": -1.1968,
-  "Franco Roncadelli": -0.7253,
-  "Freddy Murray": -0.8532,
-  "Gabi Adrian Boitan": -0.7078,
-  "Gabriel Diallo": -0.2903,
-  "Gabriel Ghetu": -0.7398,
-  "Gael Monfils": -0.2947,
-  "Gauthier Onclin": -0.6928,
-  "Genaro Alberto Olivieri": -0.6323,
-  "Geoffrey Blancaneaux": -0.6227,
-  "George Loffhagen": -0.815,
-  "Gerard Campana Lee": -0.7389,
-  "Gijs Brouwer": -0.6114,
-  "Giles Hussey": -0.698,
-  "Gilles Arnaud Bailly": -0.6681,
-  "Gillian Osmont": -1.1264,
-  "Giovanni Mpetshi Perricard": -0.3638,
-  "Giulio Zeppieri": -0.8329,
-  "Gonzalo Bueno": -0.6039,
-  "Gonzalo Escobar": -1.0703,
-  "Gonzalo Lama": -0.7361,
-  "Govind Nanda": -0.7084,
-  "Gregoire Barrere": -0.5852,
-  "Grigor Dimitrov": 0.2183,
-  "Guido Andreozzi": -0.7124,
-  "Guido Pella": -0.7453,
-  "Gunawan Trismuwantara": -0.9856,
-  "Gustavo Heide": -0.7017,
-  "Hady Habib": -0.7456,
-  "Hamad Medjedovic": -0.3682,
-  "Hamidreza Nadaf": -0.9056,
-  "Hamza Karmoussi": -1.124,
-  "Harold Mayot": -0.7364,
-  "Henri Squire": -0.6853,
-  "Henrique Rocha": -0.504,
-  "Henry Bernet": -0.8578,
-  "Henry Searle": -0.8491,
-  "Hernando Jose Escurra Isnardi": -0.8752,
-  "Heve Kelley": -1.1261,
-  "Hod'abalo Padio": -1.1293,
-  "Holger Rune": 0.1713,
-  "Hong Kit Wong": -1.093,
-  "Hubert Hurkacz": 0.2063,
-  "Hugo Dellien": -0.8835,
-  "Hugo Gaston": -0.8157,
-  "Hugo Grenier": -0.6858,
-  "Hugo Nys": -1.0672,
-  "Huzaifa Abdul Rehman": -1.1309,
-  "Hyeon Chung": -0.7087,
-  "Ignacio Buse": -0.5083,
-  "Ignacio Carou": -0.8217,
-  "Ignacio Parisca Romera": -1.1739,
-  "Ilie Cazac": -1.1466,
-  "Iliyan Radulov": -0.7086,
-  "Illya Marchenko": -0.6863,
-  "Ilya Ivashka": -0.6135,
-  "Ilya Snitari": -0.7528,
-  "Ioannis Xilas": -0.8213,
-  "Isaac Becroft": -0.8554,
-  "Ivan Gakhov": -0.7162,
-  "Ivan Ivanov": -0.9233,
-  "J.J. Wolf": -0.5469,
-  "Jack Cheng": -0.9136,
-  "Jack Draper": 0.3199,
-  "Jack Loutit": -0.768,
-  "Jack Pinnington Jones": -0.7004,
-  "Jack Sock": -0.6126,
-  "Jacob Bicknell": -1.1159,
-  "Jacob Fearnley": -0.6018,
-  "Jacopo Berrettini": -0.8009,
-  "Jaime Faria": -0.8204,
-  "Jakub Mensik": 0.0132,
-  "James Duckworth": -0.7369,
-  "James McCabe": -0.843,
-  "James Trotter": -0.7172,
-  "James Watt": -0.6995,
-  "Jan Choinski": -0.7372,
-  "Jan-Lennard Struff": -0.3962,
-  "Jannik Sinner": 1.416,
-  "Jason Jung": -0.689,
-  "Jason Kubler": -0.5561,
-  "Jaume Munar": -0.3694,
-  "Javier Barranco Cosano": -0.6881,
-  "Jay Clarke": -0.6851,
-  "Jenson Brooksby": -0.2226,
-  "Jeremy Chardy": -0.7911,
-  "Jerome Kym": -0.5601,
-  "Jesper de Jong": -0.4471,
-  "Jesse Flores": -0.8347,
-  "Jie Cui": -0.751,
-  "Jiri Lehecka": 0.1025,
-  "Jiri Vesely": -0.7387,
-  "Joao Fonseca": -0.0052,
-  "Joao Sousa": -0.6669,
-  "Joaquin  Aguilar Cardozo": -1.1104,
-  "Joaquin Aguilar Cardozo": -0.8626,
-  "Joel Schwaerzler": -0.789,
-  "Johannes Seeman": -1.0946,
-  "Johannus Monday": -0.6823,
-  "John Isner": -0.5783,
-  "John Millman": -0.5902,
-  "John Peers": -1.1406,
-  "Jordan Thompson": -0.3435,
-  "Joris De Loore": -0.6516,
-  "Jozef Kovalik": -0.6304,
-  "Juan Borba": -1.1138,
-  "Juan Carlos Fuentes Vasquez": -1.1101,
-  "Juan Carlos Prado Angelo": -0.8068,
-  "Juan Manuel Cerundolo": -0.5691,
-  "Juan Pablo Ficovich": -0.5805,
-  "Juan Pablo Varillas": -0.6634,
-  "Juncheng Shang": -0.4742,
-  "Jurij Rodionov": -0.5191,
-  "Justin Engel": -0.8084,
-  "Kacper Zuk": -0.6677,
-  "Kaipo Marshall": -1.2066,
-  "Kamil Majchrzak": -0.3474,
-  "Karam Hatamleh": -1.1158,
-  "Karan Singh": -0.7108,
-  "Karen Khachanov": 0.0146,
-  "Karim Bennani": -0.758,
-  "Karim-Mohamed Maamoun": -0.826,
-  "Karl Friberg": -0.7549,
-  "Karlis Ozolins": -0.8511,
-  "Karue Sell": -0.7262,
-  "Kasidit Samrej": -0.8298,
-  "Kei Nishikori": -0.4926,
-  "Kenneth Raisma": -0.8983,
-  "Kevin Anderson": -0.7649,
-  "Kevin Krawietz": -1.1207,
-  "Khumoyun Sultanov": -0.658,
-  "Ki Lung Ng": -0.9392,
-  "Kimmer Coppejans": -0.6357,
-  "Kiranpal Pannu": -0.8676,
-  "Kodjo Charles Alipoe-Tchotchodji": -1.1571,
-  "Komlavi Loglo": -1.1009,
-  "Kris Van Wyk": -0.7906,
-  "Kristjan Tamm": -0.8781,
-  "Kwok Shun Dasson Chan": -1.1262,
-  "Kyle Edmund": -0.8125,
-  "Kyrian Jacquet": -0.5927,
-  "Laslo Djere": -0.4856,
-  "Laurent Lokoli": -0.6489,
-  "Leandro Riedi": -0.571,
-  "Learner Tien": -0.0167,
-  "Leo Borg": -0.7953,
-  "Leo Matthysen": -1.1578,
-  "Li Tu": -0.7923,
-  "Liam Broady": -0.6541,
-  "Liam Draxl": -0.5774,
-  "Liam Krall": -1.1136,
-  "Linh Giang Trinh": -1.1397,
-  "Liova Ajavon": -1.1092,
-  "Lloyd Harris": -0.6435,
-  "Lorenzo Giustino": -0.6601,
-  "Lorenzo Musetti": 0.2008,
-  "Lorenzo Sonego": -0.4145,
-  "Louis Van Herck": -0.9184,
-  "Louis Wessels": -0.7134,
-  "Luca Nardi": -0.6801,
-  "Luca Preda": -0.8613,
-  "Luca Van Assche": -0.7234,
-  "Lucas Catarina": -0.7163,
-  "Lucas Miedler": -0.8147,
-  "Lucas Pouille": -0.6943,
-  "Luciano Darderi": -0.5058,
-  "Lucky Candra Kurniawan": -1.138,
-  "Luis Carlos Alvarez": -0.855,
-  "Luka Mikrut": -0.7318,
-  "Lukas Klein": -0.7367,
-  "Lukas Neumayer": -0.6149,
-  "Lukas Pokorny": -0.7411,
-  "Luke Saville": -0.7036,
-  "M Rifki Fitriadi": -0.8235,
-  "Mackenzie McDonald": -0.6601,
-  "Maks Kasnikowski": -0.6445,
-  "Malek Jaziri": -0.7388,
-  "Manas Dhamne": -1.112,
-  "Manuel Guinard": -0.7132,
-  "Marc Polmans": -0.6485,
-  "Marc Van Der Merwe": -0.8973,
-  "Marc-Andrea Huesler": -0.7688,
-  "Marcelo Arevalo": -1.0812,
-  "Marcelo Demoliner": -1.1184,
-  "Marco Cecchinato": -0.5936,
-  "Marco Trungelliti": -0.6432,
-  "Marcos Giron": -0.3374,
-  "Marcos Lee Chan Baratau": -0.8881,
-  "Mariano Navone": -0.6649,
-  "Marin Cilic": -0.5765,
-  "Marius Copil": -0.691,
-  "Mark Lajal": -0.5938,
-  "Marko Topo": -0.792,
-  "Markus Molder": -0.8071,
-  "Martin Antonio Vergara Del Puerto": -1.1167,
-  "Martin Antonio Vergara del Puerto": -1.1687,
-  "Martin Damm": -0.5982,
-  "Martin Klizan": -0.7338,
-  "Martin Landaluce": -0.9472,
-  "Martins Rocens": -0.9246,
-  "Marton Fucsovics": -0.3222,
-  "Martyn Pawelski": -0.8051,
-  "Matavao Fanguna": -1.1264,
-  "Mate Valkusz": -0.6906,
-  "Matej Dodig": -0.7327,
-  "Mateus Alves": -0.7609,
-  "Matheus Pucinelli De Almeida": -0.6916,
-  "Mathias Bourgue": -0.6886,
-  "Matic Kriznik": -0.9053,
-  "Matija Pecotic": -0.7963,
-  "Matteo Arnaldi": -0.3611,
-  "Matteo Berrettini": 0.0122,
-  "Matteo Gigante": -0.5355,
-  "Matteo Martineau": -0.6966,
-  "Matthew Ebden": -1.1121,
-  "Matthew Forbes": -0.9289,
-  "Mattia Bellucci": -0.6305,
-  "Matwe Middelkoop": -1.0921,
-  "Max Hans Rehberg": -0.7604,
-  "Max Purcell": -0.6343,
-  "Maxim Mrva": -0.7721,
-  "Maxim Shin": -0.8908,
-  "Maxime Cressy": -0.6264,
-  "Maxime Janvier": -0.6764,
-  "Maximilian Marterer": -0.6715,
-  "Maximus Jones": -0.8393,
-  "Mees Rottgering": -0.8462,
-  "Menelaos Efstathiou": -0.7847,
-  "Mert Naci Turker": -0.7798,
-  "Michael Agwi": -0.7168,
-  "Michael Bassem Sobhy": -0.782,
-  "Michael Mmoh": -0.4212,
-  "Michail Pervolarakis": -0.7569,
-  "Mikael Ymer": -0.6395,
-  "Mikhail Kukushkin": -0.6634,
-  "Mili Poljicak": -0.7839,
-  "Milos Raonic": -0.5798,
-  "MinKyu Song": -1.1326,
-  "Minhtuan Pham": -0.894,
-  "Miomir Kecmanovic": -0.5331,
-  "Mirza Basic": -0.8127,
-  "Mitchell Krueger": -0.7296,
-  "Moez Echargui": -0.5556,
-  "Mohamed Safwat": -0.7059,
-  "Mousa Alkotop": -0.8871,
-  "Muhammad Abid": -1.1135,
-  "Muhammad Shoaib": -1.1398,
-  "Mukund Sasikumar": -0.7092,
-  "Murkel Dellien": -0.669,
-  "Murphy Cassone": -0.6778,
-  "Mustapha El Natour": -1.0892,
-  "Muzammil Murtaza": -1.1807,
-  "N.Sriram Balaji": -1.1093,
-  "Nam Hoang Ly": -0.6587,
-  "Nerman Fatic": -0.7027,
-  "Nicholas David Ionel": -0.6743,
-  "Nick Chappell": -0.7374,
-  "Nick Hardt": -0.6756,
-  "Nick Kyrgios": -0.9691,
-  "Nicolai Budkov Kjaer": -0.6548,
-  "Nicolas Arseneault": -0.7586,
-  "Nicolas Barrientos": -0.7553,
-  "Nicolas Jarry": -0.4505,
-  "Nicolas Mejia": -0.9129,
-  "Nicolas Moreno De Alboran": -0.7051,
-  "Niki Kaliyanda Poonacha": -0.7838,
-  "Nikolas Sanchez Izquierdo": -0.6895,
-  "Nikoloz Basilashvili": -0.6446,
-  "Nino Serdarusic": -0.6999,
-  "Nishesh Basavareddy": -0.7085,
-  "Norbert Gombos": -0.6275,
-  "Novak Djokovic": 0.8921,
-  "Nuno Borges": -0.3788,
-  "Ofek Shimanov": -0.8093,
-  "Olaf Pieczkowski": -0.8456,
-  "Oleksandr Ovcharenko": -0.742,
-  "Oleksii Krutykh": -0.6674,
-  "Oliver Crawford": -0.7155,
-  "Oliver Ojakaar": -0.7446,
-  "Oliver Tarvet": -0.7439,
-  "Olle Wallin": -0.7221,
-  "Omar Jasika": -0.7226,
-  "Omni Kumar": -0.738,
-  "Orel Kimhi": -0.9329,
-  "Oriol Roca Batalla": -0.7006,
-  "Oscar Otte": -0.6233,
-  "Osgar O'Hoisin": -0.8071,
-  "Otto Virtanen": -0.7038,
-  "Pablo Andujar": -0.6659,
-  "Pablo Carreno Busta": -0.6482,
-  "Pablo Llamas Ruiz": -0.668,
-  "Patrick Agbo-Panzo": -1.1968,
-  "Patrick Kaukovalta": -0.8159,
-  "Patrick Kypson": -0.6917,
-  "Patrick Zahraj": -0.7325,
-  "Paul Jubb": -0.6435,
-  "Pavel Kotov": -0.5767,
-  "Pedro Cachin": -0.7434,
-  "Pedro Martinez": -0.7134,
-  "Pedro Sousa": -0.7515,
-  "Petar Jovanovic": -0.9014,
-  "Peter Bertran": -0.7819,
-  "Peter Buldorini": -0.8775,
-  "Petr Nesterov": -0.7847,
-  "Petros Chrysochos": -0.8459,
-  "Petros Tsitsipas": -1.1218,
-  "Philip Henning": -0.7018,
-  "Philip Hjorth": -0.8443,
-  "Philip Sekulic": -0.699,
-  "Pierre-Hugues Herbert": -0.6899,
-  "Pijus Vaitiekunas": -0.8187,
-  "Prajnesh Gunneswaran": -0.6896,
-  "Quentin Halys": -0.6668,
-  "Radu Albot": -0.669,
-  "Radu David Turcanu": -0.6733,
-  "Rafael De Alba": -0.9034,
-  "Rafael Jodar": -0.5363,
-  "Rafael Nadal": -0.5165,
-  "Ramkumar Ramanathan": -0.741,
-  "Raphael Calzi": -1.0935,
-  "Raphael Collignon": -0.4646,
-  "Raul Garcia": -0.9332,
-  "Rei Sakamoto": -0.8507,
-  "Reilly Opelka": -0.4153,
-  "Remy Bertola": -0.6668,
-  "Ricardas Berankis": -0.6329,
-  "Ricardo Rodriguez - Pace": -0.8786,
-  "Riccardo Bonadio": -0.6366,
-  "Richard Gasquet": -0.6909,
-  "Rigele Te": -0.8075,
-  "Rinky Hijikata": -0.7049,
-  "Robert Strombachs": -0.6567,
-  "Roberto Bautista Agut": -0.4557,
-  "Roberto Carballes Baena": -0.5741,
-  "Roberto Cid Subervi": -0.6969,
-  "Robin Haase": -0.6924,
-  "Rodrigo Crespo Piedra": -1.1236,
-  "Rodrigo Pacheco Mendez": -0.6601,
-  "Romain Arneodo": -1.1502,
-  "Roman Andres Burruchaga": -0.6261,
-  "Roman Safiullin": -0.5879,
-  "Ronan Tashinga Mtisi": -1.1399,
-  "Rowland Phillips": -0.9265,
-  "Rubin Statham": -1.1313,
-  "Rudolf Molleker": -0.6587,
-  "Ryan Peniston": -0.6877,
-  "Saba Purtseladze": -0.82,
-  "Sanhui Shin": -0.8216,
-  "Saud Alhogbani": -1.139,
-  "Sebastian Baez": -0.3691,
-  "Sebastian Dominko": -0.8468,
-  "Sebastian Fanselow": -0.7154,
-  "Sebastian Korda": -0.0644,
-  "Sebastian Ofner": -0.6322,
-  "Seongchan Hong": -0.654,
-  "Sergey Fomin": -0.8934,
-  "Shintaro Mochizuki": -0.828,
-  "Sho Shimabukuro": -0.613,
-  "Siddharth Vishwakarma": -0.7961,
-  "Simon Carr": -0.8021,
-  "Sina Moghimi": -0.8382,
-  "Skander Mansouri": -0.7624,
-  "Soonwoo Kwon": -0.5881,
-  "Stan Wawrinka": -0.7537,
-  "Stefan Dostanic": -0.7621,
-  "Stefano Napolitano": -0.6328,
-  "Stefano Travaglia": -0.6851,
-  "Stefanos Sakellaridis": -0.7726,
-  "Stefanos Tsitsipas": 0.078,
-  "Stephen Slocombe": -0.9613,
-  "Steve Johnson": -0.6604,
-  "Steven Diez": -0.7199,
-  "Strong Kirchheimer": -0.7785,
-  "Stylianos Christodoulou": -0.8759,
-  "Sumit Nagal": -0.7209,
-  "Sylvestre Monnou": -1.0665,
-  "Taha Baadi": -0.681,
-  "Tallon Griekspoor": -0.1867,
-  "Tao Mu": -0.7747,
-  "Taro Daniel": -0.7964,
-  "Taylor Fritz": 0.4368,
-  "Tennys Sandgren": -0.6942,
-  "Terence Atmane": -0.6954,
-  "Thai-Son Kwiatkowski": -0.7555,
-  "Thanapet Chanta": -0.8717,
-  "Thanasi Kokkinakis": -0.3765,
-  "Theo Papamalamis": -0.8229,
-  "Thiago Agustin Tirante": -0.6196,
-  "Thiago Monteiro": -0.7123,
-  "Thiago Seyboth Wild": -0.6063,
-  "Thomas Yaka Kofi Setodji": -1.0758,
-  "Thomaz Bellucci": -0.8265,
-  "Tim van Rijthoven": -0.588,
-  "Timofey Skatov": -0.6876,
-  "Titouan Droguet": -0.6203,
-  "Tomas Barrios Vera": -0.805,
-  "Tomas Machac": -0.076,
-  "Tomas Martin Etcheverry": -0.4002,
-  "Tomasz Berkieta": -0.8002,
-  "Tommy Paul": 0.1994,
-  "Trevor Svajda": -0.8215,
-  "Tristan Boyer": -0.6779,
-  "Tristan Schoolkate": -0.7041,
-  "Tsung-Hao Huang": -0.8219,
-  "Tsz Fu Wong": -1.1942,
-  "Tung-Lin Wu": -0.7713,
-  "Ugo Blanchet": -0.7933,
-  "Ugo Humbert": 0.0,
-  "Valentin Royer": -0.5698,
-  "Valentin Vacherot": -0.0887,
-  "Vasek Pospisil": -0.7546,
-  "Viacheslav Bielinskyi": -0.6936,
-  "Viktor Durasovic": -0.7265,
-  "Vilius Gaubas": -0.655,
-  "Vit Kopriva": -0.6837,
-  "Vitaliy Sachko": -0.5885,
-  "Vladyslav Orlov": -0.6619,
-  "Walid Ahouda": -0.8533,
-  "William Rejchtman Vinciguerra": -0.9184,
-  "Wishaya Trongcharoenchaikul": -0.8189,
-  "Xavier Lawrence": -1.1428,
-  "Yanaki Milev": -0.7976,
-  "Yanki Erel": -0.7583,
-  "Yannick Hanfmann": -0.3463,
-  "Yassine Dlimi": -0.7257,
-  "Yasutaka Uchiyama": -0.5689,
-  "Ye Cong Mo": -0.7948,
-  "Yi Zhou": -0.7648,
-  "Yibing Wu": -0.4418,
-  "Yoshihito Nishioka": -0.584,
-  "Yosuke Watanuki": -0.5049,
-  "Younes Lalami Laaroussi": -0.9229,
-  "Yousaf Khalil": -1.1319,
-  "Yshai Oliel": -0.7171,
-  "Yu Hsiou Hsu": -0.6323,
-  "Yuki Bhambri": -0.7677,
-  "Yun seong Chung": -0.7072,
-  "Yunchaokete Bu": -0.6616,
-  "Yuttana Charoenphon": -0.8246,
-  "Zachary Svajda": -0.6767,
-  "Zhe Li": -0.7823,
-  "Zhizhen Zhang": -0.5534,
-  "Ziga Sesko": -1.0448,
-  "Zizou Bergs": -0.2594,
-  "Zsombor Piros": -0.5471,
-  "Zura Tkemaladze": -0.8359
+  "Aaron Gil Garcia": -0.9036,
+  "Abdullah Shelbayh": -0.653,
+  "Abdulmajeed Bukhari": -1.1308,
+  "Abdulmalek Burasais": -1.1312,
+  "Abdulrahman Al Janahi": -1.1457,
+  "Adam Moundir": -0.8135,
+  "Adam Neff": -0.8178,
+  "Adam Walton": -0.6528,
+  "Adolfo Daniel Vallejo": -0.5844,
+  "Adria Soriano Barrera": -0.7026,
+  "Adrian Andreev": -0.6279,
+  "Adrian Mannarino": -0.5813,
+  "Ahmad Nael Qureshi": -1.1281,
+  "Aisam-Ul-Haq Qureshi": -1.105,
+  "Ajeet Rai": -0.8303,
+  "Akram El Sallaly": -1.1504,
+  "Alan Fernando Rubio Fierros": -0.7871,
+  "Alan Magadan": -0.9039,
+  "Alastair Gray": -1.1557,
+  "Albert Ramos-Vinolas": -0.7219,
+  "Alec Beckley": -0.8521,
+  "Alec Deckers": -1.2087,
+  "Alejandro Davidovich Fokina": 0.0345,
+  "Alejandro Moro Canas": -0.6287,
+  "Alejandro Tabilo": -0.3297,
+  "Alejo Sanchez Quilez": -1.1572,
+  "Aleksa Krivokapic": -1.1264,
+  "Aleksandar Kovacevic": -0.8635,
+  "Aleksandar Vukic": -0.7538,
+  "Aleksandr Shevchenko": -0.7579,
+  "Aleksandre Bakshi": -0.7353,
+  "Alessandro Giannessi": -0.658,
+  "Alex Barrena": -1.1759,
+  "Alex Bolt": -0.7888,
+  "Alex Finkelstein": -1.1473,
+  "Alex Hernandez": -0.8157,
+  "Alex Knaff": -0.7301,
+  "Alex Michelsen": -0.3022,
+  "Alex Molcan": -0.1559,
+  "Alex Rybakov": -0.8403,
+  "Alex Santino Nu\u00f1ez Vera": -0.8433,
+  "Alex de Minaur": 0.4034,
+  "Alexandar Lazarov": -0.7989,
+  "Alexander Blockx": -0.1729,
+  "Alexander Bublik": 0.0475,
+  "Alexander Ritschard": -0.6782,
+  "Alexander Shevchenko": -0.5101,
+  "Alexander Vasilev": -0.7319,
+  "Alexander Zverev": 0.773,
+  "Alexandre Muller": -0.6316,
+  "Alexandros Skorilas": -0.8048,
+  "Alexei Popyrin": -0.491,
+  "Alexey Vatutin": -0.722,
+  "Alexis Galarneau": -0.516,
+  "Alexis Klegou": -1.1609,
+  "Alibek Kachmazov": -0.6897,
+  "Altug Celikbilek": -0.6591,
+  "Alvaro Guillen Meza": -0.7728,
+  "Alvaro Lopez San Martin": -0.6929,
+  "Amine Jamji": -1.157,
+  "Amir Milushev": -1.1109,
+  "Amir Omarkhanov": -0.883,
+  "Ammar Alhogbani": -0.9207,
+  "Ammar Elamin": -0.8409,
+  "Amr Elsayed Abdou Ah Mohamed": -1.1392,
+  "Andre Ilagan": -1.0085,
+  "Andrea Collarini": -0.7461,
+  "Andrea Guerrieri": -1.0489,
+  "Andrea Pellegrino": -0.3475,
+  "Andrea Vavassori": -0.4738,
+  "Andreas Timini": -0.8857,
+  "Andrei Gorban": -1.1329,
+  "Andrej Nedic": -0.832,
+  "Andreja Petrovic": -0.8635,
+  "Andres Andrade": -0.6537,
+  "Andres Martin": -0.8959,
+  "Andrew Johnson": -1.1492,
+  "Andrey Chepelev": -1.1592,
+  "Andrey Kuznetsov": -0.8536,
+  "Andrey Rublev": 0.1765,
+  "Andy Andrade": -1.2002,
+  "Andy Murray": -0.4938,
+  "Anirudh Chandrasekar": -1.1638,
+  "Anthony Susanto": -0.9532,
+  "Antoine Bellier": -0.637,
+  "Antoine Escoffier": -0.6325,
+  "Antoine Ghibaudo": -1.1906,
+  "Anton Matusevich": -1.1645,
+  "Anton Shepp": -1.1427,
+  "Aqeel Khan": -1.0923,
+  "Arda Azkara": -0.7146,
+  "Aristotelis Thanos": -0.8086,
+  "Arklon Huertas Del Pino Cordova": -1.0967,
+  "Arthur Bouquier": -1.148,
+  "Arthur Cazaux": -0.4303,
+  "Arthur Fery": -0.2936,
+  "Arthur Fils": 0.2656,
+  "Arthur Gea": -0.7339,
+  "Arthur Rinderknech": -0.3887,
+  "Aryan Shah": -1.1609,
+  "Aslan Karatsev": -0.5156,
+  "Atakan Karahan": -0.8419,
+  "Atilio Jose Flores": -1.1153,
+  "Attila Balazs": -0.8265,
+  "August Holmgren": -0.6104,
+  "Aziz Dougaz": -0.9602,
+  "Aziz Ouakaa": -0.8594,
+  "Beibit Zhukayev": -0.7285,
+  "Ben Shelton": 0.2322,
+  "Benedict Badza": -1.0905,
+  "Benito Sanchez Martinez": -1.1609,
+  "Benjamin Balleret": -1.1104,
+  "Benjamin Bonzi": -0.4265,
+  "Benjamin Hassan": -0.7039,
+  "Benjamin Lock": -0.7302,
+  "Benjamin Torrealba": -1.1532,
+  "Benjamin Willwerth": -1.1916,
+  "Benoit Paire": -0.6466,
+  "Bernabe Zapata Miralles": -0.6684,
+  "Bernard Tomic": -0.7166,
+  "Billy Harris": -0.9771,
+  "Bjorn Fratangelo": -0.7935,
+  "Blaise Bicknell": -0.7475,
+  "Blake Ellis": -1.1524,
+  "Blaz Rola": -0.7133,
+  "Bor Artnak": -0.6983,
+  "Boris Arias": -1.0885,
+  "Borna Coric": -0.6207,
+  "Borna Gojo": -0.6596,
+  "Botic Van De Zandschulp": -0.8224,
+  "Botic van de Zandschulp": -0.5096,
+  "Bradley Klahn": -0.8105,
+  "Brandon Holt": -0.8048,
+  "Brandon Nakashima": -0.2258,
+  "Branko Djuric": -0.8401,
+  "Bu Yunchaokete": -1.1541,
+  "Calvin Hemery": -0.7658,
+  "Cameron Norrie": -0.2077,
+  "Camilo Ugo Carabelli": -0.5904,
+  "Carlos Alcaraz": 1.2109,
+  "Carlos Sanchez Jover": -1.1659,
+  "Carlos Taberner": -0.599,
+  "Casper Ruud": 0.2922,
+  "Cem Ilkel": -0.6862,
+  "Cesar Cruz": -0.9828,
+  "Cezar Cretu": -0.6102,
+  "Chak Lam Coleman Wong": -0.8925,
+  "Charles Broom": -0.8358,
+  "Chris Rodesch": -0.893,
+  "Christopher Bulus": -0.8284,
+  "Christopher Eubanks": -0.6119,
+  "Christopher O'Connell": -0.6155,
+  "Christopher Rungkat": -1.0978,
+  "Christos Antonopoulos": -0.9151,
+  "Chun Hun Wong": -1.1309,
+  "Chun-Hsin Tseng": -1.0087,
+  "Cleeve Harper": -0.789,
+  "Clement Chidekh": -0.8779,
+  "Clement Mainguy": -1.1192,
+  "Clement Tabur": -0.56,
+  "Codie Schalk Van Schalkwyk": -1.0976,
+  "Coleman Wong": -0.4999,
+  "Colin Sinclair": -0.7378,
+  "Colton Smith": -0.8115,
+  "Conner Huertas del Pino": -1.0634,
+  "Connor Doig": -0.9193,
+  "Connor Henry Van Schalkwyk": -0.8422,
+  "Conor Gannon": -0.8939,
+  "Constant Lestienne": -0.7261,
+  "Corentin Denolly": -0.6999,
+  "Corentin Moutet": -0.5351,
+  "Courtney John Lock": -0.954,
+  "Cristian Garin": -0.5706,
+  "Cruz Hewitt": -1.1782,
+  "Dac Thien Nguyen": -1.1127,
+  "Dalibor Svrcina": -0.5625,
+  "Damir Dzumhur": -0.6531,
+  "Dan Added": -0.8621,
+  "Dan Martin": -1.1331,
+  "Dane Sweeny": -0.5208,
+  "Daniel Altmaier": -0.5955,
+  "Daniel Antonio Nunez": -0.8292,
+  "Daniel Azar": -1.1165,
+  "Daniel Cukierman": -0.748,
+  "Daniel Dutra da Silva": -1.155,
+  "Daniel Elahi Galan": -0.8434,
+  "Daniel Evans": -0.6012,
+  "Daniel Jade": -1.0735,
+  "Daniel Jovanovski": -1.1497,
+  "Daniel Masur": -0.7235,
+  "Daniel Merida": -0.4884,
+  "Daniel Michalski": -0.8869,
+  "Daniel Rincon": -0.706,
+  "Daniel Vallejo": -1.089,
+  "Daniels Tens": -1.2154,
+  "Daniil Glinka": -0.8688,
+  "Daniil Medvedev": 0.4729,
+  "Darian King": -0.772,
+  "Darwin Blanch": -0.7179,
+  "David Agung Susanto": -0.9276,
+  "David Ekpenyong": -1.1289,
+  "David Goffin": -0.6965,
+  "David Jorda Sanchis": -0.8257,
+  "Davis Rolis": -1.1385,
+  "Denis Kudla": -0.6062,
+  "Denis Shapovalov": -0.3082,
+  "Denis Yevseyev": -0.6488,
+  "Dennis Novak": -0.6481,
+  "Devin Badenhorst": -0.902,
+  "Dhakshineswar Suresh": -0.7632,
+  "Diego Dedura": -1.2386,
+  "Diego Dedura-Palomero": -0.7866,
+  "Diego Duran": -1.1068,
+  "Diego Schwartzman": -0.6751,
+  "Digvijaypratap Singh": -0.745,
+  "Dimitar Kuzmanov": -0.6602,
+  "Dino Prizmic": -0.227,
+  "Dmitry Popko": -0.8161,
+  "Dominic Stricker": -0.6651,
+  "Dominic Thiem": -0.6382,
+  "Dominik Koepfer": -0.4967,
+  "Dragos Nicolae Madaras": -0.6401,
+  "Duje Ajdukovic": -0.6464,
+  "Dusan Lajovic": -0.582,
+  "Dylan Dietrich": -0.9892,
+  "Edan Leshem": -0.714,
+  "Edas Butvilas": -0.7287,
+  "Edward Winter": -1.1398,
+  "Eero Vasa": -0.8589,
+  "Egor Gerasimov": -0.7957,
+  "Elias Ymer": -0.6312,
+  "Eliot Spizzirri": -0.4232,
+  "Elliot Benchetrit": -0.8064,
+  "Elmer Moller": -0.6545,
+  "Emil Ruusuvuori": -0.4587,
+  "Emilio Gomez": -0.5813,
+  "Emilio Nava": -0.5909,
+  "Enmanuel Munoz": -1.14,
+  "Enzo Couacaud": -0.6695,
+  "Ergi Kirkin": -0.719,
+  "Ernesto Escobedo": -0.8021,
+  "Ernests Gulbis": -0.6727,
+  "Ethan Denzel Sibanda": -1.1303,
+  "Ethan Quinn": -0.5647,
+  "Eugenio Gonzalez Fitzmaurice": -1.1301,
+  "Fabian Marozsan": -0.3552,
+  "Fabio Fognini": -0.693,
+  "Facundo Bagnis": -0.623,
+  "Facundo Diaz Acosta": -0.5971,
+  "Facundo Mena": -1.1593,
+  "Fadi Bidan": -0.8442,
+  "Fajing Sun": -0.7498,
+  "Fares Zakaria": -0.741,
+  "Federico Agustin Gomez": -0.6568,
+  "Federico Bondioli": -1.1174,
+  "Federico Cina": -0.6731,
+  "Federico Coria": -0.8572,
+  "Federico Delbonis": -0.5811,
+  "Federico Zeballos": -0.9372,
+  "Feliciano Lopez": -0.7724,
+  "Felipe Meligeni Alves": -0.8251,
+  "Felix Auger-Aliassime": 0.3091,
+  "Felix Gill": -1.1284,
+  "Fernando Verdasco": -0.6438,
+  "Filip Cristian Jianu": -0.8727,
+  "Filip Jeff Planinsek": -0.711,
+  "Filip Krajinovic": -0.5781,
+  "Filip Misolic": -0.6889,
+  "Filippo Romano": -1.1676,
+  "Flavio Cobolli": -0.0264,
+  "Florent Bax": -1.2209,
+  "Frances Tiafoe": 0.0972,
+  "Francesco Maestrelli": -1.1142,
+  "Francesco Passaro": -0.6451,
+  "Francisco Cabral": -1.1191,
+  "Francisco Cerundolo": 0.1274,
+  "Francisco Comesana": -0.6152,
+  "Francisco Llanes": -1.1728,
+  "Francisco Rocha": -1.1638,
+  "Franco Agamenone": -1.1518,
+  "Franco Roncadelli": -0.782,
+  "Freddy Murray": -0.868,
+  "Frederico Ferreira Silva": -1.3286,
+  "Gabi Adrian Boitan": -0.7692,
+  "Gabriel Debru": -1.1504,
+  "Gabriel Diallo": -0.4696,
+  "Gabriel Ghetu": -0.8182,
+  "Gael Monfils": -0.3447,
+  "Gauthier Onclin": -0.6149,
+  "Genaro Alberto Olivieri": -0.9113,
+  "Geoffrey Blancaneaux": -0.7298,
+  "George Loffhagen": -0.827,
+  "Georgi Georgiev": -1.1437,
+  "Gerard Campana Lee": -0.7307,
+  "Ghanim Al Sulaiti": -1.1547,
+  "Gianluca Cadenasso": -1.1762,
+  "Gijs Brouwer": -0.617,
+  "Giles Hussey": -0.557,
+  "Gilles Arnaud Bailly": -0.747,
+  "Gillian Osmont": -1.1201,
+  "Giovanni Mpetshi Perricard": -0.4954,
+  "Giulio Zeppieri": -0.7681,
+  "Goncalo Da Rosa Castro": -1.1617,
+  "Gonzalo Bueno": -0.6241,
+  "Gonzalo Escobar": -1.0806,
+  "Gonzalo Lama": -0.7306,
+  "Govind Nanda": -0.7143,
+  "Gregoire Barrere": -0.5632,
+  "Grigor Dimitrov": 0.0737,
+  "Guido Andreozzi": -0.7021,
+  "Guido Pella": -0.7375,
+  "Gunawan Trismuwantara": -0.9654,
+  "Gustavo Heide": -0.8103,
+  "Guto Miguel": -1.1894,
+  "Guy Den Ouden": -1.2174,
+  "Hady Habib": -0.8054,
+  "Hamad Medjedovic": -0.2369,
+  "Hamidreza Nadaf": -0.8995,
+  "Hamish Stewart": -1.1231,
+  "Hamza Karmoussi": -1.1185,
+  "Harold Mayot": -0.8218,
+  "Harry Wendelken": -1.1701,
+  "Hendrik Jebens": -1.1614,
+  "Henri Squire": -0.7207,
+  "Henrique Rocha": -0.7433,
+  "Henry Bernet": -0.9252,
+  "Henry Searle": -0.8225,
+  "Hernando Jose Escurra Isnardi": -0.8716,
+  "Heve Kelley": -1.12,
+  "Hod'abalo Padio": -1.1224,
+  "Holger Rune": 0.1805,
+  "Hong Kit Wong": -1.0966,
+  "Hubert Hurkacz": 0.0188,
+  "Hugo Dellien": -0.7312,
+  "Hugo Gaston": -0.7274,
+  "Hugo Grenier": -0.7636,
+  "Hugo Nys": -1.1207,
+  "Huzaifa Abdul Rehman": -1.1237,
+  "Hyeon Chung": -0.7104,
+  "Hynek Barton": -1.154,
+  "Ignacio Buse": -0.3028,
+  "Ignacio Carou": -0.8171,
+  "Ignacio Parisca Romera": -1.1543,
+  "Igor Ribeiro Marcondes": -0.9871,
+  "Ilia Simakin": -1.1568,
+  "Ilie Cazac": -1.1345,
+  "Iliyan Radulov": -0.7308,
+  "Illya Marchenko": -0.6803,
+  "Ilya Ivashka": -0.6584,
+  "Ilya Snitari": -0.7605,
+  "Ioannis Xilas": -0.825,
+  "Isaac Becroft": -0.8998,
+  "Ivan Gakhov": -0.6996,
+  "Ivan Ivanov": -0.9576,
+  "Izyan Ahmad": -1.1452,
+  "J.J. Wolf": -0.5722,
+  "Jack Cheng": -0.9054,
+  "Jack Draper": 0.2769,
+  "Jack Loutit": -0.7834,
+  "Jack Pinnington Jones": -0.7961,
+  "Jack Sock": -0.6078,
+  "Jacob Bicknell": -1.1127,
+  "Jacob Fearnley": -0.6442,
+  "Jacopo Berrettini": -0.8119,
+  "Jacopo Vasami": -1.1622,
+  "Jagger Leach": -1.1561,
+  "Jaime Faria": -0.2639,
+  "Jake Delaney": -1.1488,
+  "Jakub Mensik": 0.1705,
+  "Jakub Paul": -1.1529,
+  "James Duckworth": -0.8112,
+  "James McCabe": -0.8766,
+  "James Trotter": -0.6986,
+  "James Watt": -0.7232,
+  "Jamie Mackenzie": -1.2216,
+  "Jan Choinski": -0.7455,
+  "Jan-Lennard Struff": -0.4168,
+  "Jannik Sinner": 1.6017,
+  "Jason Jung": -0.6845,
+  "Jason Kubler": -0.508,
+  "Jaume Munar": -0.4369,
+  "Javier Barranco Cosano": -0.6811,
+  "Jay Clarke": -0.7612,
+  "Jenson Brooksby": -0.4611,
+  "Jeremy Chardy": -0.7842,
+  "Jerome Kym": -0.5654,
+  "Jesper de Jong": -0.5659,
+  "Jesse Flores": -0.8311,
+  "Jie Cui": -0.7542,
+  "Jiri Lehecka": 0.1483,
+  "Jiri Vesely": -0.7333,
+  "Joao Domingues": -1.1646,
+  "Joao Fonseca": -0.0747,
+  "Joao Lucas Reis Da Silva": -1.2365,
+  "Joao Silva": -1.1548,
+  "Joao Sousa": -0.6437,
+  "Joaquin  Aguilar Cardozo": -1.1064,
+  "Joaquin Aguilar Cardozo": -0.8457,
+  "Joel Josef Schwaerzler": -1.2014,
+  "Joel Schwaerzler": -0.767,
+  "Johannes Seeman": -1.0978,
+  "Johannus Monday": -0.8059,
+  "John Isner": -0.5693,
+  "John Millman": -0.5919,
+  "John Peers": -1.1301,
+  "Jordan Lee": -1.1735,
+  "Jordan Thompson": -0.3161,
+  "Joris De Loore": -0.6459,
+  "Jozef Kovalik": -0.6176,
+  "Juan Bautista Torres": -1.1579,
+  "Juan Borba": -1.1113,
+  "Juan Carlos Fuentes Vasquez": -1.1089,
+  "Juan Carlos Prado Angelo": -0.7407,
+  "Juan Cruz Martin Manzano": -1.1507,
+  "Juan Manuel Cerundolo": -0.4283,
+  "Juan Manuel La Serna": -1.1421,
+  "Juan Pablo Ficovich": -0.8215,
+  "Juan Pablo Varillas": -0.6259,
+  "Juncheng Shang": -0.3625,
+  "Jurij Rodionov": -0.4821,
+  "Justin Engel": -0.873,
+  "Kacper Zuk": -0.6646,
+  "Kai Thompson": -1.1466,
+  "Kaichi Uchida": -1.2232,
+  "Kaipo Marshall": -1.1796,
+  "Kamil Majchrzak": -0.2818,
+  "Karam Hatamleh": -1.1126,
+  "Karan Singh": -0.7208,
+  "Karen Khachanov": -0.0906,
+  "Karim Bennani": -0.7513,
+  "Karim-Mohamed Maamoun": -0.8174,
+  "Karl Friberg": -0.7441,
+  "Karlis Ozolins": -0.8514,
+  "Karue Sell": -0.7143,
+  "Kasidit Samrej": -0.8073,
+  "Keegan Smith": -1.085,
+  "Kei Nishikori": -0.5093,
+  "Kenneth Raisma": -0.8953,
+  "Kevin Anderson": -0.7694,
+  "Kevin Krawietz": -1.1173,
+  "Khumoyun Sultanov": -0.6645,
+  "Ki Lung Ng": -0.9328,
+  "Kilian Feldbausch": -0.9485,
+  "Kimmer Coppejans": -0.7602,
+  "Kiranpal Pannu": -0.8408,
+  "Kodjo Charles Alipoe-Tchotchodji": -1.142,
+  "Komlavi Loglo": -1.102,
+  "Kris Van Wyk": -0.7717,
+  "Krish Arora": -1.1528,
+  "Kristjan Tamm": -0.8704,
+  "Kwok Shun Dasson Chan": -1.12,
+  "Kyle Edmund": -0.7959,
+  "Kyrian Jacquet": -0.523,
+  "Laslo Djere": -0.4539,
+  "Laurent Lokoli": -0.6399,
+  "Lautaro Midon": -0.9696,
+  "Leandro Riedi": -0.6223,
+  "Learner Tien": 0.0423,
+  "Leo Borg": -0.7902,
+  "Leo Matthysen": -1.1422,
+  "Li Tu": -0.7804,
+  "Liam Broady": -0.8258,
+  "Liam Draxl": -0.5705,
+  "Liam Krall": -1.1111,
+  "Linh Giang Trinh": -1.1294,
+  "Liova Ajavon": -1.1073,
+  "Lloyd Harris": -0.6324,
+  "Lorenzo Carboni": -1.1658,
+  "Lorenzo Giustino": -0.8529,
+  "Lorenzo Musetti": 0.2189,
+  "Lorenzo Sonego": -0.4938,
+  "Louis Van Herck": -0.9037,
+  "Louis Wessels": -0.7096,
+  "Luca Castelnuovo": -1.1564,
+  "Luca Nardi": -0.855,
+  "Luca Preda": -0.855,
+  "Luca Van Assche": -0.6142,
+  "Lucas Catarina": -0.7214,
+  "Lucas Miedler": -0.8747,
+  "Lucas Pouille": -0.7089,
+  "Luciano Darderi": -0.2355,
+  "Lucky Candra Kurniawan": -1.1286,
+  "Luis Carlos Alvarez": -0.8458,
+  "Luka Mikrut": -0.8998,
+  "Luka Pavlovic": -0.8866,
+  "Lukas Klein": -0.6423,
+  "Lukas Neumayer": -0.7844,
+  "Luke Saville": -0.699,
+  "M Rifki Fitriadi": -0.8237,
+  "Mac Visser": -1.1606,
+  "Mackenzie McDonald": -0.6894,
+  "Maks Kasnikowski": -0.7171,
+  "Malek Jaziri": -0.7365,
+  "Manas Dhamne": -1.2507,
+  "Manuel Guinard": -0.6979,
+  "Marc Majdandzic": -1.1668,
+  "Marc Polmans": -0.6686,
+  "Marc Van Der Merwe": -0.8807,
+  "Marc-Andrea Huesler": -0.8011,
+  "Marcelo Arevalo": -1.0891,
+  "Marcelo Demoliner": -1.1141,
+  "Marco Cecchinato": -0.598,
+  "Marco Trungelliti": -0.6773,
+  "Marcos Giron": -0.4718,
+  "Marcos Lee Chan Baratau": -0.8809,
+  "Mariano Navone": -0.5458,
+  "Marin Cilic": -0.4641,
+  "Marius Copil": -0.6873,
+  "Mark Ceban": -1.1628,
+  "Mark Lajal": -0.8155,
+  "Marko Topo": -0.8603,
+  "Markus Molder": -0.8172,
+  "Martin Antonio Vergara Del Puerto": -1.1132,
+  "Martin Antonio Vergara del Puerto": -1.15,
+  "Martin Damm": -0.3789,
+  "Martin Klizan": -0.7213,
+  "Martin Krumich": -1.0162,
+  "Martin Landaluce": -0.5796,
+  "Martins Rocens": -0.9174,
+  "Marton Fucsovics": -0.4768,
+  "Martyn Pawelski": -0.8002,
+  "Matavao Fanguna": -1.1201,
+  "Mate Valkusz": -0.68,
+  "Matej Dodig": -0.8396,
+  "Mateus Alves": -0.7602,
+  "Matheus Pucinelli De Almeida": -0.6858,
+  "Mathias Bourgue": -0.6838,
+  "Matias Soto": -1.1497,
+  "Matic Kriznik": -0.8914,
+  "Matija Pecotic": -0.7978,
+  "Matteo Arnaldi": -0.3936,
+  "Matteo Berrettini": -0.0012,
+  "Matteo Gigante": -0.5379,
+  "Matteo Martineau": -0.7339,
+  "Matthew Ebden": -1.1104,
+  "Matthew Forbes": -0.919,
+  "Mattia Bellucci": -0.562,
+  "Matwe Middelkoop": -1.096,
+  "Max Alcala Gurri": -1.1548,
+  "Max Basing": -0.9426,
+  "Max Dahlin": -1.153,
+  "Max Hans Rehberg": -0.7223,
+  "Max Houkes": -1.2468,
+  "Max Purcell": -0.5949,
+  "Max Schoenhaus": -1.0151,
+  "Maxim Mrva": -0.7842,
+  "Maxim Shin": -0.8857,
+  "Maxime Cressy": -0.584,
+  "Maxime Janvier": -0.6683,
+  "Maximilian Marterer": -0.6396,
+  "Maximus Jones": -0.8203,
+  "Mees Rottgering": -0.8066,
+  "Menelaos Efstathiou": -0.7956,
+  "Mert Alkaya": -1.1339,
+  "Mert Naci Turker": -0.7901,
+  "Michael Agwi": -0.7275,
+  "Michael Bassem Sobhy": -0.792,
+  "Michael Mmoh": -0.4755,
+  "Michael Zheng": -0.5483,
+  "Michail Pervolarakis": -0.7539,
+  "Michalis Sakellaridis": -1.1786,
+  "Michele Ribecai": -1.1679,
+  "Miguel Damas": -1.0664,
+  "Mika Petkovic": -1.1634,
+  "Mikael Ymer": -0.5968,
+  "Mikhail Kukushkin": -0.7261,
+  "Mili Poljicak": -0.8417,
+  "Milos Raonic": -0.5919,
+  "MinKyu Song": -1.1244,
+  "Minhtuan Pham": -0.8909,
+  "Miomir Kecmanovic": -0.5615,
+  "Mirza Basic": -0.7981,
+  "Mitchell Krueger": -0.8949,
+  "Moerani Bouzige": -1.1468,
+  "Moez Echargui": -0.8079,
+  "Mohamed Safwat": -0.7148,
+  "Moise Kouame": -0.998,
+  "Mousa Alkotop": -0.8865,
+  "Mubarak Shannan Zayid": -1.1473,
+  "Muhammad Abid": -1.1108,
+  "Muhammad Shoaib": -1.1298,
+  "Mukund Sasikumar": -0.6925,
+  "Murkel Dellien": -0.6656,
+  "Murphy Cassone": -0.7628,
+  "Mustapha El Natour": -1.0939,
+  "Muzammil Murtaza": -1.1573,
+  "N.Sriram Balaji": -1.1077,
+  "Nam Hoang Ly": -0.6761,
+  "Nerman Fatic": -0.7353,
+  "Nicholas David Ionel": -0.6671,
+  "Nick Chappell": -0.7348,
+  "Nick Hardt": -0.6621,
+  "Nick Kyrgios": -0.9391,
+  "Nico Hipfl": -1.1744,
+  "Nicolai Budkov Kjaer": -0.5905,
+  "Nicolas Arseneault": -0.7708,
+  "Nicolas Barrientos": -0.7534,
+  "Nicolas Jarry": -0.5824,
+  "Nicolas Kicker": -1.15,
+  "Nicolas Mejia": -0.8549,
+  "Nicolas Moreno De Alboran": -0.8809,
+  "Nicolas Villalon": -1.1431,
+  "Niels McDonald": -1.2014,
+  "Niels Visker": -1.0736,
+  "Niki Kaliyanda Poonacha": -0.789,
+  "Niklas Waldner": -1.1585,
+  "Nikola Slavic": -1.1807,
+  "Nikolas Sanchez Izquierdo": -0.7548,
+  "Nikoloz Basilashvili": -0.6326,
+  "Nino Serdarusic": -0.6963,
+  "Nishesh Basavareddy": -0.5027,
+  "Noa Vukadin": -1.1765,
+  "Norbert Gombos": -0.7195,
+  "Novak Djokovic": 0.8094,
+  "Nuno Borges": -0.3986,
+  "Ofek Shimanov": -0.822,
+  "Olaf Pieczkowski": -0.8085,
+  "Oleksandr Ovcharenko": -0.7358,
+  "Oleksii Krutykh": -0.6658,
+  "Oliver Bonding": -1.171,
+  "Oliver Crawford": -0.8507,
+  "Oliver Ojakaar": -0.7666,
+  "Oliver Tarvet": -0.6109,
+  "Olle Wallin": -0.7268,
+  "Omar Jasika": -0.7629,
+  "Omni Kumar": -0.7294,
+  "Orel Kimhi": -0.8943,
+  "Oriol Roca Batalla": -0.6972,
+  "Orlando Luz": -1.1553,
+  "Oscar Otte": -0.5937,
+  "Osgar O'Hoisin": -0.8082,
+  "Otto Virtanen": -0.6806,
+  "Pablo Andujar": -0.6633,
+  "Pablo Carreno Busta": -0.5127,
+  "Pablo Llamas Ruiz": -0.4014,
+  "Patrick Agbo-Panzo": -1.1725,
+  "Patrick Kaukovalta": -0.811,
+  "Patrick Kypson": -0.7855,
+  "Patrick Zahraj": -0.7854,
+  "Paul Jubb": -0.6602,
+  "Pavel Kotov": -0.5661,
+  "Pavle Marinkov": -1.1549,
+  "Pedro Boscardin Dias": -1.1663,
+  "Pedro Cachin": -0.6871,
+  "Pedro Martinez": -0.768,
+  "Pedro Sakamoto": -1.1547,
+  "Pedro Sousa": -0.7472,
+  "Petar Jovanovic": -0.8773,
+  "Peter Bertran": -0.7756,
+  "Peter Buldorini": -0.8599,
+  "Petr Bar Biryukov": -1.2243,
+  "Petr Nesterov": -0.769,
+  "Petros Chrysochos": -0.8417,
+  "Petros Tsitsipas": -1.1183,
+  "Philip Henning": -0.7041,
+  "Philip Hjorth": -0.8353,
+  "Philip Sekulic": -0.7526,
+  "Pierluigi Basile": -1.1536,
+  "Pierre-Hugues Herbert": -0.7842,
+  "Pijus Vaitiekunas": -0.8338,
+  "Pol Martin Tiffon": -1.0696,
+  "Prajnesh Gunneswaran": -0.6925,
+  "Quentin Halys": -0.3574,
+  "Radu Albot": -0.6484,
+  "Radu David Turcanu": -0.7657,
+  "Rafael De Alba": -0.938,
+  "Rafael Jodar": 0.1058,
+  "Rafael Nadal": -0.5555,
+  "Ramkumar Ramanathan": -0.7356,
+  "Raphael Calzi": -1.097,
+  "Raphael Collignon": -0.2473,
+  "Raul Brancaccio": -1.2488,
+  "Raul Garcia": -0.919,
+  "Reda Bennani": -1.194,
+  "Rei Sakamoto": -0.7014,
+  "Reilly Opelka": -0.4156,
+  "Remy Bertola": -0.6836,
+  "Ricardas Berankis": -0.6385,
+  "Ricardo Rodriguez - Pace": -0.8709,
+  "Riccardo Bonadio": -0.6333,
+  "Richard Gasquet": -0.646,
+  "Rigele Te": -0.7794,
+  "Rinky Hijikata": -0.485,
+  "Rio Noguchi": -1.2381,
+  "Robert Strombachs": -0.6741,
+  "Roberto Bautista Agut": -0.6286,
+  "Roberto Carballes Baena": -0.6224,
+  "Roberto Cid Subervi": -0.7001,
+  "Robin Bertrand": -1.2027,
+  "Robin Haase": -0.6857,
+  "Rodrigo Crespo Piedra": -1.119,
+  "Rodrigo Pacheco Mendez": -0.8201,
+  "Romain Arneodo": -1.185,
+  "Roman Andres Burruchaga": -0.5491,
+  "Roman Safiullin": -0.3863,
+  "Ronan Tashinga Mtisi": -1.1295,
+  "Rowland Phillips": -0.9144,
+  "Rubin Statham": -1.1237,
+  "Rudolf Molleker": -0.6498,
+  "Ryan Peniston": -0.734,
+  "Saba Purtseladze": -0.8237,
+  "Sander Jong": -1.0818,
+  "Sandro Kopp": -1.0888,
+  "Sanhui Shin": -0.8095,
+  "Santiago Rodriguez Taverna": -1.1484,
+  "Sascha Gueymard Wayenburg": -1.2046,
+  "Saud Alhogbani": -1.1292,
+  "Sean Cuenin": -1.1614,
+  "Sebastian Baez": -0.3388,
+  "Sebastian Dominko": -0.8452,
+  "Sebastian Fanselow": -0.7067,
+  "Sebastian Korda": 0.0246,
+  "Sebastian Ofner": -0.6533,
+  "Seongchan Hong": -0.6479,
+  "Sergey Fomin": -0.857,
+  "Shang Juncheng": -1.0226,
+  "Shintaro Mochizuki": -0.7627,
+  "Sho Shimabukuro": -0.4524,
+  "Siddharth Vishwakarma": -0.7864,
+  "Simon Carr": -0.7993,
+  "Sina Moghimi": -0.8385,
+  "Skander Mansouri": -0.757,
+  "SoonWoo Kwon": -0.8204,
+  "Soonwoo Kwon": -0.6317,
+  "Stan Wawrinka": -0.7439,
+  "Stefan Dostanic": -0.8274,
+  "Stefan Horia Haita": -1.1727,
+  "Stefan Kozlov": -1.2053,
+  "Stefano Napolitano": -0.7605,
+  "Stefano Travaglia": -0.785,
+  "Stefanos Sakellaridis": -0.6547,
+  "Stefanos Tsitsipas": 0.0343,
+  "Stephen Slocombe": -0.9436,
+  "Steve Johnson": -0.648,
+  "Steven Diez": -0.7122,
+  "Strong Kirchheimer": -0.7663,
+  "Stylianos Christodoulou": -0.8823,
+  "Sumit Nagal": -0.8033,
+  "Sun Fajing": -1.1552,
+  "Sylvestre Monnou": -1.0774,
+  "Taha Baadi": -0.7092,
+  "Tallon Griekspoor": -0.3186,
+  "Tao Mu": -0.7723,
+  "Taro Daniel": -0.6751,
+  "Taylor Fritz": 0.4039,
+  "Tennys Sandgren": -0.6888,
+  "Terence Atmane": -0.6133,
+  "Thai-Son Kwiatkowski": -0.8002,
+  "Thanapet Chanta": -0.8525,
+  "Thanasi Kokkinakis": -0.3339,
+  "Theo Papamalamis": -0.8093,
+  "Thiago Agustin Tirante": -0.3719,
+  "Thiago Monteiro": -0.6892,
+  "Thiago Seyboth Wild": -0.5944,
+  "Thijmen Loof": -1.1683,
+  "Thijs Boogaard": -1.081,
+  "Thomas Faurel": -0.9186,
+  "Thomas Yaka Kofi Setodji": -1.0833,
+  "Thomaz Bellucci": -0.824,
+  "Tiago Pereira": -1.2287,
+  "Tiago Torres": -0.9784,
+  "Tim van Rijthoven": -0.5802,
+  "Timofey Skatov": -0.617,
+  "Titouan Droguet": -0.3929,
+  "Toby Samuel": -0.8338,
+  "Tom Gentzsch": -0.9835,
+  "Tomas Barrios Vera": -0.7545,
+  "Tomas Machac": 0.0546,
+  "Tomas Martin Etcheverry": -0.3198,
+  "Tomasz Berkieta": -0.7889,
+  "Tommy Paul": 0.3103,
+  "Trevor Svajda": -0.8537,
+  "Tristan Boyer": -0.5173,
+  "Tristan Schoolkate": -0.7749,
+  "Tsung-Hao Huang": -0.8107,
+  "Tsz Fu Wong": -1.1686,
+  "Tung-Lin Wu": -0.7396,
+  "Tyler Zink": -1.1807,
+  "Ugo Blanchet": -0.8362,
+  "Ugo Humbert": -0.0231,
+  "Valentin Royer": -0.8464,
+  "Valentin Vacherot": -0.1187,
+  "Vasek Pospisil": -0.6564,
+  "Viacheslav Bielinskyi": -0.7083,
+  "Viktor Durasovic": -0.774,
+  "Vilius Gaubas": -0.5801,
+  "Vit Kopriva": -0.5407,
+  "Vitaliy Sachko": -0.7523,
+  "Vladyslav Orlov": -0.6718,
+  "Walid Ahouda": -0.8487,
+  "William Rejchtman Vinciguerra": -0.984,
+  "Wishaya Trongcharoenchaikul": -0.813,
+  "Wu Yibing": -0.8401,
+  "Xavier Lawrence": -1.1311,
+  "Yanaki Milev": -0.7849,
+  "Yanki Erel": -0.731,
+  "Yannick Hanfmann": -0.2656,
+  "Yassine Dlimi": -0.7652,
+  "Yasutaka Uchiyama": -0.5796,
+  "Ye Cong Mo": -0.7904,
+  "Yi Zhou": -0.8052,
+  "Yibing Wu": -0.409,
+  "Yoshihito Nishioka": -0.4524,
+  "Yosuke Watanuki": -0.6596,
+  "Younes Lalami": -1.1605,
+  "Younes Lalami Laaroussi": -0.8959,
+  "Yousaf Khalil": -1.1242,
+  "Yshai Oliel": -0.7205,
+  "Yu Hsiou Hsu": -0.8724,
+  "Yuki Bhambri": -0.7659,
+  "Yun seong Chung": -0.7029,
+  "Yunchaokete Bu": -0.6402,
+  "Yuttana Charoenphon": -0.8256,
+  "Zachary Svajda": -0.3771,
+  "Zdenek Kolar": -1.2387,
+  "Zhang Zhizhen": -1.2225,
+  "Zhe Li": -0.7784,
+  "Zhizhen Zhang": -0.5226,
+  "Zhou Yi": -1.0655,
+  "Ziga Sesko": -1.1517,
+  "Zizou Bergs": -0.3534,
+  "Zsombor Piros": -0.7209,
+  "Zura Tkemaladze": -0.8227
  },
  "surface_offsets": {
+  "Adam Walton": {
+   "grass": -0.0162
+  },
+  "Adolfo Daniel Vallejo": {
+   "clay": 0.062
+  },
   "Adrian Mannarino": {
-   "grass": 0.0294
+   "clay": -0.1006,
+   "grass": 0.0659
   },
   "Albert Ramos-Vinolas": {
-   "clay": -0.0294
+   "clay": -0.0238
   },
   "Alejandro Davidovich Fokina": {
-   "clay": 0.0107,
-   "grass": 0.0156
+   "clay": -0.0125,
+   "grass": 0.0823
   },
   "Alejandro Tabilo": {
-   "clay": -0.0055
+   "clay": 0.0329,
+   "grass": -0.0281
   },
   "Aleksandar Kovacevic": {
-   "clay": -0.038
+   "clay": -0.0107,
+   "grass": -0.0597
   },
   "Aleksandar Vukic": {
-   "clay": -0.0412,
-   "grass": 0.0149
+   "clay": -0.0957,
+   "grass": 0.0071
+  },
+  "Aleksandr Shevchenko": {
+   "clay": 0.0231
   },
   "Alex Michelsen": {
-   "clay": -0.0517,
-   "grass": 0.014
+   "clay": -0.0215,
+   "grass": -0.0158
   },
   "Alex Molcan": {
-   "clay": 0.0028
+   "clay": 0.0847
   },
   "Alex de Minaur": {
-   "clay": 0.0086,
-   "grass": 0.0164
+   "clay": 0.0002,
+   "grass": 0.0334
+  },
+  "Alexander Blockx": {
+   "clay": 0.1398
   },
   "Alexander Bublik": {
-   "clay": 0.0731,
-   "grass": 0.0682
+   "clay": 0.0315,
+   "grass": 0.0714
   },
   "Alexander Shevchenko": {
-   "clay": 0.0049
+   "clay": 0.0011
   },
   "Alexander Zverev": {
-   "clay": 0.0561,
-   "grass": 0.0097
+   "clay": 0.123,
+   "grass": 0.0531
   },
   "Alexandre Muller": {
-   "clay": 0.0621
+   "clay": 0.0276
   },
   "Alexei Popyrin": {
-   "clay": 0.0592,
-   "grass": -0.028
+   "clay": 0.0514,
+   "grass": -0.0622
+  },
+  "Andrea Pellegrino": {
+   "clay": 0.021
   },
   "Andrea Vavassori": {
-   "clay": 0.0019
+   "clay": -0.0014
   },
   "Andrey Rublev": {
-   "clay": 0.0546,
-   "grass": 0.0099
+   "clay": 0.0858,
+   "grass": -0.0381
   },
   "Arthur Cazaux": {
-   "clay": 0.0412
+   "clay": 0.0325
+  },
+  "Arthur Fery": {
+   "grass": 0.0846
   },
   "Arthur Fils": {
-   "clay": 0.0538
+   "clay": 0.1121,
+   "grass": -0.0096
   },
   "Arthur Rinderknech": {
-   "clay": -0.0174,
-   "grass": 0.0313
+   "clay": 0.0312,
+   "grass": 0.0174
   },
   "Aslan Karatsev": {
-   "clay": -0.0008
+   "clay": -0.0011
   },
   "Ben Shelton": {
-   "clay": -0.0002,
-   "grass": -0.0082
+   "clay": 0.0046,
+   "grass": 0.034
+  },
+  "Benjamin Bonzi": {
+   "clay": -0.0056,
+   "grass": 0.0305
   },
   "Bernabe Zapata Miralles": {
-   "clay": 0.0074
+   "clay": 0.0039
   },
   "Billy Harris": {
-   "grass": 0.0418
+   "grass": 0.0839
   },
   "Borna Coric": {
-   "clay": 0.0001
+   "clay": -0.0012
   },
   "Botic van de Zandschulp": {
-   "clay": -0.0107
+   "clay": 0.0011
   },
   "Brandon Nakashima": {
-   "clay": -0.026,
-   "grass": 0.0385
+   "clay": -0.0275,
+   "grass": 0.0544
   },
   "Cameron Norrie": {
-   "clay": 0.0583,
-   "grass": 0.0069
+   "clay": 0.0579,
+   "grass": -0.0267
   },
   "Camilo Ugo Carabelli": {
-   "clay": 0.037
+   "clay": 0.0742
   },
   "Carlos Alcaraz": {
-   "clay": 0.1271,
-   "grass": 0.0774
+   "clay": 0.1155,
+   "grass": 0.0574
   },
   "Casper Ruud": {
-   "clay": 0.1468
+   "clay": 0.1305
   },
   "Christopher Eubanks": {
-   "clay": -0.0184,
-   "grass": 0.015
+   "grass": 0.01
   },
   "Christopher O'Connell": {
-   "clay": -0.0261
+   "clay": -0.0578,
+   "grass": -0.0102
   },
   "Chun-Hsin Tseng": {
-   "clay": -0.0157
+   "clay": -0.048
+  },
+  "Clement Tabur": {
+   "clay": 0.0198
   },
   "Corentin Moutet": {
-   "clay": 0.0251,
-   "grass": 0.0365
+   "clay": 0.0085,
+   "grass": -0.0126
   },
   "Cristian Garin": {
-   "clay": 0.0132
+   "clay": 0.0119
   },
   "Damir Dzumhur": {
-   "clay": 0.0694
+   "clay": 0.0684
   },
   "Daniel Altmaier": {
-   "clay": 0.0077
+   "clay": 0.012,
+   "grass": 0.0293
   },
   "Daniel Elahi Galan": {
-   "clay": -0.0454
+   "clay": -0.0651
   },
   "Daniel Evans": {
-   "clay": -0.0334,
-   "grass": 0.0168
+   "clay": -0.0442,
+   "grass": 0.0171
+  },
+  "Daniel Merida": {
+   "clay": 0.1418
   },
   "Daniil Medvedev": {
-   "clay": 0.0121,
-   "grass": 0.0049
+   "clay": -0.0346,
+   "grass": -0.0162
   },
   "David Goffin": {
-   "clay": -0.0086
-  },
-  "Denis Shapovalov": {
-   "clay": -0.0454,
-   "grass": -0.0202
-  },
-  "Diego Schwartzman": {
-   "clay": -0.0302
-  },
-  "Dominic Thiem": {
-   "clay": -0.0029
-  },
-  "Dominik Koepfer": {
-   "clay": -0.0047
-  },
-  "Dusan Lajovic": {
-   "clay": -0.0063
-  },
-  "Emil Ruusuvuori": {
-   "clay": -0.0174,
-   "grass": 0.0105
-  },
-  "Fabian Marozsan": {
-   "clay": 0.0183
-  },
-  "Fabio Fognini": {
-   "clay": -0.0097
-  },
-  "Facundo Bagnis": {
-   "clay": -0.013
-  },
-  "Facundo Diaz Acosta": {
-   "clay": 0.0101
-  },
-  "Federico Coria": {
-   "clay": -0.0078
-  },
-  "Felix Auger-Aliassime": {
-   "clay": -0.0219,
-   "grass": -0.0289
-  },
-  "Filip Misolic": {
-   "clay": 0.0453
-  },
-  "Flavio Cobolli": {
-   "clay": 0.0776,
-   "grass": 0.0265
-  },
-  "Frances Tiafoe": {
-   "clay": 0.0188,
-   "grass": -0.0022
-  },
-  "Francesco Passaro": {
-   "clay": 0.0085
-  },
-  "Francisco Cerundolo": {
-   "clay": 0.0959,
-   "grass": -0.0379
-  },
-  "Francisco Comesana": {
-   "clay": 0.0241
-  },
-  "Gabriel Diallo": {
-   "grass": 0.0667
-  },
-  "Gael Monfils": {
-   "clay": -0.0288
-  },
-  "Giovanni Mpetshi Perricard": {
-   "clay": -0.0243,
-   "grass": -0.0095
-  },
-  "Gregoire Barrere": {
-   "clay": 0.0019
-  },
-  "Grigor Dimitrov": {
-   "clay": 0.0004,
-   "grass": 0.0323
-  },
-  "Hamad Medjedovic": {
-   "clay": -0.0199
-  },
-  "Holger Rune": {
-   "clay": 0.0481,
-   "grass": -0.0041
-  },
-  "Hubert Hurkacz": {
-   "clay": 0.0432,
-   "grass": 0.0102
-  },
-  "Hugo Dellien": {
-   "clay": -0.0291
-  },
-  "Hugo Gaston": {
-   "clay": -0.0248
-  },
-  "J.J. Wolf": {
-   "clay": -0.005
-  },
-  "Jack Draper": {
-   "clay": 0.0285,
-   "grass": 0.0288
-  },
-  "Jacob Fearnley": {
-   "clay": 0.0461
-  },
-  "Jakub Mensik": {
-   "clay": 0.0169,
-   "grass": -0.024
-  },
-  "James Duckworth": {
-   "grass": -0.0013
-  },
-  "Jan-Lennard Struff": {
-   "clay": 0.0319,
-   "grass": 0.0557
-  },
-  "Jannik Sinner": {
-   "clay": 0.0142,
-   "grass": 0.029
-  },
-  "Jaume Munar": {
-   "clay": -0.0367
-  },
-  "Jesper de Jong": {
-   "clay": 0.0639
-  },
-  "Jiri Lehecka": {
-   "clay": 0.0019,
-   "grass": 0.0453
-  },
-  "Joao Fonseca": {
-   "clay": 0.0087
-  },
-  "Jordan Thompson": {
-   "clay": -0.0436,
-   "grass": 0.0343
-  },
-  "Juan Manuel Cerundolo": {
-   "clay": 0.0353
-  },
-  "Juan Pablo Varillas": {
-   "clay": -0.0028
-  },
-  "Karen Khachanov": {
-   "clay": 0.0486,
-   "grass": 0.0267
-  },
-  "Laslo Djere": {
-   "clay": 0.023,
-   "grass": -0.0384
-  },
-  "Lorenzo Musetti": {
-   "clay": 0.1482,
-   "grass": 0.0274
-  },
-  "Lorenzo Sonego": {
-   "clay": -0.0365,
-   "grass": 0.0183
-  },
-  "Luca Nardi": {
-   "clay": -0.0252
-  },
-  "Luca Van Assche": {
-   "clay": -0.0121
-  },
-  "Luciano Darderi": {
-   "clay": 0.2189
-  },
-  "Mackenzie McDonald": {
-   "grass": 0.014
-  },
-  "Marc-Andrea Huesler": {
-   "clay": -0.0194
-  },
-  "Marco Cecchinato": {
-   "clay": 0.0019
-  },
-  "Marcos Giron": {
-   "clay": -0.0297,
-   "grass": 0.0355
-  },
-  "Mariano Navone": {
-   "clay": 0.096
-  },
-  "Marton Fucsovics": {
-   "clay": 0.0249,
-   "grass": 0.0385
-  },
-  "Matteo Arnaldi": {
-   "clay": 0.0464
-  },
-  "Matteo Berrettini": {
-   "clay": 0.0788,
-   "grass": 0.0075
-  },
-  "Maximilian Marterer": {
-   "clay": -0.0133
-  },
-  "Miomir Kecmanovic": {
-   "clay": -0.0293
-  },
-  "Nicolas Jarry": {
-   "clay": -0.0165,
-   "grass": 0.0405
-  },
-  "Nicolas Moreno De Alboran": {
-   "clay": -0.0098
-  },
-  "Novak Djokovic": {
-   "clay": 0.0444,
-   "grass": 0.05
-  },
-  "Nuno Borges": {
-   "clay": -0.0083,
-   "grass": -0.0113
-  },
-  "Pavel Kotov": {
-   "clay": 0.0185
-  },
-  "Pedro Cachin": {
-   "clay": -0.0206
-  },
-  "Pedro Martinez": {
-   "clay": 0.047
-  },
-  "Quentin Halys": {
-   "clay": 0.0338,
-   "grass": 0.009
-  },
-  "Rafael Nadal": {
-   "clay": 0.0454
-  },
-  "Reilly Opelka": {
-   "grass": 0.0421
-  },
-  "Richard Gasquet": {
-   "clay": -0.0117
-  },
-  "Rinky Hijikata": {
-   "grass": -0.0149
-  },
-  "Roberto Bautista Agut": {
-   "clay": -0.0086,
-   "grass": 0.0589
-  },
-  "Roberto Carballes Baena": {
-   "clay": 0.0036
-  },
-  "Roman Safiullin": {
-   "clay": -0.034,
-   "grass": -0.0109
-  },
-  "Sebastian Baez": {
-   "clay": 0.0702
-  },
-  "Sebastian Korda": {
-   "clay": -0.0126,
-   "grass": 0.0269
-  },
-  "Sebastian Ofner": {
-   "clay": 0.012,
-   "grass": 0.0223
-  },
-  "Stan Wawrinka": {
-   "clay": -0.0343
-  },
-  "Stefanos Tsitsipas": {
-   "clay": 0.1014,
-   "grass": -0.0407
-  },
-  "Sumit Nagal": {
-   "clay": -0.0162
-  },
-  "Tallon Griekspoor": {
-   "clay": 0.0281,
-   "grass": 0.0571
-  },
-  "Taro Daniel": {
-   "clay": -0.024
-  },
-  "Taylor Fritz": {
-   "clay": -0.0272,
-   "grass": 0.1031
-  },
-  "Thanasi Kokkinakis": {
    "clay": -0.0082
   },
+  "Denis Shapovalov": {
+   "clay": -0.0502,
+   "grass": -0.0278
+  },
+  "Diego Schwartzman": {
+   "clay": -0.0233
+  },
+  "Dino Prizmic": {
+   "clay": 0.0628
+  },
+  "Dominic Thiem": {
+   "clay": -0.003
+  },
+  "Dominik Koepfer": {
+   "clay": -0.0021
+  },
+  "Dusan Lajovic": {
+   "clay": 0.0026
+  },
+  "Elmer Moller": {
+   "clay": -0.0014
+  },
+  "Emil Ruusuvuori": {
+   "clay": -0.0089,
+   "grass": 0.0068
+  },
+  "Emilio Nava": {
+   "clay": 0.0683
+  },
+  "Ethan Quinn": {
+   "clay": -0.0192,
+   "grass": 0.0702
+  },
+  "Fabian Marozsan": {
+   "clay": 0.0129,
+   "grass": 0.0051
+  },
+  "Fabio Fognini": {
+   "clay": -0.0069
+  },
+  "Facundo Bagnis": {
+   "clay": -0.0071
+  },
+  "Facundo Diaz Acosta": {
+   "clay": 0.0309
+  },
+  "Federico Agustin Gomez": {
+   "clay": 0.0359
+  },
+  "Federico Cina": {
+   "clay": 0.036
+  },
+  "Federico Coria": {
+   "clay": -0.0562
+  },
+  "Felix Auger-Aliassime": {
+   "clay": -0.026,
+   "grass": 0.0152
+  },
+  "Filip Misolic": {
+   "clay": 0.0389
+  },
+  "Flavio Cobolli": {
+   "clay": 0.1166,
+   "grass": 0.0406
+  },
+  "Frances Tiafoe": {
+   "clay": -0.0004,
+   "grass": 0.0893
+  },
+  "Francesco Passaro": {
+   "clay": 0.0171
+  },
+  "Francisco Cerundolo": {
+   "clay": 0.0883,
+   "grass": 0.0198
+  },
+  "Francisco Comesana": {
+   "clay": 0.0575
+  },
+  "Gabriel Diallo": {
+   "clay": 0.0031,
+   "grass": 0.0305
+  },
+  "Gael Monfils": {
+   "clay": -0.0447
+  },
+  "Giovanni Mpetshi Perricard": {
+   "clay": -0.0324,
+   "grass": 0.0171
+  },
+  "Gregoire Barrere": {
+   "clay": 0.0013
+  },
+  "Grigor Dimitrov": {
+   "clay": -0.0449,
+   "grass": 0.0683
+  },
+  "Gustavo Heide": {
+   "clay": -0.0493
+  },
+  "Hamad Medjedovic": {
+   "clay": 0.0317
+  },
+  "Henrique Rocha": {
+   "clay": -0.0014
+  },
+  "Holger Rune": {
+   "clay": 0.056,
+   "grass": -0.0045
+  },
+  "Hubert Hurkacz": {
+   "clay": 0.0524,
+   "grass": 0.0569
+  },
+  "Hugo Dellien": {
+   "clay": 0.0319
+  },
+  "Hugo Gaston": {
+   "clay": -0.0438
+  },
+  "Ignacio Buse": {
+   "clay": 0.1027
+  },
+  "J.J. Wolf": {
+   "clay": -0.0213
+  },
+  "Jack Draper": {
+   "clay": 0.0191,
+   "grass": 0.0277
+  },
+  "Jacob Fearnley": {
+   "clay": 0.0076,
+   "grass": 0.0052
+  },
+  "Jaime Faria": {
+   "clay": 0.0294
+  },
+  "Jakub Mensik": {
+   "clay": 0.0758,
+   "grass": -0.0568
+  },
+  "James Duckworth": {
+   "grass": -0.0157
+  },
+  "Jan Choinski": {
+   "grass": 0.0615
+  },
+  "Jan-Lennard Struff": {
+   "clay": -0.0017,
+   "grass": 0.1052
+  },
+  "Jannik Sinner": {
+   "clay": 0.0576,
+   "grass": 0.0568
+  },
+  "Jaume Munar": {
+   "clay": -0.0311,
+   "grass": -0.0096
+  },
+  "Jenson Brooksby": {
+   "grass": 0.0435
+  },
+  "Jesper de Jong": {
+   "clay": 0.0574
+  },
+  "Jiri Lehecka": {
+   "clay": 0.0113,
+   "grass": 0.0607
+  },
+  "Joao Fonseca": {
+   "clay": 0.0768
+  },
+  "Jordan Thompson": {
+   "clay": -0.0241,
+   "grass": 0.0342
+  },
+  "Juan Manuel Cerundolo": {
+   "clay": 0.0801
+  },
+  "Juan Pablo Varillas": {
+   "clay": -0.001
+  },
+  "Jurij Rodionov": {
+   "clay": 0.0269
+  },
+  "Kamil Majchrzak": {
+   "clay": -0.0555,
+   "grass": 0.1015
+  },
+  "Karen Khachanov": {
+   "clay": -0.0014,
+   "grass": 0.0114
+  },
+  "Laslo Djere": {
+   "clay": 0.0189,
+   "grass": -0.0367
+  },
+  "Learner Tien": {
+   "clay": -0.005
+  },
+  "Liam Broady": {
+   "grass": -0.0356
+  },
+  "Lorenzo Musetti": {
+   "clay": 0.1174,
+   "grass": 0.0147
+  },
+  "Lorenzo Sonego": {
+   "clay": -0.0485,
+   "grass": 0.0319
+  },
+  "Luca Nardi": {
+   "clay": -0.0348
+  },
+  "Luca Van Assche": {
+   "clay": 0.0493
+  },
+  "Luciano Darderi": {
+   "clay": 0.2028,
+   "grass": -0.0492
+  },
+  "Mackenzie McDonald": {
+   "clay": -0.0517,
+   "grass": 0.0246
+  },
+  "Marc-Andrea Huesler": {
+   "clay": -0.0085
+  },
+  "Marco Cecchinato": {
+   "clay": 0.0284
+  },
+  "Marco Trungelliti": {
+   "clay": 0.0592
+  },
+  "Marcos Giron": {
+   "clay": -0.065,
+   "grass": 0.0181
+  },
+  "Mariano Navone": {
+   "clay": 0.1586
+  },
+  "Marton Fucsovics": {
+   "clay": -0.0151,
+   "grass": 0.0377
+  },
+  "Matteo Arnaldi": {
+   "clay": 0.0414
+  },
+  "Matteo Berrettini": {
+   "clay": 0.0672,
+   "grass": 0.0216
+  },
+  "Mattia Bellucci": {
+   "grass": 0.0604
+  },
+  "Maximilian Marterer": {
+   "clay": -0.0086
+  },
+  "Miomir Kecmanovic": {
+   "clay": -0.0612,
+   "grass": -0.0048
+  },
+  "Nicolai Budkov Kjaer": {
+   "clay": -0.0224
+  },
+  "Nicolas Jarry": {
+   "clay": -0.0259,
+   "grass": 0.0337
+  },
+  "Nicolas Moreno De Alboran": {
+   "clay": -0.0158
+  },
+  "Nikoloz Basilashvili": {
+   "clay": -0.0376
+  },
+  "Novak Djokovic": {
+   "clay": 0.0315,
+   "grass": 0.0716
+  },
+  "Nuno Borges": {
+   "clay": -0.0019,
+   "grass": 0.0188
+  },
+  "Otto Virtanen": {
+   "clay": -0.062
+  },
+  "Pablo Carreno Busta": {
+   "clay": 0.0104
+  },
+  "Pablo Llamas Ruiz": {
+   "clay": 0.0313
+  },
+  "Pavel Kotov": {
+   "clay": 0.0129
+  },
+  "Pedro Cachin": {
+   "clay": -0.0171
+  },
+  "Pedro Martinez": {
+   "clay": 0.0521
+  },
+  "Pierre-Hugues Herbert": {
+   "clay": -0.0703
+  },
+  "Quentin Halys": {
+   "clay": 0.0966,
+   "grass": -0.0438
+  },
+  "Rafael Jodar": {
+   "clay": 0.1461
+  },
+  "Rafael Nadal": {
+   "clay": 0.0332
+  },
+  "Raphael Collignon": {
+   "clay": 0.0269
+  },
+  "Reilly Opelka": {
+   "grass": 0.0296
+  },
+  "Richard Gasquet": {
+   "clay": -0.0076
+  },
+  "Rinky Hijikata": {
+   "clay": -0.0628,
+   "grass": 0.024
+  },
+  "Roberto Bautista Agut": {
+   "clay": -0.0284,
+   "grass": 0.0211
+  },
+  "Roberto Carballes Baena": {
+   "clay": 0.006
+  },
+  "Roman Andres Burruchaga": {
+   "clay": 0.0776
+  },
+  "Roman Safiullin": {
+   "clay": -0.0055,
+   "grass": 0.0537
+  },
+  "Sebastian Baez": {
+   "clay": 0.0549
+  },
+  "Sebastian Korda": {
+   "clay": -0.0136,
+   "grass": 0.0161
+  },
+  "Sebastian Ofner": {
+   "clay": -0.0286,
+   "grass": 0.0161
+  },
+  "Shintaro Mochizuki": {
+   "grass": 0.0938
+  },
+  "Stan Wawrinka": {
+   "clay": -0.0935
+  },
+  "Stefanos Tsitsipas": {
+   "clay": 0.1121,
+   "grass": -0.0342
+  },
+  "Sumit Nagal": {
+   "clay": -0.0543
+  },
+  "Tallon Griekspoor": {
+   "clay": -0.0126,
+   "grass": -0.0102
+  },
+  "Taro Daniel": {
+   "clay": 0.0149
+  },
+  "Taylor Fritz": {
+   "clay": -0.0678,
+   "grass": 0.1425
+  },
+  "Terence Atmane": {
+   "clay": -0.0218
+  },
+  "Thanasi Kokkinakis": {
+   "clay": 0.0062
+  },
   "Thiago Agustin Tirante": {
-   "clay": 0.0044
+   "clay": 0.076
   },
   "Thiago Monteiro": {
-   "clay": 0.0056
+   "clay": -0.0031
   },
   "Thiago Seyboth Wild": {
-   "clay": 0.0186
+   "clay": 0.0167
+  },
+  "Timofey Skatov": {
+   "clay": 0.0089
+  },
+  "Titouan Droguet": {
+   "clay": 0.0439
   },
   "Tomas Barrios Vera": {
-   "clay": -0.0325
+   "clay": -0.0642
   },
   "Tomas Machac": {
-   "clay": -0.0178
+   "clay": -0.0009
   },
   "Tomas Martin Etcheverry": {
-   "clay": 0.015,
-   "grass": -0.0462
+   "clay": 0.0957,
+   "grass": -0.0887
   },
   "Tommy Paul": {
-   "clay": 0.0834,
-   "grass": 0.0078
+   "clay": 0.0942,
+   "grass": 0.0304
   },
   "Ugo Humbert": {
-   "clay": -0.0947,
-   "grass": -0.025
+   "clay": -0.0629,
+   "grass": 0.0217
   },
   "Valentin Vacherot": {
-   "clay": -0.024
+   "clay": 0.0177
+  },
+  "Vilius Gaubas": {
+   "clay": 0.0156
   },
   "Vit Kopriva": {
-   "clay": 0.0116
+   "clay": 0.0309
   },
   "Yannick Hanfmann": {
-   "clay": 0.0082,
-   "grass": -0.0231
+   "clay": 0.0439,
+   "grass": -0.0173
   },
   "Yoshihito Nishioka": {
-   "clay": -0.0174
+   "clay": -0.0039
   },
   "Zhizhen Zhang": {
-   "clay": 0.0369,
-   "grass": 0.0066
+   "clay": 0.0242,
+   "grass": 0.0042
   },
   "Zizou Bergs": {
-   "clay": -0.0489
+   "clay": -0.0366,
+   "grass": 0.0513
   }
- },
- "form": {
-  "Adam Walton": -0.0547,
-  "Adrian Mannarino": -0.1027,
-  "Alejandro Davidovich Fokina": -0.0158,
-  "Alejandro Tabilo": -0.0541,
-  "Aleksandar Kovacevic": 0.0725,
-  "Aleksandar Vukic": 0.0486,
-  "Alex Michelsen": 0.0782,
-  "Alex de Minaur": 0.0253,
-  "Alexander Blockx": 0.1155,
-  "Alexander Bublik": 0.1302,
-  "Alexander Shevchenko": 0.0539,
-  "Alexander Zverev": -0.0294,
-  "Alexandre Muller": -0.0397,
-  "Alexei Popyrin": -0.107,
-  "Andrea Vavassori": 0.0029,
-  "Andrey Rublev": 0.0213,
-  "Arthur Rinderknech": -0.0025,
-  "Ben Shelton": -0.0309,
-  "Billy Harris": 0.0184,
-  "Botic Van De Zandschulp": -0.0261,
-  "Botic van de Zandschulp": 0.0583,
-  "Brandon Nakashima": 0.1052,
-  "Cameron Norrie": -0.0324,
-  "Camilo Ugo Carabelli": -0.0752,
-  "Casper Ruud": -0.0606,
-  "Coleman Wong": 0.0574,
-  "Damir Dzumhur": -0.0847,
-  "Dane Sweeny": -0.0461,
-  "Daniel Altmaier": -0.0868,
-  "Daniil Medvedev": 0.1203,
-  "Denis Shapovalov": -0.0615,
-  "Dino Prizmic": -0.046,
-  "Eliot Spizzirri": 0.0473,
-  "Emilio Nava": -0.0485,
-  "Ethan Quinn": -0.0446,
-  "Fabian Marozsan": 0.0566,
-  "Felix Auger-Aliassime": -0.0318,
-  "Flavio Cobolli": 0.0056,
-  "Frances Tiafoe": 0.0024,
-  "Francisco Cerundolo": -0.064,
-  "Francisco Comesana": -0.0256,
-  "Gabriel Diallo": -0.0618,
-  "Gael Monfils": -0.0569,
-  "Giovanni Mpetshi Perricard": 0.0742,
-  "Grigor Dimitrov": -0.038,
-  "Hamad Medjedovic": -0.002,
-  "Hubert Hurkacz": 0.107,
-  "Hugo Gaston": -0.0371,
-  "Jacob Fearnley": -0.0574,
-  "Jakub Mensik": 0.0875,
-  "James Duckworth": -0.0736,
-  "James Watt": -0.0426,
-  "Jan-Lennard Struff": -0.0583,
-  "Jaume Munar": -0.0303,
-  "Jenson Brooksby": -0.0165,
-  "Jesper de Jong": -0.0512,
-  "Jiri Lehecka": -0.0098,
-  "Juncheng Shang": 0.0547,
-  "Justin Engel": -0.1262,
-  "Kamil Majchrzak": 0.0545,
-  "Karen Khachanov": -0.0675,
-  "Laslo Djere": -0.0514,
-  "Learner Tien": 0.0241,
-  "Lorenzo Musetti": 0.0518,
-  "Lorenzo Sonego": -0.0134,
-  "Luciano Darderi": 0.0064,
-  "Marcos Giron": 0.1156,
-  "Mariano Navone": -0.0863,
-  "Marin Cilic": 0.0067,
-  "Martin Landaluce": -0.1008,
-  "Marton Fucsovics": -0.0395,
-  "Matteo Berrettini": 0.0379,
-  "Michael Mmoh": 0.0563,
-  "Miomir Kecmanovic": -0.0887,
-  "Nick Kyrgios": -0.0512,
-  "Nicolai Budkov Kjaer": 0.0109,
-  "Nishesh Basavareddy": 0.0148,
-  "Nuno Borges": 0.0322,
-  "Pablo Carreno Busta": -0.0625,
-  "Quentin Halys": 0.0265,
-  "Rafael Jodar": 0.0451,
-  "Raphael Collignon": 0.0697,
-  "Rei Sakamoto": -0.0436,
-  "Reilly Opelka": 0.0061,
-  "Rinky Hijikata": 0.0193,
-  "Roberto Bautista Agut": -0.053,
-  "Sebastian Baez": 0.2015,
-  "Sebastian Korda": -0.0139,
-  "Shintaro Mochizuki": -0.0777,
-  "Stan Wawrinka": -0.0662,
-  "Stefanos Tsitsipas": 0.0351,
-  "Tallon Griekspoor": -0.1069,
-  "Taylor Fritz": -0.1281,
-  "Terence Atmane": -0.037,
-  "Thanasi Kokkinakis": 0.0136,
-  "Tomas Machac": 0.1323,
-  "Tomas Martin Etcheverry": -0.0387,
-  "Tommy Paul": -0.043,
-  "Tristan Schoolkate": -0.0556,
-  "Ugo Humbert": 0.0468,
-  "Valentin Royer": -0.096,
-  "Valentin Vacherot": -0.0102,
-  "Yibing Wu": 0.0155,
-  "Zhizhen Zhang": 0.0254,
-  "Zizou Bergs": 0.0865
  },
  "serve": {
   "players": {
    "Novak Djokovic": {
-    "spw": 0.6892,
-    "rpw": 0.3965,
-    "sv_pts": 4692
+    "spw": 0.6875,
+    "rpw": 0.395,
+    "sv_pts": 3237
    },
    "Sebastian Korda": {
-    "spw": 0.6587,
-    "rpw": 0.3607,
-    "sv_pts": 4154
+    "spw": 0.6576,
+    "rpw": 0.3613,
+    "sv_pts": 2803
    },
    "Yoshihito Nishioka": {
-    "spw": 0.6243,
-    "rpw": 0.3445,
-    "sv_pts": 2653
+    "spw": 0.6259,
+    "rpw": 0.3463,
+    "sv_pts": 1695
    },
    "Alexei Popyrin": {
-    "spw": 0.651,
-    "rpw": 0.3428,
-    "sv_pts": 4436
+    "spw": 0.6492,
+    "rpw": 0.3433,
+    "sv_pts": 3068
    },
    "Jannik Sinner": {
-    "spw": 0.7034,
-    "rpw": 0.4126,
-    "sv_pts": 6228
+    "spw": 0.7018,
+    "rpw": 0.4128,
+    "sv_pts": 4262
    },
    "Daniil Medvedev": {
-    "spw": 0.6526,
-    "rpw": 0.3968,
-    "sv_pts": 6449
+    "spw": 0.6532,
+    "rpw": 0.3945,
+    "sv_pts": 4409
    },
    "Karen Khachanov": {
-    "spw": 0.6609,
-    "rpw": 0.3705,
-    "sv_pts": 5449
+    "spw": 0.6607,
+    "rpw": 0.3702,
+    "sv_pts": 3725
    },
    "Denis Shapovalov": {
-    "spw": 0.6398,
-    "rpw": 0.372,
-    "sv_pts": 4183
+    "spw": 0.6409,
+    "rpw": 0.3719,
+    "sv_pts": 2848
    },
    "Marcos Giron": {
-    "spw": 0.6368,
-    "rpw": 0.3632,
-    "sv_pts": 5254
+    "spw": 0.6369,
+    "rpw": 0.3623,
+    "sv_pts": 3649
    },
    "Mackenzie McDonald": {
-    "spw": 0.6268,
-    "rpw": 0.3572,
-    "sv_pts": 2667
+    "spw": 0.6279,
+    "rpw": 0.3569,
+    "sv_pts": 1854
    },
    "Roberto Bautista Agut": {
-    "spw": 0.6287,
-    "rpw": 0.3637,
-    "sv_pts": 3627
+    "spw": 0.6306,
+    "rpw": 0.3629,
+    "sv_pts": 2525
    },
    "Thanasi Kokkinakis": {
-    "spw": 0.6574,
-    "rpw": 0.3367,
-    "sv_pts": 1837
+    "spw": 0.6568,
+    "rpw": 0.3402,
+    "sv_pts": 1170
    },
    "Jack Draper": {
-    "spw": 0.6713,
-    "rpw": 0.3815,
-    "sv_pts": 3759
+    "spw": 0.6707,
+    "rpw": 0.3794,
+    "sv_pts": 2515
    },
    "Miomir Kecmanovic": {
-    "spw": 0.637,
-    "rpw": 0.365,
-    "sv_pts": 5060
+    "spw": 0.6383,
+    "rpw": 0.3643,
+    "sv_pts": 3477
    },
    "Roman Safiullin": {
-    "spw": 0.6448,
+    "spw": 0.6445,
     "rpw": 0.3591,
-    "sv_pts": 3049
+    "sv_pts": 2127
    },
    "Quentin Halys": {
-    "spw": 0.6583,
-    "rpw": 0.3243,
-    "sv_pts": 3196
+    "spw": 0.6573,
+    "rpw": 0.3271,
+    "sv_pts": 2218
    },
    "Felix Auger-Aliassime": {
-    "spw": 0.6747,
-    "rpw": 0.3625,
-    "sv_pts": 5923
+    "spw": 0.6726,
+    "rpw": 0.3627,
+    "sv_pts": 4050
    },
    "Richard Gasquet": {
-    "spw": 0.6257,
-    "rpw": 0.3521,
-    "sv_pts": 1290
-   },
-   "Daniel Elahi Galan": {
-    "spw": 0.6083,
-    "rpw": 0.3553,
-    "sv_pts": 1518
+    "spw": 0.6278,
+    "rpw": 0.3527,
+    "sv_pts": 903
    },
    "Holger Rune": {
-    "spw": 0.6535,
-    "rpw": 0.3642,
-    "sv_pts": 5568
+    "spw": 0.6548,
+    "rpw": 0.364,
+    "sv_pts": 3787
    },
    "Andrey Rublev": {
-    "spw": 0.6668,
-    "rpw": 0.3712,
-    "sv_pts": 6312
+    "spw": 0.6646,
+    "rpw": 0.3708,
+    "sv_pts": 4338
    },
    "Andy Murray": {
-    "spw": 0.6406,
-    "rpw": 0.3554,
-    "sv_pts": 872
+    "spw": 0.6417,
+    "rpw": 0.356,
+    "sv_pts": 606
    },
    "Maxime Cressy": {
-    "spw": 0.649,
-    "rpw": 0.3341,
-    "sv_pts": 491
+    "spw": 0.6478,
+    "rpw": 0.3386,
+    "sv_pts": 343
    },
    "Kyle Edmund": {
-    "spw": 0.6326,
-    "rpw": 0.3504,
-    "sv_pts": 66
-   },
-   "Pedro Cachin": {
-    "spw": 0.6142,
-    "rpw": 0.3535,
-    "sv_pts": 822
-   },
-   "Soonwoo Kwon": {
-    "spw": 0.6346,
-    "rpw": 0.349,
-    "sv_pts": 464
-   },
-   "Christopher O'Connell": {
-    "spw": 0.6288,
-    "rpw": 0.3434,
-    "sv_pts": 3091
-   },
-   "Lorenzo Sonego": {
-    "spw": 0.6588,
-    "rpw": 0.3396,
-    "sv_pts": 5234
-   },
-   "Rinky Hijikata": {
-    "spw": 0.6074,
-    "rpw": 0.3521,
-    "sv_pts": 2779
-   },
-   "Mikael Ymer": {
-    "spw": 0.6202,
-    "rpw": 0.3592,
-    "sv_pts": 397
-   },
-   "Jordan Thompson": {
-    "spw": 0.6482,
-    "rpw": 0.348,
-    "sv_pts": 3544
-   },
-   "Constant Lestienne": {
-    "spw": 0.5974,
-    "rpw": 0.3599,
-    "sv_pts": 814
-   },
-   "Tallon Griekspoor": {
-    "spw": 0.6623,
-    "rpw": 0.3252,
-    "sv_pts": 5593
-   },
-   "Benjamin Bonzi": {
-    "spw": 0.6419,
-    "rpw": 0.351,
-    "sv_pts": 2770
-   },
-   "Botic van de Zandschulp": {
-    "spw": 0.6209,
-    "rpw": 0.365,
-    "sv_pts": 3905
-   },
-   "Maximilian Marterer": {
-    "spw": 0.623,
-    "rpw": 0.3439,
-    "sv_pts": 847
-   },
-   "Filip Krajinovic": {
-    "spw": 0.63,
+    "spw": 0.6353,
     "rpw": 0.3524,
-    "sv_pts": 169
-   },
-   "Aslan Karatsev": {
-    "spw": 0.6387,
-    "rpw": 0.3518,
-    "sv_pts": 920
-   },
-   "Pedro Martinez": {
-    "spw": 0.5899,
-    "rpw": 0.3657,
-    "sv_pts": 3227
-   },
-   "Flavio Cobolli": {
-    "spw": 0.6311,
-    "rpw": 0.3644,
-    "sv_pts": 5514
-   },
-   "Laslo Djere": {
-    "spw": 0.6393,
-    "rpw": 0.3577,
-    "sv_pts": 2842
-   },
-   "Emil Ruusuvuori": {
-    "spw": 0.6473,
-    "rpw": 0.3534,
-    "sv_pts": 1631
-   },
-   "Michael Mmoh": {
-    "spw": 0.6329,
-    "rpw": 0.3614,
-    "sv_pts": 853
-   },
-   "Tim van Rijthoven": {
-    "spw": 0.6431,
-    "rpw": 0.3538,
     "sv_pts": 46
    },
+   "Pedro Cachin": {
+    "spw": 0.6186,
+    "rpw": 0.3541,
+    "sv_pts": 575
+   },
+   "Soonwoo Kwon": {
+    "spw": 0.6307,
+    "rpw": 0.3522,
+    "sv_pts": 298
+   },
+   "Christopher O'Connell": {
+    "spw": 0.63,
+    "rpw": 0.3414,
+    "sv_pts": 2122
+   },
+   "Rinky Hijikata": {
+    "spw": 0.6098,
+    "rpw": 0.3521,
+    "sv_pts": 1928
+   },
+   "Mikael Ymer": {
+    "spw": 0.6244,
+    "rpw": 0.3594,
+    "sv_pts": 267
+   },
+   "Jordan Thompson": {
+    "spw": 0.6495,
+    "rpw": 0.3506,
+    "sv_pts": 2429
+   },
+   "Constant Lestienne": {
+    "spw": 0.6073,
+    "rpw": 0.3593,
+    "sv_pts": 544
+   },
+   "Tallon Griekspoor": {
+    "spw": 0.6618,
+    "rpw": 0.3267,
+    "sv_pts": 3807
+   },
+   "Benjamin Bonzi": {
+    "spw": 0.6425,
+    "rpw": 0.3541,
+    "sv_pts": 1858
+   },
+   "Botic van de Zandschulp": {
+    "spw": 0.6222,
+    "rpw": 0.3635,
+    "sv_pts": 2643
+   },
+   "Maximilian Marterer": {
+    "spw": 0.626,
+    "rpw": 0.346,
+    "sv_pts": 593
+   },
+   "Filip Krajinovic": {
+    "spw": 0.6331,
+    "rpw": 0.3537,
+    "sv_pts": 118
+   },
+   "Aslan Karatsev": {
+    "spw": 0.6392,
+    "rpw": 0.3545,
+    "sv_pts": 598
+   },
+   "Pedro Martinez": {
+    "spw": 0.5927,
+    "rpw": 0.3639,
+    "sv_pts": 2244
+   },
+   "Flavio Cobolli": {
+    "spw": 0.6327,
+    "rpw": 0.3642,
+    "sv_pts": 3792
+   },
+   "Laslo Djere": {
+    "spw": 0.6402,
+    "rpw": 0.3572,
+    "sv_pts": 1945
+   },
+   "Emil Ruusuvuori": {
+    "spw": 0.6471,
+    "rpw": 0.3532,
+    "sv_pts": 1135
+   },
+   "Michael Mmoh": {
+    "spw": 0.6384,
+    "rpw": 0.3622,
+    "sv_pts": 541
+   },
+   "Tim van Rijthoven": {
+    "spw": 0.643,
+    "rpw": 0.3548,
+    "sv_pts": 32
+   },
    "Sebastian Baez": {
-    "spw": 0.606,
-    "rpw": 0.3923,
-    "sv_pts": 4750
+    "spw": 0.6084,
+    "rpw": 0.392,
+    "sv_pts": 3241
    },
    "Marco Cecchinato": {
-    "spw": 0.6248,
-    "rpw": 0.3529,
-    "sv_pts": 302
+    "spw": 0.629,
+    "rpw": 0.3545,
+    "sv_pts": 208
    },
    "Marin Cilic": {
-    "spw": 0.6466,
-    "rpw": 0.3324,
-    "sv_pts": 1769
+    "spw": 0.6462,
+    "rpw": 0.335,
+    "sv_pts": 1238
    },
    "Roberto Carballes Baena": {
-    "spw": 0.6117,
-    "rpw": 0.3744,
-    "sv_pts": 3168
+    "spw": 0.6129,
+    "rpw": 0.3718,
+    "sv_pts": 2152
    },
    "Mukund Sasikumar": {
-    "spw": 0.6382,
+    "spw": 0.6395,
     "rpw": 0.3573,
-    "sv_pts": 16
+    "sv_pts": 11
    },
    "Elias Ymer": {
-    "spw": 0.6217,
+    "spw": 0.626,
     "rpw": 0.362,
-    "sv_pts": 675
+    "sv_pts": 466
    },
    "Alex Molcan": {
-    "spw": 0.6258,
-    "rpw": 0.3691,
-    "sv_pts": 473
+    "spw": 0.63,
+    "rpw": 0.3674,
+    "sv_pts": 327
    },
    "Chun-Hsin Tseng": {
-    "spw": 0.6151,
-    "rpw": 0.3541,
-    "sv_pts": 1067
+    "spw": 0.6198,
+    "rpw": 0.3553,
+    "sv_pts": 729
    },
    "Manas Dhamne": {
-    "spw": 0.6404,
+    "spw": 0.641,
     "rpw": 0.3577,
-    "sv_pts": 7
+    "sv_pts": 5
    },
    "Sumit Nagal": {
-    "spw": 0.6122,
-    "rpw": 0.3611,
-    "sv_pts": 793
+    "spw": 0.6196,
+    "rpw": 0.3598,
+    "sv_pts": 535
    },
    "Pablo Andujar": {
-    "spw": 0.6346,
-    "rpw": 0.3592,
-    "sv_pts": 27
+    "spw": 0.6379,
+    "rpw": 0.358,
+    "sv_pts": 16
    },
    "Radu Albot": {
-    "spw": 0.6171,
-    "rpw": 0.3671,
-    "sv_pts": 581
+    "spw": 0.6216,
+    "rpw": 0.3649,
+    "sv_pts": 403
    },
    "Ramkumar Ramanathan": {
-    "spw": 0.6442,
-    "rpw": 0.3532,
-    "sv_pts": 59
+    "spw": 0.6437,
+    "rpw": 0.3544,
+    "sv_pts": 42
    },
    "Jaume Munar": {
-    "spw": 0.6347,
-    "rpw": 0.3845,
-    "sv_pts": 4693
+    "spw": 0.6336,
+    "rpw": 0.3833,
+    "sv_pts": 3246
    },
    "Nikoloz Basilashvili": {
-    "spw": 0.6387,
-    "rpw": 0.3566,
-    "sv_pts": 998
+    "spw": 0.6383,
+    "rpw": 0.3587,
+    "sv_pts": 646
    },
    "Bernabe Zapata Miralles": {
-    "spw": 0.5992,
-    "rpw": 0.3686,
-    "sv_pts": 684
-   },
-   "Frances Tiafoe": {
-    "spw": 0.6514,
-    "rpw": 0.3587,
-    "sv_pts": 5173
-   },
-   "Lorenzo Musetti": {
-    "spw": 0.6518,
-    "rpw": 0.3786,
-    "sv_pts": 6510
+    "spw": 0.6086,
+    "rpw": 0.3671,
+    "sv_pts": 457
    },
    "Taylor Fritz": {
-    "spw": 0.6928,
-    "rpw": 0.3547,
-    "sv_pts": 7483
+    "spw": 0.6909,
+    "rpw": 0.3542,
+    "sv_pts": 5157
    },
    "Matteo Berrettini": {
-    "spw": 0.686,
-    "rpw": 0.3431,
-    "sv_pts": 3369
+    "spw": 0.6853,
+    "rpw": 0.3447,
+    "sv_pts": 2293
    },
    "Borna Gojo": {
-    "spw": 0.6527,
-    "rpw": 0.3463,
-    "sv_pts": 553
+    "spw": 0.6509,
+    "rpw": 0.3483,
+    "sv_pts": 387
    },
    "Federico Coria": {
-    "spw": 0.5984,
-    "rpw": 0.3821,
-    "sv_pts": 1025
+    "spw": 0.604,
+    "rpw": 0.3782,
+    "sv_pts": 707
    },
    "Borna Coric": {
-    "spw": 0.633,
-    "rpw": 0.3442,
-    "sv_pts": 1696
+    "spw": 0.6334,
+    "rpw": 0.3448,
+    "sv_pts": 1179
    },
    "Francisco Cerundolo": {
-    "spw": 0.6206,
-    "rpw": 0.3914,
-    "sv_pts": 5819
+    "spw": 0.6221,
+    "rpw": 0.3897,
+    "sv_pts": 4022
    },
    "Adrian Mannarino": {
-    "spw": 0.6326,
-    "rpw": 0.3592,
-    "sv_pts": 3805
+    "spw": 0.6328,
+    "rpw": 0.3589,
+    "sv_pts": 2583
    },
    "Arthur Rinderknech": {
-    "spw": 0.6627,
-    "rpw": 0.3304,
-    "sv_pts": 5042
+    "spw": 0.6628,
+    "rpw": 0.3311,
+    "sv_pts": 3405
    },
    "Felipe Meligeni Alves": {
-    "spw": 0.6315,
-    "rpw": 0.3514,
-    "sv_pts": 302
+    "spw": 0.6339,
+    "rpw": 0.353,
+    "sv_pts": 197
    },
    "Viktor Durasovic": {
-    "spw": 0.636,
-    "rpw": 0.3518,
-    "sv_pts": 163
+    "spw": 0.6376,
+    "rpw": 0.3532,
+    "sv_pts": 114
    },
    "Casper Ruud": {
-    "spw": 0.6602,
-    "rpw": 0.3717,
-    "sv_pts": 5340
+    "spw": 0.6592,
+    "rpw": 0.3727,
+    "sv_pts": 3627
    },
    "Thiago Monteiro": {
-    "spw": 0.6498,
-    "rpw": 0.3266,
-    "sv_pts": 1485
+    "spw": 0.6492,
+    "rpw": 0.3298,
+    "sv_pts": 1038
+   },
+   "Lorenzo Musetti": {
+    "spw": 0.6526,
+    "rpw": 0.3776,
+    "sv_pts": 4420
    },
    "Jason Kubler": {
-    "spw": 0.6313,
-    "rpw": 0.3584,
-    "sv_pts": 398
+    "spw": 0.634,
+    "rpw": 0.3589,
+    "sv_pts": 251
    },
    "Daniel Evans": {
-    "spw": 0.6191,
-    "rpw": 0.3588,
-    "sv_pts": 2019
+    "spw": 0.6205,
+    "rpw": 0.3575,
+    "sv_pts": 1394
    },
    "Cameron Norrie": {
-    "spw": 0.6481,
-    "rpw": 0.3605,
-    "sv_pts": 5704
+    "spw": 0.6477,
+    "rpw": 0.3588,
+    "sv_pts": 3907
    },
    "Alex de Minaur": {
-    "spw": 0.6473,
-    "rpw": 0.4009,
-    "sv_pts": 6665
+    "spw": 0.6466,
+    "rpw": 0.4,
+    "sv_pts": 4565
    },
    "Albert Ramos-Vinolas": {
-    "spw": 0.6128,
+    "spw": 0.6175,
     "rpw": 0.3577,
-    "sv_pts": 756
+    "sv_pts": 529
    },
    "Rafael Nadal": {
-    "spw": 0.6275,
-    "rpw": 0.377,
-    "sv_pts": 504
+    "spw": 0.6303,
+    "rpw": 0.3733,
+    "sv_pts": 353
    },
    "Oscar Otte": {
-    "spw": 0.6408,
-    "rpw": 0.3515,
-    "sv_pts": 257
+    "spw": 0.6412,
+    "rpw": 0.3528,
+    "sv_pts": 173
    },
    "Dalibor Svrcina": {
-    "spw": 0.6082,
-    "rpw": 0.3726,
-    "sv_pts": 395
+    "spw": 0.6146,
+    "rpw": 0.3661,
+    "sv_pts": 259
    },
    "Jiri Lehecka": {
-    "spw": 0.6668,
-    "rpw": 0.3528,
-    "sv_pts": 5177
+    "spw": 0.6646,
+    "rpw": 0.353,
+    "sv_pts": 3454
    },
    "Alexander Zverev": {
-    "spw": 0.6845,
-    "rpw": 0.3731,
-    "sv_pts": 7530
+    "spw": 0.6829,
+    "rpw": 0.3713,
+    "sv_pts": 5208
    },
-   "Tomas Machac": {
-    "spw": 0.6435,
-    "rpw": 0.3632,
-    "sv_pts": 4138
+   "Frances Tiafoe": {
+    "spw": 0.6512,
+    "rpw": 0.3572,
+    "sv_pts": 3500
    },
    "Marc-Andrea Huesler": {
-    "spw": 0.6405,
-    "rpw": 0.3403,
-    "sv_pts": 797
+    "spw": 0.6402,
+    "rpw": 0.3424,
+    "sv_pts": 549
    },
    "Timofey Skatov": {
-    "spw": 0.6282,
-    "rpw": 0.3663,
-    "sv_pts": 389
+    "spw": 0.6311,
+    "rpw": 0.3645,
+    "sv_pts": 272
    },
    "Stan Wawrinka": {
-    "spw": 0.6459,
-    "rpw": 0.333,
-    "sv_pts": 2859
+    "spw": 0.6451,
+    "rpw": 0.3345,
+    "sv_pts": 1987
    },
    "Alexander Bublik": {
-    "spw": 0.6612,
-    "rpw": 0.3487,
-    "sv_pts": 5212
+    "spw": 0.6608,
+    "rpw": 0.35,
+    "sv_pts": 3548
    },
    "Daniel Michalski": {
-    "spw": 0.6383,
-    "rpw": 0.3548,
-    "sv_pts": 22
+    "spw": 0.6395,
+    "rpw": 0.3556,
+    "sv_pts": 15
    },
    "Hubert Hurkacz": {
-    "spw": 0.6864,
-    "rpw": 0.3426,
-    "sv_pts": 4024
+    "spw": 0.6839,
+    "rpw": 0.3433,
+    "sv_pts": 2761
    },
    "Dimitar Kuzmanov": {
-    "spw": 0.6375,
-    "rpw": 0.3608,
-    "sv_pts": 59
+    "spw": 0.6393,
+    "rpw": 0.36,
+    "sv_pts": 41
    },
    "Zizou Bergs": {
-    "spw": 0.641,
-    "rpw": 0.3616,
-    "sv_pts": 4399
+    "spw": 0.6394,
+    "rpw": 0.3612,
+    "sv_pts": 3031
    },
    "Grigor Dimitrov": {
-    "spw": 0.6719,
-    "rpw": 0.371,
-    "sv_pts": 3799
+    "spw": 0.673,
+    "rpw": 0.3714,
+    "sv_pts": 2480
    },
    "David Goffin": {
-    "spw": 0.6107,
-    "rpw": 0.3762,
-    "sv_pts": 2723
+    "spw": 0.6142,
+    "rpw": 0.3742,
+    "sv_pts": 1880
    },
    "Michail Pervolarakis": {
-    "spw": 0.6396,
-    "rpw": 0.3571,
-    "sv_pts": 6
+    "spw": 0.6405,
+    "rpw": 0.3572,
+    "sv_pts": 4
    },
    "Stefanos Tsitsipas": {
-    "spw": 0.6723,
-    "rpw": 0.3544,
-    "sv_pts": 4835
+    "spw": 0.6719,
+    "rpw": 0.355,
+    "sv_pts": 3325
    },
    "Stefanos Sakellaridis": {
     "spw": 0.6424,
-    "rpw": 0.3375,
-    "sv_pts": 159
+    "rpw": 0.3426,
+    "sv_pts": 112
    },
    "Kacper Zuk": {
-    "spw": 0.6406,
-    "rpw": 0.3577,
-    "sv_pts": 8
+    "spw": 0.6412,
+    "rpw": 0.3576,
+    "sv_pts": 6
    },
    "Jenson Brooksby": {
-    "spw": 0.6239,
-    "rpw": 0.3829,
-    "sv_pts": 2172
+    "spw": 0.6254,
+    "rpw": 0.3807,
+    "sv_pts": 1518
    },
    "J.J. Wolf": {
-    "spw": 0.6296,
-    "rpw": 0.3526,
-    "sv_pts": 841
-   },
-   "Diego Schwartzman": {
-    "spw": 0.6002,
-    "rpw": 0.3636,
-    "sv_pts": 713
+    "spw": 0.6331,
+    "rpw": 0.3532,
+    "sv_pts": 572
    },
    "Ben Shelton": {
-    "spw": 0.6778,
-    "rpw": 0.3318,
-    "sv_pts": 6258
+    "spw": 0.6758,
+    "rpw": 0.3321,
+    "sv_pts": 4230
    },
    "Christopher Eubanks": {
-    "spw": 0.6602,
-    "rpw": 0.3178,
-    "sv_pts": 1786
+    "spw": 0.6582,
+    "rpw": 0.3207,
+    "sv_pts": 1241
    },
    "Joao Sousa": {
-    "spw": 0.6268,
-    "rpw": 0.3516,
-    "sv_pts": 134
-   },
-   "Gregoire Barrere": {
-    "spw": 0.6328,
-    "rpw": 0.3557,
-    "sv_pts": 931
-   },
-   "Fabio Fognini": {
-    "spw": 0.6044,
-    "rpw": 0.3612,
-    "sv_pts": 1381
-   },
-   "Ugo Humbert": {
-    "spw": 0.6632,
-    "rpw": 0.3607,
-    "sv_pts": 5042
-   },
-   "Kiranpal Pannu": {
-    "spw": 0.6364,
-    "rpw": 0.3524,
-    "sv_pts": 90
-   },
-   "John Isner": {
-    "spw": 0.6668,
-    "rpw": 0.3326,
-    "sv_pts": 328
-   },
-   "Alejandro Davidovich Fokina": {
-    "spw": 0.63,
-    "rpw": 0.3789,
-    "sv_pts": 5710
-   },
-   "Pablo Carreno Busta": {
-    "spw": 0.6305,
-    "rpw": 0.3508,
-    "sv_pts": 1730
-   },
-   "Tommy Paul": {
-    "spw": 0.6517,
-    "rpw": 0.3914,
-    "sv_pts": 5129
-   },
-   "John Millman": {
-    "spw": 0.6397,
-    "rpw": 0.3569,
-    "sv_pts": 51
-   },
-   "Robin Haase": {
-    "spw": 0.6375,
-    "rpw": 0.3574,
-    "sv_pts": 49
-   },
-   "Brandon Nakashima": {
-    "spw": 0.6689,
-    "rpw": 0.3464,
-    "sv_pts": 5347
-   },
-   "Tomas Martin Etcheverry": {
-    "spw": 0.6443,
-    "rpw": 0.3626,
-    "sv_pts": 5522
-   },
-   "Juncheng Shang": {
-    "spw": 0.6431,
-    "rpw": 0.3508,
-    "sv_pts": 2393
-   },
-   "Daniel Altmaier": {
-    "spw": 0.6248,
-    "rpw": 0.3433,
-    "sv_pts": 4276
-   },
-   "Nuno Borges": {
-    "spw": 0.6389,
-    "rpw": 0.3569,
-    "sv_pts": 5327
-   },
-   "Taro Daniel": {
-    "spw": 0.6215,
-    "rpw": 0.3407,
-    "sv_pts": 1572
-   },
-   "Ernesto Escobedo": {
-    "spw": 0.6354,
-    "rpw": 0.3494,
-    "sv_pts": 123
-   },
-   "Dusan Lajovic": {
-    "spw": 0.6126,
-    "rpw": 0.3673,
-    "sv_pts": 2160
-   },
-   "Cristian Garin": {
-    "spw": 0.6385,
-    "rpw": 0.3677,
-    "sv_pts": 1485
-   },
-   "Yosuke Watanuki": {
-    "spw": 0.6501,
-    "rpw": 0.3511,
-    "sv_pts": 759
-   },
-   "Yannick Hanfmann": {
-    "spw": 0.6425,
-    "rpw": 0.3598,
-    "sv_pts": 2840
-   },
-   "Pavel Kotov": {
-    "spw": 0.6264,
-    "rpw": 0.349,
-    "sv_pts": 1628
-   },
-   "Ilya Ivashka": {
-    "spw": 0.6242,
-    "rpw": 0.3647,
-    "sv_pts": 344
-   },
-   "Lloyd Harris": {
-    "spw": 0.6499,
-    "rpw": 0.3306,
-    "sv_pts": 877
-   },
-   "Marton Fucsovics": {
-    "spw": 0.6285,
-    "rpw": 0.3759,
-    "sv_pts": 3136
-   },
-   "Luca Van Assche": {
-    "spw": 0.625,
-    "rpw": 0.3573,
-    "sv_pts": 1314
-   },
-   "Guido Pella": {
-    "spw": 0.6355,
-    "rpw": 0.3531,
-    "sv_pts": 317
-   },
-   "Corentin Moutet": {
-    "spw": 0.6185,
-    "rpw": 0.3817,
-    "sv_pts": 4550
-   },
-   "Yibing Wu": {
-    "spw": 0.6256,
-    "rpw": 0.3481,
-    "sv_pts": 1193
-   },
-   "Vasek Pospisil": {
-    "spw": 0.6343,
-    "rpw": 0.359,
-    "sv_pts": 123
-   },
-   "Dominic Thiem": {
-    "spw": 0.6396,
-    "rpw": 0.3392,
-    "sv_pts": 834
-   },
-   "Max Purcell": {
-    "spw": 0.6403,
-    "rpw": 0.3396,
-    "sv_pts": 1273
-   },
-   "Jeremy Chardy": {
     "spw": 0.6309,
-    "rpw": 0.3555,
-    "sv_pts": 62
-   },
-   "Facundo Bagnis": {
-    "spw": 0.6304,
-    "rpw": 0.3584,
-    "sv_pts": 517
-   },
-   "Denis Kudla": {
-    "spw": 0.6328,
-    "rpw": 0.3564,
-    "sv_pts": 161
-   },
-   "Mattia Bellucci": {
-    "spw": 0.6332,
-    "rpw": 0.351,
-    "sv_pts": 1879
-   },
-   "Yu Hsiou Hsu": {
-    "spw": 0.6355,
-    "rpw": 0.3609,
-    "sv_pts": 117
-   },
-   "Enzo Couacaud": {
-    "spw": 0.6407,
-    "rpw": 0.3544,
-    "sv_pts": 99
-   },
-   "Hugo Dellien": {
-    "spw": 0.6063,
-    "rpw": 0.3484,
-    "sv_pts": 957
-   },
-   "Zhizhen Zhang": {
-    "spw": 0.651,
-    "rpw": 0.3334,
-    "sv_pts": 2720
-   },
-   "Nicolas Jarry": {
-    "spw": 0.6649,
-    "rpw": 0.3382,
-    "sv_pts": 3421
-   },
-   "Oleksii Krutykh": {
-    "spw": 0.6347,
-    "rpw": 0.3557,
-    "sv_pts": 76
-   },
-   "Laurent Lokoli": {
-    "spw": 0.6387,
-    "rpw": 0.3565,
-    "sv_pts": 56
-   },
-   "Juan Pablo Varillas": {
-    "spw": 0.6185,
-    "rpw": 0.364,
-    "sv_pts": 735
-   },
-   "Brandon Holt": {
-    "spw": 0.6196,
-    "rpw": 0.342,
-    "sv_pts": 584
-   },
-   "Aleksandar Vukic": {
-    "spw": 0.635,
-    "rpw": 0.332,
-    "sv_pts": 4426
-   },
-   "Jan-Lennard Struff": {
-    "spw": 0.6503,
-    "rpw": 0.3554,
-    "sv_pts": 4141
-   },
-   "Nicolas Barrientos": {
-    "spw": 0.6412,
-    "rpw": 0.3583,
-    "sv_pts": 7
-   },
-   "Nicolas Mejia": {
-    "spw": 0.6226,
-    "rpw": 0.3479,
-    "sv_pts": 227
-   },
-   "Yuki Bhambri": {
-    "spw": 0.6404,
-    "rpw": 0.3565,
-    "sv_pts": 6
-   },
-   "Arthur Fils": {
-    "spw": 0.65,
-    "rpw": 0.3684,
-    "sv_pts": 3746
-   },
-   "Geoffrey Blancaneaux": {
-    "spw": 0.6405,
-    "rpw": 0.3571,
-    "sv_pts": 27
-   },
-   "Clement Chidekh": {
-    "spw": 0.6405,
-    "rpw": 0.3551,
-    "sv_pts": 42
-   },
-   "Antoine Bellier": {
-    "spw": 0.641,
-    "rpw": 0.3575,
-    "sv_pts": 7
-   },
-   "Luca Nardi": {
-    "spw": 0.6049,
-    "rpw": 0.3423,
-    "sv_pts": 1613
-   },
-   "Emilio Gomez": {
-    "spw": 0.6319,
-    "rpw": 0.3549,
-    "sv_pts": 118
-   },
-   "Jack Sock": {
-    "spw": 0.6386,
-    "rpw": 0.3567,
-    "sv_pts": 68
-   },
-   "Fernando Verdasco": {
-    "spw": 0.6304,
-    "rpw": 0.3572,
-    "sv_pts": 44
-   },
-   "Liam Krall": {
-    "spw": 0.6417,
-    "rpw": 0.3575,
-    "sv_pts": 10
-   },
-   "Gabriel Diallo": {
-    "spw": 0.6545,
-    "rpw": 0.3509,
-    "sv_pts": 3573
-   },
-   "Zachary Svajda": {
-    "spw": 0.624,
-    "rpw": 0.3601,
-    "sv_pts": 722
-   },
-   "Steve Johnson": {
-    "spw": 0.636,
-    "rpw": 0.3499,
-    "sv_pts": 91
-   },
-   "Alex Rybakov": {
-    "spw": 0.6407,
-    "rpw": 0.3571,
-    "sv_pts": 13
-   },
-   "Tomas Barrios Vera": {
-    "spw": 0.6019,
-    "rpw": 0.3594,
-    "sv_pts": 631
-   },
-   "Juan Manuel Cerundolo": {
-    "spw": 0.617,
-    "rpw": 0.3688,
-    "sv_pts": 1249
-   },
-   "Federico Delbonis": {
-    "spw": 0.6405,
-    "rpw": 0.3602,
-    "sv_pts": 28
-   },
-   "Luciano Darderi": {
-    "spw": 0.633,
-    "rpw": 0.3625,
-    "sv_pts": 4245
-   },
-   "Alejandro Tabilo": {
-    "spw": 0.6454,
-    "rpw": 0.3441,
-    "sv_pts": 3531
-   },
-   "Hugo Gaston": {
-    "spw": 0.5974,
-    "rpw": 0.3613,
-    "sv_pts": 2360
-   },
-   "Andrea Vavassori": {
-    "spw": 0.6336,
-    "rpw": 0.3448,
-    "sv_pts": 533
-   },
-   "Gijs Brouwer": {
-    "spw": 0.643,
-    "rpw": 0.3572,
-    "sv_pts": 314
-   },
-   "Matija Pecotic": {
-    "spw": 0.6416,
-    "rpw": 0.359,
-    "sv_pts": 19
-   },
-   "Aleksandar Kovacevic": {
-    "spw": 0.6492,
-    "rpw": 0.3238,
-    "sv_pts": 3363
-   },
-   "Tung-Lin Wu": {
-    "spw": 0.6442,
-    "rpw": 0.3465,
-    "sv_pts": 210
-   },
-   "Carlos Alcaraz": {
-    "spw": 0.6759,
-    "rpw": 0.4126,
-    "sv_pts": 6709
-   },
-   "Facundo Diaz Acosta": {
-    "spw": 0.6232,
-    "rpw": 0.3704,
-    "sv_pts": 1172
-   },
-   "Camilo Ugo Carabelli": {
-    "spw": 0.6019,
-    "rpw": 0.3634,
-    "sv_pts": 2525
-   },
-   "Alexandre Muller": {
-    "spw": 0.6146,
-    "rpw": 0.357,
-    "sv_pts": 4251
-   },
-   "Liam Broady": {
-    "spw": 0.6225,
-    "rpw": 0.3656,
-    "sv_pts": 290
-   },
-   "Abdullah Shelbayh": {
-    "spw": 0.6225,
-    "rpw": 0.3542,
-    "sv_pts": 230
-   },
-   "Damir Dzumhur": {
-    "spw": 0.6009,
-    "rpw": 0.3787,
-    "sv_pts": 2797
-   },
-   "Alexander Ritschard": {
-    "spw": 0.6356,
-    "rpw": 0.351,
-    "sv_pts": 117
-   },
-   "Leandro Riedi": {
-    "spw": 0.6326,
-    "rpw": 0.36,
-    "sv_pts": 492
-   },
-   "Lukas Klein": {
-    "spw": 0.6582,
-    "rpw": 0.3502,
-    "sv_pts": 719
-   },
-   "Joao Fonseca": {
-    "spw": 0.6581,
-    "rpw": 0.3639,
-    "sv_pts": 2778
-   },
-   "Thomaz Bellucci": {
-    "spw": 0.6401,
-    "rpw": 0.357,
-    "sv_pts": 9
-   },
-   "Mateus Alves": {
-    "spw": 0.64,
-    "rpw": 0.3581,
-    "sv_pts": 10
-   },
-   "Alexander Shevchenko": {
-    "spw": 0.613,
-    "rpw": 0.3593,
-    "sv_pts": 3478
-   },
-   "Matteo Arnaldi": {
-    "spw": 0.6289,
-    "rpw": 0.3609,
-    "sv_pts": 4416
-   },
-   "Alexandar Lazarov": {
-    "spw": 0.6377,
-    "rpw": 0.3579,
-    "sv_pts": 21
-   },
-   "Francesco Passaro": {
-    "spw": 0.6376,
-    "rpw": 0.3523,
-    "sv_pts": 933
-   },
-   "Malek Jaziri": {
-    "spw": 0.6396,
-    "rpw": 0.3571,
-    "sv_pts": 5
-   },
-   "Jacopo Berrettini": {
-    "spw": 0.6393,
-    "rpw": 0.358,
-    "sv_pts": 15
-   },
-   "Feliciano Lopez": {
-    "spw": 0.643,
-    "rpw": 0.3516,
-    "sv_pts": 80
-   },
-   "Guido Andreozzi": {
-    "spw": 0.6369,
-    "rpw": 0.3589,
-    "sv_pts": 61
-   },
-   "Rodrigo Pacheco Mendez": {
-    "spw": 0.6338,
-    "rpw": 0.3604,
-    "sv_pts": 250
-   },
-   "Nick Chappell": {
-    "spw": 0.6411,
-    "rpw": 0.3574,
-    "sv_pts": 10
-   },
-   "Riccardo Bonadio": {
-    "spw": 0.6415,
-    "rpw": 0.3571,
-    "sv_pts": 30
-   },
-   "Carlos Taberner": {
-    "spw": 0.6334,
-    "rpw": 0.3819,
-    "sv_pts": 415
-   },
-   "Gael Monfils": {
-    "spw": 0.6444,
-    "rpw": 0.3577,
-    "sv_pts": 3471
-   },
-   "Benoit Paire": {
-    "spw": 0.6276,
-    "rpw": 0.363,
-    "sv_pts": 196
-   },
-   "Emilio Nava": {
-    "spw": 0.6368,
-    "rpw": 0.3489,
-    "sv_pts": 980
-   },
-   "Younes Lalami Laaroussi": {
-    "spw": 0.6287,
-    "rpw": 0.3507,
-    "sv_pts": 66
-   },
-   "Elliot Benchetrit": {
-    "spw": 0.6309,
-    "rpw": 0.3477,
-    "sv_pts": 126
-   },
-   "Adam Moundir": {
-    "spw": 0.6414,
-    "rpw": 0.3578,
-    "sv_pts": 11
-   },
-   "Hugo Grenier": {
-    "spw": 0.6241,
-    "rpw": 0.3524,
-    "sv_pts": 394
-   },
-   "Alexey Vatutin": {
-    "spw": 0.6364,
-    "rpw": 0.3623,
-    "sv_pts": 40
-   },
-   "Jurij Rodionov": {
-    "spw": 0.6545,
-    "rpw": 0.3679,
-    "sv_pts": 433
-   },
-   "Henrique Rocha": {
-    "spw": 0.6314,
-    "rpw": 0.3596,
-    "sv_pts": 328
-   },
-   "Pedro Sousa": {
-    "spw": 0.6393,
-    "rpw": 0.3573,
-    "sv_pts": 13
-   },
-   "Alessandro Giannessi": {
-    "spw": 0.6391,
-    "rpw": 0.3576,
-    "sv_pts": 7
-   },
-   "Sebastian Ofner": {
-    "spw": 0.6387,
-    "rpw": 0.3432,
-    "sv_pts": 2743
-   },
-   "Giulio Zeppieri": {
-    "spw": 0.6317,
-    "rpw": 0.3501,
-    "sv_pts": 656
-   },
-   "Ivan Gakhov": {
-    "spw": 0.6263,
-    "rpw": 0.3565,
-    "sv_pts": 90
-   },
-   "Valentin Vacherot": {
-    "spw": 0.6495,
-    "rpw": 0.3537,
-    "sv_pts": 1285
-   },
-   "Dino Prizmic": {
-    "spw": 0.6285,
-    "rpw": 0.3609,
-    "sv_pts": 773
-   },
-   "Hamad Medjedovic": {
-    "spw": 0.6554,
-    "rpw": 0.3451,
-    "sv_pts": 2616
-   },
-   "Max Hans Rehberg": {
-    "spw": 0.6372,
-    "rpw": 0.359,
-    "sv_pts": 32
-   },
-   "Marko Topo": {
-    "spw": 0.6268,
-    "rpw": 0.3576,
-    "sv_pts": 119
-   },
-   "Jozef Kovalik": {
-    "spw": 0.6359,
-    "rpw": 0.3521,
-    "sv_pts": 339
-   },
-   "Lorenzo Giustino": {
-    "spw": 0.6404,
-    "rpw": 0.3572,
-    "sv_pts": 7
-   },
-   "Daniel Rincon": {
-    "spw": 0.6369,
-    "rpw": 0.356,
-    "sv_pts": 37
-   },
-   "Marco Trungelliti": {
-    "spw": 0.6287,
-    "rpw": 0.3459,
-    "sv_pts": 229
-   },
-   "Attila Balazs": {
-    "spw": 0.6333,
-    "rpw": 0.3574,
-    "sv_pts": 20
-   },
-   "Martin Landaluce": {
-    "spw": 0.6303,
-    "rpw": 0.3399,
-    "sv_pts": 590
-   },
-   "Fabian Marozsan": {
-    "spw": 0.6386,
-    "rpw": 0.3591,
-    "sv_pts": 4504
-   },
-   "Stefano Napolitano": {
-    "spw": 0.6428,
-    "rpw": 0.3592,
-    "sv_pts": 184
-   },
-   "Nino Serdarusic": {
-    "spw": 0.6419,
-    "rpw": 0.3565,
-    "sv_pts": 17
-   },
-   "Vitaliy Sachko": {
-    "spw": 0.6442,
-    "rpw": 0.3402,
-    "sv_pts": 371
-   },
-   "Stefano Travaglia": {
-    "spw": 0.6371,
-    "rpw": 0.356,
-    "sv_pts": 32
-   },
-   "Pablo Llamas Ruiz": {
-    "spw": 0.6349,
-    "rpw": 0.3733,
-    "sv_pts": 426
-   },
-   "Alvaro Lopez San Martin": {
-    "spw": 0.6396,
-    "rpw": 0.3569,
-    "sv_pts": 10
-   },
-   "Oriol Roca Batalla": {
-    "spw": 0.6401,
-    "rpw": 0.3566,
-    "sv_pts": 9
-   },
-   "Lucas Pouille": {
-    "spw": 0.6298,
-    "rpw": 0.3573,
-    "sv_pts": 279
-   },
-   "Jiri Vesely": {
-    "spw": 0.6414,
-    "rpw": 0.3415,
-    "sv_pts": 174
-   },
-   "Patrick Kypson": {
-    "spw": 0.6393,
-    "rpw": 0.3451,
-    "sv_pts": 216
-   },
-   "Arthur Cazaux": {
-    "spw": 0.6474,
-    "rpw": 0.3392,
-    "sv_pts": 2660
-   },
-   "Genaro Alberto Olivieri": {
-    "spw": 0.6382,
-    "rpw": 0.3588,
-    "sv_pts": 64
-   },
-   "Giovanni Mpetshi Perricard": {
-    "spw": 0.694,
-    "rpw": 0.2771,
-    "sv_pts": 3944
-   },
-   "Dominic Stricker": {
-    "spw": 0.6439,
-    "rpw": 0.3431,
-    "sv_pts": 862
-   },
-   "Thiago Agustin Tirante": {
-    "spw": 0.6349,
-    "rpw": 0.3577,
-    "sv_pts": 690
-   },
-   "Thiago Seyboth Wild": {
-    "spw": 0.6259,
-    "rpw": 0.3486,
-    "sv_pts": 2006
-   },
-   "Nick Kyrgios": {
-    "spw": 0.6482,
-    "rpw": 0.326,
-    "sv_pts": 275
-   },
-   "Milos Raonic": {
-    "spw": 0.6713,
-    "rpw": 0.3385,
-    "sv_pts": 372
-   },
-   "Ricardas Berankis": {
-    "spw": 0.6386,
-    "rpw": 0.3619,
-    "sv_pts": 62
-   },
-   "Ryan Peniston": {
-    "spw": 0.6391,
-    "rpw": 0.3564,
-    "sv_pts": 40
-   },
-   "Jan Choinski": {
-    "spw": 0.6311,
-    "rpw": 0.3496,
-    "sv_pts": 335
-   },
-   "Louis Wessels": {
-    "spw": 0.6417,
-    "rpw": 0.3572,
-    "sv_pts": 15
-   },
-   "George Loffhagen": {
-    "spw": 0.6337,
-    "rpw": 0.3556,
-    "sv_pts": 180
-   },
-   "Li Tu": {
-    "spw": 0.6247,
-    "rpw": 0.3425,
-    "sv_pts": 304
-   },
-   "Alex Michelsen": {
-    "spw": 0.6331,
-    "rpw": 0.3684,
-    "sv_pts": 4893
-   },
-   "Kimmer Coppejans": {
-    "spw": 0.6393,
-    "rpw": 0.3534,
-    "sv_pts": 60
-   },
-   "Sho Shimabukuro": {
-    "spw": 0.6395,
-    "rpw": 0.3555,
-    "sv_pts": 187
-   },
-   "Arthur Fery": {
-    "spw": 0.631,
-    "rpw": 0.3575,
-    "sv_pts": 311
-   },
-   "Dennis Novak": {
-    "spw": 0.6427,
-    "rpw": 0.3526,
-    "sv_pts": 31
-   },
-   "Shintaro Mochizuki": {
-    "spw": 0.6055,
-    "rpw": 0.3631,
-    "sv_pts": 1084
-   },
-   "Dominik Koepfer": {
-    "spw": 0.635,
-    "rpw": 0.354,
-    "sv_pts": 1141
-   },
-   "Harold Mayot": {
-    "spw": 0.6307,
-    "rpw": 0.3507,
-    "sv_pts": 594
-   },
-   "Otto Virtanen": {
-    "spw": 0.6301,
-    "rpw": 0.351,
-    "sv_pts": 973
-   },
-   "Kevin Anderson": {
-    "spw": 0.6419,
-    "rpw": 0.3591,
-    "sv_pts": 50
-   },
-   "James Duckworth": {
-    "spw": 0.6463,
-    "rpw": 0.3315,
-    "sv_pts": 2022
-   },
-   "Ethan Quinn": {
-    "spw": 0.626,
-    "rpw": 0.3522,
-    "sv_pts": 1735
-   },
-   "Yun seong Chung": {
-    "spw": 0.6408,
-    "rpw": 0.3566,
-    "sv_pts": 9
-   },
-   "Eliot Spizzirri": {
-    "spw": 0.6494,
-    "rpw": 0.3677,
-    "sv_pts": 812
-   },
-   "Alex Bolt": {
-    "spw": 0.6416,
-    "rpw": 0.3466,
-    "sv_pts": 271
-   },
-   "Filip Misolic": {
-    "spw": 0.6206,
-    "rpw": 0.3537,
-    "sv_pts": 1393
-   },
-   "Leo Borg": {
-    "spw": 0.6168,
-    "rpw": 0.3511,
-    "sv_pts": 351
-   },
-   "Dragos Nicolae Madaras": {
-    "spw": 0.6396,
-    "rpw": 0.3582,
-    "sv_pts": 13
-   },
-   "Rudolf Molleker": {
-    "spw": 0.6356,
-    "rpw": 0.3574,
-    "sv_pts": 85
-   },
-   "Zsombor Piros": {
-    "spw": 0.629,
-    "rpw": 0.3634,
-    "sv_pts": 179
-   },
-   "Duje Ajdukovic": {
-    "spw": 0.634,
-    "rpw": 0.3579,
-    "sv_pts": 232
-   },
-   "Jesper de Jong": {
-    "spw": 0.6435,
-    "rpw": 0.3507,
-    "sv_pts": 1975
-   },
-   "Kei Nishikori": {
-    "spw": 0.6249,
-    "rpw": 0.3608,
-    "sv_pts": 1265
-   },
-   "Andres Martin": {
-    "spw": 0.6346,
-    "rpw": 0.3536,
-    "sv_pts": 24
-   },
-   "Jason Jung": {
-    "spw": 0.637,
-    "rpw": 0.3571,
-    "sv_pts": 33
-   },
-   "Bjorn Fratangelo": {
-    "spw": 0.6411,
-    "rpw": 0.3558,
-    "sv_pts": 11
-   },
-   "Bradley Klahn": {
-    "spw": 0.6402,
-    "rpw": 0.3564,
-    "sv_pts": 11
-   },
-   "Omni Kumar": {
-    "spw": 0.6358,
-    "rpw": 0.3553,
-    "sv_pts": 63
-   },
-   "Gonzalo Lama": {
-    "spw": 0.6401,
-    "rpw": 0.3564,
-    "sv_pts": 13
-   },
-   "Skander Mansouri": {
-    "spw": 0.6387,
-    "rpw": 0.3637,
-    "sv_pts": 54
-   },
-   "Beibit Zhukayev": {
-    "spw": 0.6372,
-    "rpw": 0.3392,
-    "sv_pts": 269
-   },
-   "Alexis Galarneau": {
-    "spw": 0.6467,
-    "rpw": 0.3687,
-    "sv_pts": 157
-   },
-   "Andrey Kuznetsov": {
-    "spw": 0.64,
-    "rpw": 0.3567,
-    "sv_pts": 9
-   },
-   "Strong Kirchheimer": {
-    "spw": 0.6397,
-    "rpw": 0.3524,
-    "sv_pts": 38
-   },
-   "Mitchell Krueger": {
-    "spw": 0.6365,
-    "rpw": 0.3658,
-    "sv_pts": 435
-   },
-   "Thai-Son Kwiatkowski": {
-    "spw": 0.6401,
-    "rpw": 0.3572,
-    "sv_pts": 16
-   },
-   "Darian King": {
-    "spw": 0.6339,
-    "rpw": 0.375,
-    "sv_pts": 85
-   },
-   "Illya Marchenko": {
-    "spw": 0.6394,
-    "rpw": 0.3607,
-    "sv_pts": 13
-   },
-   "Nicolas Moreno De Alboran": {
-    "spw": 0.6472,
-    "rpw": 0.337,
-    "sv_pts": 440
-   },
-   "Learner Tien": {
-    "spw": 0.626,
-    "rpw": 0.3665,
-    "sv_pts": 3742
-   },
-   "Titouan Droguet": {
-    "spw": 0.6328,
-    "rpw": 0.3673,
-    "sv_pts": 271
-   },
-   "Jakub Mensik": {
-    "spw": 0.6511,
-    "rpw": 0.3652,
-    "sv_pts": 4729
-   },
-   "Seongchan Hong": {
-    "spw": 0.6374,
-    "rpw": 0.3496,
-    "sv_pts": 178
-   },
-   "Philip Sekulic": {
-    "spw": 0.6378,
-    "rpw": 0.3581,
-    "sv_pts": 51
-   },
-   "Alibek Kachmazov": {
-    "spw": 0.6381,
-    "rpw": 0.3591,
-    "sv_pts": 204
-   },
-   "Jie Cui": {
-    "spw": 0.6405,
-    "rpw": 0.3573,
-    "sv_pts": 8
-   },
-   "Benjamin Lock": {
-    "spw": 0.6425,
-    "rpw": 0.3567,
-    "sv_pts": 33
-   },
-   "Tao Mu": {
-    "spw": 0.6383,
-    "rpw": 0.3578,
-    "sv_pts": 9
-   },
-   "Marc Polmans": {
-    "spw": 0.6328,
-    "rpw": 0.3544,
-    "sv_pts": 71
-   },
-   "Ye Cong Mo": {
-    "spw": 0.6412,
-    "rpw": 0.3565,
-    "sv_pts": 11
-   },
-   "Yi Zhou": {
-    "spw": 0.6404,
-    "rpw": 0.3516,
-    "sv_pts": 448
-   },
-   "Terence Atmane": {
-    "spw": 0.6331,
-    "rpw": 0.3504,
-    "sv_pts": 1188
-   },
-   "Luke Saville": {
-    "spw": 0.6401,
-    "rpw": 0.3552,
-    "sv_pts": 16
-   },
-   "Zhe Li": {
-    "spw": 0.6408,
-    "rpw": 0.3568,
-    "sv_pts": 11
-   },
-   "Egor Gerasimov": {
-    "spw": 0.6422,
-    "rpw": 0.35,
-    "sv_pts": 68
-   },
-   "Mikhail Kukushkin": {
-    "spw": 0.6261,
-    "rpw": 0.3542,
-    "sv_pts": 264
-   },
-   "Yunchaokete Bu": {
-    "spw": 0.6383,
-    "rpw": 0.3507,
-    "sv_pts": 2444
-   },
-   "Denis Yevseyev": {
-    "spw": 0.6349,
-    "rpw": 0.3612,
-    "sv_pts": 105
-   },
-   "Rigele Te": {
-    "spw": 0.6384,
-    "rpw": 0.3579,
-    "sv_pts": 50
-   },
-   "Dane Sweeny": {
-    "spw": 0.6392,
-    "rpw": 0.3447,
-    "sv_pts": 123
-   },
-   "Benjamin Hassan": {
-    "spw": 0.6304,
-    "rpw": 0.3513,
-    "sv_pts": 280
-   },
-   "Karl Friberg": {
-    "spw": 0.6398,
-    "rpw": 0.3552,
-    "sv_pts": 28
-   },
-   "Mark Lajal": {
-    "spw": 0.6419,
-    "rpw": 0.3572,
-    "sv_pts": 299
-   },
-   "Alexander Blockx": {
-    "spw": 0.6327,
-    "rpw": 0.3447,
-    "sv_pts": 781
-   },
-   "Pierre-Hugues Herbert": {
-    "spw": 0.6316,
-    "rpw": 0.343,
-    "sv_pts": 812
-   },
-   "Mate Valkusz": {
-    "spw": 0.6387,
-    "rpw": 0.3566,
-    "sv_pts": 73
-   },
-   "Calvin Hemery": {
-    "spw": 0.6394,
-    "rpw": 0.3497,
-    "sv_pts": 81
-   },
-   "Mathias Bourgue": {
-    "spw": 0.6405,
-    "rpw": 0.3563,
-    "sv_pts": 17
-   },
-   "Matteo Martineau": {
-    "spw": 0.6426,
-    "rpw": 0.3556,
-    "sv_pts": 36
-   },
-   "Cem Ilkel": {
-    "spw": 0.6383,
-    "rpw": 0.3576,
-    "sv_pts": 58
-   },
-   "Billy Harris": {
-    "spw": 0.6356,
-    "rpw": 0.3364,
-    "sv_pts": 1274
-   },
-   "Patrick Kaukovalta": {
-    "spw": 0.6419,
-    "rpw": 0.3532,
-    "sv_pts": 13
-   },
-   "Coleman Wong": {
-    "spw": 0.6416,
-    "rpw": 0.3529,
-    "sv_pts": 1080
-   },
-   "Steven Diez": {
-    "spw": 0.6383,
-    "rpw": 0.3528,
-    "sv_pts": 34
-   },
-   "Adam Walton": {
-    "spw": 0.6424,
-    "rpw": 0.3434,
-    "sv_pts": 2337
-   },
-   "James McCabe": {
-    "spw": 0.6259,
-    "rpw": 0.3432,
-    "sv_pts": 282
-   },
-   "Vit Kopriva": {
-    "spw": 0.6051,
-    "rpw": 0.3623,
-    "sv_pts": 1384
-   },
-   "Omar Jasika": {
-    "spw": 0.6338,
-    "rpw": 0.3526,
-    "sv_pts": 78
-   },
-   "Ugo Blanchet": {
-    "spw": 0.6187,
-    "rpw": 0.3447,
-    "sv_pts": 692
-   },
-   "Antoine Escoffier": {
-    "spw": 0.6381,
-    "rpw": 0.3597,
-    "sv_pts": 19
-   },
-   "Viacheslav Bielinskyi": {
-    "spw": 0.6389,
-    "rpw": 0.3579,
-    "sv_pts": 15
-   },
-   "Vladyslav Orlov": {
-    "spw": 0.64,
-    "rpw": 0.3568,
-    "sv_pts": 14
-   },
-   "Eero Vasa": {
-    "spw": 0.6337,
-    "rpw": 0.356,
-    "sv_pts": 144
-   },
-   "Kevin Krawietz": {
-    "spw": 0.639,
-    "rpw": 0.3578,
-    "sv_pts": 18
-   },
-   "Lukas Pokorny": {
-    "spw": 0.6413,
-    "rpw": 0.3586,
-    "sv_pts": 6
-   },
-   "Gustavo Heide": {
-    "spw": 0.6401,
-    "rpw": 0.3465,
-    "sv_pts": 387
-   },
-   "Chris Rodesch": {
-    "spw": 0.6489,
-    "rpw": 0.3473,
-    "sv_pts": 152
-   },
-   "Alex Knaff": {
-    "spw": 0.6342,
-    "rpw": 0.3603,
-    "sv_pts": 136
-   },
-   "Adria Soriano Barrera": {
-    "spw": 0.6499,
-    "rpw": 0.3487,
-    "sv_pts": 125
-   },
-   "Mohamed Safwat": {
-    "spw": 0.6375,
-    "rpw": 0.3609,
-    "sv_pts": 35
-   },
-   "Alvaro Guillen Meza": {
-    "spw": 0.6413,
-    "rpw": 0.3787,
-    "sv_pts": 140
-   },
-   "Amr Elsayed Abdou Ah Mohamed": {
-    "spw": 0.6424,
-    "rpw": 0.3616,
-    "sv_pts": 13
-   },
-   "Andres Andrade": {
-    "spw": 0.6361,
-    "rpw": 0.3686,
-    "sv_pts": 158
-   },
-   "Michael Bassem Sobhy": {
-    "spw": 0.6407,
-    "rpw": 0.3595,
-    "sv_pts": 18
-   },
-   "Hady Habib": {
-    "spw": 0.6449,
-    "rpw": 0.3351,
-    "sv_pts": 297
-   },
-   "Robert Strombachs": {
-    "spw": 0.6416,
-    "rpw": 0.3562,
-    "sv_pts": 15
-   },
-   "Martins Rocens": {
-    "spw": 0.6383,
-    "rpw": 0.3556,
-    "sv_pts": 11
-   },
-   "Nicolai Budkov Kjaer": {
-    "spw": 0.6465,
-    "rpw": 0.3585,
-    "sv_pts": 649
-   },
-   "Davis Rolis": {
-    "spw": 0.639,
-    "rpw": 0.3537,
-    "sv_pts": 38
-   },
-   "Yanki Erel": {
-    "spw": 0.6516,
     "rpw": 0.3531,
     "sv_pts": 94
    },
-   "Ajeet Rai": {
-    "spw": 0.6331,
-    "rpw": 0.3537,
+   "Gregoire Barrere": {
+    "spw": 0.6342,
+    "rpw": 0.3559,
+    "sv_pts": 652
+   },
+   "Fabio Fognini": {
+    "spw": 0.6088,
+    "rpw": 0.3608,
+    "sv_pts": 966
+   },
+   "Ugo Humbert": {
+    "spw": 0.6654,
+    "rpw": 0.3605,
+    "sv_pts": 3361
+   },
+   "Kiranpal Pannu": {
+    "spw": 0.638,
+    "rpw": 0.3538,
     "sv_pts": 63
    },
-   "Altug Celikbilek": {
-    "spw": 0.6423,
-    "rpw": 0.3612,
-    "sv_pts": 17
+   "John Isner": {
+    "spw": 0.6615,
+    "rpw": 0.338,
+    "sv_pts": 229
    },
-   "Sergey Fomin": {
-    "spw": 0.6348,
-    "rpw": 0.3561,
-    "sv_pts": 70
+   "Alejandro Davidovich Fokina": {
+    "spw": 0.6293,
+    "rpw": 0.3787,
+    "sv_pts": 3793
    },
-   "Maks Kasnikowski": {
-    "spw": 0.6331,
-    "rpw": 0.3618,
-    "sv_pts": 80
+   "Pablo Carreno Busta": {
+    "spw": 0.6324,
+    "rpw": 0.3512,
+    "sv_pts": 1195
    },
-   "Khumoyun Sultanov": {
-    "spw": 0.646,
-    "rpw": 0.3626,
-    "sv_pts": 62
+   "Tommy Paul": {
+    "spw": 0.6508,
+    "rpw": 0.3898,
+    "sv_pts": 3564
    },
-   "Kamil Majchrzak": {
-    "spw": 0.6486,
-    "rpw": 0.3643,
-    "sv_pts": 1891
-   },
-   "Maxim Shin": {
-    "spw": 0.6379,
-    "rpw": 0.3571,
-    "sv_pts": 8
-   },
-   "Matic Kriznik": {
-    "spw": 0.6334,
-    "rpw": 0.3568,
-    "sv_pts": 33
-   },
-   "Sebastian Dominko": {
-    "spw": 0.6454,
-    "rpw": 0.3569,
-    "sv_pts": 40
-   },
-   "Diego Duran": {
-    "spw": 0.6428,
-    "rpw": 0.3627,
-    "sv_pts": 12
-   },
-   "Gillian Osmont": {
-    "spw": 0.6373,
-    "rpw": 0.3572,
-    "sv_pts": 12
-   },
-   "Marcelo Arevalo": {
-    "spw": 0.6368,
-    "rpw": 0.3748,
-    "sv_pts": 65
-   },
-   "Heve Kelley": {
-    "spw": 0.6378,
-    "rpw": 0.3554,
-    "sv_pts": 9
-   },
-   "Juan Carlos Fuentes Vasquez": {
-    "spw": 0.6364,
-    "rpw": 0.3617,
-    "sv_pts": 29
-   },
-   "Matavao Fanguna": {
-    "spw": 0.6375,
-    "rpw": 0.3568,
-    "sv_pts": 15
-   },
-   "Moez Echargui": {
-    "spw": 0.6378,
-    "rpw": 0.3794,
-    "sv_pts": 197
-   },
-   "Jesse Flores": {
-    "spw": 0.6395,
-    "rpw": 0.3561,
-    "sv_pts": 13
-   },
-   "Aziz Dougaz": {
-    "spw": 0.6269,
-    "rpw": 0.3531,
-    "sv_pts": 210
-   },
-   "Rodrigo Crespo Piedra": {
-    "spw": 0.6395,
-    "rpw": 0.3575,
-    "sv_pts": 23
-   },
-   "Nam Hoang Ly": {
-    "spw": 0.6409,
-    "rpw": 0.3627,
-    "sv_pts": 44
-   },
-   "Philip Henning": {
-    "spw": 0.6369,
-    "rpw": 0.3581,
-    "sv_pts": 87
-   },
-   "Kris Van Wyk": {
-    "spw": 0.6366,
-    "rpw": 0.3636,
-    "sv_pts": 42
-   },
-   "Linh Giang Trinh": {
-    "spw": 0.6312,
-    "rpw": 0.3602,
+   "John Millman": {
+    "spw": 0.6405,
+    "rpw": 0.357,
     "sv_pts": 36
    },
-   "Dmitry Popko": {
-    "spw": 0.6282,
-    "rpw": 0.3554,
-    "sv_pts": 121
+   "Robin Haase": {
+    "spw": 0.6389,
+    "rpw": 0.3574,
+    "sv_pts": 34
    },
-   "Ignacio Buse": {
-    "spw": 0.6398,
-    "rpw": 0.3641,
-    "sv_pts": 525
+   "Tomas Machac": {
+    "spw": 0.6478,
+    "rpw": 0.3653,
+    "sv_pts": 2727
    },
-   "Joris De Loore": {
-    "spw": 0.6379,
-    "rpw": 0.3571,
-    "sv_pts": 14
+   "Lorenzo Sonego": {
+    "spw": 0.6582,
+    "rpw": 0.3403,
+    "sv_pts": 3658
    },
-   "Yshai Oliel": {
-    "spw": 0.6406,
-    "rpw": 0.3551,
-    "sv_pts": 16
+   "Brandon Nakashima": {
+    "spw": 0.6686,
+    "rpw": 0.3459,
+    "sv_pts": 3705
    },
-   "Daniel Cukierman": {
-    "spw": 0.625,
-    "rpw": 0.3504,
-    "sv_pts": 54
+   "Tomas Martin Etcheverry": {
+    "spw": 0.6439,
+    "rpw": 0.3618,
+    "sv_pts": 3785
    },
-   "Orel Kimhi": {
-    "spw": 0.6257,
-    "rpw": 0.3513,
-    "sv_pts": 132
+   "Juncheng Shang": {
+    "spw": 0.6515,
+    "rpw": 0.3518,
+    "sv_pts": 1502
    },
-   "Nerman Fatic": {
-    "spw": 0.637,
-    "rpw": 0.3514,
-    "sv_pts": 82
+   "Daniel Altmaier": {
+    "spw": 0.6251,
+    "rpw": 0.3447,
+    "sv_pts": 2900
    },
-   "Yanaki Milev": {
-    "spw": 0.6278,
-    "rpw": 0.3635,
-    "sv_pts": 132
+   "Nuno Borges": {
+    "spw": 0.6388,
+    "rpw": 0.3565,
+    "sv_pts": 3713
    },
-   "Petr Nesterov": {
-    "spw": 0.6337,
-    "rpw": 0.3644,
-    "sv_pts": 39
+   "Taro Daniel": {
+    "spw": 0.6238,
+    "rpw": 0.3412,
+    "sv_pts": 1085
    },
-   "Andrej Nedic": {
-    "spw": 0.6321,
-    "rpw": 0.3572,
-    "sv_pts": 84
+   "Ernesto Escobedo": {
+    "spw": 0.6373,
+    "rpw": 0.3516,
+    "sv_pts": 86
    },
-   "Marius Copil": {
-    "spw": 0.6426,
-    "rpw": 0.3555,
-    "sv_pts": 13
+   "Dusan Lajovic": {
+    "spw": 0.6155,
+    "rpw": 0.3664,
+    "sv_pts": 1500
    },
-   "Aristotelis Thanos": {
-    "spw": 0.6427,
-    "rpw": 0.3594,
-    "sv_pts": 22
+   "Cristian Garin": {
+    "spw": 0.6392,
+    "rpw": 0.3665,
+    "sv_pts": 1023
    },
-   "Nicholas David Ionel": {
-    "spw": 0.6406,
-    "rpw": 0.3573,
-    "sv_pts": 22
+   "Yosuke Watanuki": {
+    "spw": 0.6484,
+    "rpw": 0.3524,
+    "sv_pts": 514
    },
-   "Ioannis Xilas": {
-    "spw": 0.6409,
-    "rpw": 0.3637,
-    "sv_pts": 12
-   },
-   "Luca Preda": {
-    "spw": 0.6363,
+   "Yannick Hanfmann": {
+    "spw": 0.6425,
     "rpw": 0.3591,
-    "sv_pts": 16
+    "sv_pts": 1978
    },
-   "Michael Agwi": {
-    "spw": 0.6367,
-    "rpw": 0.3701,
+   "Pavel Kotov": {
+    "spw": 0.6281,
+    "rpw": 0.3497,
+    "sv_pts": 1130
+   },
+   "Ilya Ivashka": {
+    "spw": 0.6281,
+    "rpw": 0.3626,
+    "sv_pts": 235
+   },
+   "Lloyd Harris": {
+    "spw": 0.6488,
+    "rpw": 0.3346,
+    "sv_pts": 613
+   },
+   "Marton Fucsovics": {
+    "spw": 0.6296,
+    "rpw": 0.3749,
+    "sv_pts": 2170
+   },
+   "Luca Van Assche": {
+    "spw": 0.6251,
+    "rpw": 0.3556,
+    "sv_pts": 831
+   },
+   "Guido Pella": {
+    "spw": 0.637,
+    "rpw": 0.3541,
+    "sv_pts": 221
+   },
+   "Corentin Moutet": {
+    "spw": 0.6196,
+    "rpw": 0.3789,
+    "sv_pts": 3112
+   },
+   "Yibing Wu": {
+    "spw": 0.6305,
+    "rpw": 0.35,
+    "sv_pts": 798
+   },
+   "Vasek Pospisil": {
+    "spw": 0.6369,
+    "rpw": 0.3586,
     "sv_pts": 83
    },
-   "Osgar O'Hoisin": {
-    "spw": 0.6423,
-    "rpw": 0.3542,
-    "sv_pts": 14
+   "Dominic Thiem": {
+    "spw": 0.6405,
+    "rpw": 0.3415,
+    "sv_pts": 574
    },
-   "Lucas Miedler": {
-    "spw": 0.6415,
-    "rpw": 0.357,
-    "sv_pts": 18
+   "Max Purcell": {
+    "spw": 0.6418,
+    "rpw": 0.3431,
+    "sv_pts": 873
    },
-   "Saba Purtseladze": {
-    "spw": 0.6397,
-    "rpw": 0.3551,
-    "sv_pts": 92
-   },
-   "Vilius Gaubas": {
-    "spw": 0.6237,
-    "rpw": 0.3704,
-    "sv_pts": 189
-   },
-   "Zura Tkemaladze": {
-    "spw": 0.6348,
-    "rpw": 0.3584,
-    "sv_pts": 38
-   },
-   "Elmer Moller": {
-    "spw": 0.5981,
-    "rpw": 0.3676,
-    "sv_pts": 494
-   },
-   "August Holmgren": {
-    "spw": 0.6639,
-    "rpw": 0.3317,
-    "sv_pts": 390
-   },
-   "Aisam-Ul-Haq Qureshi": {
-    "spw": 0.6417,
-    "rpw": 0.3527,
-    "sv_pts": 24
-   },
-   "N.Sriram Balaji": {
-    "spw": 0.6454,
-    "rpw": 0.3567,
-    "sv_pts": 14
-   },
-   "Aqeel Khan": {
-    "spw": 0.6439,
-    "rpw": 0.3578,
-    "sv_pts": 46
-   },
-   "Niki Kaliyanda Poonacha": {
-    "spw": 0.6445,
-    "rpw": 0.3602,
-    "sv_pts": 13
-   },
-   "Muhammad Shoaib": {
-    "spw": 0.6336,
-    "rpw": 0.3538,
+   "Jeremy Chardy": {
+    "spw": 0.6342,
+    "rpw": 0.3561,
     "sv_pts": 44
    },
-   "Juan Carlos Prado Angelo": {
-    "spw": 0.6421,
-    "rpw": 0.3631,
-    "sv_pts": 12
+   "Daniel Elahi Galan": {
+    "spw": 0.6121,
+    "rpw": 0.3558,
+    "sv_pts": 1059
    },
-   "Maximus Jones": {
+   "Facundo Bagnis": {
+    "spw": 0.6331,
+    "rpw": 0.3586,
+    "sv_pts": 357
+   },
+   "Denis Kudla": {
+    "spw": 0.6352,
+    "rpw": 0.3566,
+    "sv_pts": 112
+   },
+   "Mattia Bellucci": {
+    "spw": 0.636,
+    "rpw": 0.3452,
+    "sv_pts": 1212
+   },
+   "Yu Hsiou Hsu": {
+    "spw": 0.6373,
+    "rpw": 0.36,
+    "sv_pts": 82
+   },
+   "Enzo Couacaud": {
+    "spw": 0.6412,
+    "rpw": 0.3553,
+    "sv_pts": 69
+   },
+   "Hugo Dellien": {
+    "spw": 0.6154,
+    "rpw": 0.3501,
+    "sv_pts": 634
+   },
+   "Zhizhen Zhang": {
+    "spw": 0.6523,
+    "rpw": 0.3357,
+    "sv_pts": 1870
+   },
+   "Nicolas Jarry": {
+    "spw": 0.6639,
+    "rpw": 0.3391,
+    "sv_pts": 2380
+   },
+   "Diego Schwartzman": {
+    "spw": 0.6086,
+    "rpw": 0.3636,
+    "sv_pts": 489
+   },
+   "Oleksii Krutykh": {
     "spw": 0.6369,
-    "rpw": 0.3579,
-    "sv_pts": 18
+    "rpw": 0.3562,
+    "sv_pts": 53
    },
-   "Murkel Dellien": {
-    "spw": 0.6372,
-    "rpw": 0.3635,
+   "Laurent Lokoli": {
+    "spw": 0.6398,
+    "rpw": 0.3568,
+    "sv_pts": 39
+   },
+   "Juan Pablo Varillas": {
+    "spw": 0.6226,
+    "rpw": 0.3632,
+    "sv_pts": 512
+   },
+   "Brandon Holt": {
+    "spw": 0.6237,
+    "rpw": 0.3448,
+    "sv_pts": 409
+   },
+   "Aleksandar Vukic": {
+    "spw": 0.6355,
+    "rpw": 0.3331,
+    "sv_pts": 3078
+   },
+   "Jan-Lennard Struff": {
+    "spw": 0.6499,
+    "rpw": 0.3549,
+    "sv_pts": 2870
+   },
+   "Nicolas Barrientos": {
+    "spw": 0.6416,
+    "rpw": 0.358,
+    "sv_pts": 5
+   },
+   "Nicolas Mejia": {
+    "spw": 0.6273,
+    "rpw": 0.3503,
+    "sv_pts": 159
+   },
+   "Yuki Bhambri": {
+    "spw": 0.641,
+    "rpw": 0.3568,
+    "sv_pts": 4
+   },
+   "Arthur Fils": {
+    "spw": 0.6488,
+    "rpw": 0.3685,
+    "sv_pts": 2430
+   },
+   "Geoffrey Blancaneaux": {
+    "spw": 0.6411,
+    "rpw": 0.3572,
+    "sv_pts": 19
+   },
+   "Clement Chidekh": {
+    "spw": 0.6411,
+    "rpw": 0.3558,
     "sv_pts": 29
    },
-   "Wishaya Trongcharoenchaikul": {
-    "spw": 0.6384,
-    "rpw": 0.3554,
-    "sv_pts": 10
+   "Antoine Bellier": {
+    "spw": 0.6415,
+    "rpw": 0.3575,
+    "sv_pts": 5
    },
-   "Boris Arias": {
-    "spw": 0.6443,
-    "rpw": 0.3599,
-    "sv_pts": 14
+   "Luca Nardi": {
+    "spw": 0.6083,
+    "rpw": 0.3418,
+    "sv_pts": 1081
    },
-   "Thanapet Chanta": {
-    "spw": 0.6401,
-    "rpw": 0.3557,
-    "sv_pts": 18
+   "Emilio Gomez": {
+    "spw": 0.6347,
+    "rpw": 0.3556,
+    "sv_pts": 83
    },
-   "Yassine Dlimi": {
-    "spw": 0.6379,
-    "rpw": 0.3616,
-    "sv_pts": 52
+   "Jack Sock": {
+    "spw": 0.6397,
+    "rpw": 0.3569,
+    "sv_pts": 48
    },
-   "Petros Chrysochos": {
-    "spw": 0.6393,
-    "rpw": 0.359,
+   "Fernando Verdasco": {
+    "spw": 0.6338,
+    "rpw": 0.3573,
+    "sv_pts": 31
+   },
+   "Liam Krall": {
+    "spw": 0.6419,
+    "rpw": 0.3575,
+    "sv_pts": 7
+   },
+   "Gabriel Diallo": {
+    "spw": 0.6535,
+    "rpw": 0.3514,
+    "sv_pts": 2476
+   },
+   "Zachary Svajda": {
+    "spw": 0.627,
+    "rpw": 0.3597,
+    "sv_pts": 505
+   },
+   "Steve Johnson": {
+    "spw": 0.6377,
+    "rpw": 0.352,
+    "sv_pts": 64
+   },
+   "Alex Rybakov": {
+    "spw": 0.6412,
+    "rpw": 0.3572,
+    "sv_pts": 9
+   },
+   "Tomas Barrios Vera": {
+    "spw": 0.6089,
+    "rpw": 0.3591,
+    "sv_pts": 441
+   },
+   "Juan Manuel Cerundolo": {
+    "spw": 0.6204,
+    "rpw": 0.367,
+    "sv_pts": 870
+   },
+   "Federico Delbonis": {
+    "spw": 0.641,
+    "rpw": 0.3594,
+    "sv_pts": 19
+   },
+   "Luciano Darderi": {
+    "spw": 0.6352,
+    "rpw": 0.3646,
+    "sv_pts": 2870
+   },
+   "Alejandro Tabilo": {
+    "spw": 0.6452,
+    "rpw": 0.3449,
+    "sv_pts": 2471
+   },
+   "Hugo Gaston": {
+    "spw": 0.602,
+    "rpw": 0.3594,
+    "sv_pts": 1535
+   },
+   "Andrea Vavassori": {
+    "spw": 0.6335,
+    "rpw": 0.3485,
+    "sv_pts": 347
+   },
+   "Gijs Brouwer": {
+    "spw": 0.6432,
+    "rpw": 0.3564,
+    "sv_pts": 215
+   },
+   "Matija Pecotic": {
+    "spw": 0.6419,
+    "rpw": 0.3586,
+    "sv_pts": 13
+   },
+   "Aleksandar Kovacevic": {
+    "spw": 0.6496,
+    "rpw": 0.3243,
+    "sv_pts": 2302
+   },
+   "Tung-Lin Wu": {
+    "spw": 0.6438,
+    "rpw": 0.3492,
+    "sv_pts": 147
+   },
+   "Carlos Alcaraz": {
+    "spw": 0.6741,
+    "rpw": 0.4089,
+    "sv_pts": 4604
+   },
+   "Facundo Diaz Acosta": {
+    "spw": 0.6286,
+    "rpw": 0.3697,
+    "sv_pts": 804
+   },
+   "Camilo Ugo Carabelli": {
+    "spw": 0.6063,
+    "rpw": 0.362,
+    "sv_pts": 1636
+   },
+   "Alexandre Muller": {
+    "spw": 0.6167,
+    "rpw": 0.3563,
+    "sv_pts": 2944
+   },
+   "Liam Broady": {
+    "spw": 0.627,
+    "rpw": 0.3638,
+    "sv_pts": 203
+   },
+   "Abdullah Shelbayh": {
+    "spw": 0.6286,
+    "rpw": 0.3553,
+    "sv_pts": 152
+   },
+   "Damir Dzumhur": {
+    "spw": 0.6037,
+    "rpw": 0.3778,
+    "sv_pts": 1941
+   },
+   "Alexander Ritschard": {
+    "spw": 0.6374,
+    "rpw": 0.3527,
+    "sv_pts": 82
+   },
+   "Leandro Riedi": {
+    "spw": 0.6365,
+    "rpw": 0.3564,
+    "sv_pts": 331
+   },
+   "Lukas Klein": {
+    "spw": 0.6557,
+    "rpw": 0.3522,
+    "sv_pts": 489
+   },
+   "Joao Fonseca": {
+    "spw": 0.6558,
+    "rpw": 0.3615,
+    "sv_pts": 1774
+   },
+   "Thomaz Bellucci": {
+    "spw": 0.6408,
+    "rpw": 0.3572,
+    "sv_pts": 7
+   },
+   "Mateus Alves": {
+    "spw": 0.6407,
+    "rpw": 0.358,
+    "sv_pts": 7
+   },
+   "Alexander Shevchenko": {
+    "spw": 0.6154,
+    "rpw": 0.3597,
+    "sv_pts": 2356
+   },
+   "Matteo Arnaldi": {
+    "spw": 0.6298,
+    "rpw": 0.3598,
+    "sv_pts": 3053
+   },
+   "Francesco Passaro": {
+    "spw": 0.6375,
+    "rpw": 0.3522,
+    "sv_pts": 639
+   },
+   "Malek Jaziri": {
+    "spw": 0.6405,
+    "rpw": 0.3572,
+    "sv_pts": 3
+   },
+   "Jacopo Berrettini": {
+    "spw": 0.6403,
+    "rpw": 0.3577,
+    "sv_pts": 3
+   },
+   "Feliciano Lopez": {
+    "spw": 0.6429,
+    "rpw": 0.3532,
+    "sv_pts": 56
+   },
+   "Guido Andreozzi": {
+    "spw": 0.6385,
+    "rpw": 0.3585,
+    "sv_pts": 43
+   },
+   "Rodrigo Pacheco Mendez": {
+    "spw": 0.6338,
+    "rpw": 0.3577,
+    "sv_pts": 167
+   },
+   "Nick Chappell": {
+    "spw": 0.6415,
+    "rpw": 0.3574,
+    "sv_pts": 7
+   },
+   "Riccardo Bonadio": {
+    "spw": 0.6418,
+    "rpw": 0.3572,
     "sv_pts": 21
    },
-   "Menelaos Efstathiou": {
-    "spw": 0.6406,
-    "rpw": 0.3569,
+   "Gael Monfils": {
+    "spw": 0.6438,
+    "rpw": 0.3588,
+    "sv_pts": 2348
+   },
+   "Benoit Paire": {
+    "spw": 0.6313,
+    "rpw": 0.3616,
+    "sv_pts": 137
+   },
+   "Emilio Nava": {
+    "spw": 0.6376,
+    "rpw": 0.3501,
+    "sv_pts": 686
+   },
+   "Younes Lalami Laaroussi": {
+    "spw": 0.6325,
+    "rpw": 0.3526,
+    "sv_pts": 46
+   },
+   "Elliot Benchetrit": {
+    "spw": 0.6339,
+    "rpw": 0.3503,
+    "sv_pts": 88
+   },
+   "Adam Moundir": {
+    "spw": 0.6417,
+    "rpw": 0.3577,
+    "sv_pts": 7
+   },
+   "Hugo Grenier": {
+    "spw": 0.6279,
+    "rpw": 0.3535,
+    "sv_pts": 276
+   },
+   "Alexey Vatutin": {
+    "spw": 0.6382,
+    "rpw": 0.3609,
+    "sv_pts": 28
+   },
+   "Jurij Rodionov": {
+    "spw": 0.6521,
+    "rpw": 0.3659,
+    "sv_pts": 303
+   },
+   "Henrique Rocha": {
+    "spw": 0.6338,
+    "rpw": 0.3592,
+    "sv_pts": 230
+   },
+   "Pedro Sousa": {
+    "spw": 0.6403,
+    "rpw": 0.3573,
+    "sv_pts": 9
+   },
+   "Alessandro Giannessi": {
+    "spw": 0.6401,
+    "rpw": 0.3576,
+    "sv_pts": 5
+   },
+   "Sebastian Ofner": {
+    "spw": 0.6369,
+    "rpw": 0.3432,
+    "sv_pts": 1873
+   },
+   "Giulio Zeppieri": {
+    "spw": 0.6336,
+    "rpw": 0.3513,
+    "sv_pts": 459
+   },
+   "Ivan Gakhov": {
+    "spw": 0.6307,
+    "rpw": 0.3568,
+    "sv_pts": 63
+   },
+   "Valentin Vacherot": {
+    "spw": 0.6442,
+    "rpw": 0.3488,
+    "sv_pts": 821
+   },
+   "Dino Prizmic": {
+    "spw": 0.6308,
+    "rpw": 0.3603,
+    "sv_pts": 541
+   },
+   "Hamad Medjedovic": {
+    "spw": 0.6537,
+    "rpw": 0.3492,
+    "sv_pts": 1693
+   },
+   "Max Hans Rehberg": {
+    "spw": 0.6387,
+    "rpw": 0.3586,
+    "sv_pts": 23
+   },
+   "Marko Topo": {
+    "spw": 0.6309,
+    "rpw": 0.3575,
+    "sv_pts": 83
+   },
+   "Jozef Kovalik": {
+    "spw": 0.6373,
+    "rpw": 0.3533,
+    "sv_pts": 237
+   },
+   "Lorenzo Giustino": {
+    "spw": 0.641,
+    "rpw": 0.3573,
+    "sv_pts": 5
+   },
+   "Daniel Rincon": {
+    "spw": 0.6385,
+    "rpw": 0.3565,
+    "sv_pts": 26
+   },
+   "Marco Trungelliti": {
+    "spw": 0.6317,
+    "rpw": 0.3473,
+    "sv_pts": 147
+   },
+   "Attila Balazs": {
+    "spw": 0.636,
+    "rpw": 0.3574,
+    "sv_pts": 14
+   },
+   "Martin Landaluce": {
+    "spw": 0.6325,
+    "rpw": 0.3431,
+    "sv_pts": 413
+   },
+   "Fabian Marozsan": {
+    "spw": 0.6388,
+    "rpw": 0.3589,
+    "sv_pts": 3131
+   },
+   "Stefano Napolitano": {
+    "spw": 0.6427,
+    "rpw": 0.3587,
+    "sv_pts": 129
+   },
+   "Nino Serdarusic": {
+    "spw": 0.6421,
+    "rpw": 0.3568,
     "sv_pts": 12
    },
-   "Stylianos Christodoulou": {
-    "spw": 0.643,
-    "rpw": 0.3618,
+   "Vitaliy Sachko": {
+    "spw": 0.6438,
+    "rpw": 0.3439,
+    "sv_pts": 260
+   },
+   "Stefano Travaglia": {
+    "spw": 0.6387,
+    "rpw": 0.3564,
+    "sv_pts": 23
+   },
+   "Pablo Llamas Ruiz": {
+    "spw": 0.6409,
+    "rpw": 0.3718,
+    "sv_pts": 266
+   },
+   "Alvaro Lopez San Martin": {
+    "spw": 0.6404,
+    "rpw": 0.3571,
+    "sv_pts": 7
+   },
+   "Oriol Roca Batalla": {
+    "spw": 0.6408,
+    "rpw": 0.3569,
+    "sv_pts": 7
+   },
+   "Lucas Pouille": {
+    "spw": 0.6323,
+    "rpw": 0.358,
+    "sv_pts": 171
+   },
+   "Jiri Vesely": {
+    "spw": 0.6417,
+    "rpw": 0.3456,
+    "sv_pts": 122
+   },
+   "Patrick Kypson": {
+    "spw": 0.6401,
+    "rpw": 0.3481,
+    "sv_pts": 151
+   },
+   "Arthur Cazaux": {
+    "spw": 0.6475,
+    "rpw": 0.3402,
+    "sv_pts": 1854
+   },
+   "Genaro Alberto Olivieri": {
+    "spw": 0.6394,
+    "rpw": 0.3584,
+    "sv_pts": 44
+   },
+   "Giovanni Mpetshi Perricard": {
+    "spw": 0.6902,
+    "rpw": 0.2809,
+    "sv_pts": 2733
+   },
+   "Dominic Stricker": {
+    "spw": 0.6435,
+    "rpw": 0.3459,
+    "sv_pts": 598
+   },
+   "Thiago Agustin Tirante": {
+    "spw": 0.6362,
+    "rpw": 0.3577,
+    "sv_pts": 483
+   },
+   "Thiago Seyboth Wild": {
+    "spw": 0.6281,
+    "rpw": 0.3493,
+    "sv_pts": 1393
+   },
+   "Nick Kyrgios": {
+    "spw": 0.65,
+    "rpw": 0.3325,
+    "sv_pts": 170
+   },
+   "Milos Raonic": {
+    "spw": 0.6641,
+    "rpw": 0.3445,
+    "sv_pts": 241
+   },
+   "Ricardas Berankis": {
+    "spw": 0.6397,
+    "rpw": 0.3607,
+    "sv_pts": 43
+   },
+   "Ryan Peniston": {
+    "spw": 0.6401,
+    "rpw": 0.3567,
+    "sv_pts": 28
+   },
+   "Jan Choinski": {
+    "spw": 0.6336,
+    "rpw": 0.3514,
+    "sv_pts": 234
+   },
+   "Louis Wessels": {
+    "spw": 0.6419,
+    "rpw": 0.3573,
+    "sv_pts": 11
+   },
+   "George Loffhagen": {
+    "spw": 0.6359,
+    "rpw": 0.3561,
+    "sv_pts": 126
+   },
+   "Li Tu": {
+    "spw": 0.6287,
+    "rpw": 0.3459,
+    "sv_pts": 213
+   },
+   "Alex Michelsen": {
+    "spw": 0.6333,
+    "rpw": 0.3673,
+    "sv_pts": 3327
+   },
+   "Kimmer Coppejans": {
+    "spw": 0.6402,
+    "rpw": 0.3545,
+    "sv_pts": 42
+   },
+   "Sho Shimabukuro": {
+    "spw": 0.6402,
+    "rpw": 0.356,
+    "sv_pts": 131
+   },
+   "Arthur Fery": {
+    "spw": 0.6335,
+    "rpw": 0.3575,
+    "sv_pts": 218
+   },
+   "Dennis Novak": {
+    "spw": 0.6426,
+    "rpw": 0.354,
+    "sv_pts": 22
+   },
+   "Shintaro Mochizuki": {
+    "spw": 0.6104,
+    "rpw": 0.3624,
+    "sv_pts": 759
+   },
+   "Dominik Koepfer": {
+    "spw": 0.6358,
+    "rpw": 0.3553,
+    "sv_pts": 781
+   },
+   "Harold Mayot": {
+    "spw": 0.6328,
+    "rpw": 0.3506,
+    "sv_pts": 375
+   },
+   "Otto Virtanen": {
+    "spw": 0.6319,
+    "rpw": 0.352,
+    "sv_pts": 681
+   },
+   "Kevin Anderson": {
+    "spw": 0.6421,
+    "rpw": 0.3587,
+    "sv_pts": 35
+   },
+   "James Duckworth": {
+    "spw": 0.6465,
+    "rpw": 0.3342,
+    "sv_pts": 1408
+   },
+   "Ethan Quinn": {
+    "spw": 0.6289,
+    "rpw": 0.3514,
+    "sv_pts": 1176
+   },
+   "Yun seong Chung": {
+    "spw": 0.6413,
+    "rpw": 0.3568,
+    "sv_pts": 6
+   },
+   "Eliot Spizzirri": {
+    "spw": 0.6484,
+    "rpw": 0.3662,
+    "sv_pts": 568
+   },
+   "Alex Bolt": {
+    "spw": 0.6412,
+    "rpw": 0.3485,
+    "sv_pts": 184
+   },
+   "Filip Misolic": {
+    "spw": 0.6231,
+    "rpw": 0.3542,
+    "sv_pts": 975
+   },
+   "Leo Borg": {
+    "spw": 0.6222,
+    "rpw": 0.3525,
+    "sv_pts": 245
+   },
+   "Dragos Nicolae Madaras": {
+    "spw": 0.6405,
+    "rpw": 0.358,
+    "sv_pts": 9
+   },
+   "Rudolf Molleker": {
+    "spw": 0.6375,
+    "rpw": 0.3574,
+    "sv_pts": 60
+   },
+   "Zsombor Piros": {
+    "spw": 0.6324,
+    "rpw": 0.3619,
+    "sv_pts": 125
+   },
+   "Duje Ajdukovic": {
+    "spw": 0.636,
+    "rpw": 0.3578,
+    "sv_pts": 162
+   },
+   "Jesper de Jong": {
+    "spw": 0.6423,
+    "rpw": 0.3513,
+    "sv_pts": 1366
+   },
+   "Kei Nishikori": {
+    "spw": 0.6273,
+    "rpw": 0.3612,
+    "sv_pts": 845
+   },
+   "Andres Martin": {
+    "spw": 0.6369,
+    "rpw": 0.3547,
+    "sv_pts": 17
+   },
+   "Jason Jung": {
+    "spw": 0.6386,
+    "rpw": 0.3572,
+    "sv_pts": 23
+   },
+   "Bjorn Fratangelo": {
+    "spw": 0.6415,
+    "rpw": 0.3563,
+    "sv_pts": 8
+   },
+   "Bradley Klahn": {
+    "spw": 0.6409,
+    "rpw": 0.3567,
+    "sv_pts": 8
+   },
+   "Omni Kumar": {
+    "spw": 0.6376,
+    "rpw": 0.3559,
+    "sv_pts": 44
+   },
+   "Gonzalo Lama": {
+    "spw": 0.6408,
+    "rpw": 0.3568,
+    "sv_pts": 9
+   },
+   "Skander Mansouri": {
+    "spw": 0.6398,
+    "rpw": 0.362,
+    "sv_pts": 37
+   },
+   "Beibit Zhukayev": {
+    "spw": 0.6372,
+    "rpw": 0.3423,
+    "sv_pts": 185
+   },
+   "Alexis Galarneau": {
+    "spw": 0.6457,
+    "rpw": 0.3659,
+    "sv_pts": 110
+   },
+   "Andrey Kuznetsov": {
+    "spw": 0.6407,
+    "rpw": 0.357,
+    "sv_pts": 6
+   },
+   "Strong Kirchheimer": {
+    "spw": 0.6405,
+    "rpw": 0.3539,
+    "sv_pts": 27
+   },
+   "Mitchell Krueger": {
+    "spw": 0.6369,
+    "rpw": 0.3615,
+    "sv_pts": 293
+   },
+   "Thai-Son Kwiatkowski": {
+    "spw": 0.6408,
+    "rpw": 0.3573,
+    "sv_pts": 11
+   },
+   "Darian King": {
+    "spw": 0.6362,
+    "rpw": 0.3702,
+    "sv_pts": 60
+   },
+   "Illya Marchenko": {
+    "spw": 0.6403,
+    "rpw": 0.3597,
+    "sv_pts": 9
+   },
+   "Nicolas Moreno De Alboran": {
+    "spw": 0.6463,
+    "rpw": 0.3412,
+    "sv_pts": 308
+   },
+   "Learner Tien": {
+    "spw": 0.6277,
+    "rpw": 0.368,
+    "sv_pts": 2373
+   },
+   "Titouan Droguet": {
+    "spw": 0.635,
+    "rpw": 0.365,
+    "sv_pts": 190
+   },
+   "Jakub Mensik": {
+    "spw": 0.6508,
+    "rpw": 0.3661,
+    "sv_pts": 3186
+   },
+   "Seongchan Hong": {
+    "spw": 0.6387,
+    "rpw": 0.3516,
+    "sv_pts": 124
+   },
+   "Philip Sekulic": {
+    "spw": 0.6391,
+    "rpw": 0.358,
+    "sv_pts": 36
+   },
+   "Alibek Kachmazov": {
+    "spw": 0.6392,
+    "rpw": 0.3587,
+    "sv_pts": 143
+   },
+   "Jie Cui": {
+    "spw": 0.6411,
+    "rpw": 0.3574,
+    "sv_pts": 6
+   },
+   "Benjamin Lock": {
+    "spw": 0.6425,
+    "rpw": 0.3569,
+    "sv_pts": 23
+   },
+   "Tao Mu": {
+    "spw": 0.6396,
+    "rpw": 0.3577,
+    "sv_pts": 6
+   },
+   "Marc Polmans": {
+    "spw": 0.6355,
+    "rpw": 0.3553,
+    "sv_pts": 50
+   },
+   "Ye Cong Mo": {
+    "spw": 0.6416,
+    "rpw": 0.3568,
+    "sv_pts": 8
+   },
+   "Yi Zhou": {
+    "spw": 0.641,
+    "rpw": 0.3507,
+    "sv_pts": 293
+   },
+   "Terence Atmane": {
+    "spw": 0.6349,
+    "rpw": 0.3501,
+    "sv_pts": 786
+   },
+   "Luke Saville": {
+    "spw": 0.6408,
+    "rpw": 0.3559,
+    "sv_pts": 12
+   },
+   "Zhe Li": {
+    "spw": 0.6413,
+    "rpw": 0.357,
+    "sv_pts": 7
+   },
+   "Egor Gerasimov": {
+    "spw": 0.6423,
+    "rpw": 0.3521,
+    "sv_pts": 48
+   },
+   "Mikhail Kukushkin": {
+    "spw": 0.6338,
+    "rpw": 0.3567,
+    "sv_pts": 155
+   },
+   "Denis Yevseyev": {
+    "spw": 0.6369,
+    "rpw": 0.3602,
+    "sv_pts": 73
+   },
+   "Rigele Te": {
+    "spw": 0.6395,
+    "rpw": 0.3578,
+    "sv_pts": 35
+   },
+   "Dane Sweeny": {
+    "spw": 0.6401,
+    "rpw": 0.3481,
+    "sv_pts": 86
+   },
+   "Yunchaokete Bu": {
+    "spw": 0.6384,
+    "rpw": 0.3508,
+    "sv_pts": 1700
+   },
+   "Benjamin Hassan": {
+    "spw": 0.6331,
+    "rpw": 0.3528,
+    "sv_pts": 196
+   },
+   "Karl Friberg": {
+    "spw": 0.6406,
+    "rpw": 0.3558,
+    "sv_pts": 20
+   },
+   "Mark Lajal": {
+    "spw": 0.6421,
+    "rpw": 0.3573,
+    "sv_pts": 209
+   },
+   "Alexander Blockx": {
+    "spw": 0.6342,
+    "rpw": 0.3467,
+    "sv_pts": 546
+   },
+   "Pierre-Hugues Herbert": {
+    "spw": 0.6321,
+    "rpw": 0.3448,
+    "sv_pts": 548
+   },
+   "Mate Valkusz": {
+    "spw": 0.6398,
+    "rpw": 0.3568,
+    "sv_pts": 51
+   },
+   "Calvin Hemery": {
+    "spw": 0.6402,
+    "rpw": 0.3519,
+    "sv_pts": 57
+   },
+   "Mathias Bourgue": {
+    "spw": 0.6411,
+    "rpw": 0.3567,
+    "sv_pts": 12
+   },
+   "Matteo Martineau": {
+    "spw": 0.6425,
+    "rpw": 0.3562,
+    "sv_pts": 25
+   },
+   "Cem Ilkel": {
+    "spw": 0.6395,
+    "rpw": 0.3575,
+    "sv_pts": 40
+   },
+   "Billy Harris": {
+    "spw": 0.6365,
+    "rpw": 0.339,
+    "sv_pts": 892
+   },
+   "Alexandar Lazarov": {
+    "spw": 0.6403,
+    "rpw": 0.3584,
+    "sv_pts": 12
+   },
+   "Patrick Kaukovalta": {
+    "spw": 0.6421,
+    "rpw": 0.3545,
+    "sv_pts": 9
+   },
+   "Coleman Wong": {
+    "spw": 0.641,
+    "rpw": 0.3525,
+    "sv_pts": 750
+   },
+   "Steven Diez": {
+    "spw": 0.6395,
+    "rpw": 0.3542,
+    "sv_pts": 23
+   },
+   "Adam Walton": {
+    "spw": 0.6424,
+    "rpw": 0.3446,
+    "sv_pts": 1635
+   },
+   "James McCabe": {
+    "spw": 0.6296,
+    "rpw": 0.3465,
+    "sv_pts": 197
+   },
+   "Vit Kopriva": {
+    "spw": 0.6086,
+    "rpw": 0.3586,
+    "sv_pts": 953
+   },
+   "Omar Jasika": {
+    "spw": 0.6362,
+    "rpw": 0.354,
+    "sv_pts": 55
+   },
+   "Ugo Blanchet": {
+    "spw": 0.6226,
+    "rpw": 0.3469,
+    "sv_pts": 484
+   },
+   "Antoine Escoffier": {
+    "spw": 0.6394,
+    "rpw": 0.3591,
     "sv_pts": 13
    },
-   "Hamza Karmoussi": {
-    "spw": 0.6382,
-    "rpw": 0.357,
+   "Viacheslav Bielinskyi": {
+    "spw": 0.64,
+    "rpw": 0.3578,
+    "sv_pts": 11
+   },
+   "Eero Vasa": {
+    "spw": 0.636,
+    "rpw": 0.3564,
+    "sv_pts": 101
+   },
+   "Kevin Krawietz": {
+    "spw": 0.6401,
+    "rpw": 0.3577,
     "sv_pts": 13
+   },
+   "Gustavo Heide": {
+    "spw": 0.6406,
+    "rpw": 0.3488,
+    "sv_pts": 271
+   },
+   "Chris Rodesch": {
+    "spw": 0.6472,
+    "rpw": 0.3499,
+    "sv_pts": 107
+   },
+   "Alex Knaff": {
+    "spw": 0.6364,
+    "rpw": 0.3595,
+    "sv_pts": 95
+   },
+   "Adria Soriano Barrera": {
+    "spw": 0.648,
+    "rpw": 0.351,
+    "sv_pts": 88
+   },
+   "Mohamed Safwat": {
+    "spw": 0.6389,
+    "rpw": 0.3599,
+    "sv_pts": 24
+   },
+   "Alvaro Guillen Meza": {
+    "spw": 0.6416,
+    "rpw": 0.3734,
+    "sv_pts": 98
+   },
+   "Amr Elsayed Abdou Ah Mohamed": {
+    "spw": 0.6425,
+    "rpw": 0.3604,
+    "sv_pts": 9
+   },
+   "Andres Andrade": {
+    "spw": 0.6377,
+    "rpw": 0.3658,
+    "sv_pts": 110
+   },
+   "Michael Bassem Sobhy": {
+    "spw": 0.6412,
+    "rpw": 0.3589,
+    "sv_pts": 13
+   },
+   "Hady Habib": {
+    "spw": 0.6443,
+    "rpw": 0.3402,
+    "sv_pts": 208
+   },
+   "Robert Strombachs": {
+    "spw": 0.6418,
+    "rpw": 0.3566,
+    "sv_pts": 11
+   },
+   "Martins Rocens": {
+    "spw": 0.6395,
+    "rpw": 0.3562,
+    "sv_pts": 7
+   },
+   "Nicolai Budkov Kjaer": {
+    "spw": 0.6458,
+    "rpw": 0.3583,
+    "sv_pts": 454
+   },
+   "Davis Rolis": {
+    "spw": 0.64,
+    "rpw": 0.3548,
+    "sv_pts": 26
+   },
+   "Yanki Erel": {
+    "spw": 0.6433,
+    "rpw": 0.3602,
+    "sv_pts": 15
+   },
+   "Ajeet Rai": {
+    "spw": 0.6357,
+    "rpw": 0.3548,
+    "sv_pts": 44
+   },
+   "Altug Celikbilek": {
+    "spw": 0.6424,
+    "rpw": 0.3601,
+    "sv_pts": 12
+   },
+   "Sergey Fomin": {
+    "spw": 0.6369,
+    "rpw": 0.3565,
+    "sv_pts": 49
+   },
+   "Maks Kasnikowski": {
+    "spw": 0.6357,
+    "rpw": 0.3606,
+    "sv_pts": 56
+   },
+   "Khumoyun Sultanov": {
+    "spw": 0.645,
+    "rpw": 0.3612,
+    "sv_pts": 43
+   },
+   "Kamil Majchrzak": {
+    "spw": 0.6497,
+    "rpw": 0.3627,
+    "sv_pts": 1311
+   },
+   "Maxim Shin": {
+    "spw": 0.6393,
+    "rpw": 0.3572,
+    "sv_pts": 6
+   },
+   "Matic Kriznik": {
+    "spw": 0.6361,
+    "rpw": 0.357,
+    "sv_pts": 23
+   },
+   "Sebastian Dominko": {
+    "spw": 0.6446,
+    "rpw": 0.357,
+    "sv_pts": 28
+   },
+   "Diego Duran": {
+    "spw": 0.6427,
+    "rpw": 0.3611,
+    "sv_pts": 8
+   },
+   "Gillian Osmont": {
+    "spw": 0.6389,
+    "rpw": 0.3573,
+    "sv_pts": 8
+   },
+   "Marcelo Arevalo": {
+    "spw": 0.6384,
+    "rpw": 0.37,
+    "sv_pts": 45
+   },
+   "Heve Kelley": {
+    "spw": 0.6392,
+    "rpw": 0.356,
+    "sv_pts": 6
+   },
+   "Juan Carlos Fuentes Vasquez": {
+    "spw": 0.6381,
+    "rpw": 0.3605,
+    "sv_pts": 20
+   },
+   "Matavao Fanguna": {
+    "spw": 0.639,
+    "rpw": 0.357,
+    "sv_pts": 10
+   },
+   "Moez Echargui": {
+    "spw": 0.639,
+    "rpw": 0.374,
+    "sv_pts": 138
+   },
+   "Jesse Flores": {
+    "spw": 0.6404,
+    "rpw": 0.3565,
+    "sv_pts": 9
+   },
+   "Aziz Dougaz": {
+    "spw": 0.6306,
+    "rpw": 0.3542,
+    "sv_pts": 147
+   },
+   "Rodrigo Crespo Piedra": {
+    "spw": 0.6404,
+    "rpw": 0.3575,
+    "sv_pts": 16
+   },
+   "Nam Hoang Ly": {
+    "spw": 0.6414,
+    "rpw": 0.3612,
+    "sv_pts": 31
+   },
+   "Philip Henning": {
+    "spw": 0.6384,
+    "rpw": 0.3579,
+    "sv_pts": 61
+   },
+   "Kris Van Wyk": {
+    "spw": 0.6383,
+    "rpw": 0.3619,
+    "sv_pts": 29
+   },
+   "Linh Giang Trinh": {
+    "spw": 0.6345,
+    "rpw": 0.3595,
+    "sv_pts": 26
+   },
+   "Dmitry Popko": {
+    "spw": 0.632,
+    "rpw": 0.356,
+    "sv_pts": 85
+   },
+   "Ignacio Buse": {
+    "spw": 0.6403,
+    "rpw": 0.3628,
+    "sv_pts": 367
+   },
+   "Joris De Loore": {
+    "spw": 0.6392,
+    "rpw": 0.3572,
+    "sv_pts": 10
+   },
+   "Yshai Oliel": {
+    "spw": 0.6412,
+    "rpw": 0.3558,
+    "sv_pts": 11
+   },
+   "Daniel Cukierman": {
+    "spw": 0.6299,
+    "rpw": 0.3524,
+    "sv_pts": 38
+   },
+   "Orel Kimhi": {
+    "spw": 0.63,
+    "rpw": 0.3529,
+    "sv_pts": 92
+   },
+   "Nerman Fatic": {
+    "spw": 0.6385,
+    "rpw": 0.3531,
+    "sv_pts": 57
+   },
+   "Yanaki Milev": {
+    "spw": 0.6316,
+    "rpw": 0.3619,
+    "sv_pts": 92
+   },
+   "Petr Nesterov": {
+    "spw": 0.6363,
+    "rpw": 0.3624,
+    "sv_pts": 27
+   },
+   "Andrej Nedic": {
+    "spw": 0.635,
+    "rpw": 0.3573,
+    "sv_pts": 59
+   },
+   "Marius Copil": {
+    "spw": 0.6425,
+    "rpw": 0.3561,
+    "sv_pts": 9
+   },
+   "Aristotelis Thanos": {
+    "spw": 0.6426,
+    "rpw": 0.3589,
+    "sv_pts": 16
+   },
+   "Nicholas David Ionel": {
+    "spw": 0.6411,
+    "rpw": 0.3574,
+    "sv_pts": 16
+   },
+   "Ioannis Xilas": {
+    "spw": 0.6413,
+    "rpw": 0.3619,
+    "sv_pts": 8
+   },
+   "Luca Preda": {
+    "spw": 0.6381,
+    "rpw": 0.3587,
+    "sv_pts": 12
+   },
+   "Michael Agwi": {
+    "spw": 0.6383,
+    "rpw": 0.3666,
+    "sv_pts": 58
+   },
+   "Osgar O'Hoisin": {
+    "spw": 0.6424,
+    "rpw": 0.3552,
+    "sv_pts": 10
+   },
+   "Lucas Miedler": {
+    "spw": 0.6418,
+    "rpw": 0.3571,
+    "sv_pts": 13
+   },
+   "Saba Purtseladze": {
+    "spw": 0.6429,
+    "rpw": 0.3579,
+    "sv_pts": 52
+   },
+   "Vilius Gaubas": {
+    "spw": 0.6283,
+    "rpw": 0.3671,
+    "sv_pts": 132
+   },
+   "Zura Tkemaladze": {
+    "spw": 0.637,
+    "rpw": 0.3581,
+    "sv_pts": 26
+   },
+   "Elmer Moller": {
+    "spw": 0.6066,
+    "rpw": 0.3656,
+    "sv_pts": 346
+   },
+   "August Holmgren": {
+    "spw": 0.6595,
+    "rpw": 0.3371,
+    "sv_pts": 273
+   },
+   "Aisam-Ul-Haq Qureshi": {
+    "spw": 0.642,
+    "rpw": 0.3541,
+    "sv_pts": 17
+   },
+   "N.Sriram Balaji": {
+    "spw": 0.6445,
+    "rpw": 0.3569,
+    "sv_pts": 10
+   },
+   "Aqeel Khan": {
+    "spw": 0.6435,
+    "rpw": 0.3577,
+    "sv_pts": 32
+   },
+   "Niki Kaliyanda Poonacha": {
+    "spw": 0.6439,
+    "rpw": 0.3594,
+    "sv_pts": 9
+   },
+   "Muhammad Shoaib": {
+    "spw": 0.6362,
+    "rpw": 0.3549,
+    "sv_pts": 30
+   },
+   "Juan Carlos Prado Angelo": {
+    "spw": 0.6422,
+    "rpw": 0.3614,
+    "sv_pts": 8
+   },
+   "Maximus Jones": {
+    "spw": 0.6386,
+    "rpw": 0.3578,
+    "sv_pts": 13
+   },
+   "Murkel Dellien": {
+    "spw": 0.6388,
+    "rpw": 0.3618,
+    "sv_pts": 20
+   },
+   "Wishaya Trongcharoenchaikul": {
+    "spw": 0.6396,
+    "rpw": 0.356,
+    "sv_pts": 7
+   },
+   "Boris Arias": {
+    "spw": 0.6437,
+    "rpw": 0.3592,
+    "sv_pts": 10
+   },
+   "Thanapet Chanta": {
+    "spw": 0.6408,
+    "rpw": 0.3563,
+    "sv_pts": 13
+   },
+   "Yassine Dlimi": {
+    "spw": 0.6392,
+    "rpw": 0.3605,
+    "sv_pts": 36
+   },
+   "Petros Chrysochos": {
+    "spw": 0.6402,
+    "rpw": 0.3586,
+    "sv_pts": 15
+   },
+   "Menelaos Efstathiou": {
+    "spw": 0.6412,
+    "rpw": 0.3571,
+    "sv_pts": 9
+   },
+   "Stylianos Christodoulou": {
+    "spw": 0.6428,
+    "rpw": 0.3605,
+    "sv_pts": 9
+   },
+   "Hamza Karmoussi": {
+    "spw": 0.6395,
+    "rpw": 0.3572,
+    "sv_pts": 9
    },
    "Hong Kit Wong": {
     "spw": 0.6426,
-    "rpw": 0.3546,
-    "sv_pts": 24
+    "rpw": 0.3555,
+    "sv_pts": 17
    },
    "Courtney John Lock": {
-    "spw": 0.6373,
-    "rpw": 0.3568,
-    "sv_pts": 13
+    "spw": 0.6388,
+    "rpw": 0.357,
+    "sv_pts": 9
    },
    "Benedict Badza": {
-    "spw": 0.6432,
-    "rpw": 0.3588,
-    "sv_pts": 21
-   },
-   "Kwok Shun Dasson Chan": {
-    "spw": 0.6412,
-    "rpw": 0.3568,
-    "sv_pts": 21
-   },
-   "Blaise Bicknell": {
-    "spw": 0.6421,
-    "rpw": 0.369,
-    "sv_pts": 30
-   },
-   "Kaipo Marshall": {
-    "spw": 0.631,
-    "rpw": 0.3602,
-    "sv_pts": 74
-   },
-   "Rowland Phillips": {
-    "spw": 0.6322,
-    "rpw": 0.3675,
-    "sv_pts": 48
-   },
-   "Adolfo Daniel Vallejo": {
-    "spw": 0.6428,
-    "rpw": 0.3613,
-    "sv_pts": 37
-   },
-   "Benjamin Balleret": {
-    "spw": 0.6399,
-    "rpw": 0.3608,
-    "sv_pts": 35
-   },
-   "Martin Antonio Vergara Del Puerto": {
-    "spw": 0.6371,
-    "rpw": 0.3576,
-    "sv_pts": 10
-   },
-   "M Rifki Fitriadi": {
-    "spw": 0.6447,
-    "rpw": 0.3644,
-    "sv_pts": 27
-   },
-   "Komlavi Loglo": {
-    "spw": 0.6411,
-    "rpw": 0.3594,
-    "sv_pts": 25
-   },
-   "Thomas Yaka Kofi Setodji": {
-    "spw": 0.6457,
-    "rpw": 0.3634,
-    "sv_pts": 73
-   },
-   "Anthony Susanto": {
-    "spw": 0.6357,
-    "rpw": 0.3549,
-    "sv_pts": 26
-   },
-   "Franco Roncadelli": {
-    "spw": 0.6317,
-    "rpw": 0.3745,
-    "sv_pts": 105
-   },
-   "Ilya Snitari": {
-    "spw": 0.6288,
-    "rpw": 0.3589,
-    "sv_pts": 39
-   },
-   "Joaquin  Aguilar Cardozo": {
-    "spw": 0.63,
-    "rpw": 0.3653,
-    "sv_pts": 48
-   },
-   "Tennys Sandgren": {
-    "spw": 0.6411,
-    "rpw": 0.3562,
-    "sv_pts": 20
-   },
-   "Adam Neff": {
-    "spw": 0.6375,
-    "rpw": 0.3546,
-    "sv_pts": 19
-   },
-   "Roman Andres Burruchaga": {
-    "spw": 0.6173,
-    "rpw": 0.3803,
-    "sv_pts": 445
-   },
-   "Federico Agustin Gomez": {
-    "spw": 0.6322,
-    "rpw": 0.3491,
-    "sv_pts": 330
-   },
-   "Francisco Comesana": {
-    "spw": 0.6365,
-    "rpw": 0.3528,
-    "sv_pts": 2755
-   },
-   "Mariano Navone": {
-    "spw": 0.6011,
-    "rpw": 0.3958,
-    "sv_pts": 3272
-   },
-   "Oliver Ojakaar": {
-    "spw": 0.6466,
-    "rpw": 0.3663,
-    "sv_pts": 25
-   },
-   "Hamidreza Nadaf": {
-    "spw": 0.637,
-    "rpw": 0.3543,
-    "sv_pts": 19
-   },
-   "Sina Moghimi": {
-    "spw": 0.6359,
-    "rpw": 0.3607,
-    "sv_pts": 38
-   },
-   "Kristjan Tamm": {
-    "spw": 0.6382,
-    "rpw": 0.3543,
-    "sv_pts": 68
-   },
-   "Martin Damm": {
-    "spw": 0.6607,
-    "rpw": 0.3359,
-    "sv_pts": 227
-   },
-   "Darwin Blanch": {
-    "spw": 0.6367,
-    "rpw": 0.3377,
-    "sv_pts": 228
-   },
-   "Matteo Gigante": {
-    "spw": 0.636,
-    "rpw": 0.3658,
-    "sv_pts": 612
-   },
-   "David Jorda Sanchis": {
-    "spw": 0.6372,
-    "rpw": 0.359,
-    "sv_pts": 53
-   },
-   "Jaime Faria": {
-    "spw": 0.6231,
-    "rpw": 0.3479,
-    "sv_pts": 718
-   },
-   "Alejandro Moro Canas": {
-    "spw": 0.632,
-    "rpw": 0.3471,
-    "sv_pts": 124
-   },
-   "Nick Hardt": {
-    "spw": 0.6346,
-    "rpw": 0.3613,
-    "sv_pts": 62
-   },
-   "Sebastian Fanselow": {
-    "spw": 0.6364,
-    "rpw": 0.355,
+    "spw": 0.643,
+    "rpw": 0.3584,
     "sv_pts": 15
    },
-   "Nikolas Sanchez Izquierdo": {
-    "spw": 0.6357,
-    "rpw": 0.3613,
+   "Kwok Shun Dasson Chan": {
+    "spw": 0.6416,
+    "rpw": 0.357,
+    "sv_pts": 15
+   },
+   "Blaise Bicknell": {
+    "spw": 0.6422,
+    "rpw": 0.3657,
+    "sv_pts": 21
+   },
+   "Kaipo Marshall": {
+    "spw": 0.6342,
+    "rpw": 0.3595,
+    "sv_pts": 52
+   },
+   "Rowland Phillips": {
+    "spw": 0.6352,
+    "rpw": 0.3646,
+    "sv_pts": 34
+   },
+   "Adolfo Daniel Vallejo": {
+    "spw": 0.6427,
+    "rpw": 0.3602,
     "sv_pts": 26
    },
+   "Benjamin Balleret": {
+    "spw": 0.6406,
+    "rpw": 0.3598,
+    "sv_pts": 24
+   },
+   "Martin Antonio Vergara Del Puerto": {
+    "spw": 0.6387,
+    "rpw": 0.3576,
+    "sv_pts": 7
+   },
+   "M Rifki Fitriadi": {
+    "spw": 0.6441,
+    "rpw": 0.3624,
+    "sv_pts": 19
+   },
+   "Komlavi Loglo": {
+    "spw": 0.6415,
+    "rpw": 0.3589,
+    "sv_pts": 18
+   },
+   "Thomas Yaka Kofi Setodji": {
+    "spw": 0.6448,
+    "rpw": 0.3618,
+    "sv_pts": 51
+   },
+   "Anthony Susanto": {
+    "spw": 0.6377,
+    "rpw": 0.3557,
+    "sv_pts": 18
+   },
+   "Franco Roncadelli": {
+    "spw": 0.6346,
+    "rpw": 0.3699,
+    "sv_pts": 73
+   },
+   "Ilya Snitari": {
+    "spw": 0.6327,
+    "rpw": 0.3585,
+    "sv_pts": 28
+   },
+   "Joaquin  Aguilar Cardozo": {
+    "spw": 0.6335,
+    "rpw": 0.3631,
+    "sv_pts": 34
+   },
+   "Tennys Sandgren": {
+    "spw": 0.6415,
+    "rpw": 0.3566,
+    "sv_pts": 14
+   },
+   "Adam Neff": {
+    "spw": 0.639,
+    "rpw": 0.3555,
+    "sv_pts": 13
+   },
+   "Roman Andres Burruchaga": {
+    "spw": 0.6223,
+    "rpw": 0.3757,
+    "sv_pts": 312
+   },
+   "Federico Agustin Gomez": {
+    "spw": 0.6344,
+    "rpw": 0.3509,
+    "sv_pts": 231
+   },
+   "Francisco Comesana": {
+    "spw": 0.6355,
+    "rpw": 0.3524,
+    "sv_pts": 1911
+   },
+   "Mariano Navone": {
+    "spw": 0.6037,
+    "rpw": 0.3934,
+    "sv_pts": 2290
+   },
+   "Oliver Ojakaar": {
+    "spw": 0.6454,
+    "rpw": 0.3637,
+    "sv_pts": 17
+   },
+   "Hamidreza Nadaf": {
+    "spw": 0.6386,
+    "rpw": 0.3553,
+    "sv_pts": 13
+   },
+   "Sina Moghimi": {
+    "spw": 0.6378,
+    "rpw": 0.3598,
+    "sv_pts": 27
+   },
+   "Kristjan Tamm": {
+    "spw": 0.6394,
+    "rpw": 0.3552,
+    "sv_pts": 48
+   },
+   "Martin Damm": {
+    "spw": 0.6563,
+    "rpw": 0.3411,
+    "sv_pts": 151
+   },
+   "Darwin Blanch": {
+    "spw": 0.6381,
+    "rpw": 0.3425,
+    "sv_pts": 159
+   },
+   "David Jorda Sanchis": {
+    "spw": 0.6387,
+    "rpw": 0.3586,
+    "sv_pts": 37
+   },
+   "Jaime Faria": {
+    "spw": 0.6262,
+    "rpw": 0.3494,
+    "sv_pts": 502
+   },
+   "Alejandro Moro Canas": {
+    "spw": 0.6348,
+    "rpw": 0.35,
+    "sv_pts": 87
+   },
+   "Nick Hardt": {
+    "spw": 0.6368,
+    "rpw": 0.3602,
+    "sv_pts": 43
+   },
+   "Carlos Taberner": {
+    "spw": 0.6356,
+    "rpw": 0.3776,
+    "sv_pts": 289
+   },
+   "Matteo Gigante": {
+    "spw": 0.6386,
+    "rpw": 0.3652,
+    "sv_pts": 421
+   },
+   "Sebastian Fanselow": {
+    "spw": 0.6382,
+    "rpw": 0.3558,
+    "sv_pts": 11
+   },
+   "Nikolas Sanchez Izquierdo": {
+    "spw": 0.6377,
+    "rpw": 0.3602,
+    "sv_pts": 18
+   },
    "Javier Barranco Cosano": {
-    "spw": 0.6421,
-    "rpw": 0.3544,
-    "sv_pts": 35
+    "spw": 0.6422,
+    "rpw": 0.3553,
+    "sv_pts": 24
    },
    "Henri Squire": {
-    "spw": 0.6479,
-    "rpw": 0.3394,
-    "sv_pts": 164
+    "spw": 0.6465,
+    "rpw": 0.344,
+    "sv_pts": 115
    },
    "Tristan Schoolkate": {
     "spw": 0.6426,
-    "rpw": 0.3388,
-    "sv_pts": 1076
+    "rpw": 0.3413,
+    "sv_pts": 753
    },
    "Paul Jubb": {
-    "spw": 0.6441,
-    "rpw": 0.3686,
-    "sv_pts": 150
+    "spw": 0.6437,
+    "rpw": 0.3658,
+    "sv_pts": 105
    },
    "Charles Broom": {
-    "spw": 0.6354,
-    "rpw": 0.3583,
-    "sv_pts": 62
-   },
-   "Giles Hussey": {
-    "spw": 0.6441,
-    "rpw": 0.3604,
-    "sv_pts": 42
-   },
-   "Jacob Fearnley": {
-    "spw": 0.6188,
-    "rpw": 0.3591,
-    "sv_pts": 1949
-   },
-   "Henry Searle": {
-    "spw": 0.6299,
-    "rpw": 0.3481,
-    "sv_pts": 142
-   },
-   "Maxime Janvier": {
-    "spw": 0.6402,
-    "rpw": 0.3551,
-    "sv_pts": 30
-   },
-   "Reilly Opelka": {
-    "spw": 0.6857,
-    "rpw": 0.2922,
-    "sv_pts": 3392
-   },
-   "Andrea Pellegrino": {
-    "spw": 0.6348,
-    "rpw": 0.3636,
-    "sv_pts": 150
-   },
-   "Lukas Neumayer": {
-    "spw": 0.6356,
-    "rpw": 0.3516,
-    "sv_pts": 258
-   },
-   "Andrea Collarini": {
-    "spw": 0.6391,
-    "rpw": 0.3552,
-    "sv_pts": 23
-   },
-   "Joel Schwaerzler": {
-    "spw": 0.6318,
-    "rpw": 0.3515,
-    "sv_pts": 102
-   },
-   "Matej Dodig": {
-    "spw": 0.6367,
-    "rpw": 0.3502,
-    "sv_pts": 104
-   },
-   "Luka Mikrut": {
-    "spw": 0.639,
-    "rpw": 0.3577,
-    "sv_pts": 21
-   },
-   "Mili Poljicak": {
-    "spw": 0.6397,
-    "rpw": 0.3485,
-    "sv_pts": 80
-   },
-   "Matthew Ebden": {
-    "spw": 0.6339,
-    "rpw": 0.3549,
-    "sv_pts": 17
-   },
-   "Francisco Cabral": {
-    "spw": 0.6356,
-    "rpw": 0.3561,
-    "sv_pts": 24
-   },
-   "Petros Tsitsipas": {
-    "spw": 0.6392,
-    "rpw": 0.3537,
-    "sv_pts": 19
-   },
-   "Kyrian Jacquet": {
-    "spw": 0.637,
-    "rpw": 0.3636,
-    "sv_pts": 366
-   },
-   "Matthew Forbes": {
-    "spw": 0.6347,
-    "rpw": 0.3565,
+    "spw": 0.6374,
+    "rpw": 0.3581,
     "sv_pts": 43
    },
-   "Raphael Collignon": {
-    "spw": 0.6324,
-    "rpw": 0.3509,
-    "sv_pts": 1545
+   "Giles Hussey": {
+    "spw": 0.6436,
+    "rpw": 0.3595,
+    "sv_pts": 29
    },
-   "Cezar Cretu": {
-    "spw": 0.6365,
-    "rpw": 0.3613,
-    "sv_pts": 81
+   "Jacob Fearnley": {
+    "spw": 0.6208,
+    "rpw": 0.3568,
+    "sv_pts": 1342
    },
-   "Gabi Adrian Boitan": {
-    "spw": 0.6455,
-    "rpw": 0.3542,
-    "sv_pts": 49
+   "Henry Searle": {
+    "spw": 0.6331,
+    "rpw": 0.3505,
+    "sv_pts": 99
    },
-   "Conor Gannon": {
-    "spw": 0.6345,
-    "rpw": 0.3501,
-    "sv_pts": 40
+   "Maxime Janvier": {
+    "spw": 0.6409,
+    "rpw": 0.3558,
+    "sv_pts": 21
    },
-   "Yousaf Khalil": {
-    "spw": 0.6381,
-    "rpw": 0.3546,
+   "Reilly Opelka": {
+    "spw": 0.6833,
+    "rpw": 0.2965,
+    "sv_pts": 2370
+   },
+   "Andrea Pellegrino": {
+    "spw": 0.6368,
+    "rpw": 0.3621,
+    "sv_pts": 105
+   },
+   "Lukas Neumayer": {
+    "spw": 0.6372,
+    "rpw": 0.353,
+    "sv_pts": 180
+   },
+   "Andrea Collarini": {
+    "spw": 0.6401,
+    "rpw": 0.3559,
+    "sv_pts": 16
+   },
+   "Joel Schwaerzler": {
+    "spw": 0.6346,
+    "rpw": 0.3531,
+    "sv_pts": 71
+   },
+   "Matej Dodig": {
+    "spw": 0.6383,
+    "rpw": 0.3522,
+    "sv_pts": 73
+   },
+   "Luka Mikrut": {
+    "spw": 0.64,
+    "rpw": 0.3576,
     "sv_pts": 15
    },
-   "Cesar Cruz": {
+   "Mili Poljicak": {
+    "spw": 0.6404,
+    "rpw": 0.351,
+    "sv_pts": 56
+   },
+   "Matthew Ebden": {
+    "spw": 0.6364,
+    "rpw": 0.3556,
+    "sv_pts": 12
+   },
+   "Francisco Cabral": {
+    "spw": 0.6376,
+    "rpw": 0.3565,
+    "sv_pts": 17
+   },
+   "Petros Tsitsipas": {
+    "spw": 0.6402,
+    "rpw": 0.3548,
+    "sv_pts": 13
+   },
+   "Kyrian Jacquet": {
+    "spw": 0.6382,
+    "rpw": 0.3623,
+    "sv_pts": 256
+   },
+   "Matthew Forbes": {
+    "spw": 0.637,
+    "rpw": 0.3568,
+    "sv_pts": 30
+   },
+   "Raphael Collignon": {
     "spw": 0.6352,
-    "rpw": 0.3577,
-    "sv_pts": 42
+    "rpw": 0.35,
+    "sv_pts": 1066
+   },
+   "Cezar Cretu": {
+    "spw": 0.6381,
+    "rpw": 0.3602,
+    "sv_pts": 57
+   },
+   "Gabi Adrian Boitan": {
+    "spw": 0.6446,
+    "rpw": 0.3551,
+    "sv_pts": 35
+   },
+   "Conor Gannon": {
+    "spw": 0.6368,
+    "rpw": 0.3523,
+    "sv_pts": 28
+   },
+   "Yousaf Khalil": {
+    "spw": 0.6394,
+    "rpw": 0.3554,
+    "sv_pts": 10
+   },
+   "Cesar Cruz": {
+    "spw": 0.6373,
+    "rpw": 0.3576,
+    "sv_pts": 29
    },
    "Iliyan Radulov": {
     "spw": 0.6424,
-    "rpw": 0.3651,
-    "sv_pts": 17
+    "rpw": 0.3629,
+    "sv_pts": 12
    },
    "Alan Fernando Rubio Fierros": {
-    "spw": 0.6406,
-    "rpw": 0.3532,
-    "sv_pts": 59
+    "spw": 0.6412,
+    "rpw": 0.3544,
+    "sv_pts": 42
    },
    "Aleksandre Bakshi": {
     "spw": 0.6425,
-    "rpw": 0.3631,
-    "sv_pts": 57
+    "rpw": 0.3615,
+    "sv_pts": 40
    },
    "Jack Cheng": {
-    "spw": 0.6354,
-    "rpw": 0.3563,
-    "sv_pts": 21
+    "spw": 0.6375,
+    "rpw": 0.3566,
+    "sv_pts": 15
    },
    "Marcos Lee Chan Baratau": {
-    "spw": 0.6388,
-    "rpw": 0.3567,
-    "sv_pts": 30
+    "spw": 0.6399,
+    "rpw": 0.3569,
+    "sv_pts": 21
    },
    "Gonzalo Escobar": {
-    "spw": 0.6435,
-    "rpw": 0.3657,
-    "sv_pts": 17
+    "spw": 0.6432,
+    "rpw": 0.3633,
+    "sv_pts": 12
    },
    "Ki Lung Ng": {
-    "spw": 0.6343,
-    "rpw": 0.3565,
-    "sv_pts": 28
+    "spw": 0.6367,
+    "rpw": 0.3568,
+    "sv_pts": 19
    },
    "Alec Beckley": {
-    "spw": 0.6393,
-    "rpw": 0.3554,
-    "sv_pts": 22
+    "spw": 0.6402,
+    "rpw": 0.356,
+    "sv_pts": 15
    },
    "Hugo Nys": {
-    "spw": 0.6407,
-    "rpw": 0.3614,
-    "sv_pts": 35
-   },
-   "Romain Arneodo": {
-    "spw": 0.644,
-    "rpw": 0.3586,
-    "sv_pts": 37
-   },
-   "Jack Loutit": {
-    "spw": 0.6442,
-    "rpw": 0.3562,
-    "sv_pts": 30
-   },
-   "Rubin Statham": {
-    "spw": 0.6367,
-    "rpw": 0.3556,
-    "sv_pts": 22
-   },
-   "Liova Ajavon": {
-    "spw": 0.6438,
-    "rpw": 0.362,
-    "sv_pts": 24
-   },
-   "Daniels Tens": {
-    "spw": 0.6356,
-    "rpw": 0.3525,
-    "sv_pts": 63
-   },
-   "Norbert Gombos": {
-    "spw": 0.6534,
-    "rpw": 0.3558,
-    "sv_pts": 183
-   },
-   "Yasutaka Uchiyama": {
-    "spw": 0.6483,
-    "rpw": 0.3602,
-    "sv_pts": 91
-   },
-   "Fajing Sun": {
-    "spw": 0.6371,
-    "rpw": 0.3477,
-    "sv_pts": 84
-   },
-   "Gilles Arnaud Bailly": {
-    "spw": 0.6403,
-    "rpw": 0.3427,
-    "sv_pts": 161
-   },
-   "Justin Engel": {
-    "spw": 0.6664,
-    "rpw": 0.3409,
-    "sv_pts": 654
-   },
-   "Jerome Kym": {
-    "spw": 0.666,
-    "rpw": 0.3368,
-    "sv_pts": 608
-   },
-   "Theo Papamalamis": {
-    "spw": 0.6347,
-    "rpw": 0.3524,
+    "spw": 0.6412,
+    "rpw": 0.3603,
     "sv_pts": 25
    },
-   "Manuel Guinard": {
-    "spw": 0.635,
-    "rpw": 0.3569,
-    "sv_pts": 171
-   },
-   "Branko Djuric": {
-    "spw": 0.6408,
-    "rpw": 0.3524,
-    "sv_pts": 81
-   },
-   "Nishesh Basavareddy": {
-    "spw": 0.6256,
-    "rpw": 0.3464,
-    "sv_pts": 1259
-   },
-   "Daniel Masur": {
-    "spw": 0.636,
-    "rpw": 0.3552,
-    "sv_pts": 50
-   },
-   "Isaac Becroft": {
-    "spw": 0.6402,
-    "rpw": 0.3559,
+   "Romain Arneodo": {
+    "spw": 0.6436,
+    "rpw": 0.3583,
     "sv_pts": 26
    },
+   "Jack Loutit": {
+    "spw": 0.6437,
+    "rpw": 0.3566,
+    "sv_pts": 21
+   },
+   "Rubin Statham": {
+    "spw": 0.6384,
+    "rpw": 0.3562,
+    "sv_pts": 15
+   },
+   "Liova Ajavon": {
+    "spw": 0.6434,
+    "rpw": 0.3607,
+    "sv_pts": 17
+   },
+   "Daniels Tens": {
+    "spw": 0.6376,
+    "rpw": 0.3539,
+    "sv_pts": 44
+   },
+   "Norbert Gombos": {
+    "spw": 0.6507,
+    "rpw": 0.3562,
+    "sv_pts": 128
+   },
+   "Yasutaka Uchiyama": {
+    "spw": 0.6467,
+    "rpw": 0.3595,
+    "sv_pts": 64
+   },
+   "Fajing Sun": {
+    "spw": 0.6386,
+    "rpw": 0.3504,
+    "sv_pts": 59
+   },
+   "Gilles Arnaud Bailly": {
+    "spw": 0.6408,
+    "rpw": 0.3465,
+    "sv_pts": 112
+   },
+   "Justin Engel": {
+    "spw": 0.6623,
+    "rpw": 0.3437,
+    "sv_pts": 457
+   },
+   "Jerome Kym": {
+    "spw": 0.6619,
+    "rpw": 0.3404,
+    "sv_pts": 426
+   },
+   "Theo Papamalamis": {
+    "spw": 0.637,
+    "rpw": 0.3539,
+    "sv_pts": 18
+   },
+   "Manuel Guinard": {
+    "spw": 0.6369,
+    "rpw": 0.357,
+    "sv_pts": 120
+   },
+   "Branko Djuric": {
+    "spw": 0.6413,
+    "rpw": 0.3538,
+    "sv_pts": 57
+   },
+   "Nishesh Basavareddy": {
+    "spw": 0.6274,
+    "rpw": 0.3476,
+    "sv_pts": 806
+   },
+   "Daniel Masur": {
+    "spw": 0.6379,
+    "rpw": 0.3558,
+    "sv_pts": 35
+   },
+   "Isaac Becroft": {
+    "spw": 0.6409,
+    "rpw": 0.3563,
+    "sv_pts": 18
+   },
    "Kasidit Samrej": {
-    "spw": 0.6334,
-    "rpw": 0.3474,
-    "sv_pts": 77
+    "spw": 0.6359,
+    "rpw": 0.3503,
+    "sv_pts": 54
    },
    "Tristan Boyer": {
-    "spw": 0.6368,
-    "rpw": 0.3485,
-    "sv_pts": 772
+    "spw": 0.6377,
+    "rpw": 0.3499,
+    "sv_pts": 540
    },
    "Gauthier Onclin": {
-    "spw": 0.639,
-    "rpw": 0.3602,
-    "sv_pts": 60
+    "spw": 0.64,
+    "rpw": 0.3595,
+    "sv_pts": 42
    },
    "Mees Rottgering": {
-    "spw": 0.6345,
-    "rpw": 0.3565,
-    "sv_pts": 36
+    "spw": 0.6368,
+    "rpw": 0.3568,
+    "sv_pts": 25
    },
    "Trevor Svajda": {
-    "spw": 0.6357,
+    "spw": 0.6377,
+    "rpw": 0.3553,
+    "sv_pts": 27
+   },
+   "Arthur Gea": {
+    "spw": 0.6416,
+    "rpw": 0.3532,
+    "sv_pts": 26
+   },
+   "James Trotter": {
+    "spw": 0.6372,
+    "rpw": 0.3447,
+    "sv_pts": 67
+   },
+   "Juan Pablo Ficovich": {
+    "spw": 0.6383,
+    "rpw": 0.3657,
+    "sv_pts": 197
+   },
+   "Colton Smith": {
+    "spw": 0.63,
+    "rpw": 0.3574,
+    "sv_pts": 261
+   },
+   "Federico Cina": {
+    "spw": 0.6347,
+    "rpw": 0.3437,
+    "sv_pts": 214
+   },
+   "Rei Sakamoto": {
+    "spw": 0.6423,
+    "rpw": 0.3429,
+    "sv_pts": 161
+   },
+   "Taha Baadi": {
+    "spw": 0.6384,
+    "rpw": 0.3591,
+    "sv_pts": 33
+   },
+   "Filip Cristian Jianu": {
+    "spw": 0.6363,
+    "rpw": 0.3642,
+    "sv_pts": 63
+   },
+   "Martin Klizan": {
+    "spw": 0.6403,
+    "rpw": 0.3543,
+    "sv_pts": 43
+   },
+   "Corentin Denolly": {
+    "spw": 0.6373,
+    "rpw": 0.3536,
+    "sv_pts": 72
+   },
+   "Diego Dedura-Palomero": {
+    "spw": 0.6336,
     "rpw": 0.3544,
     "sv_pts": 38
    },
-   "Arthur Gea": {
-    "spw": 0.6413,
-    "rpw": 0.3515,
-    "sv_pts": 37
-   },
-   "James Trotter": {
-    "spw": 0.6352,
-    "rpw": 0.3398,
-    "sv_pts": 96
-   },
-   "Juan Pablo Ficovich": {
-    "spw": 0.6371,
-    "rpw": 0.3681,
-    "sv_pts": 281
-   },
-   "Colton Smith": {
-    "spw": 0.6266,
-    "rpw": 0.3574,
-    "sv_pts": 374
-   },
-   "Federico Cina": {
-    "spw": 0.6324,
-    "rpw": 0.3396,
-    "sv_pts": 306
-   },
-   "Rei Sakamoto": {
-    "spw": 0.6422,
-    "rpw": 0.3381,
-    "sv_pts": 230
-   },
-   "Taha Baadi": {
-    "spw": 0.6368,
-    "rpw": 0.3597,
-    "sv_pts": 47
-   },
-   "Filip Cristian Jianu": {
-    "spw": 0.634,
-    "rpw": 0.3667,
-    "sv_pts": 91
-   },
-   "Martin Klizan": {
-    "spw": 0.6394,
-    "rpw": 0.3531,
-    "sv_pts": 61
-   },
-   "Corentin Denolly": {
-    "spw": 0.6353,
-    "rpw": 0.3522,
-    "sv_pts": 103
-   },
-   "Diego Dedura-Palomero": {
-    "spw": 0.6357,
-    "rpw": 0.3528,
-    "sv_pts": 86
-   },
    "Karue Sell": {
-    "spw": 0.6323,
-    "rpw": 0.3503,
-    "sv_pts": 24
+    "spw": 0.6353,
+    "rpw": 0.3524,
+    "sv_pts": 17
    },
    "Clement Tabur": {
-    "spw": 0.657,
-    "rpw": 0.3552,
-    "sv_pts": 291
+    "spw": 0.6537,
+    "rpw": 0.3557,
+    "sv_pts": 203
    },
    "Valentin Royer": {
-    "spw": 0.6546,
-    "rpw": 0.3444,
-    "sv_pts": 1552
+    "spw": 0.6521,
+    "rpw": 0.3443,
+    "sv_pts": 1062
    },
    "Jack Pinnington Jones": {
-    "spw": 0.6296,
-    "rpw": 0.3536,
-    "sv_pts": 206
+    "spw": 0.6327,
+    "rpw": 0.3545,
+    "sv_pts": 144
    },
    "Bernard Tomic": {
-    "spw": 0.6339,
-    "rpw": 0.3537,
-    "sv_pts": 161
+    "spw": 0.6361,
+    "rpw": 0.3547,
+    "sv_pts": 113
    },
    "Johannus Monday": {
-    "spw": 0.6411,
-    "rpw": 0.3469,
-    "sv_pts": 56
+    "spw": 0.6415,
+    "rpw": 0.3499,
+    "sv_pts": 39
    },
    "Jay Clarke": {
-    "spw": 0.6338,
-    "rpw": 0.3516,
-    "sv_pts": 56
+    "spw": 0.6363,
+    "rpw": 0.3533,
+    "sv_pts": 39
    },
    "Oliver Crawford": {
-    "spw": 0.6427,
-    "rpw": 0.3417,
-    "sv_pts": 89
+    "spw": 0.6426,
+    "rpw": 0.346,
+    "sv_pts": 62
    },
    "Oliver Tarvet": {
     "spw": 0.6423,
-    "rpw": 0.3625,
-    "sv_pts": 106
+    "rpw": 0.3612,
+    "sv_pts": 74
    },
    "Patrick Zahraj": {
-    "spw": 0.6333,
-    "rpw": 0.3583,
-    "sv_pts": 57
+    "spw": 0.6359,
+    "rpw": 0.3581,
+    "sv_pts": 40
    },
    "William Rejchtman Vinciguerra": {
-    "spw": 0.6338,
-    "rpw": 0.351,
-    "sv_pts": 46
+    "spw": 0.6363,
+    "rpw": 0.3529,
+    "sv_pts": 32
    },
    "Alex Hernandez": {
-    "spw": 0.6379,
-    "rpw": 0.3545,
-    "sv_pts": 106
+    "spw": 0.6391,
+    "rpw": 0.3553,
+    "sv_pts": 74
    },
    "Govind Nanda": {
-    "spw": 0.6359,
-    "rpw": 0.3636,
-    "sv_pts": 67
+    "spw": 0.6377,
+    "rpw": 0.3619,
+    "sv_pts": 47
    },
    "Luis Carlos Alvarez": {
-    "spw": 0.6382,
-    "rpw": 0.3685,
-    "sv_pts": 81
+    "spw": 0.6394,
+    "rpw": 0.3655,
+    "sv_pts": 57
    },
    "Alan Magadan": {
-    "spw": 0.6371,
-    "rpw": 0.3599,
-    "sv_pts": 48
+    "spw": 0.6387,
+    "rpw": 0.3592,
+    "sv_pts": 34
    },
    "Murphy Cassone": {
-    "spw": 0.6479,
-    "rpw": 0.347,
-    "sv_pts": 71
+    "spw": 0.6464,
+    "rpw": 0.3499,
+    "sv_pts": 50
    },
    "Liam Draxl": {
-    "spw": 0.6415,
-    "rpw": 0.3672,
-    "sv_pts": 125
+    "spw": 0.6418,
+    "rpw": 0.3647,
+    "sv_pts": 88
    },
    "Dan Martin": {
-    "spw": 0.6305,
-    "rpw": 0.3511,
-    "sv_pts": 38
+    "spw": 0.634,
+    "rpw": 0.353,
+    "sv_pts": 27
    },
    "Nicolas Arseneault": {
-    "spw": 0.6409,
-    "rpw": 0.3554,
-    "sv_pts": 110
+    "spw": 0.6413,
+    "rpw": 0.356,
+    "sv_pts": 77
    },
    "Stefan Dostanic": {
-    "spw": 0.6355,
-    "rpw": 0.36,
-    "sv_pts": 210
+    "spw": 0.6372,
+    "rpw": 0.3594,
+    "sv_pts": 147
    },
    "Dhakshineswar Suresh": {
     "spw": 0.6425,
-    "rpw": 0.347,
-    "sv_pts": 106
+    "rpw": 0.3499,
+    "sv_pts": 74
    },
    "Ivan Ivanov": {
-    "spw": 0.6288,
-    "rpw": 0.3487,
-    "sv_pts": 84
-   },
-   "Alexander Vasilev": {
-    "spw": 0.6462,
-    "rpw": 0.3646,
-    "sv_pts": 116
-   },
-   "Cleeve Harper": {
-    "spw": 0.649,
-    "rpw": 0.367,
-    "sv_pts": 53
-   },
-   "Aaron Gil Garcia": {
-    "spw": 0.6294,
-    "rpw": 0.3611,
-    "sv_pts": 75
-   },
-   "Daniel Antonio Nunez": {
-    "spw": 0.6376,
-    "rpw": 0.3622,
-    "sv_pts": 58
-   },
-   "Louis Van Herck": {
-    "spw": 0.6378,
-    "rpw": 0.3624,
-    "sv_pts": 54
-   },
-   "Hyeon Chung": {
-    "spw": 0.6326,
-    "rpw": 0.3675,
-    "sv_pts": 92
-   },
-   "Gonzalo Bueno": {
-    "spw": 0.6405,
-    "rpw": 0.3586,
-    "sv_pts": 81
-   },
-   "Olaf Pieczkowski": {
-    "spw": 0.6533,
-    "rpw": 0.3396,
-    "sv_pts": 85
-   },
-   "Tomasz Berkieta": {
-    "spw": 0.6443,
-    "rpw": 0.3536,
-    "sv_pts": 57
-   },
-   "Ergi Kirkin": {
-    "spw": 0.6336,
-    "rpw": 0.3507,
-    "sv_pts": 42
-   },
-   "Arda Azkara": {
-    "spw": 0.6428,
-    "rpw": 0.3552,
+    "spw": 0.6325,
+    "rpw": 0.3511,
     "sv_pts": 59
    },
+   "Alexander Vasilev": {
+    "spw": 0.6452,
+    "rpw": 0.3627,
+    "sv_pts": 81
+   },
+   "Cleeve Harper": {
+    "spw": 0.6471,
+    "rpw": 0.3643,
+    "sv_pts": 37
+   },
+   "Aaron Gil Garcia": {
+    "spw": 0.633,
+    "rpw": 0.3601,
+    "sv_pts": 53
+   },
+   "Daniel Antonio Nunez": {
+    "spw": 0.639,
+    "rpw": 0.3609,
+    "sv_pts": 41
+   },
+   "Louis Van Herck": {
+    "spw": 0.6391,
+    "rpw": 0.361,
+    "sv_pts": 38
+   },
+   "Hyeon Chung": {
+    "spw": 0.6353,
+    "rpw": 0.3648,
+    "sv_pts": 64
+   },
+   "Gonzalo Bueno": {
+    "spw": 0.641,
+    "rpw": 0.3583,
+    "sv_pts": 57
+   },
+   "Olaf Pieczkowski": {
+    "spw": 0.6503,
+    "rpw": 0.3446,
+    "sv_pts": 60
+   },
+   "Tomasz Berkieta": {
+    "spw": 0.6438,
+    "rpw": 0.3547,
+    "sv_pts": 40
+   },
+   "Ergi Kirkin": {
+    "spw": 0.6362,
+    "rpw": 0.3527,
+    "sv_pts": 30
+   },
+   "Arda Azkara": {
+    "spw": 0.6427,
+    "rpw": 0.3559,
+    "sv_pts": 41
+   },
    "Henry Bernet": {
-    "spw": 0.6403,
-    "rpw": 0.3355,
-    "sv_pts": 121
+    "spw": 0.6409,
+    "rpw": 0.3413,
+    "sv_pts": 84
    },
    "Olle Wallin": {
-    "spw": 0.635,
-    "rpw": 0.3652,
-    "sv_pts": 129
+    "spw": 0.637,
+    "rpw": 0.3632,
+    "sv_pts": 90
    },
    "Aziz Ouakaa": {
-    "spw": 0.6292,
-    "rpw": 0.3529,
-    "sv_pts": 134
+    "spw": 0.6327,
+    "rpw": 0.3541,
+    "sv_pts": 94
    },
    "Amir Omarkhanov": {
-    "spw": 0.633,
-    "rpw": 0.3474,
-    "sv_pts": 49
+    "spw": 0.6357,
+    "rpw": 0.3503,
+    "sv_pts": 34
    },
    "Remy Bertola": {
-    "spw": 0.6383,
-    "rpw": 0.3529,
-    "sv_pts": 46
+    "spw": 0.6395,
+    "rpw": 0.3542,
+    "sv_pts": 32
    },
    "Dan Added": {
-    "spw": 0.6284,
-    "rpw": 0.3532,
-    "sv_pts": 39
+    "spw": 0.6324,
+    "rpw": 0.3545,
+    "sv_pts": 27
    },
    "Rafael Jodar": {
-    "spw": 0.6338,
-    "rpw": 0.3707,
-    "sv_pts": 202
+    "spw": 0.6359,
+    "rpw": 0.3674,
+    "sv_pts": 142
    },
    "Botic Van De Zandschulp": {
-    "spw": 0.6349,
-    "rpw": 0.3522,
-    "sv_pts": 56
+    "spw": 0.637,
+    "rpw": 0.3537,
+    "sv_pts": 39
    },
    "James Watt": {
-    "spw": 0.6364,
-    "rpw": 0.3558,
-    "sv_pts": 67
+    "spw": 0.6381,
+    "rpw": 0.3563,
+    "sv_pts": 47
    }
   },
-  "avg_spw": 0.6418,
+  "avg_spw": 0.642,
   "by_surface": {
-   "clay": 0.6205,
-   "grass": 0.661,
-   "hard": 0.6469
+   "clay": 0.6207,
+   "grass": 0.6608,
+   "hard": 0.6472
   }
  },
  "n_played": {
   "Aaron Gil Garcia": 1,
-  "Abdullah Shelbayh": 15,
+  "Abdullah Shelbayh": 19,
   "Abdulmajeed Bukhari": 1,
   "Abdulmalek Burasais": 1,
+  "Abdulrahman Al Janahi": 1,
   "Adam Moundir": 2,
   "Adam Neff": 1,
-  "Adam Walton": 48,
-  "Adolfo Daniel Vallejo": 3,
+  "Adam Walton": 74,
+  "Adolfo Daniel Vallejo": 26,
   "Adria Soriano Barrera": 6,
   "Adrian Andreev": 1,
-  "Adrian Mannarino": 144,
+  "Adrian Mannarino": 169,
   "Ahmad Nael Qureshi": 1,
   "Aisam-Ul-Haq Qureshi": 2,
   "Ajeet Rai": 4,
   "Akram El Sallaly": 1,
   "Alan Fernando Rubio Fierros": 2,
-  "Alan Magadan": 1,
+  "Alan Magadan": 2,
+  "Alastair Gray": 1,
   "Albert Ramos-Vinolas": 52,
   "Alec Beckley": 3,
-  "Alejandro Davidovich Fokina": 175,
-  "Alejandro Moro Canas": 4,
-  "Alejandro Tabilo": 100,
+  "Alec Deckers": 2,
+  "Alejandro Davidovich Fokina": 198,
+  "Alejandro Moro Canas": 9,
+  "Alejandro Tabilo": 135,
+  "Alejo Sanchez Quilez": 1,
   "Aleksa Krivokapic": 1,
-  "Aleksandar Kovacevic": 85,
-  "Aleksandar Vukic": 123,
+  "Aleksandar Kovacevic": 114,
+  "Aleksandar Vukic": 146,
+  "Aleksandr Shevchenko": 32,
   "Aleksandre Bakshi": 6,
   "Alessandro Giannessi": 1,
-  "Alex Bolt": 11,
-  "Alex Hernandez": 3,
+  "Alex Barrena": 7,
+  "Alex Bolt": 22,
+  "Alex Finkelstein": 1,
+  "Alex Hernandez": 4,
   "Alex Knaff": 10,
-  "Alex Michelsen": 137,
-  "Alex Molcan": 37,
-  "Alex Rybakov": 1,
+  "Alex Michelsen": 159,
+  "Alex Molcan": 61,
+  "Alex Rybakov": 3,
   "Alex Santino Nu\u00f1ez Vera": 1,
-  "Alex de Minaur": 228,
-  "Alexandar Lazarov": 2,
-  "Alexander Blockx": 16,
-  "Alexander Bublik": 165,
+  "Alex de Minaur": 256,
+  "Alexandar Lazarov": 1,
+  "Alexander Blockx": 43,
+  "Alexander Bublik": 196,
   "Alexander Ritschard": 7,
-  "Alexander Shevchenko": 119,
+  "Alexander Shevchenko": 114,
   "Alexander Vasilev": 2,
-  "Alexander Zverev": 257,
-  "Alexandre Muller": 114,
+  "Alexander Zverev": 304,
+  "Alexandre Muller": 129,
   "Alexandros Skorilas": 1,
-  "Alexei Popyrin": 139,
+  "Alexei Popyrin": 158,
   "Alexey Vatutin": 2,
-  "Alexis Galarneau": 7,
+  "Alexis Galarneau": 20,
   "Alexis Klegou": 2,
   "Alibek Kachmazov": 9,
   "Altug Celikbilek": 2,
-  "Alvaro Guillen Meza": 7,
+  "Alvaro Guillen Meza": 9,
   "Alvaro Lopez San Martin": 1,
+  "Amine Jamji": 1,
   "Amir Milushev": 1,
   "Amir Omarkhanov": 1,
   "Ammar Alhogbani": 1,
   "Ammar Elamin": 1,
   "Amr Elsayed Abdou Ah Mohamed": 6,
-  "Andrea Collarini": 1,
-  "Andrea Pellegrino": 3,
-  "Andrea Vavassori": 22,
+  "Andre Ilagan": 1,
+  "Andrea Collarini": 2,
+  "Andrea Guerrieri": 4,
+  "Andrea Pellegrino": 29,
+  "Andrea Vavassori": 26,
   "Andreas Timini": 1,
   "Andrei Gorban": 1,
   "Andrej Nedic": 3,
   "Andreja Petrovic": 1,
   "Andres Andrade": 9,
-  "Andres Martin": 2,
+  "Andres Martin": 4,
+  "Andrew Johnson": 1,
+  "Andrey Chepelev": 1,
   "Andrey Kuznetsov": 1,
-  "Andrey Rublev": 216,
-  "Andy Murray": 52,
+  "Andrey Rublev": 247,
+  "Andy Andrade": 4,
+  "Andy Murray": 50,
+  "Anirudh Chandrasekar": 1,
   "Anthony Susanto": 3,
   "Antoine Bellier": 1,
   "Antoine Escoffier": 1,
-  "Aqeel Khan": 5,
+  "Antoine Ghibaudo": 4,
+  "Anton Matusevich": 1,
+  "Anton Shepp": 1,
+  "Aqeel Khan": 4,
   "Arda Azkara": 1,
   "Aristotelis Thanos": 4,
   "Arklon Huertas Del Pino Cordova": 1,
-  "Arthur Cazaux": 58,
-  "Arthur Fery": 6,
-  "Arthur Fils": 143,
-  "Arthur Gea": 1,
-  "Arthur Rinderknech": 137,
-  "Aslan Karatsev": 54,
+  "Arthur Bouquier": 1,
+  "Arthur Cazaux": 60,
+  "Arthur Fery": 28,
+  "Arthur Fils": 158,
+  "Arthur Gea": 15,
+  "Arthur Rinderknech": 155,
+  "Aryan Shah": 1,
+  "Aslan Karatsev": 51,
   "Atakan Karahan": 1,
   "Atilio Jose Flores": 1,
   "Attila Balazs": 2,
-  "August Holmgren": 9,
-  "Aziz Dougaz": 10,
+  "August Holmgren": 15,
+  "Aziz Dougaz": 15,
   "Aziz Ouakaa": 2,
-  "Beibit Zhukayev": 12,
-  "Ben Shelton": 185,
+  "Beibit Zhukayev": 11,
+  "Ben Shelton": 215,
   "Benedict Badza": 1,
+  "Benito Sanchez Martinez": 1,
   "Benjamin Balleret": 3,
-  "Benjamin Bonzi": 78,
-  "Benjamin Hassan": 16,
+  "Benjamin Bonzi": 97,
+  "Benjamin Hassan": 19,
   "Benjamin Lock": 2,
+  "Benjamin Torrealba": 1,
+  "Benjamin Willwerth": 2,
   "Benoit Paire": 9,
-  "Bernabe Zapata Miralles": 52,
-  "Bernard Tomic": 3,
-  "Billy Harris": 33,
+  "Bernabe Zapata Miralles": 50,
+  "Bernard Tomic": 13,
+  "Billy Harris": 49,
   "Bjorn Fratangelo": 1,
-  "Blaise Bicknell": 7,
+  "Blaise Bicknell": 6,
+  "Blake Ellis": 1,
   "Blaz Rola": 2,
   "Bor Artnak": 6,
   "Boris Arias": 1,
-  "Borna Coric": 81,
-  "Borna Gojo": 29,
-  "Botic Van De Zandschulp": 1,
-  "Botic van de Zandschulp": 130,
+  "Borna Coric": 79,
+  "Borna Gojo": 35,
+  "Botic Van De Zandschulp": 30,
+  "Botic van de Zandschulp": 125,
   "Bradley Klahn": 1,
-  "Brandon Holt": 15,
-  "Brandon Nakashima": 151,
+  "Brandon Holt": 17,
+  "Brandon Nakashima": 174,
   "Branko Djuric": 2,
-  "Calvin Hemery": 2,
-  "Cameron Norrie": 165,
-  "Camilo Ugo Carabelli": 57,
-  "Carlos Alcaraz": 224,
-  "Carlos Taberner": 10,
-  "Casper Ruud": 197,
+  "Bu Yunchaokete": 7,
+  "Calvin Hemery": 5,
+  "Cameron Norrie": 184,
+  "Camilo Ugo Carabelli": 81,
+  "Carlos Alcaraz": 241,
+  "Carlos Sanchez Jover": 1,
+  "Carlos Taberner": 11,
+  "Casper Ruud": 224,
   "Cem Ilkel": 6,
   "Cesar Cruz": 6,
   "Cezar Cretu": 3,
-  "Charles Broom": 2,
-  "Chris Rodesch": 10,
+  "Chak Lam Coleman Wong": 24,
+  "Charles Broom": 4,
+  "Chris Rodesch": 19,
   "Christopher Bulus": 2,
-  "Christopher Eubanks": 80,
-  "Christopher O'Connell": 115,
+  "Christopher Eubanks": 79,
+  "Christopher O'Connell": 134,
   "Christopher Rungkat": 1,
   "Christos Antonopoulos": 1,
   "Chun Hun Wong": 1,
-  "Chun-Hsin Tseng": 31,
+  "Chun-Hsin Tseng": 39,
   "Cleeve Harper": 1,
-  "Clement Chidekh": 2,
+  "Clement Chidekh": 6,
   "Clement Mainguy": 2,
-  "Clement Tabur": 4,
+  "Clement Tabur": 22,
   "Codie Schalk Van Schalkwyk": 2,
-  "Coleman Wong": 30,
+  "Coleman Wong": 29,
   "Colin Sinclair": 2,
-  "Colton Smith": 9,
+  "Colton Smith": 20,
   "Conner Huertas del Pino": 2,
   "Connor Doig": 1,
   "Connor Henry Van Schalkwyk": 2,
   "Conor Gannon": 3,
-  "Constant Lestienne": 44,
+  "Constant Lestienne": 39,
   "Corentin Denolly": 2,
-  "Corentin Moutet": 115,
+  "Corentin Moutet": 131,
   "Courtney John Lock": 2,
-  "Cristian Garin": 71,
+  "Cristian Garin": 89,
+  "Cruz Hewitt": 2,
   "Dac Thien Nguyen": 1,
-  "Dalibor Svrcina": 14,
-  "Damir Dzumhur": 63,
-  "Dan Added": 1,
+  "Dalibor Svrcina": 32,
+  "Damir Dzumhur": 93,
+  "Dan Added": 4,
   "Dan Martin": 1,
-  "Dane Sweeny": 5,
-  "Daniel Altmaier": 126,
-  "Daniel Antonio Nunez": 1,
+  "Dane Sweeny": 19,
+  "Daniel Altmaier": 151,
+  "Daniel Antonio Nunez": 2,
   "Daniel Azar": 1,
   "Daniel Cukierman": 8,
-  "Daniel Elahi Galan": 62,
+  "Daniel Dutra da Silva": 1,
+  "Daniel Elahi Galan": 68,
   "Daniel Evans": 87,
+  "Daniel Jade": 2,
+  "Daniel Jovanovski": 1,
   "Daniel Masur": 2,
-  "Daniel Michalski": 3,
+  "Daniel Merida": 31,
+  "Daniel Michalski": 6,
   "Daniel Rincon": 3,
   "Daniel Vallejo": 2,
   "Daniels Tens": 5,
-  "Daniil Glinka": 1,
-  "Daniil Medvedev": 223,
+  "Daniil Glinka": 7,
+  "Daniil Medvedev": 248,
   "Darian King": 10,
-  "Darwin Blanch": 5,
-  "David Agung Susanto": 2,
+  "Darwin Blanch": 15,
+  "David Agung Susanto": 1,
   "David Ekpenyong": 1,
-  "David Goffin": 91,
-  "David Jorda Sanchis": 2,
+  "David Goffin": 95,
+  "David Jorda Sanchis": 4,
   "Davis Rolis": 2,
   "Denis Kudla": 13,
-  "Denis Shapovalov": 124,
+  "Denis Shapovalov": 142,
   "Denis Yevseyev": 5,
   "Dennis Novak": 4,
   "Devin Badenhorst": 1,
   "Dhakshineswar Suresh": 2,
-  "Diego Dedura-Palomero": 3,
+  "Diego Dedura": 9,
+  "Diego Dedura-Palomero": 2,
   "Diego Duran": 3,
-  "Diego Schwartzman": 48,
+  "Diego Schwartzman": 45,
   "Digvijaypratap Singh": 1,
-  "Dimitar Kuzmanov": 8,
-  "Dimitris Azoidis": 1,
-  "Dino Prizmic": 21,
-  "Dmitry Popko": 4,
-  "Dominic Stricker": 36,
-  "Dominic Thiem": 54,
-  "Dominik Koepfer": 51,
+  "Dimitar Kuzmanov": 9,
+  "Dino Prizmic": 54,
+  "Dmitry Popko": 5,
+  "Dominic Stricker": 37,
+  "Dominic Thiem": 52,
+  "Dominik Koepfer": 49,
   "Dragos Nicolae Madaras": 1,
-  "Duje Ajdukovic": 14,
-  "Dusan Lajovic": 100,
+  "Duje Ajdukovic": 15,
+  "Dusan Lajovic": 118,
+  "Dylan Dietrich": 3,
   "Edan Leshem": 1,
-  "Edas Butvilas": 5,
+  "Edas Butvilas": 12,
+  "Edward Winter": 1,
   "Eero Vasa": 7,
   "Egor Gerasimov": 3,
-  "Elias Ymer": 31,
-  "Eliot Spizzirri": 16,
+  "Elias Ymer": 47,
+  "Eliot Spizzirri": 27,
   "Elliot Benchetrit": 6,
-  "Elmer Moller": 14,
-  "Emil Ruusuvuori": 85,
+  "Elmer Moller": 27,
+  "Emil Ruusuvuori": 82,
   "Emilio Gomez": 13,
-  "Emilio Nava": 24,
+  "Emilio Nava": 53,
   "Enmanuel Munoz": 1,
   "Enzo Couacaud": 5,
   "Ergi Kirkin": 3,
   "Ernesto Escobedo": 8,
   "Ernests Gulbis": 1,
   "Ethan Denzel Sibanda": 1,
-  "Ethan Quinn": 39,
+  "Ethan Quinn": 70,
   "Eugenio Gonzalez Fitzmaurice": 1,
-  "Fabian Marozsan": 128,
+  "Fabian Marozsan": 155,
   "Fabio Fognini": 55,
-  "Facundo Bagnis": 23,
-  "Facundo Diaz Acosta": 47,
+  "Facundo Bagnis": 22,
+  "Facundo Diaz Acosta": 56,
+  "Facundo Mena": 1,
   "Fadi Bidan": 2,
-  "Fajing Sun": 5,
+  "Fajing Sun": 4,
   "Fares Zakaria": 2,
-  "Federico Agustin Gomez": 7,
-  "Federico Cina": 6,
-  "Federico Coria": 50,
+  "Federico Agustin Gomez": 18,
+  "Federico Bondioli": 3,
+  "Federico Cina": 23,
+  "Federico Coria": 53,
   "Federico Delbonis": 2,
   "Federico Zeballos": 2,
   "Feliciano Lopez": 7,
-  "Felipe Meligeni Alves": 14,
-  "Felix Auger-Aliassime": 178,
+  "Felipe Meligeni Alves": 15,
+  "Felix Auger-Aliassime": 208,
+  "Felix Gill": 6,
   "Fernando Verdasco": 5,
-  "Filip Cristian Jianu": 6,
+  "Filip Cristian Jianu": 9,
   "Filip Jeff Planinsek": 2,
   "Filip Krajinovic": 15,
-  "Filip Misolic": 30,
-  "Flavio Cobolli": 137,
-  "Frances Tiafoe": 171,
-  "Francesco Passaro": 24,
+  "Filip Misolic": 34,
+  "Filippo Romano": 1,
+  "Flavio Cobolli": 173,
+  "Florent Bax": 2,
+  "Frances Tiafoe": 204,
+  "Francesco Maestrelli": 18,
+  "Francesco Passaro": 34,
   "Francisco Cabral": 1,
-  "Francisco Cerundolo": 195,
-  "Francisco Comesana": 56,
+  "Francisco Cerundolo": 227,
+  "Francisco Comesana": 80,
   "Francisco Llanes": 2,
-  "Franco Roncadelli": 8,
+  "Francisco Rocha": 1,
+  "Franco Agamenone": 1,
+  "Franco Roncadelli": 9,
   "Freddy Murray": 2,
-  "Gabi Adrian Boitan": 2,
-  "Gabriel Diallo": 82,
-  "Gabriel Ghetu": 1,
-  "Gael Monfils": 110,
-  "Gauthier Onclin": 1,
-  "Genaro Alberto Olivieri": 3,
-  "Geoffrey Blancaneaux": 2,
-  "George Loffhagen": 4,
+  "Frederico Ferreira Silva": 4,
+  "Gabi Adrian Boitan": 3,
+  "Gabriel Debru": 1,
+  "Gabriel Diallo": 98,
+  "Gabriel Ghetu": 2,
+  "Gael Monfils": 113,
+  "Gauthier Onclin": 8,
+  "Genaro Alberto Olivieri": 10,
+  "Geoffrey Blancaneaux": 4,
+  "George Loffhagen": 7,
+  "Georgi Georgiev": 1,
   "Gerard Campana Lee": 1,
-  "Gijs Brouwer": 22,
-  "Giles Hussey": 2,
-  "Gilles Arnaud Bailly": 3,
+  "Ghanim Al Sulaiti": 1,
+  "Gianluca Cadenasso": 4,
+  "Gijs Brouwer": 21,
+  "Giles Hussey": 6,
+  "Gilles Arnaud Bailly": 8,
   "Gillian Osmont": 1,
-  "Giovanni Mpetshi Perricard": 85,
-  "Giulio Zeppieri": 18,
-  "Gonzalo Bueno": 5,
+  "Giovanni Mpetshi Perricard": 103,
+  "Giulio Zeppieri": 22,
+  "Goncalo Da Rosa Castro": 1,
+  "Gonzalo Bueno": 16,
   "Gonzalo Escobar": 1,
   "Gonzalo Lama": 1,
   "Govind Nanda": 2,
   "Gregoire Barrere": 58,
-  "Grigor Dimitrov": 160,
+  "Grigor Dimitrov": 166,
   "Guido Andreozzi": 4,
   "Guido Pella": 22,
   "Gunawan Trismuwantara": 3,
-  "Gustavo Heide": 11,
-  "Hady Habib": 12,
-  "Hamad Medjedovic": 72,
+  "Gustavo Heide": 19,
+  "Guto Miguel": 2,
+  "Guy Den Ouden": 5,
+  "Hady Habib": 14,
+  "Hamad Medjedovic": 91,
   "Hamidreza Nadaf": 1,
+  "Hamish Stewart": 3,
   "Hamza Karmoussi": 1,
-  "Harold Mayot": 23,
-  "Henri Squire": 5,
-  "Henrique Rocha": 10,
-  "Henry Bernet": 2,
-  "Henry Searle": 3,
+  "Harold Mayot": 25,
+  "Harry Wendelken": 6,
+  "Hendrik Jebens": 1,
+  "Henri Squire": 8,
+  "Henrique Rocha": 25,
+  "Henry Bernet": 4,
+  "Henry Searle": 5,
   "Hernando Jose Escurra Isnardi": 1,
   "Heve Kelley": 1,
   "Hod'abalo Padio": 3,
-  "Holger Rune": 197,
+  "Holger Rune": 183,
   "Hong Kit Wong": 2,
-  "Hubert Hurkacz": 160,
-  "Hugo Dellien": 34,
-  "Hugo Gaston": 71,
-  "Hugo Grenier": 16,
-  "Hugo Nys": 1,
+  "Hubert Hurkacz": 177,
+  "Hugo Dellien": 49,
+  "Hugo Gaston": 86,
+  "Hugo Grenier": 24,
+  "Hugo Nys": 2,
   "Huzaifa Abdul Rehman": 3,
   "Hyeon Chung": 2,
-  "Ignacio Buse": 14,
+  "Hynek Barton": 1,
+  "Ignacio Buse": 52,
   "Ignacio Carou": 1,
   "Ignacio Parisca Romera": 2,
+  "Igor Ribeiro Marcondes": 5,
+  "Ilia Simakin": 1,
   "Ilie Cazac": 1,
   "Iliyan Radulov": 2,
   "Illya Marchenko": 1,
   "Ilya Ivashka": 27,
   "Ilya Snitari": 4,
   "Ioannis Xilas": 2,
-  "Isaac Becroft": 1,
+  "Isaac Becroft": 2,
   "Ivan Gakhov": 4,
-  "Ivan Ivanov": 2,
+  "Ivan Ivanov": 3,
+  "Izyan Ahmad": 1,
   "J.J. Wolf": 62,
   "Jack Cheng": 1,
-  "Jack Draper": 132,
+  "Jack Draper": 133,
   "Jack Loutit": 4,
-  "Jack Pinnington Jones": 3,
+  "Jack Pinnington Jones": 20,
   "Jack Sock": 6,
   "Jacob Bicknell": 1,
-  "Jacob Fearnley": 43,
-  "Jacopo Berrettini": 2,
-  "Jaime Faria": 19,
-  "Jakub Mensik": 111,
-  "James Duckworth": 53,
-  "James McCabe": 8,
+  "Jacob Fearnley": 54,
+  "Jacopo Berrettini": 1,
+  "Jacopo Vasami": 1,
+  "Jagger Leach": 1,
+  "Jaime Faria": 49,
+  "Jake Delaney": 1,
+  "Jakub Mensik": 132,
+  "Jakub Paul": 1,
+  "James Duckworth": 70,
+  "James McCabe": 18,
   "James Trotter": 2,
   "James Watt": 3,
-  "Jan Choinski": 10,
-  "Jan-Lennard Struff": 129,
-  "Jannik Sinner": 229,
+  "Jamie Mackenzie": 2,
+  "Jan Choinski": 33,
+  "Jan-Lennard Struff": 156,
+  "Jannik Sinner": 262,
   "Jason Jung": 3,
-  "Jason Kubler": 31,
-  "Jaume Munar": 134,
+  "Jason Kubler": 30,
+  "Jaume Munar": 149,
   "Javier Barranco Cosano": 1,
-  "Jay Clarke": 1,
-  "Jenson Brooksby": 45,
+  "Jay Clarke": 9,
+  "Jenson Brooksby": 66,
   "Jeremy Chardy": 5,
-  "Jerome Kym": 10,
-  "Jesper de Jong": 40,
+  "Jerome Kym": 18,
+  "Jesper de Jong": 64,
   "Jesse Flores": 1,
   "Jie Cui": 3,
-  "Jiri Lehecka": 176,
+  "Jiri Lehecka": 197,
   "Jiri Vesely": 8,
-  "Joao Fonseca": 63,
+  "Joao Domingues": 1,
+  "Joao Fonseca": 84,
+  "Joao Lucas Reis Da Silva": 6,
+  "Joao Silva": 1,
   "Joao Sousa": 15,
   "Joaquin  Aguilar Cardozo": 4,
   "Joaquin Aguilar Cardozo": 1,
+  "Joel Josef Schwaerzler": 7,
   "Joel Schwaerzler": 3,
   "Johannes Seeman": 1,
-  "Johannus Monday": 1,
+  "Johannus Monday": 3,
   "John Isner": 23,
   "John Millman": 4,
   "John Peers": 1,
-  "Jordan Thompson": 133,
+  "Jordan Lee": 1,
+  "Jordan Thompson": 126,
   "Joris De Loore": 1,
   "Jozef Kovalik": 15,
+  "Juan Bautista Torres": 1,
   "Juan Borba": 1,
   "Juan Carlos Fuentes Vasquez": 2,
-  "Juan Carlos Prado Angelo": 3,
-  "Juan Manuel Cerundolo": 38,
-  "Juan Pablo Ficovich": 6,
-  "Juan Pablo Varillas": 49,
-  "Juncheng Shang": 76,
-  "Jurij Rodionov": 22,
-  "Justin Engel": 14,
+  "Juan Carlos Prado Angelo": 14,
+  "Juan Cruz Martin Manzano": 1,
+  "Juan Manuel Cerundolo": 70,
+  "Juan Manuel La Serna": 1,
+  "Juan Pablo Ficovich": 12,
+  "Juan Pablo Varillas": 48,
+  "Juncheng Shang": 67,
+  "Jurij Rodionov": 39,
+  "Justin Engel": 17,
   "Kacper Zuk": 1,
+  "Kai Thompson": 1,
+  "Kaichi Uchida": 2,
   "Kaipo Marshall": 7,
-  "Kamil Majchrzak": 33,
+  "Kamil Majchrzak": 55,
   "Karam Hatamleh": 1,
   "Karan Singh": 1,
-  "Karen Khachanov": 168,
-  "Karim Bennani": 2,
+  "Karen Khachanov": 193,
+  "Karim Bennani": 4,
   "Karim-Mohamed Maamoun": 2,
   "Karl Friberg": 2,
   "Karlis Ozolins": 2,
   "Karue Sell": 1,
   "Kasidit Samrej": 4,
-  "Kei Nishikori": 40,
+  "Keegan Smith": 2,
+  "Kei Nishikori": 37,
   "Kenneth Raisma": 1,
   "Kevin Anderson": 4,
   "Kevin Krawietz": 1,
   "Khumoyun Sultanov": 8,
   "Ki Lung Ng": 2,
-  "Kimmer Coppejans": 3,
+  "Kilian Feldbausch": 7,
+  "Kimmer Coppejans": 11,
   "Kiranpal Pannu": 6,
   "Kodjo Charles Alipoe-Tchotchodji": 1,
   "Komlavi Loglo": 2,
   "Kris Van Wyk": 5,
-  "Kristjan Tamm": 4,
+  "Krish Arora": 1,
+  "Kristjan Tamm": 3,
   "Kwok Shun Dasson Chan": 1,
   "Kyle Edmund": 7,
-  "Kyrian Jacquet": 5,
-  "Laslo Djere": 117,
+  "Kyrian Jacquet": 21,
+  "Laslo Djere": 120,
   "Laurent Lokoli": 3,
-  "Leandro Riedi": 15,
-  "Learner Tien": 73,
+  "Lautaro Midon": 9,
+  "Leandro Riedi": 22,
+  "Learner Tien": 97,
   "Leo Borg": 15,
   "Leo Matthysen": 1,
-  "Li Tu": 12,
-  "Liam Broady": 18,
-  "Liam Draxl": 2,
+  "Li Tu": 13,
+  "Liam Broady": 21,
+  "Liam Draxl": 17,
   "Liam Krall": 1,
   "Linh Giang Trinh": 2,
   "Liova Ajavon": 2,
-  "Lloyd Harris": 27,
-  "Lorenzo Giustino": 1,
-  "Lorenzo Musetti": 203,
-  "Lorenzo Sonego": 165,
+  "Lloyd Harris": 33,
+  "Lorenzo Carboni": 1,
+  "Lorenzo Giustino": 6,
+  "Lorenzo Musetti": 209,
+  "Lorenzo Sonego": 182,
   "Louis Van Herck": 1,
   "Louis Wessels": 1,
-  "Luca Nardi": 48,
+  "Luca Castelnuovo": 1,
+  "Luca Nardi": 58,
   "Luca Preda": 1,
-  "Luca Van Assche": 63,
+  "Luca Van Assche": 78,
   "Lucas Catarina": 1,
-  "Lucas Miedler": 1,
-  "Lucas Pouille": 11,
-  "Luciano Darderi": 112,
+  "Lucas Miedler": 2,
+  "Lucas Pouille": 9,
+  "Luciano Darderi": 148,
   "Lucky Candra Kurniawan": 1,
   "Luis Carlos Alvarez": 3,
-  "Luka Mikrut": 1,
-  "Lukas Klein": 26,
-  "Lukas Neumayer": 7,
-  "Lukas Pokorny": 1,
+  "Luka Mikrut": 4,
+  "Luka Pavlovic": 10,
+  "Lukas Klein": 28,
+  "Lukas Neumayer": 16,
   "Luke Saville": 1,
   "M Rifki Fitriadi": 5,
-  "Mackenzie McDonald": 106,
-  "Maks Kasnikowski": 4,
+  "Mac Visser": 1,
+  "Mackenzie McDonald": 124,
+  "Maks Kasnikowski": 5,
   "Malek Jaziri": 1,
-  "Manas Dhamne": 1,
+  "Manas Dhamne": 4,
   "Manuel Guinard": 4,
-  "Marc Polmans": 4,
+  "Marc Majdandzic": 1,
+  "Marc Polmans": 9,
   "Marc Van Der Merwe": 1,
-  "Marc-Andrea Huesler": 48,
+  "Marc-Andrea Huesler": 57,
   "Marcelo Arevalo": 9,
   "Marcelo Demoliner": 1,
-  "Marco Cecchinato": 26,
-  "Marco Trungelliti": 10,
-  "Marcos Giron": 165,
+  "Marco Cecchinato": 35,
+  "Marco Trungelliti": 39,
+  "Marcos Giron": 189,
   "Marcos Lee Chan Baratau": 1,
-  "Mariano Navone": 85,
-  "Marin Cilic": 41,
+  "Mariano Navone": 119,
+  "Marin Cilic": 64,
   "Marius Copil": 1,
-  "Mark Lajal": 12,
-  "Marko Topo": 3,
+  "Mark Ceban": 1,
+  "Mark Lajal": 14,
+  "Marko Topo": 9,
   "Markus Molder": 1,
   "Martin Antonio Vergara Del Puerto": 1,
   "Martin Antonio Vergara del Puerto": 1,
-  "Martin Damm": 5,
+  "Martin Damm": 32,
   "Martin Klizan": 1,
-  "Martin Landaluce": 15,
+  "Martin Krumich": 3,
+  "Martin Landaluce": 45,
   "Martins Rocens": 2,
-  "Marton Fucsovics": 110,
+  "Marton Fucsovics": 127,
   "Martyn Pawelski": 2,
   "Matavao Fanguna": 1,
   "Mate Valkusz": 6,
-  "Matej Dodig": 5,
+  "Matej Dodig": 11,
   "Mateus Alves": 1,
   "Matheus Pucinelli De Almeida": 2,
   "Mathias Bourgue": 1,
+  "Matias Soto": 1,
   "Matic Kriznik": 3,
   "Matija Pecotic": 2,
-  "Matteo Arnaldi": 132,
-  "Matteo Berrettini": 107,
-  "Matteo Gigante": 13,
-  "Matteo Martineau": 2,
+  "Matteo Arnaldi": 152,
+  "Matteo Berrettini": 123,
+  "Matteo Gigante": 12,
+  "Matteo Martineau": 3,
   "Matthew Ebden": 1,
   "Matthew Forbes": 1,
-  "Mattia Bellucci": 44,
+  "Mattia Bellucci": 69,
   "Matwe Middelkoop": 1,
-  "Max Hans Rehberg": 2,
-  "Max Purcell": 64,
+  "Max Alcala Gurri": 1,
+  "Max Basing": 4,
+  "Max Dahlin": 1,
+  "Max Hans Rehberg": 6,
+  "Max Houkes": 3,
+  "Max Purcell": 63,
+  "Max Schoenhaus": 4,
   "Maxim Mrva": 1,
   "Maxim Shin": 1,
   "Maxime Cressy": 34,
   "Maxime Janvier": 1,
   "Maximilian Marterer": 40,
   "Maximus Jones": 2,
-  "Mees Rottgering": 1,
+  "Mees Rottgering": 5,
   "Menelaos Efstathiou": 6,
+  "Mert Alkaya": 3,
   "Mert Naci Turker": 1,
   "Michael Agwi": 8,
   "Michael Bassem Sobhy": 2,
-  "Michael Mmoh": 40,
+  "Michael Mmoh": 41,
+  "Michael Zheng": 16,
   "Michail Pervolarakis": 1,
-  "Mikael Ymer": 30,
+  "Michalis Sakellaridis": 1,
+  "Michele Ribecai": 1,
+  "Miguel Damas": 4,
+  "Mika Petkovic": 1,
+  "Mikael Ymer": 27,
   "Mikhail Kukushkin": 10,
-  "Mili Poljicak": 2,
-  "Milos Raonic": 21,
+  "Mili Poljicak": 3,
+  "Milos Raonic": 18,
   "MinKyu Song": 1,
   "Minhtuan Pham": 1,
-  "Miomir Kecmanovic": 167,
+  "Miomir Kecmanovic": 190,
   "Mirza Basic": 4,
-  "Mitchell Krueger": 12,
-  "Moez Echargui": 9,
+  "Mitchell Krueger": 15,
+  "Moerani Bouzige": 1,
+  "Moez Echargui": 24,
   "Mohamed Safwat": 8,
+  "Moise Kouame": 11,
   "Mousa Alkotop": 2,
+  "Mubarak Shannan Zayid": 1,
   "Muhammad Abid": 1,
   "Muhammad Shoaib": 4,
-  "Mukund Sasikumar": 4,
+  "Mukund Sasikumar": 3,
   "Murkel Dellien": 2,
-  "Murphy Cassone": 1,
+  "Murphy Cassone": 11,
   "Mustapha El Natour": 1,
   "Muzammil Murtaza": 2,
   "N.Sriram Balaji": 2,
   "Nam Hoang Ly": 4,
-  "Nerman Fatic": 3,
+  "Nerman Fatic": 6,
   "Nicholas David Ionel": 3,
   "Nick Chappell": 1,
   "Nick Hardt": 3,
-  "Nick Kyrgios": 7,
-  "Nicolai Budkov Kjaer": 16,
+  "Nick Kyrgios": 9,
+  "Nico Hipfl": 1,
+  "Nicolai Budkov Kjaer": 37,
   "Nicolas Arseneault": 2,
   "Nicolas Barrientos": 1,
-  "Nicolas Jarry": 129,
-  "Nicolas Mejia": 14,
-  "Nicolas Moreno De Alboran": 18,
+  "Nicolas Jarry": 131,
+  "Nicolas Kicker": 1,
+  "Nicolas Mejia": 26,
+  "Nicolas Moreno De Alboran": 22,
+  "Nicolas Villalon": 1,
+  "Niels McDonald": 2,
+  "Niels Visker": 2,
   "Niki Kaliyanda Poonacha": 1,
-  "Nikolas Sanchez Izquierdo": 1,
-  "Nikoloz Basilashvili": 23,
+  "Niklas Waldner": 1,
+  "Nikola Slavic": 1,
+  "Nikolas Sanchez Izquierdo": 4,
+  "Nikoloz Basilashvili": 54,
   "Nino Serdarusic": 1,
-  "Nishesh Basavareddy": 28,
-  "Norbert Gombos": 5,
-  "Novak Djokovic": 161,
-  "Nuno Borges": 143,
+  "Nishesh Basavareddy": 39,
+  "Noa Vukadin": 1,
+  "Norbert Gombos": 6,
+  "Novak Djokovic": 174,
+  "Nuno Borges": 173,
   "Ofek Shimanov": 1,
   "Olaf Pieczkowski": 2,
   "Oleksandr Ovcharenko": 4,
   "Oleksii Krutykh": 8,
-  "Oliver Crawford": 1,
+  "Oliver Bonding": 1,
+  "Oliver Crawford": 4,
   "Oliver Ojakaar": 3,
-  "Oliver Tarvet": 2,
+  "Oliver Tarvet": 6,
   "Olle Wallin": 2,
-  "Omar Jasika": 2,
+  "Omar Jasika": 3,
   "Omni Kumar": 5,
   "Orel Kimhi": 3,
   "Oriol Roca Batalla": 1,
-  "Oscar Otte": 21,
+  "Orlando Luz": 4,
+  "Oscar Otte": 20,
   "Osgar O'Hoisin": 5,
-  "Otto Virtanen": 32,
-  "Pablo Andujar": 4,
-  "Pablo Carreno Busta": 45,
-  "Pablo Llamas Ruiz": 13,
+  "Otto Virtanen": 50,
+  "Pablo Andujar": 3,
+  "Pablo Carreno Busta": 69,
+  "Pablo Llamas Ruiz": 29,
   "Patrick Agbo-Panzo": 4,
   "Patrick Kaukovalta": 1,
-  "Patrick Kypson": 9,
-  "Patrick Zahraj": 1,
-  "Paul Jubb": 5,
-  "Pavel Kotov": 73,
+  "Patrick Kypson": 34,
+  "Patrick Zahraj": 2,
+  "Paul Jubb": 7,
+  "Pavel Kotov": 72,
+  "Pavle Marinkov": 1,
+  "Pedro Boscardin Dias": 4,
   "Pedro Cachin": 54,
-  "Pedro Martinez": 101,
+  "Pedro Martinez": 122,
+  "Pedro Sakamoto": 1,
   "Pedro Sousa": 1,
   "Petar Jovanovic": 2,
   "Peter Bertran": 2,
   "Peter Buldorini": 1,
+  "Petr Bar Biryukov": 2,
   "Petr Nesterov": 3,
   "Petros Chrysochos": 3,
   "Petros Tsitsipas": 1,
   "Philip Henning": 6,
   "Philip Hjorth": 1,
-  "Philip Sekulic": 3,
-  "Pierre-Hugues Herbert": 19,
+  "Philip Sekulic": 4,
+  "Pierluigi Basile": 1,
+  "Pierre-Hugues Herbert": 33,
   "Pijus Vaitiekunas": 1,
+  "Pol Martin Tiffon": 2,
   "Prajnesh Gunneswaran": 1,
-  "Quentin Halys": 93,
-  "Radu Albot": 32,
-  "Radu David Turcanu": 2,
-  "Rafael De Alba": 1,
-  "Rafael Jodar": 3,
+  "Quentin Halys": 134,
+  "Radu Albot": 31,
+  "Radu David Turcanu": 3,
+  "Rafael De Alba": 2,
+  "Rafael Jodar": 46,
   "Rafael Nadal": 24,
   "Ramkumar Ramanathan": 5,
   "Raphael Calzi": 1,
-  "Raphael Collignon": 26,
+  "Raphael Collignon": 50,
+  "Raul Brancaccio": 5,
   "Raul Garcia": 2,
-  "Rei Sakamoto": 4,
-  "Reilly Opelka": 68,
-  "Remy Bertola": 3,
+  "Reda Bennani": 2,
+  "Rei Sakamoto": 19,
+  "Reilly Opelka": 76,
+  "Remy Bertola": 9,
   "Ricardas Berankis": 5,
   "Ricardo Rodriguez - Pace": 1,
   "Riccardo Bonadio": 3,
-  "Richard Gasquet": 67,
-  "Rigele Te": 5,
-  "Rinky Hijikata": 90,
+  "Richard Gasquet": 65,
+  "Rigele Te": 4,
+  "Rinky Hijikata": 122,
+  "Rio Noguchi": 2,
   "Robert Strombachs": 6,
-  "Roberto Bautista Agut": 122,
-  "Roberto Carballes Baena": 124,
+  "Roberto Bautista Agut": 140,
+  "Roberto Carballes Baena": 130,
   "Roberto Cid Subervi": 3,
+  "Robin Bertrand": 2,
   "Robin Haase": 3,
   "Rodrigo Crespo Piedra": 1,
-  "Rodrigo Pacheco Mendez": 15,
-  "Romain Arneodo": 3,
-  "Roman Andres Burruchaga": 11,
-  "Roman Safiullin": 106,
+  "Rodrigo Pacheco Mendez": 14,
+  "Romain Arneodo": 4,
+  "Roman Andres Burruchaga": 38,
+  "Roman Safiullin": 119,
   "Ronan Tashinga Mtisi": 1,
   "Rowland Phillips": 6,
   "Rubin Statham": 1,
   "Rudolf Molleker": 4,
-  "Ryan Peniston": 4,
+  "Ryan Peniston": 5,
   "Saba Purtseladze": 6,
+  "Sander Jong": 2,
+  "Sandro Kopp": 2,
   "Sanhui Shin": 1,
+  "Santiago Rodriguez Taverna": 1,
+  "Sascha Gueymard Wayenburg": 2,
   "Saud Alhogbani": 1,
-  "Sebastian Baez": 165,
+  "Sean Cuenin": 1,
+  "Sebastian Baez": 190,
   "Sebastian Dominko": 3,
   "Sebastian Fanselow": 1,
-  "Sebastian Korda": 140,
-  "Sebastian Ofner": 91,
+  "Sebastian Korda": 143,
+  "Sebastian Ofner": 103,
   "Seongchan Hong": 12,
   "Sergey Fomin": 5,
-  "Shintaro Mochizuki": 28,
-  "Sho Shimabukuro": 11,
+  "Shang Juncheng": 7,
+  "Shintaro Mochizuki": 47,
+  "Sho Shimabukuro": 35,
   "Siddharth Vishwakarma": 1,
   "Simon Carr": 1,
   "Sina Moghimi": 2,
   "Skander Mansouri": 4,
-  "Soonwoo Kwon": 28,
-  "Stan Wawrinka": 99,
-  "Stefan Dostanic": 3,
-  "Stefano Napolitano": 7,
-  "Stefano Travaglia": 2,
-  "Stefanos Sakellaridis": 8,
-  "Stefanos Tsitsipas": 187,
+  "SoonWoo Kwon": 5,
+  "Soonwoo Kwon": 27,
+  "Stan Wawrinka": 115,
+  "Stefan Dostanic": 4,
+  "Stefan Horia Haita": 1,
+  "Stefan Kozlov": 2,
+  "Stefano Napolitano": 9,
+  "Stefano Travaglia": 16,
+  "Stefanos Sakellaridis": 18,
+  "Stefanos Tsitsipas": 210,
   "Stephen Slocombe": 1,
   "Steve Johnson": 8,
   "Steven Diez": 2,
   "Strong Kirchheimer": 2,
   "Stylianos Christodoulou": 3,
-  "Sumit Nagal": 31,
+  "Sumit Nagal": 33,
+  "Sun Fajing": 1,
   "Sylvestre Monnou": 1,
-  "Taha Baadi": 4,
-  "Tallon Griekspoor": 182,
+  "Taha Baadi": 6,
+  "Tallon Griekspoor": 193,
   "Tao Mu": 1,
-  "Taro Daniel": 69,
-  "Taylor Fritz": 234,
+  "Taro Daniel": 73,
+  "Taylor Fritz": 260,
   "Tennys Sandgren": 1,
-  "Terence Atmane": 32,
-  "Thai-Son Kwiatkowski": 1,
+  "Terence Atmane": 58,
+  "Thai-Son Kwiatkowski": 2,
   "Thanapet Chanta": 2,
-  "Thanasi Kokkinakis": 69,
+  "Thanasi Kokkinakis": 66,
   "Theo Papamalamis": 1,
-  "Thiago Agustin Tirante": 22,
-  "Thiago Monteiro": 61,
-  "Thiago Seyboth Wild": 71,
+  "Thiago Agustin Tirante": 56,
+  "Thiago Monteiro": 68,
+  "Thiago Seyboth Wild": 76,
+  "Thijmen Loof": 1,
+  "Thijs Boogaard": 5,
+  "Thomas Faurel": 6,
   "Thomas Yaka Kofi Setodji": 5,
   "Thomaz Bellucci": 1,
+  "Tiago Pereira": 2,
+  "Tiago Torres": 3,
   "Tim van Rijthoven": 5,
-  "Timofey Skatov": 15,
-  "Titouan Droguet": 7,
-  "Tomas Barrios Vera": 23,
-  "Tomas Machac": 122,
-  "Tomas Martin Etcheverry": 176,
+  "Timofey Skatov": 28,
+  "Titouan Droguet": 29,
+  "Toby Samuel": 11,
+  "Tom Gentzsch": 7,
+  "Tomas Barrios Vera": 43,
+  "Tomas Machac": 128,
+  "Tomas Martin Etcheverry": 207,
   "Tomasz Berkieta": 1,
-  "Tommy Paul": 180,
-  "Trevor Svajda": 1,
-  "Tristan Boyer": 14,
-  "Tristan Schoolkate": 20,
+  "Tommy Paul": 215,
+  "Trevor Svajda": 4,
+  "Tristan Boyer": 23,
+  "Tristan Schoolkate": 33,
   "Tsung-Hao Huang": 1,
   "Tsz Fu Wong": 2,
   "Tung-Lin Wu": 9,
-  "Ugo Blanchet": 11,
-  "Ugo Humbert": 172,
-  "Valentin Royer": 23,
-  "Valentin Vacherot": 31,
-  "Vasek Pospisil": 6,
+  "Tyler Zink": 1,
+  "Ugo Blanchet": 20,
+  "Ugo Humbert": 199,
+  "Valentin Royer": 39,
+  "Valentin Vacherot": 51,
+  "Vasek Pospisil": 5,
   "Viacheslav Bielinskyi": 3,
-  "Viktor Durasovic": 9,
-  "Vilius Gaubas": 12,
-  "Vit Kopriva": 29,
-  "Vitaliy Sachko": 11,
-  "Vladyslav Orlov": 5,
+  "Viktor Durasovic": 10,
+  "Vilius Gaubas": 40,
+  "Vit Kopriva": 64,
+  "Vitaliy Sachko": 26,
+  "Vladyslav Orlov": 4,
   "Walid Ahouda": 1,
-  "William Rejchtman Vinciguerra": 1,
+  "William Rejchtman Vinciguerra": 2,
   "Wishaya Trongcharoenchaikul": 1,
+  "Wu Yibing": 23,
   "Xavier Lawrence": 1,
   "Yanaki Milev": 5,
-  "Yanki Erel": 4,
-  "Yannick Hanfmann": 111,
-  "Yassine Dlimi": 5,
+  "Yanki Erel": 3,
+  "Yannick Hanfmann": 147,
+  "Yassine Dlimi": 4,
   "Yasutaka Uchiyama": 3,
   "Ye Cong Mo": 1,
-  "Yi Zhou": 15,
-  "Yibing Wu": 45,
-  "Yoshihito Nishioka": 108,
+  "Yi Zhou": 13,
+  "Yibing Wu": 41,
+  "Yoshihito Nishioka": 100,
   "Yosuke Watanuki": 31,
+  "Younes Lalami": 1,
   "Younes Lalami Laaroussi": 3,
   "Yousaf Khalil": 1,
   "Yshai Oliel": 7,
-  "Yu Hsiou Hsu": 7,
+  "Yu Hsiou Hsu": 11,
   "Yuki Bhambri": 1,
   "Yun seong Chung": 1,
-  "Yunchaokete Bu": 57,
+  "Yunchaokete Bu": 56,
   "Yuttana Charoenphon": 2,
-  "Zachary Svajda": 22,
+  "Zachary Svajda": 57,
+  "Zdenek Kolar": 5,
+  "Zhang Zhizhen": 16,
   "Zhe Li": 1,
-  "Zhizhen Zhang": 109,
-  "Ziga Sesko": 1,
-  "Zizou Bergs": 110,
-  "Zsombor Piros": 9,
+  "Zhizhen Zhang": 106,
+  "Zhou Yi": 6,
+  "Ziga Sesko": 3,
+  "Zizou Bergs": 133,
+  "Zsombor Piros": 16,
   "Zura Tkemaladze": 5
  },
  "meta": {
   "converged": true,
-  "iterations": 12
+  "iterations": 13
  },
- "games_cal": 0.8963
+ "games_cal": 0.9174
 }

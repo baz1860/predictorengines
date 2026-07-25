@@ -1,12 +1,7 @@
 """Competition registry for the Club Soccer engine."""
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
-from pathlib import Path
-
-_COMP_STRENGTH_FILE = Path(__file__).resolve().parent / "data" / "comp_strength.json"
-_comp_strength_cache: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -88,8 +83,8 @@ COMPETITIONS = [
     # `strength` values come from uefa_registry.strength_prior(), which is
     # anchored on the existing hand-set scale (Premier League 1.00 at
     # coefficient 89.16, Scottish Premiership 0.58 at 27.50) and linear in the
-    # UEFA coefficient between them. They are PRIORS, not fitted values — P4
-    # replaces them, and comp_strength.json stays gated off meanwhile.
+    # UEFA coefficient between them. They are fixed, reviewed priors rather
+    # than a second inactive fitted-strength system.
     #
     # teams_n is from live 2025/26 files where observed. releg/promo/euro
     # spots are left at 0 rather than guessed: they only parameterise the
@@ -345,36 +340,9 @@ def get(name: str | None) -> Competition | None:
     return BY_NAME.get(str(name).strip())
 
 
-def _load_comp_strength() -> dict:
-    """Fitted competition-strength overrides (P4.4) — cached for the process
-    lifetime. Consulted by strength() ONLY when the file's "active" flag is
-    true (report-only/gated-OFF by default, per the promotion discipline)."""
-    global _comp_strength_cache
-    if _comp_strength_cache is None:
-        if _COMP_STRENGTH_FILE.exists():
-            try:
-                _comp_strength_cache = json.loads(_COMP_STRENGTH_FILE.read_text())
-            except Exception:
-                _comp_strength_cache = {}
-        else:
-            _comp_strength_cache = {}
-    return _comp_strength_cache
-
-
-def reload_comp_strength() -> None:
-    """Force the next strength() call to re-read comp_strength.json from
-    disk (tests / --fit-comp-strength change the file mid-process)."""
-    global _comp_strength_cache
-    _comp_strength_cache = None
-
-
 def strength(name: str | None) -> float:
     c = get(name)
-    base = c.strength if c else 0.75
-    fitted = _load_comp_strength()
-    if fitted.get("active") and name in fitted:
-        return float(fitted[name])
-    return base
+    return c.strength if c else 0.75
 
 
 def comp_from_bsd_league(bsd_name: str) -> Competition | None:

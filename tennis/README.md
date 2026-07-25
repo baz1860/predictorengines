@@ -26,18 +26,19 @@ python3 -m tennis.season --event Wimbledon --odds-api # also pull book prices
 
 That pulls all matching draws from ESPN, including completed matches and their
 winners, saves them to `data/draw.csv`, and writes
-[`data/card.md`](data/card.md) — the only file you normally read. For every match
+[`data/card_atp.md`](data/card_atp.md) or [`data/card_wta.md`](data/card_wta.md).
+For every match
 in every round it shows the model's pick and win probability; where you've added
 book prices it also shows the de-vigged market, the edge, and a staked bet
 (**bold** = backed).
 
-With `--tour both`, the index links to separate [`data/card_atp.md`](data/card_atp.md)
+With `--tour both`, [`data/card.md`](data/card.md) is an index linking to separate [`data/card_atp.md`](data/card_atp.md)
 and [`data/card_wta.md`](data/card_wta.md) cards so one tour cannot overwrite the
 other.
 
 ```bash
 python3 -m tennis.season --no-fetch                 # reprice the saved draw offline
-python3 -m tennis.season --min-edge 2               # only count ≥2% edges as bets
+python3 -m tennis.season --min-edge 0.02            # only count ≥2% EV edges as bets
 ```
 
 ### Adding prices
@@ -53,7 +54,7 @@ python3 -m tennis.fetch --odds-api --tours wta --event Wimbledon
 You can also do it in the normal card run:
 
 ```bash
-python3 -m tennis.season --tour atp --event Wimbledon --odds-api --min-edge 2
+python3 -m tennis.season --tour atp --event Wimbledon --odds-api --min-edge 0.02
 ```
 
 For manual entry, write a skeleton and fill it in:
@@ -84,15 +85,18 @@ python3 -m tennis.model --fit --tour atp
 python3 -m tennis.model --fit --tour wta
 ```
 
-ATP history uses TML's free season archives. WTA history uses the public WTA
-results JSON feed (completed singles, winners, scores, rounds and surfaces),
-cached under `data/api_cache/`; Sackmann and MatchCharting remain offline
-fallbacks. The WTA fit is therefore trained on real tour results rather than
-the old heuristic-only seed.
+Current-season ATP results use ESPN's free, no-key scoreboard JSON. The first
+run downloads the season to date; later runs refresh a rolling 21-day overlap,
+merge corrected events into `data/api_cache/espn_atp_<year>.json`, and append
+only unseen completed singles to `matches.csv`. Completed ATP seasons already
+cached from TML remain the historical source. WTA history uses the public WTA
+results JSON feed; Sackmann and MatchCharting remain offline fallbacks.
 
 Day to day, `bash tennis/update.sh` accumulates new results and refits both
 tours; then run `python3 -m tennis.season --tour atp` or
 `python3 -m tennis.season --tour wta` to refresh and price all active events.
+The update is fail-fast: a tour more than 21 days behind its fit date stops the
+pipeline and saved stale parameters are refused by prediction/card commands.
 
 ## In the app
 
@@ -111,36 +115,37 @@ quality lives:
 | File | Role |
 |---|---|
 | `season.py` | **the front door**: schedule → draw → model → round-by-round card |
-| `providers.py` | TML/WTA official history → `matches.csv`; ESPN multi-event draw scraper |
+| `providers.py` | ESPN current ATP + TML history/WTA API → `matches.csv`; ESPN draw scraper |
 | `fetch.py` | `--seed` / `--accumulate` history; `--odds-template` |
 | `model.py` | surface-split Bradley–Terry fit (ridge logistic, time-decay) + `predict_match` |
 | `simulate.py` | Markov chain (game/set/match, tiebreak) + draw / bracket Monte-Carlo |
-| `market.py` | two-way & power de-vig, log-odds market blend, CLV tracking |
-| `calibrate.py` | per-market isotonic calibration maps (outright nesting guard) |
+| `rounds.py` | shared round vocabulary, inference and draw schema |
+| `market.py` | two-way de-vig and log-odds market blend |
+| `calibrate.py` | orientation-safe match-winner isotonic calibration |
 | `portfolio.py` | simultaneous-Kelly staking (per-player + total caps, drawdown brake) |
 | `validate.py` | walk-forward backtest (match + outright markets) + regression gate |
 | `engine.py` | in-process command API the app tabs call |
-| `data/` | `matches.csv` (source of truth), `*_model_params.json`, `draw.csv`, `odds.csv`, `card.md`, `calibration.json`, … |
+| `data/` | `matches.csv` (source of truth), `*_model_params.json`, `draw.csv`, `odds.csv`, per-tour cards, `calibration.json`, … |
 
 ### The model
 
 ```
 logit P(A beats B) = skill_A − skill_B
                    + surface_offset_A[s] − surface_offset_B[s]
-                   + form_weight · (form_A − form_B)
-                   + h2h_weight · h2h_log_odds(A, B, s)
 ```
 
 Fitted by penalised (ridge) logistic regression over a sparse design with
 time-decay sample weights (≈52-week half-life), L-BFGS, no scikit-learn. Low
-sample players regress to a rank-based prior; surface offsets are kept only above
-a minimum sample. ATP and WTA are fitted separately.
+sample ATP players regress to a rank-based prior; the WTA prior is explicitly
+zero-centred because the current WTA results feed has no ranking fields. Surface
+offsets are kept only above a minimum sample. ATP and WTA are fitted separately.
 
 The Markov chain gives **exact** game/set/match probabilities from point-on-serve
 rates, so set/games sub-markets stay consistent with the match probability. A
-matchup-specific serve base (`serve_base()`) sets the total-games regime and a
-fitted `games_cal` corrects the idealised model's ~9% over-prediction of totals,
-making over/under priceable. The only stochastic layer is the bracket.
+matchup-specific serve base (`serve_base()`) sets the total-games regime, with
+separate ATP/WTA fallbacks when serve stats are absent. A fitted `games_cal`
+corrects the remaining level error. The only stochastic layer is the bracket,
+where best-of-5 increases the stronger player's advancement probability.
 
 ### Validation & calibration
 
@@ -152,10 +157,12 @@ python3 -m tennis.calibrate --fit                                 # isotonic map
 
 `validate.py` refits on matches strictly before each retrain date (no
 look-ahead), orients matches neutrally, and scores match_winner / set_hcp /
-first_set, plus reconstructed-bracket win/final/sf/qf with `--outright`. It writes
-the predictions calibration fits on and a baseline for the `--gate` check.
-`calibrate.py` reports an honest grouped K-fold out-of-sample Brier improvement;
-predict and edge apply calibration and the market blend by default.
+first_set alongside rank-logistic and Elo controls, plus reconstructed-bracket
+win/final/sf/qf with `--outright`. It writes the predictions used by calibration
+and a baseline for the `--gate` check. `calibrate.py` fits only match-winner in
+fold-sorted orientation; predict then re-inverts the Markov chain so first-set
+and handicap probabilities remain consistent. Edge and card staking share the
+same portfolio caps and fractional edge units.
 
 See [`plans/tennis_engine_plan.md`](../plans/tennis_engine_plan.md) for the full
 design and [`app/engines/tennis.py`](../app/engines/tennis.py) for the adapter.

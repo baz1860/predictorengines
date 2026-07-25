@@ -34,10 +34,8 @@ from club_soccer import fetch as F
 F.fetch_fixtures(current=True, date_from='$from', date_to='$to', enrich_stats=False)"
 done
 
-# Then reconcile identities, refit, and check
-python3 -m club_soccer.club_identity --write
-python3 -m club_soccer.club_identity --apply
-python3 -m club_soccer.identity_review --export     # review any new collisions
+# Then report unresolved identities, refit, and check
+python3 -m club_soccer.identity_review              # read-only report
 python3 -c "from club_soccer import model as M; M.save_params(M.fit())"
 python3 -m club_soccer.validate --gate
 ```
@@ -47,7 +45,9 @@ it means "don't merge, then overwrite the file with just this slice". That is
 what truncated fixtures.csv from 55,329 rows to 2,704 during this build. The
 shrink guard now refuses it, but use `current=True` regardless.
 
-After the backfill, run `identity_review --export` and check the new rows.
+After the backfill, run `identity_review` and check the new rows. The report
+does not mutate fixtures; confirmed aliases are added explicitly to
+`data/club_alias_map.json`.
 Brazil, Portugal and Spain share a lot of club names — América, Nacional,
 Inter, Sport, Vitória, Santos — and the country guard only blocks merges onto
 clubs whose country we already know.

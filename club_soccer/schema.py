@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Iterable
 
 # Bump when the row shape changes in a way that invalidates cached matrices.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Canonical fixture shape. Older CSVs are intentionally accepted by
 # model.load_fixtures(), but every new fetch/merge writes these columns so
@@ -120,7 +120,10 @@ FIXTURE_COLUMNS = [
     # date-only display/partition field. Staking-time freshness checks should
     # prefer kickoff_utc; legacy rows without it fall back to date-only.
     "fixture_id", "kickoff_utc", "date", "season", "competition", "competition_id",
-    "country", "type", "home_id", "home", "away_id", "away",
+    "country", "type",
+    # Provider IDs are source-local; *_club_id is the deterministic
+    # cross-provider identity generated after canonical name resolution.
+    "home_id", "home_club_id", "home", "away_id", "away_club_id", "away",
     # status_raw: the provider's original string, preserved whenever the status
     # could not be mapped (status == QUARANTINE_STATUS) so an operator can add
     # the mapping later. Empty for recognised statuses.

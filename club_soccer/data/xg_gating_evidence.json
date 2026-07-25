@@ -2,7 +2,7 @@
   "change": "evidence-weighted ensemble: scale shot-based components by per-team shot-data coverage",
   "status": "LIVE (default on)",
   "measured_at_utc": "2026-07-22T19:52:15.040132+00:00",
-  "problem": "12 competitions (~31% of fitted matches) arrive from fd.co.uk /new/ files with no shot columns. Their attack_xg/defence_xg are identically 0 - league-average by construction, not measurement - yet the xg and xgf components held 40% of the default ensemble weight, diluting goals and elo.",
+  "problem": "12 competitions (~31% of fitted matches) arrive from fd.co.uk /new/ files with no shot columns. Their attack_xg/defence_xg are identically 0 - league-average by construction, not measurement - yet the shot component held 40% of the default ensemble weight, diluting goals and elo.",
   "mechanism": "weight_shot_components *= n/(n+8) where n = min(home,away) weighted shot-matches",
   "walk_forward_2024_07_onward": {
     "n": 21622,

@@ -75,7 +75,8 @@ ENGINE_INPUTS: dict[str, list[tuple[str, str, str, str]]] = {
         ("model", "golf/data/model_params.json", "model", "model.py --fit"),
     ],
     "tennis": [
-        ("matches", "tennis/data/matches.csv", "results", "fetch.py --seed / --accumulate"),
+        ("results_atp", "tennis/data/matches.csv", "results", "ESPN current ATP + TML history / fetch.py --accumulate"),
+        ("results_wta", "tennis/data/matches.csv", "results", "WTA API / fetch.py --accumulate"),
         ("draw", "tennis/data/draw.csv", "fixtures", "fetch.py --draw-template / manual"),
         ("odds", "tennis/data/odds.csv", "odds", "manual / The Odds API"),
         ("model_atp", "tennis/data/atp_model_params.json", "model", "model.py --fit --tour atp"),
@@ -131,6 +132,40 @@ def _age_days(p: Path) -> float | None:
     return round(age / 86400.0, 2)
 
 
+def _iso_age_days(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        then = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=timezone.utc)
+        return round((datetime.now(timezone.utc) - then).total_seconds() / 86400.0, 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tennis_latest_date(path: Path, tour: str) -> str | None:
+    try:
+        with path.open(newline="") as handle:
+            dates = [
+                row.get("date", "")
+                for row in csv.DictReader(handle)
+                if str(row.get("tour") or "").lower() == tour
+            ]
+        latest = max((date for date in dates if date), default="")
+        return f"{latest}T23:59:59+00:00" if latest else None
+    except (OSError, csv.Error):
+        return None
+
+
+def _json_asof(path: Path) -> str | None:
+    try:
+        value = json.loads(path.read_text()).get("asof")
+        return f"{value}T23:59:59+00:00" if value else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def _row_count(p: Path) -> int | None:
     if not p.exists() or p.suffix.lower() != ".csv":
         return None
@@ -162,10 +197,16 @@ def build_manifest(engine: str) -> dict:
     entries = {}
     for key, rel, role, source in inputs:
         p = ROOT / rel
+        latest_data_at = None
+        if engine == "tennis" and key.startswith("results_"):
+            latest_data_at = _tennis_latest_date(p, key.removeprefix("results_"))
+        elif engine == "tennis" and key.startswith("model_"):
+            latest_data_at = _json_asof(p)
         entries[key] = {
             "path": rel, "role": role, "source": source,
             "exists": p.exists(), "fetched_at": _mtime_iso(p),
             "rows": _row_count(p), "schema_version": SCHEMA_VERSION,
+            **({"latest_data_at": latest_data_at} if latest_data_at else {}),
         }
     return {"engine": engine, "schema_version": SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -205,7 +246,13 @@ def freshness(engine: str) -> list[dict]:
             out.append({"key": key, "role": role, "status": "missing",
                         "age_days": None, "message": f"{key}: file missing ({rel})"})
             continue
-        age = _age_days(p)
+        if engine == "tennis" and key.startswith("results_"):
+            data_at = _tennis_latest_date(p, key.removeprefix("results_"))
+            age = _iso_age_days(data_at)
+        elif engine == "tennis" and key.startswith("model_"):
+            age = _iso_age_days(_json_asof(p))
+        else:
+            age = _age_days(p)
         limit = _STALE_DAYS.get(role, 7)
         status = "stale" if (age is not None and age > limit) else "ok"
         msg = (f"{key}: {_fmt_age_days(age)} (> {_fmt_limit_days(limit)})"

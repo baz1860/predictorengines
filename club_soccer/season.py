@@ -18,12 +18,10 @@ Steps (in order):
   5. Refit the model (skipped: --fast).
   6. Standings are computed lazily by the card writer (no separate step).
   7. Price the card: BSD odds only (manual odds.csv needs --allow-manual-odds,
-     is age-limited, and only prices future fixtures), with
-     availability report, context multipliers (whatever's promoted — none
-     are, by design, until a future gate passes), do-not-bet filter.
+     is age-limited, and only prices future fixtures), with availability
+     adjustments and the do-not-bet filter.
   8. Write club_soccer/data/card.md.
-  9. Mondays only: append a validate --gate + backtest_market summary to
-     the card footer.
+  9. Mondays only: append the latest validate --gate summary to the card.
 """
 from __future__ import annotations
 
@@ -49,15 +47,16 @@ from . import fetch as F
 from . import model as M
 from . import edge as E
 from . import standings as ST
-from . import context as CTX
 from . import club_squads as CS
 from . import player_features as PF
 from . import snapshot_odds as SO
 from . import market_model as MM
 from . import fetch_fdcouk as FD
+from . import cache_retention as CR
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
+RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
 # Tests and one-off diagnostics can redirect the card without touching the
 # live production artifact. Production keeps the historical default.
 CARD = Path(os.environ.get("CLUB_SOCCER_CARD_PATH", str(DATA / "card.md")))
@@ -136,8 +135,7 @@ def run_network_steps(api_key: str) -> None:
 
 
 # ── card sections ──────────────────────────────────────────────────────────
-def _freshness_header(today: str) -> list[str]:
-    report = H.run_checks()
+def _freshness_header(today: str, report: dict) -> list[str]:
     absences_today = 0
     if PF.ABSENCES_CSV.exists():
         try:
@@ -258,14 +256,6 @@ def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None,
                                        f"{h_a.get('attack_mult', 1.0):.2f} / {r.away} {arrow_a} "
                                        f"{a_a.get('attack_mult', 1.0):.2f} (confidence {conf:.0%}, "
                                        f"{n_out} out)")
-
-                is_domestic = r.type in ("league", "cup")
-                ctx_feats = CTX.context_features_asof(
-                    r.home, r.away, str(r.date.date()), is_domestic, comp,
-                    int(r.season) if pd.notna(r.season) else None, r.type == "cup")
-                if ctx_feats["rest_diff"] or ctx_feats["cong14_diff"]:
-                    bits.append(f"rest/congestion: rest_diff={ctx_feats['rest_diff']:+.0f}d "
-                               f"cong14_diff={ctx_feats['cong14_diff']:+.0f}")
 
                 if r.type == "league" and pd.notna(r.season):
                     pos_note = tables.position_note(comp, int(r.season), str(r.date.date()),
@@ -533,7 +523,6 @@ def _read_validation_latest() -> dict | None:
 
 def _weekly_footer() -> list[str]:
     lines = ["## Weekly check (Mondays)", ""]
-    from . import backtest_market as BM
     # Read the metrics the validation gate already wrote rather than running a
     # second full walk-forward. update.sh invokes `validate --gate` on every
     # run, so recomputing here duplicated a ~2-minute pass every Monday for an
@@ -546,22 +535,18 @@ def _weekly_footer() -> list[str]:
     else:
         lines.append("- Walk-forward Brier: unavailable "
                      "(run `python3 -m club_soccer.validate --gate`)")
-    bt = _step("Weekly backtest_market summary", BM.run, verbose=False)
-    if bt and bt.get("n_matched"):
-        lines.append(f"- backtest_market: {bt['n_matched']} matched rows, model 1X2 "
-                     f"log-loss {bt.get('model_log_loss_1x2')} vs market "
-                     f"{bt.get('market_log_loss_1x2_devigged_pinnacle_closing')}")
     lines.append("")
     return lines
 
 
 def write_card(edge_rows: list[dict], player_adj_map: dict | None,
                calib_maps: dict | None = None,
-               pricing_note: str | None = None) -> None:
+               pricing_note: str | None = None,
+               health_report: dict | None = None) -> None:
     today = datetime.now(timezone.utc)
     today_str = str(today.date())
     lines: list[str] = []
-    lines += _freshness_header(today_str)
+    lines += _freshness_header(today_str, health_report or {})
     # Lead with likely winners — the primary use is a steady stream of bets the
     # model expects to come in. Edge is context, not the headline.
     lines += _likely_winners_section(edge_rows, today_str)
@@ -585,8 +570,8 @@ def _file_age_days(path: Path) -> float | None:
         return None
 
 
-LAST_RUN = DATA / "last_run.json"
-LOCK_FILE = DATA / "season.lock"
+LAST_RUN = RUNTIME / "last_run.json"
+LOCK_FILE = RUNTIME / "season.lock"
 
 
 class _SeasonLock:
@@ -601,7 +586,7 @@ class _SeasonLock:
         self._fh = None
 
     def __enter__(self) -> "_SeasonLock":
-        DATA.mkdir(exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = open(self.path, "w")
         try:
             fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -638,7 +623,7 @@ def _publish_status(payload: dict, run_id: str, claim: bool = False) -> None:
     run's marker with its own stale result. Either way the tmp file is
     run-unique, so two runs never fight over one .tmp path."""
     try:
-        DATA.mkdir(exist_ok=True)
+        LAST_RUN.parent.mkdir(parents=True, exist_ok=True)
         if not claim:
             try:
                 cur_id = json.loads(LAST_RUN.read_text()).get("run_id")
@@ -647,7 +632,7 @@ def _publish_status(payload: dict, run_id: str, claim: bool = False) -> None:
             if cur_id is not None and cur_id != run_id:
                 print(f"   last_run.json owned by run {cur_id} — not overwriting")
                 return
-        tmp = DATA / f"last_run.json.{run_id}.tmp"
+        tmp = LAST_RUN.parent / f"last_run.json.{run_id}.tmp"
         tmp.write_text(json.dumps(payload, indent=2))
         tmp.replace(LAST_RUN)
     except Exception as exc:
@@ -750,7 +735,8 @@ def run(fast: bool = False, no_network: bool = False,
 
 def _run_steps(fast: bool, no_network: bool,
                allow_manual_odds: bool) -> tuple[list[dict], str | None]:
-    report = H.run_checks()
+    _step("Prune recoverable caches", CR.prune_all)
+    report = H.run_checks(network=not no_network)
     if not report.get("ok", True):
         _FAILED_REQUIRED.append("Health hard checks failed "
                                 "(see health output above)")
@@ -843,7 +829,7 @@ def _run_steps(fast: bool, no_network: bool,
     if pricing_note:
         print(f"\n== {pricing_note} ==")
 
-    write_card(edge_rows, player_adj_map, calib_maps, pricing_note)
+    write_card(edge_rows, player_adj_map, calib_maps, pricing_note, report)
     return edge_rows, pricing_note
 
 

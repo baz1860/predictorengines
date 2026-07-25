@@ -124,7 +124,7 @@ def test_settle_matches_by_identity_not_the_discarded_fixture_id(ledger, monkeyp
     (198815); the result must still be found and settled."""
     import pandas as pd
 
-    from club_soccer import decision_time_backtest as B
+    from club_soccer import market_settlement as MS
     from club_soccer import model as M
 
     DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [_decision(
@@ -138,7 +138,7 @@ def test_settle_matches_by_identity_not_the_discarded_fixture_id(ledger, monkeyp
         "home_goals": 2.0, "away_goals": 1.0}])
     monkeypatch.setattr(M, "load_fixtures", lambda: fixtures)
     monkeypatch.setattr(M, "played", lambda df: df)
-    monkeypatch.setattr(B, "_closing_probs", lambda: ({}, {}))
+    monkeypatch.setattr(MS, "closing_probs", lambda: ({}, {}))
 
     assert DL.settle(verbose=False) == 1
     s = DL.load_settlements()[0]
@@ -150,7 +150,7 @@ def test_settle_does_not_settle_a_fixture_that_has_not_finished(ledger, monkeypa
     """A decision with no matching finished fixture must not settle."""
     import pandas as pd
 
-    from club_soccer import decision_time_backtest as B
+    from club_soccer import market_settlement as MS
     from club_soccer import model as M
 
     DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [_decision(
@@ -159,7 +159,7 @@ def test_settle_does_not_settle_a_fixture_that_has_not_finished(ledger, monkeypa
     monkeypatch.setattr(M, "load_fixtures", lambda: pd.DataFrame(
         columns=["fixture_id", "date", "home", "away", "home_goals", "away_goals"]))
     monkeypatch.setattr(M, "played", lambda df: df)
-    monkeypatch.setattr(B, "_closing_probs", lambda: ({}, {}))
+    monkeypatch.setattr(MS, "closing_probs", lambda: ({}, {}))
     assert DL.settle(verbose=False) == 0
 
 
@@ -168,7 +168,7 @@ def test_settle_requires_an_official_result_status(ledger, monkeypatch):
     a live (in-play) row whose score is not final."""
     import pandas as pd
 
-    from club_soccer import decision_time_backtest as B
+    from club_soccer import market_settlement as MS
     from club_soccer import model as M
 
     DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [
@@ -186,7 +186,7 @@ def test_settle_requires_an_official_result_status(ledger, monkeypatch):
          "home_goals": 1.0, "away_goals": 0.0, "status": "IN_PLAY"},
     ])
     monkeypatch.setattr(M, "load_fixtures", lambda: fixtures)
-    monkeypatch.setattr(B, "_closing_probs", lambda: ({}, {}))
+    monkeypatch.setattr(MS, "closing_probs", lambda: ({}, {}))
 
     assert DL.settle(verbose=False) == 1          # only the AWARDED fixture
     settled = DL.load_settlements()
@@ -272,7 +272,7 @@ def test_a_frequent_capture_schedule_is_deployed():
     import re
     from pathlib import Path
 
-    p = (Path(__file__).resolve().parent / "deploy" /
+    p = (Path(__file__).resolve().parents[2] / "deploy" /
          "com.barrie.sportspredictor.clubsoccer.capture.plist")
     assert p.exists(), "capture launch agent is missing"
     text = p.read_text()

@@ -42,6 +42,7 @@ def _load_params_or_raise(tour: str) -> dict:
     if not params:
         raise ValueError(f"No fitted {tour.upper()} model. Run: "
                          f"python -m tennis.model --fit --tour {tour}")
+    M.assert_params_fresh(params)
     return params
 
 
@@ -62,21 +63,6 @@ def _sims_arg(p) -> int:
     except (TypeError, ValueError):
         raise ValueError("sims must be a number")
     return max(2000, min(n, 200000))
-
-
-def _h2h_fn(tour: str, weight_on: bool):
-    """Return an h2h_log_odds(a, b, surface) closure backed by matches.csv, or
-    None when H2H is off / no data is present (keeps predict cheap)."""
-    if not weight_on:
-        return None
-    try:
-        df = M.load_matches_df()
-    except FileNotFoundError:
-        return None
-    df = df[df["tour"].astype(str).str.lower() == tour]
-    if df.empty:
-        return None
-    return lambda a, b, s: M.h2h_log_odds_from_df(a, b, s, df)
 
 
 # ─────────────────────────────────────────────
@@ -106,27 +92,26 @@ def cmd_predict(p):
     best_of = int(p.get("best_of", 5 if tour == "atp" and p.get("slam") else 3))
     params = _load_params_or_raise(tour)
 
-    h2h = 0.0
-    hf = _h2h_fn(tour, bool(p.get("h2h", True)))
-    if hf:
-        h2h = hf(a, b, surface)
-    pred = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)
+    pred = M.predict_match(a, b, surface, params)
     p_a = pred["p_a"]
     base = M.serve_base(a, b, surface, params)
-    mk = S.match_markets(p_a, best_of=best_of, base=base or S.BASE_SERVE,
-                         games_cal=float(params.get("games_cal", 1.0)))
 
     calibrated = bool(p.get("calibrated", True))
     maps = C.load_maps() if calibrated else None
-    p_a_disp = C.apply_one("match_winner", p_a, maps) if maps else p_a
-    p_first = C.apply_one("first_set", mk["p_first_set"], maps) if maps else mk["p_first_set"]
-    p_minus = C.apply_one("set_hcp", mk["p_a_minus_1_5_sets"], maps) if maps else mk["p_a_minus_1_5_sets"]
+    p_a_disp = C.apply_oriented(a, b, p_a, maps) if maps else p_a
+    # Re-invert all sub-markets from the calibrated headline so the displayed
+    # match/set/handicap board remains internally coherent.
+    mk = S.match_markets(
+        p_a_disp, best_of=best_of, base=base or S.base_serve(tour),
+        games_cal=float(params.get("games_cal", 1.0)),
+    )
 
     rows = [
         {"market": "Match winner", "side": a, "p": round(p_a_disp, 4)},
         {"market": "Match winner", "side": b, "p": round(1 - p_a_disp, 4)},
-        {"market": "First set", "side": a, "p": round(p_first, 4)},
-        {"market": f"{a} −1.5 sets", "side": a, "p": round(p_minus, 4)},
+        {"market": "First set", "side": a, "p": round(mk["p_first_set"], 4)},
+        {"market": f"{a} −1.5 sets", "side": a,
+         "p": round(mk["p_a_minus_1_5_sets"], 4)},
         {"market": f"{a} +1.5 sets", "side": a, "p": round(mk["p_a_plus_1_5_sets"], 4)},
     ]
     columns = [
@@ -137,7 +122,8 @@ def cmd_predict(p):
     note = (f"{tour.upper()} · {surface} · best-of-{best_of} · "
             f"exp games ≈ {mk['exp_total_games']:.1f}"
             + (" · calibrated" if maps else "")
-            + (f" · H2H {h2h:+.2f}" if h2h else ""))
+            + (f" · unresolved: {', '.join(pred['unresolved'])}"
+               if pred["unresolved"] else ""))
     return {
         "note": note,
         "outcomes": [{"label": a, "prob": p_a_disp}, {"label": b, "prob": 1 - p_a_disp}],
@@ -184,12 +170,6 @@ def _load_draw_groups(tour: str, event_filter: str = "") -> list[dict]:
     return list(groups.values())
 
 
-def _load_draw(tour: str):
-    """Backward-compatible single-draw loader for callers outside the adapter."""
-    group = _load_draw_groups(tour)[0]
-    return group["rows"], group["surface"], group["best_of"]
-
-
 def cmd_simulate(p):
     tour = _tour(p)
     params = _load_params_or_raise(tour)
@@ -198,7 +178,6 @@ def cmd_simulate(p):
     n = _sims_arg(p)
     import numpy as np
     rng = np.random.default_rng(int(p.get("seed", 0)) or None)
-    hf = _h2h_fn(tour, bool(p.get("h2h", True)))
     rows = []
     total_draw_rows = 0
     locked = 0
@@ -209,7 +188,7 @@ def cmd_simulate(p):
         try:
             res = S.simulate_draw_rows(draw_rows, params, group["surface"],
                                        best_of=group["best_of"], n_sims=n,
-                                       rng=rng, h2h_fn=hf)
+                                       rng=rng)
         except ValueError as e:
             raise ValueError(f"{e}. Re-fetch the draw from ESPN or save a draw with "
                              "completed winners/state columns.") from None
@@ -241,14 +220,6 @@ def _load_odds() -> list[dict]:
                 if (r.get("player_a") or "").strip() and (r.get("player_b") or "").strip()]
 
 
-def _kelly(p_model: float, odds: float, frac: float) -> float:
-    b = odds - 1.0
-    if b <= 0:
-        return 0.0
-    f = (b * p_model - (1.0 - p_model)) / b
-    return max(0.0, f) * frac
-
-
 def cmd_edge(p):
     tour = _tour(p)
     params = _load_params_or_raise(tour)
@@ -257,12 +228,12 @@ def cmd_edge(p):
     peak = float(p.get("peak", bankroll))
     kelly_frac = float(p.get("kelly", DEFAULT_KELLY))
     min_edge = float(p.get("min_edge", 0.0))
-    hf = _h2h_fn(tour, bool(p.get("h2h", True)))
     maps = C.load_maps() if bool(p.get("calibrated", True)) else None
     blended = bool(p.get("market_blend", True))
     w_mkt = MK.blend_weights().get("match_winner", 0.5)
 
     rows = []
+    unresolved_rows = 0
     for r in odds_rows:
         if (r.get("tour") or "").lower() not in ("", tour):
             continue
@@ -272,16 +243,19 @@ def cmd_edge(p):
             oa, ob = float(r["odds_a"]), float(r["odds_b"])
         except (ValueError, KeyError):
             continue
-        h2h = hf(a, b, surface) if hf else 0.0
-        p_a = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)["p_a"]
+        prediction = M.predict_match(a, b, surface, params)
+        if prediction["unresolved"]:
+            unresolved_rows += 1
+            continue
+        p_a = prediction["p_a"]
         if maps:
-            p_a = C.apply_one("match_winner", p_a, maps)
+            p_a = C.apply_oriented(a, b, p_a, maps)
         pm_a, pm_b = MK.devig_two_way(oa, ob)
         for (home, away, odds, p_model, p_mkt) in (
                 (a, b, oa, p_a, pm_a), (b, a, ob, 1 - p_a, pm_b)):
             p_eff = MK.blend(p_model, p_mkt, w_mkt) if blended else p_model
             ev = p_eff * odds - 1.0
-            stake = round(bankroll * _kelly(p_eff, odds, kelly_frac), 2) if ev > 0 else 0.0
+            stake = PORT.kelly_stake(p_eff, odds, bankroll, kelly_frac) if ev > 0 else 0.0
             rows.append({
                 "player": home, "opponent": away, "home": home, "away": away,
                 "surface": surface, "market": "match_winner", "side": "win",
@@ -316,7 +290,9 @@ def cmd_edge(p):
     note = (f"{n_rec} staked / {len(rows)} priced · {tour.upper()} · "
             f"{PORT.summary(staked, bankroll, peak)}"
             + (" · calibrated" if maps else "")
-            + (" · market-blend" if blended else ""))
+            + (" · market-blend" if blended else "")
+            + (f" · skipped {unresolved_rows} unresolved match(es)"
+               if unresolved_rows else ""))
     return {"note": note, "columns": columns, "rows": rows}
 
 

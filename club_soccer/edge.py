@@ -212,7 +212,8 @@ def write_template(path: Path = ODDS_CSV) -> None:
 def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                    bankroll: float = 100.0, calib_maps=None,
                    player_adj_map: dict | None = None,
-                   apply_do_not_bet: bool = False) -> list[dict]:
+                   apply_do_not_bet: bool = False,
+                   market_blend: bool | None = None) -> list[dict]:
     """Compute edge rows from priced odds.
 
     Odds may carry a ``bookmaker`` column (absent → treated as one book,
@@ -231,8 +232,17 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
     (P6.2). A suppressed row keeps its edge/EV for visibility but its stake
     is zeroed and `suppressed_reason` is filled — excluded from the card and
     from staking, never from the report.
+
+    market_blend: explicit True/False from an interactive caller. None uses
+    the validated production default. Blending is owned here so it can happen
+    exactly once, before the final evidence gate.
     """
     out = []
+    valid_models = {"ensemble", "goals", "elo", "xg"}
+    if model_name not in valid_models:
+        raise ValueError(
+            f"Unknown model {model_name!r}; choose one of {sorted(valid_models)}"
+        )
     params = M.load_params()
     odds = odds.copy()
     if "bookmaker" not in odds.columns:
@@ -249,10 +259,10 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
         line_num = pd.Series(np.nan, index=odds.index)
     odds["_line_key"] = line_num.map(lambda v: "" if pd.isna(v) else f"{v:g}")
     skipped = {"unknown_market_or_line": 0, "duplicate_side_book": 0,
-               "incomplete_book": 0}
+               "incomplete_book": 0, "unknown_team": 0}
     # One fixture is normally represented by three market groups (1X2,
     # total, BTTS). Prediction is fixture-level, so price it once and reuse it
-    # instead of refitting the same context lookup for every market.
+    # for every market.
     prediction_cache: dict[tuple[str, str, str, str], dict] = {}
     for (date, comp, home, away, market, line_key), grp in odds.groupby(
             ["date", "competition", "home", "away", "market", "_line_key"],
@@ -320,8 +330,11 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
             try:
                 pred = M.predict_match(home, away, comp, str(date), model_name,
                                        params=params, player_adj=p_adj)
-            except ValueError:
-                continue
+            except ValueError as exc:
+                if str(exc).startswith("Unknown team:"):
+                    skipped["unknown_team"] += 1
+                    continue
+                raise
             if calib_maps is not None:
                 from .calibrate import apply as _apply_calib
                 ph, pdr, pa = _apply_calib(
@@ -363,6 +376,7 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
             label = bet_label(home, away, str(r["market"]), side, line)
             row = {"date": str(date), "competition": comp,
                    "match": f"{home} v {away}", "home": home, "away": away,
+                   "model": model_name,
                    "market": str(r["market"]), "side": side, "line": line,
                    "bet": label, "odds": round(o, 3),
                    "p_model": round(float(p_model), 3),
@@ -389,20 +403,23 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
     if dropped:
         print(f"  rows_from_odds: rejected odds groups {dropped}")
     out.sort(key=lambda x: -x["ev_per_unit"])
-    # The shared market blend is deliberately gated at the engine level. A
-    # fitted weight alone never changes production pricing; app.market_blend's
-    # DEFAULT_BLEND_ON must explicitly include club_soccer after a held-out
-    # win against both pure model and pure market.
-    try:
-        from app.market_blend import apply_blend_to_rows, is_default_on
-        if is_default_on("club_soccer"):
-            apply_blend_to_rows(out, "club_soccer", bankroll, KELLY_FRACTION,
-                                kelly_key="kelly_stake")
-            out.sort(key=lambda x: -x["ev_per_unit"])
-    except Exception:
-        # Pricing must remain available if the optional shared helper is absent
-        # or malformed; the unblended rows are the safe fallback.
-        pass
+    # A fitted weight alone never changes production pricing. The shared
+    # registry must validate the default, or an interactive caller must opt in.
+    # This is a required in-repo dependency: if an enabled blend is malformed,
+    # fail visibly instead of silently pricing a different model.
+    from app.market_blend import apply_blend_to_rows, is_default_on
+    blend_enabled = (is_default_on("club_soccer")
+                     if market_blend is None else bool(market_blend))
+    if blend_enabled:
+        apply_blend_to_rows(out, "club_soccer", bankroll, KELLY_FRACTION,
+                            kelly_key="kelly_stake")
+        out.sort(key=lambda x: -x["ev_per_unit"])
+        if not is_default_on("club_soccer"):
+            for row in out:
+                row["strategy_variant"] = "experimental market blend"
+    if model_name != "ensemble":
+        for row in out:
+            row["strategy_variant"] = f"ungated model {model_name}"
     # Evidence gate runs LAST — after every probability/stake transformation.
     # The market blend above rewrites kelly_stake/stake_gbp, so zeroing before
     # it would let the blend silently reopen stakes on gated rows. Any later
@@ -437,12 +454,12 @@ def apply_evidence_gate(rows: list[dict]) -> bool:
         """A stake may stand only if its MARKET is open and — when the artifact
         carries per-league evidence — its LEAGUE is open too. With no per-league
         data the market-level gate decides (backward-compatible)."""
+        if row.get("strategy_variant"):
+            return False
         gkey = _GATE_MARKET.get(str(row.get("market")))
         if gkey is None or not market_open.get(gkey):
             return False
-        if league_open:
-            return bool(league_open.get((gkey, str(row.get("competition"))), False))
-        return True
+        return bool(league_open.get((gkey, str(row.get("competition"))), False))
 
     zeroed = 0
     for row in rows:

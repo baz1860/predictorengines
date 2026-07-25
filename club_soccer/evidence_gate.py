@@ -33,12 +33,14 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-BACKTEST_JSON = DATA / "backtest_market.json"
+RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
+BACKTEST_JSON = RUNTIME / "backtest_market.json"
 
 MAX_ARTIFACT_AGE_DAYS = 14.0
 MIN_BETS = 1000
@@ -57,12 +59,9 @@ MIN_LEAGUE_BETS = 200
 _MARKETS = {"1x2": "1X2", "total_over_under_2_5": "OU2.5"}
 
 # ── methodology requirements ──────────────────────────────────────────────
-# The gate must be impossible to open with evidence from the legacy
-# closing-odds simulator (which selects on the close and executes at the
-# close — not a deployable strategy). Only an artifact that explicitly
-# declares the decision-time methodology counts. The current
-# backtest_market.py does NOT produce this artifact; the gate therefore
-# stays closed until the backtest is redesigned — which is correct.
+# The gate must be impossible to open with closing-odds simulation. Only an
+# artifact that explicitly declares the frozen decision-time methodology
+# counts.
 REQUIRED_VERSION = "decision_time_v2"
 REQUIRED_METHODOLOGY = {
     "selection_method": "latest_quote_at_or_before_decision_time",
@@ -321,6 +320,32 @@ def evaluate(now: datetime | None = None) -> dict:
                "open": market_active.get(mkey, False) and market_pass.get(mkey, False)}
         for mkey in _MARKETS
     }
+    # decision_time_v2 promises per-league activation. Missing or malformed
+    # league evidence cannot fall back to a pooled market pass: that would let
+    # a well-sampled European market authorize an unmeasured league.
+    by_league = bt.get("simulated_betting_by_league")
+    if not isinstance(by_league, dict):
+        by_league = {}
+    for mkey, state in markets.items():
+        if not state["open"]:
+            continue
+        leagues = by_league.get(mkey)
+        has_open_league = (
+            isinstance(leagues, dict)
+            and any(
+                isinstance(thresholds, dict)
+                and set(thresholds) == REQUIRED_THRESHOLDS
+                and all(_league_row_ok(thresholds.get(t))
+                        for t in REQUIRED_THRESHOLDS)
+                for thresholds in leagues.values()
+            )
+        )
+        if not has_open_league:
+            state["open"] = False
+            reasons.append(
+                f"{_MARKETS[mkey]}: pooled market passed but no league has "
+                "complete independently passing evidence"
+            )
     allowed = any(m["open"] for m in markets.values())
     if not allowed and not reasons:
         # Closed purely because no market has enough settled evidence yet (every
@@ -373,9 +398,9 @@ def _league_row_ok(row) -> bool:
 def market_league_staking_allowed() -> dict[tuple[str, str], bool]:
     """Per (gate_market_key, competition) gate.
 
-    Returns {} when the artifact carries no `simulated_betting_by_league`
-    section (older evidence) — callers then fall back to the market-level gate.
-    Otherwise every (market, league) present is reported: it is open only if its
+    Returns {} when the artifact carries no valid league section; callers must
+    treat that as every league closed. Every (market, league) present is
+    reported: it is open only if its
     MARKET is open AND the league independently clears every threshold, so a
     pooled European pass can never unlock a CLV-less league. Never raises."""
     try:

@@ -1,0 +1,11 @@
+{
+  "status": "FAIL",
+  "staking_enabled": false,
+  "reason": "NHL staking is disabled until a leak-free walk-forward validation beats trivial baselines and timestamped odds validation supports betting ROI.",
+  "required_to_enable": [
+    "walk-forward validation using only pre-game information",
+    "moneyline Brier better than the observed home-rate baseline",
+    "accuracy better than always-pick-home baseline",
+    "timestamped sportsbook odds with source/bookmaker metadata for ROI validation"
+  ]
+}

@@ -11,28 +11,17 @@ Two file shapes, with materially different richness:
   /new/{COUNTRY}.csv             one file per country, all seasons. SPARSE:
                                  goals only, plus closing odds. No shot data.
 
-The sparse files matter for modelling: the xg and xpress ensemble components
-are built from shots-on-target and corners, so leagues arriving via /new/
+The sparse files matter for modelling: the xg ensemble component is built
+from shots-on-target, so leagues arriving via /new/
 (Austria, Denmark, Norway, Poland, Romania, Russia, Sweden, Switzerland,
 Finland, Ireland) contribute to the goals and Elo components only. Their teams
 will be rated, but on a thinner signal than a Premier League side — which is
 exactly what the P0 coverage tiers are there to express, and a reason not to
 treat "league ingested" as "league fully modelled".
 
-Identity is the real hazard here, not fetching
-----------------------------------------------
-fd.co.uk spells Sturm Graz "Sturm Graz". fixtures.csv already holds the club as
-"SK Sturm Graz" from BSD's European coverage. Ingesting naively creates a
-SECOND identity for the very club this project exists to fix, and P1's
-canonical_name() deliberately passes unknown names through unchanged, so it
-will not catch it.
-
-The P1 evidence matcher cannot catch it either: it keys on same
-date+competition+score collisions, and an Austrian Bundesliga match never
-collides with a Champions League one. So this module ends with a dedicated
-cross-source reconciliation pass (see club_identity.propose_domestic_merges)
-that matches newly ingested domestic clubs against existing Europe-only
-identities by name affinity, scoped by country.
+Identity is resolved at the shared ``fetch.write_fixtures`` boundary. Provider
+aliases are mapped through the curated/openfootball registry there; this
+seeder does not run a second fuzzy reconciliation workflow.
 
 CLI:
   python3 -m club_soccer.seed_fdcouk_leagues --report          # what would be fetched
@@ -44,7 +33,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
-import json
 import sys
 import urllib.error
 import urllib.request
@@ -251,30 +239,6 @@ def load_competition(comp, refresh: bool = False) -> list[dict]:
     return []
 
 
-def _persist_aliases(alias: dict[str, str]) -> None:
-    """Fold merges into the cumulative alias map so future fetches apply them.
-
-    Without this a reconciliation lives only in fixtures.csv, and the very next
-    provider fetch re-creates the identity it removed.
-    """
-    if not alias:
-        return
-    try:
-        from . import club_identity as CI
-        doc = json.loads(CI.ALIAS_MAP.read_text()) if CI.ALIAS_MAP.exists() else {"alias": {}}
-        current = doc.get("alias", {})
-        added = {k: v for k, v in alias.items() if current.get(k) != v}
-        current.update(alias)
-        doc["alias"] = dict(sorted(current.items()))
-        CI.ALIAS_MAP.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
-        CI.reload_resolver()
-        print(f"  persisted {len(added)} new alias(es) -> {CI.ALIAS_MAP.name} "
-              f"({len(current)} total)")
-    except Exception as exc:
-        print(f"  WARNING: aliases NOT persisted ({exc}) — the next fetch will "
-              f"re-create these identities")
-
-
 def wave_competitions(wave: int) -> list:
     names = WAVES.get(wave, [])
     comps = []
@@ -319,40 +283,12 @@ def ingest(wave: int, write: bool = False, refresh: bool = False) -> pd.DataFram
     existing = pd.read_csv(FIXTURES, low_memory=False)
     before = len(existing)
     before_teams = len(set(existing["home"]) | set(existing["away"]))
-    backup = FIXTURES.with_suffix(f".csv.bak.pre_wave{wave}")
-    existing.to_csv(backup, index=False)
-
-    # Reconcile the clubs we already knew only from Europe onto their newly
-    # ingested domestic identities. Without this the ingest would CREATE the
-    # fragmentation P1 just removed — "Sturm Graz" arriving alongside the
-    # existing "SK Sturm Graz" — on precisely the clubs that matter most here,
-    # since a club with European history is by definition one we price.
-    from .club_identity import apply_alias_map, propose_domestic_merges
-    merges = propose_domestic_merges(existing, new)
-    if merges["review"]:
-        print(f"\n  {len(merges['review'])} proposal(s) NEED REVIEW (not applied):")
-        for r in sorted(merges["review"], key=lambda x: -x["score"]):
-            print(f"    {r['existing']!r} ? {r['new']!r}  "
-                  f"score={r['score']} ({r['affinity']})")
-    if merges["alias"]:
-        print(f"\n  reconciled {len(merges['alias'])} Europe-only identity(ies) "
-              f"onto domestic names:")
-        for old_name, new_name in sorted(merges["alias"].items()):
-            print(f"    {old_name!r} -> {new_name!r}")
-        existing = apply_alias_map(existing, merges["alias"])
-        # PERSIST. Rewriting fixtures.csv alone is not durable: canonical_name
-        # reads club_alias_map.json on every fetch, so a merge that never
-        # reaches the map is silently undone the next time the provider sends
-        # its own spelling. That is exactly how "SK Sturm Graz" reappeared
-        # after P3 had already merged it into "Sturm Graz".
-        _persist_aliases(merges["alias"])
 
     combined = pd.concat([existing, new], ignore_index=True)
     combined = dedupe_fixtures(combined)
     from .fetch import write_fixtures as _write_fixtures
     combined = _write_fixtures(combined)
     after_teams = len(set(combined["home"]) | set(combined["away"]))
-    print(f"\n  backup -> {backup.name}")
     print(f"  fixtures.csv {before} -> {len(combined)} (+{len(combined) - before})")
     print(f"  identities   {before_teams} -> {after_teams}")
     return new

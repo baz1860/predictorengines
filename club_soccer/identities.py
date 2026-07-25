@@ -7,27 +7,39 @@ ambiguous joins in validation/market diagnostics.
 """
 from __future__ import annotations
 
-import re
-import unicodedata
-
 import pandas as pd
+
+from .normalization import normalise_spaces
 
 
 def _norm(value) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", text.casefold()).strip()
+    return normalise_spaces(value)
 
 
 def match_identity(row) -> str:
-    """Canonical identity: date + competition + home + away."""
+    """Canonical identity: date + competition + stable home/away club IDs."""
     raw_date = row.get("date")
     try:
         date = "" if raw_date is None or bool(pd.isna(raw_date)) else pd.Timestamp(raw_date).strftime("%Y-%m-%d")
     except (TypeError, ValueError):
         date = ""
+    home_id = row.get("home_club_id")
+    away_id = row.get("away_club_id")
+
+    def missing(value) -> bool:
+        if value is None:
+            return True
+        try:
+            return bool(pd.isna(value))
+        except (TypeError, ValueError):
+            return not bool(value)
+
+    if missing(home_id):
+        home_id = _norm(row.get("home"))
+    if missing(away_id):
+        away_id = _norm(row.get("away"))
     return "|".join((date, _norm(row.get("competition")),
-                     _norm(row.get("home")), _norm(row.get("away"))))
+                     str(home_id), str(away_id)))
 
 
 def identity_series(df: pd.DataFrame) -> pd.Series:
@@ -83,9 +95,9 @@ def dedupe_fixtures(df: pd.DataFrame) -> pd.DataFrame:
     """Reconcile duplicate provider rows by canonical match identity.
 
     The richest row is the base; missing fields from its siblings are filled
-    without replacing non-empty observations. Conflicting scores are left
-    visible in the selected row and counted by ``conflicting_score_identity_count``
-    for health reporting rather than silently averaged.
+    without replacing non-empty observations. Callers must reject conflicting
+    score identities before invoking this function: once rows are reconciled,
+    the discarded sibling is no longer available for diagnosis.
     """
     if df.empty or not {"date", "competition", "home", "away"}.issubset(df.columns):
         return df.copy()

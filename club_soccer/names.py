@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import difflib
 import re
-import unicodedata
+
+from .normalization import fold_accents
 
 # Source spelling (country code already stripped) -> football-data canon name.
 # Covers both openfootball and API-Football variants of the same clubs.
@@ -81,7 +82,7 @@ STOP = {"fc", "cf", "afc", "acf", "ac", "bc", "sc", "sk", "fk", "nk", "gnk", "rc
 
 
 def simplify(name: str) -> str:
-    s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    s = fold_accents(name)
     s = s.replace("munchen", "munich").replace("internazionale", "inter")
     s = re.sub(r"[^a-z0-9 ]", " ", s)
     toks = [t for t in s.split() if t not in STOP]

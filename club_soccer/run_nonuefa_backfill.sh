@@ -38,11 +38,7 @@ F.fetch_fixtures(current=True, date_from='$from', date_to='$to', enrich_stats=Fa
 done
 
 echo
-echo "== 2. reconcile identities =="
-# Accent/spelling variants and any new cross-source duplicates. The alias map
-# is cumulative, so this never loses earlier decisions.
-python3 -m club_soccer.club_identity --write
-python3 -m club_soccer.club_identity --apply
+echo "== 2. canonicalisation is enforced by the fixture write boundary =="
 
 echo
 echo "== 3. integrity check =="
@@ -98,9 +94,8 @@ python3 -m club_soccer.validate --gate
 
 echo
 echo "== 5. review any new identity collisions =="
-python3 -m club_soccer.identity_review --export
+python3 -m club_soccer.identity_review
 echo
 echo "DONE."
-echo "Next: open club_soccer/data/identity_review.csv, fill the VERDICT column,"
-echo "then run:  python3 -m club_soccer.identity_review --apply"
-echo "South American club names collide heavily with Iberian ones — expect work here."
+echo "The report is read-only. Confirmed aliases must be reviewed and added"
+echo "explicitly to club_soccer/data/club_alias_map.json."

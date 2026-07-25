@@ -1,17 +1,13 @@
-"""tennis/calibrate.py — per-market probability calibration.
+"""tennis/calibrate.py — orientation-safe headline probability calibration.
 
 Fits an isotonic map per market from validate.py's walk-forward predictions and
 applies them as a pure consumer in the predict/edge path. Same isotonic
 machinery and JSON shape as golf/calibrate.py.
 
-Markets fall in two groups:
-  * match markets — match_winner, set_hcp, first_set — each calibrated
-    independently (binary, scored straight off completed matches);
-  * outright markets — win, final, sf, qf — calibrated with a nesting guard so a
-    calibrated player keeps win ≤ final ≤ sf ≤ qf.
-
-Only the markets actually present as p_<m>/y_<m> columns in the predictions CSV
-are fitted, so this works before the outright (draw-sim) backtest is wired.
+Only match-winner is calibrated. Set and handicap probabilities are re-derived
+from that calibrated headline probability by the Markov model, preserving the
+internal consistency of every displayed match market. Outright simulation is
+validated directly and is not routed through a half-built calibration pipeline.
 
   python -m tennis.calibrate --fit          # refit from validation_predictions.csv
   from tennis import calibrate as C
@@ -28,9 +24,7 @@ DATA_DIR = Path(__file__).parent / "data"
 PRED_CSV = DATA_DIR / "validation_predictions.csv"
 CALIB_FILE = DATA_DIR / "calibration.json"
 
-MATCH_MARKETS = ["match_winner", "set_hcp", "first_set"]
-OUTRIGHT_MARKETS = ["win", "final", "sf", "qf"]   # nested, widest (qf) last
-ALL_MARKETS = MATCH_MARKETS + OUTRIGHT_MARKETS
+ALL_MARKETS = ["match_winner"]
 
 
 # ── isotonic helpers (mirror of golf/calibrate.py) ──
@@ -128,33 +122,14 @@ def apply_one(market: str, p: float, maps=None) -> float:
     return float(np.interp(p, m["x"], m["y"]))
 
 
-def apply_match(probs: dict, maps=None) -> dict:
-    """Calibrate independent match-market probabilities (no nesting)."""
-    if maps is None:
-        maps = load_maps()
-    if maps is None:
-        return dict(probs)
-    out = dict(probs)
-    for m in MATCH_MARKETS:
-        if m in probs:
-            out[m] = apply_one(m, float(probs[m]), maps)
-    return out
+def apply_oriented(player_a: str, player_b: str, p_a: float, maps=None) -> float:
+    """Apply the fold-sorted calibration map and restore the caller's order."""
+    from .model import fold_name
 
-
-def apply_outright(probs: dict, maps=None) -> dict:
-    """Calibrate outright probabilities and enforce win ≤ final ≤ sf ≤ qf."""
-    if maps is None:
-        maps = load_maps()
-    if maps is None:
-        return dict(probs)
-    out = {m: apply_one(m, float(probs.get(m, 0.0)), maps)
-           for m in OUTRIGHT_MARKETS if m in probs}
-    prev = 1.0
-    for m in reversed(OUTRIGHT_MARKETS):   # widest (qf) inward
-        if m in out:
-            out[m] = min(out[m], prev)
-            prev = out[m]
-    return {**probs, **out}
+    if fold_name(player_a) <= fold_name(player_b):
+        return apply_one("match_winner", p_a, maps)
+    sorted_side = apply_one("match_winner", 1.0 - p_a, maps)
+    return 1.0 - sorted_side
 
 
 def _report(pred_df, maps, folds: int = 5, seed: int = 0) -> None:

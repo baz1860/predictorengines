@@ -20,9 +20,14 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-# ATP/WTA average point-win-on-serve baseline; sub-markets are derived as a
-# symmetric edge around this so they stay consistent with the BT match prob.
-BASE_SERVE = 0.64
+# Tour-specific point-win-on-serve baselines. WTA rows currently have no serve
+# aggregates, so using the ATP level there materially overstates holds/totals.
+BASE_SERVE_BY_TOUR = {"atp": 0.64, "wta": 0.60}
+BASE_SERVE = BASE_SERVE_BY_TOUR["atp"]  # compatibility for callers without a tour
+
+
+def base_serve(tour: str | None) -> float:
+    return BASE_SERVE_BY_TOUR.get(str(tour or "").lower(), 0.62)
 
 
 # ─────────────────────────────────────────────
@@ -206,239 +211,124 @@ def _expected_sets(s: float, best_of: int) -> float:
 # Tournament Monte Carlo
 # ─────────────────────────────────────────────
 
-def simulate_draw(pairings: list[tuple[str, str]], params, surface: str,
-                  best_of: int = 3, n_sims: int = 50000, rng=None,
-                  h2h_fn=None) -> dict:
-    """Simulate a single-elimination bracket.
-
-    `pairings` is the ordered list of first-round matches (each consecutive pair
-    feeds one second-round slot). Returns per-player reach frequencies:
-    {player: {"win", "final", "sf", "qf"}}.
-    """
-    import numpy as np
-    from . import model as M
-
-    rng = rng or np.random.default_rng(0)
-    if not pairings:
-        return {}
-    n_first = len(pairings)
-    if n_first & (n_first - 1) != 0:
-        raise ValueError(f"bracket needs a power-of-two number of first-round "
-                         f"matches, got {n_first}")
-    rounds = n_first.bit_length()           # matches → rounds after them
-    players = [p for pair in pairings for p in pair]
-
-    # Pre-compute base P(A beats B) per ordered pair we may encounter. Cheap to
-    # just memoise on demand inside the loop.
-    cache: dict[tuple[str, str], float] = {}
-
-    def p_beats(a: str, b: str) -> float:
-        key = (a, b)
-        if key not in cache:
-            h2h = h2h_fn(a, b, surface) if h2h_fn else 0.0
-            cache[key] = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)["p_a"]
-            cache[(b, a)] = 1.0 - cache[key]
-        return cache[key]
-
-    counts = {p: {"win": 0, "final": 0, "sf": 0, "qf": 0} for p in players}
-    # A player reaching a stage of field-size 2^k must have won (rounds−k)
-    # matches: last-8 (QF) ⇒ won ≥ rounds−3, last-4 ⇒ ≥ rounds−2, etc. Negative
-    # thresholds (draws already ≤ that stage) credit everyone, which is correct.
-    qf_t, sf_t, final_t = rounds - 3, rounds - 2, rounds - 1
-
-    for _ in range(n_sims):
-        alive = list(players)
-        wins = {p: 0 for p in players}
-        for _r in range(rounds):
-            winners = []
-            for i in range(0, len(alive), 2):
-                a, b = alive[i], alive[i + 1]
-                w = a if rng.random() < p_beats(a, b) else b
-                wins[w] += 1
-                winners.append(w)
-            alive = winners
-        for p, n in wins.items():
-            if n >= qf_t:
-                counts[p]["qf"] += 1
-            if n >= sf_t:
-                counts[p]["sf"] += 1
-            if n >= final_t:
-                counts[p]["final"] += 1
-        counts[alive[0]]["win"] += 1
-
-    return {p: {k: v / n_sims for k, v in d.items()} for p, d in counts.items()}
+def _best_of_probability(raw_probability: float, best_of: int) -> float:
+    """Translate the fitted best-of-3-like strength into the event format."""
+    raw_probability = round(float(raw_probability), 4)
+    ps_a, ps_b = point_edge_for_target(raw_probability, best_of=3)
+    return match_win_prob(ps_a, ps_b, best_of=best_of)
 
 
-# Round ranks: shallower (closer to the title) = smaller. Used by the bracket
-# simulator to credit how far each entrant reached.
-ROUND_RANK = {"F": 0, "SF": 1, "QF": 2, "R16": 3, "R32": 4, "R64": 5,
-              "R128": 6, "R256": 7}
-
-ROUND_ORDER = ["Q1", "Q2", "QF-Q", "R256", "R128", "R64", "R32", "R16",
-               "R1", "R2", "R3", "R4", "QF", "SF", "F"]
-FIELD_ROUND = {2: "F", 4: "SF", 8: "QF", 16: "R16", 32: "R32",
-               64: "R64", 128: "R128", 256: "R256"}
+def _node_leaves(node) -> list[str]:
+    if isinstance(node, str):
+        return [node]
+    return _node_leaves(node["a"]) + _node_leaves(node["b"])
 
 
-def _is_tbd(name: str) -> bool:
-    return not str(name or "").strip() or str(name).strip().upper() in {"TBD", "BYE"}
+def _draw_rows_to_bracket(draw_rows: list[dict]):
+    """Compile feed rows into one tree before any Monte-Carlo iterations."""
+    from .rounds import (
+        FIELD_ROUND, QUALIFYING_ROUNDS, canonical_round, is_tbd, round_sort_key,
+    )
 
-
-def _round_sort_key(round_name: str, first_idx: int) -> tuple[int, int]:
-    try:
-        return (ROUND_ORDER.index(str(round_name or "")), first_idx)
-    except ValueError:
-        return (len(ROUND_ORDER), first_idx)
-
-
-def _round_rank(round_name: str, field_size: int) -> int:
-    """Reach-rank for a round. Generic feed labels such as R1/R2 are inferred
-    from the number of players in that round when possible."""
-    r = str(round_name or "")
-    if r in {"Q1", "Q2", "QF-Q"}:
-        return 99
-    if r in ROUND_RANK:
-        return ROUND_RANK[r]
-    inferred = FIELD_ROUND.get(field_size)
-    return ROUND_RANK.get(inferred, 99)
-
-
-def _credit_reach(counts: dict, best_rank: dict[str, int], player: str, rank: int) -> None:
-    if _is_tbd(player):
-        return
-    counts.setdefault(player, {"win": 0, "final": 0, "sf": 0, "qf": 0})
-    if rank < best_rank.get(player, 99):
-        best_rank[player] = rank
-
-
-def simulate_draw_rows(draw_rows: list[dict], params, surface: str,
-                       best_of: int = 3, n_sims: int = 50000, rng=None,
-                       h2h_fn=None) -> dict:
-    """Simulate a tournament from draw rows that may include known results.
-
-    Rows are expected to carry at least ``round/player_a/player_b`` and may also
-    include ``state`` and ``winner``. Completed rows lock their winner; unresolved
-    rows are simulated. Later rows with ``TBD`` slots are filled from the previous
-    round's winners in row order. If the feed stops before listing the final, the
-    remaining rounds are synthesized from the surviving players; an odd partial
-    field carries one deterministic bye until the bracket is even again.
-    """
-    import numpy as np
-    from . import model as M
-
-    rng = rng or np.random.default_rng(0)
     rows = []
-    for i, raw in enumerate(draw_rows):
+    for index, raw in enumerate(draw_rows):
         a = str(raw.get("player_a") or "").strip()
         b = str(raw.get("player_b") or "").strip()
-        if _is_tbd(a) and _is_tbd(b):
+        if is_tbd(a) and is_tbd(b):
             continue
         rows.append({
-            "idx": i,
-            "round": str(raw.get("round") or ""),
+            "idx": index,
+            "round": str(raw.get("round") or "").strip(),
             "player_a": a,
             "player_b": b,
             "state": str(raw.get("state") or "").lower(),
             "winner": str(raw.get("winner") or "").strip(),
         })
     if not rows:
-        return {}
-
-    players = {
-        n for r in rows for n in (r["player_a"], r["player_b"], r["winner"])
-        if not _is_tbd(n)
-    }
-    counts = {p: {"win": 0, "final": 0, "sf": 0, "qf": 0} for p in players}
-    cache: dict[tuple[str, str], float] = {}
-
-    def p_beats(a: str, b: str) -> float:
-        key = (a, b)
-        if key not in cache:
-            h2h = h2h_fn(a, b, surface) if h2h_fn else 0.0
-            cache[key] = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)["p_a"]
-            cache[(b, a)] = 1.0 - cache[key]
-        return cache[key]
+        return None
 
     grouped: dict[str, list[dict]] = {}
-    first_idx: dict[str, int] = {}
-    for r in rows:
-        grouped.setdefault(r["round"], []).append(r)
-        first_idx.setdefault(r["round"], r["idx"])
-    round_keys = sorted(grouped, key=lambda r: _round_sort_key(r, first_idx[r]))
+    first_index: dict[str, int] = {}
+    for row in rows:
+        if row["round"] in QUALIFYING_ROUNDS:
+            continue
+        grouped.setdefault(row["round"], []).append(row)
+        first_index.setdefault(row["round"], row["idx"])
+    round_names = sorted(
+        grouped, key=lambda name: round_sort_key(name, first_index[name]),
+    )
+    frontier: list = []
 
-    qf_r, sf_r, final_r = ROUND_RANK["QF"], ROUND_RANK["SF"], ROUND_RANK["F"]
+    for raw_round in round_names:
+        group = grouped[raw_round]
+        round_name = canonical_round(raw_round, 2 * len(group))
+        available = list(frontier)
 
-    def resolve_slot(name: str, prev: list[str], cursor: list[int]) -> str:
-        if not _is_tbd(name):
+        def child_for(name: str):
+            if not available:
+                return name
+            if is_tbd(name):
+                return available.pop(0)
+            for i, node in enumerate(available):
+                fixed = str(node.get("winner") or "") if isinstance(node, dict) else ""
+                if (not fixed or fixed == name) and name in _node_leaves(node):
+                    return available.pop(i)
             return name
-        if cursor[0] < len(prev):
-            out = prev[cursor[0]]
-            cursor[0] += 1
-            return out
-        return ""
 
-    def play_match(a: str, b: str, fixed_winner: str = "") -> str:
-        if fixed_winner and not _is_tbd(fixed_winner):
-            return fixed_winner
-        return a if rng.random() < p_beats(a, b) else b
+        current = []
+        for row in group:
+            a = child_for(row["player_a"])
+            b = child_for(row["player_b"])
+            if is_tbd(a) or is_tbd(b):
+                continue
+            current.append({
+                "round": round_name,
+                "a": a,
+                "b": b,
+                "winner": row["winner"] if row["state"] == "post" else "",
+            })
+        frontier = current + available
 
-    for _ in range(n_sims):
-        prev_winners: list[str] = []
-        best_rank: dict[str, int] = {}
+    if not frontier:
+        return None
+    while len(frontier) > 1:
+        field_size = len(frontier)
+        round_name = FIELD_ROUND.get(field_size)
+        if round_name is None:
+            # A partial feed can briefly expose an odd draw. Carry one bye while
+            # pairing the rest, then infer the next standard stage.
+            round_name = FIELD_ROUND.get(1 << (field_size - 1).bit_length(), "F")
+        next_frontier = []
+        start = 0
+        if len(frontier) % 2:
+            next_frontier.append(frontier[0])
+            start = 1
+        for i in range(start, len(frontier), 2):
+            if i + 1 >= len(frontier):
+                next_frontier.append(frontier[i])
+                continue
+            next_frontier.append({
+                "round": round_name, "a": frontier[i], "b": frontier[i + 1],
+                "winner": "",
+            })
+        frontier = next_frontier
+    return frontier[0]
 
-        for rnd in round_keys:
-            winners: list[str] = []
-            cursor = [0]
-            resolved_pairs: list[tuple[str, str]] = []
 
-            for row in grouped[rnd]:
-                a = resolve_slot(row["player_a"], prev_winners, cursor)
-                b = resolve_slot(row["player_b"], prev_winners, cursor)
-                if _is_tbd(a) or _is_tbd(b):
-                    continue
-                rank = _round_rank(rnd, 2 * len(grouped[rnd]))
-                _credit_reach(counts, best_rank, a, rank)
-                _credit_reach(counts, best_rank, b, rank)
-                fixed = row["winner"] if row["state"] == "post" else ""
-                winners.append(play_match(a, b, fixed))
-                resolved_pairs.append((a, b))
-
-            if resolved_pairs:
-                prev_winners = winners
-
-        alive = list(prev_winners)
-        while len(alive) > 1:
-            # ESPN sometimes publishes a partial 28-player draw as 7 matches
-            # in the next round before the missing slot is known. Preserve a
-            # bye rather than aborting the whole event simulation.
-            bye = alive.pop() if len(alive) % 2 else None
-            rank = _round_rank(FIELD_ROUND.get(len(alive), ""), len(alive))
-            winners = [bye] if bye else []
-            for i in range(0, len(alive), 2):
-                a, b = alive[i], alive[i + 1]
-                _credit_reach(counts, best_rank, a, rank)
-                _credit_reach(counts, best_rank, b, rank)
-                winners.append(play_match(a, b))
-            alive = winners
-
-        for p, rk in best_rank.items():
-            if rk <= qf_r:
-                counts[p]["qf"] += 1
-            if rk <= sf_r:
-                counts[p]["sf"] += 1
-            if rk <= final_r:
-                counts[p]["final"] += 1
-        if alive:
-            counts.setdefault(alive[0], {"win": 0, "final": 0, "sf": 0, "qf": 0})
-            counts[alive[0]]["win"] += 1
-
-    return {p: {k: v / n_sims for k, v in d.items()} for p, d in counts.items()}
+def simulate_draw_rows(draw_rows: list[dict], params, surface: str,
+                       best_of: int = 3, n_sims: int = 50000, rng=None,
+                       h2h_fn=None) -> dict:
+    """Compile draw rows once and delegate to the canonical tree simulator."""
+    root = _draw_rows_to_bracket(draw_rows)
+    if root is None:
+        return {}
+    return simulate_bracket(
+        root, params, surface, best_of=best_of, n_sims=n_sims, rng=rng,
+    )
 
 
 def _bracket_leaves(node) -> list[str]:
-    if isinstance(node, str):
-        return [node]
-    return _bracket_leaves(node["a"]) + _bracket_leaves(node["b"])
+    return _node_leaves(node)
 
 
 def simulate_bracket(root, params, surface: str, best_of: int = 3,
@@ -453,19 +343,20 @@ def simulate_bracket(root, params, surface: str, best_of: int = 3,
     """
     import numpy as np
     from . import model as M
+    from .rounds import ROUND_RANK, is_tbd
 
     rng = rng or np.random.default_rng(0)
-    players = _bracket_leaves(root)
+    players = sorted(set(_bracket_leaves(root)))
     counts = {p: {"win": 0, "final": 0, "sf": 0, "qf": 0} for p in players}
 
-    cache: dict[tuple[str, str], float] = {}
+    cache: dict[tuple[str, str, int], float] = {}
 
     def p_beats(a: str, b: str) -> float:
-        key = (a, b)
+        key = (a, b, best_of)
         if key not in cache:
-            h2h = h2h_fn(a, b, surface) if h2h_fn else 0.0
-            cache[key] = M.predict_match(a, b, surface, params, h2h_log_odds=h2h)["p_a"]
-            cache[(b, a)] = 1.0 - cache[key]
+            raw = M.predict_match(a, b, surface, params)["p_a"]
+            cache[key] = _best_of_probability(raw, best_of)
+            cache[(b, a, best_of)] = 1.0 - cache[key]
         return cache[key]
 
     qf_r, sf_r, final_r = ROUND_RANK["QF"], ROUND_RANK["SF"], ROUND_RANK["F"]
@@ -482,6 +373,13 @@ def simulate_bracket(root, params, surface: str, best_of: int = 3,
             for pl in (a, b):
                 if rank < best_rank.get(pl, 99):
                     best_rank[pl] = rank
+            fixed = str(node.get("winner") or "")
+            if fixed and not is_tbd(fixed):
+                if fixed not in (a, b):
+                    raise ValueError(
+                        f"locked winner {fixed!r} is not in resolved match {a!r}/{b!r}"
+                    )
+                return fixed
             return a if rng.random() < p_beats(a, b) else b
 
         champ = sim(root)

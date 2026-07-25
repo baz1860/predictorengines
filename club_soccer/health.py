@@ -34,7 +34,7 @@ _OFF_SEASON_MONTHS = {6, 7}
 _FINISHED_STATUSES = {"FT", "FIN", "AET", "PEN"}
 
 
-def run_checks() -> dict:
+def run_checks(network: bool = True) -> dict:
     """Compute and print the club soccer data health report.
 
     Returns a dict with every metric plus "ok": bool (True iff both hard
@@ -85,23 +85,68 @@ def run_checks() -> dict:
 
     # Every writer canonicalises at fetch.write_fixtures(). Detect a bypass or
     # a stale hand-edited file before it can split a club's model history.
-    from .club_identity import canonicalise
+    from .club_identity import canonical_id, canonicalise
     from .competitions import get as get_comp
+    country_cache: dict[str, str | None] = {}
+
+    def _country(comp_value) -> str | None:
+        name = str(comp_value)
+        if name not in country_cache:
+            comp = get_comp(name)
+            value = getattr(comp, "country", None) if comp is not None else None
+            country_cache[name] = None if value in {"Europe", "World"} else value
+        return country_cache[name]
+
+    countries = df["competition"].map(_country)
+    pairs = pd.concat([
+        pd.DataFrame({"raw": df["home"], "country": countries}),
+        pd.DataFrame({"raw": df["away"], "country": countries}),
+    ], ignore_index=True)
+    counts = pairs.value_counts(["raw", "country"], dropna=False)
     noncanonical = 0
     examples: list[str] = []
-    for row in df[["competition", "home", "away"]].itertuples(index=False):
-        comp = get_comp(str(row.competition))
-        country = getattr(comp, "country", None) if comp is not None else None
-        if country in {"Europe", "World"}:
-            country = None
-        for raw in (row.home, row.away):
-            canon = canonicalise(raw, country_hint=country)
-            if canon != raw:
-                noncanonical += 1
-                if len(examples) < 10:
-                    examples.append(f"{raw!r} -> {canon!r}")
+    for (raw, country), count in counts.items():
+        country_hint = None if pd.isna(country) else country
+        canon = canonicalise(raw, country_hint=country_hint)
+        if canon != raw:
+            noncanonical += int(count)
+            if len(examples) < 10:
+                examples.append(f"{raw!r} -> {canon!r}")
     report["noncanonical_team_names"] = noncanonical
     report["noncanonical_team_name_examples"] = examples
+
+    invalid_ids = 0
+    for side in ("home", "away"):
+        id_column = f"{side}_club_id"
+        if id_column not in df.columns:
+            invalid_ids += len(df)
+            continue
+        keys = list(zip(df[side].tolist(), countries.tolist()))
+        expected_map = {
+            key: canonical_id(
+                key[0], country_hint=None if pd.isna(key[1]) else key[1]
+            )
+            for key in set(keys)
+        }
+        expected = pd.Series(
+            (expected_map[key] for key in keys), index=df.index
+        )
+        invalid_ids += int((df[id_column].astype(str) != expected).sum())
+    report["invalid_club_ids"] = invalid_ids
+
+    # A valid ID on every row is insufficient if one ID retains several display
+    # names: model.fit() keys ratings by display name, so that state silently
+    # splits one club's history. Enforce the write-boundary invariant directly.
+    identity_names = pd.concat([
+        df[["home_club_id", "home"]].rename(
+            columns={"home_club_id": "club_id", "home": "name"
+        ),
+        df[["away_club_id", "away"]].rename(
+            columns={"away_club_id": "club_id", "away": "name"
+        ),
+    ], ignore_index=True)
+    names_per_id = identity_names.groupby("club_id")["name"].nunique(dropna=False)
+    report["fragmented_club_ids"] = int((names_per_id > 1).sum())
 
     # Parked implementation has a finite life. Once an expiry lands this hard
     # check forces a maintainer to promote it with evidence or delete the code;
@@ -109,10 +154,24 @@ def run_checks() -> dict:
     expired_experiments: list[str] = []
     try:
         registry = json.loads(EXPERIMENTS.read_text())
-        expired_experiments = [
-            str(item["name"]) for item in registry.get("experiments", [])
-            if str(item.get("expires_on", "")) < str(today)
-        ]
+        experiments = registry.get("experiments", [])
+        valid_statuses = {"candidate", "promoted", "retired"}
+        registry_errors = []
+        expired_experiments = []
+        for item in experiments:
+            name = str(item.get("name", "<unnamed>"))
+            status = str(item.get("status", ""))
+            if status not in valid_statuses:
+                registry_errors.append(f"{name}: invalid status {status!r}")
+                continue
+            evidence = HERE / str(item.get("evidence", ""))
+            if not item.get("evidence") or not evidence.exists():
+                registry_errors.append(f"{name}: evidence missing")
+            if status in {"promoted", "retired"} and not item.get("disposition"):
+                registry_errors.append(f"{name}: {status} entry lacks disposition")
+            if status == "candidate" and str(item.get("expires_on", "")) < str(today):
+                expired_experiments.append(name)
+        report["experiment_registry_errors"] = registry_errors
     except Exception as exc:
         report["experiment_registry_error"] = str(exc)
         expired_experiments = ["<registry unreadable>"]
@@ -211,7 +270,10 @@ def run_checks() -> dict:
                     and report["duplicate_match_identities"] == 0
                     and report["conflicting_score_identities"] == 0
                     and report["noncanonical_team_names"] == 0
+                    and report["invalid_club_ids"] == 0
+                    and report["fragmented_club_ids"] == 0
                     and not report["expired_experiments"]
+                    and not report.get("experiment_registry_errors")
                     and report.get("void_with_results", 0) == 0)
 
     print(f"Club Soccer health check ({today}):")
@@ -228,9 +290,18 @@ def run_checks() -> dict:
     status = "PASS" if report["noncanonical_team_names"] == 0 else "FAIL"
     print(f"  [{status}] noncanonical_team_names = "
           f"{report['noncanonical_team_names']} (must be 0)")
+    status = "PASS" if report["invalid_club_ids"] == 0 else "FAIL"
+    print(f"  [{status}] invalid_club_ids = "
+          f"{report['invalid_club_ids']} (must be 0)")
+    status = "PASS" if report["fragmented_club_ids"] == 0 else "FAIL"
+    print(f"  [{status}] fragmented_club_ids = "
+          f"{report['fragmented_club_ids']} (must be 0)")
     status = "PASS" if not report["expired_experiments"] else "FAIL"
     print(f"  [{status}] expired_experiments = "
           f"{report['expired_experiments']} (must be empty)")
+    status = "PASS" if not report.get("experiment_registry_errors") else "FAIL"
+    print(f"  [{status}] experiment_registry_errors = "
+          f"{report.get('experiment_registry_errors', [])} (must be empty)")
 
     if days_since is None:
         print("  [WARN] days_since_last_result: no played rows found")
@@ -277,21 +348,26 @@ def run_checks() -> dict:
         # us? The season heuristic above is a cheap proxy that still flags
         # pre-season gaps; this compares against the actual fd.co.uk file and
         # only warns when there really are results we failed to ingest.
-        # Networked, so best-effort — the offline INFO above always prints.
-        try:
-            behind = [r for r in SFL.refresh_health() if r.get("behind")]
-            report["leagues_behind_source"] = [r["competition"] for r in behind]
-            if behind:
-                print(f"  [WARN] {len(behind)} league(s) are BEHIND their source "
-                      "— the fd.co.uk refresh is not ingesting available results:")
-                for r in behind[:8]:
-                    print(f"         {r['competition']} — ours {r.get('our_latest')} "
-                          f"vs source {r.get('source_latest')}")
-            else:
-                print("  [INFO] all BSD-less leagues are level with their source "
-                      "(no genuine staleness)")
-        except Exception as exc:
-            print(f"  [INFO] source-freshness check skipped ({exc})")
+        # Networked, so it is explicit. `season --no-network` and offline tests
+        # must not issue a hidden HTTP request from a function called "health".
+        if network:
+            try:
+                behind = [r for r in SFL.refresh_health() if r.get("behind")]
+                report["leagues_behind_source"] = [r["competition"] for r in behind]
+                if behind:
+                    print(f"  [WARN] {len(behind)} league(s) are BEHIND their source "
+                          "— the fd.co.uk refresh is not ingesting available results:")
+                    for r in behind[:8]:
+                        print(f"         {r['competition']} — ours {r.get('our_latest')} "
+                              f"vs source {r.get('source_latest')}")
+                else:
+                    print("  [INFO] all BSD-less leagues are level with their source "
+                          "(no genuine staleness)")
+            except Exception as exc:
+                print(f"  [INFO] source-freshness check skipped ({exc})")
+        else:
+            report["source_freshness_skipped"] = "offline"
+            print("  [INFO] source-freshness check skipped (offline)")
     except Exception as exc:
         print(f"  [INFO] league staleness unavailable ({exc})")
 

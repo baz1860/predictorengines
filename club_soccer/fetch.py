@@ -28,8 +28,9 @@ from bsd_client import (event_date_utc, fixture_detail_fields, get_all_events,
 from .competitions import COMPETITIONS, comp_from_bsd_league, get as comp_get
 from . import schema
 from .club_identity import (canonical_name as _canonical_name,
+                            canonical_id as _canonical_id,
                             canonicalise as _canonicalise)
-from .identities import dedupe_fixtures
+from .identities import (conflicting_score_identity_count, dedupe_fixtures)
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -105,6 +106,10 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
         # quarantined row can be diagnosed and the mapping added later.
         quarantined = df["status"] == QUARANTINE_STATUS
         if "status_raw" in df.columns:
+            # CSV round-trips infer an all-empty status_raw column as float.
+            # Convert before assigning strings; recent pandas versions reject
+            # the lossy float -> string setitem.
+            df["status_raw"] = df["status_raw"].fillna("").astype(str)
             # A row that has become recognised must not retain an obsolete raw
             # quarantine value from an earlier provider response.
             df.loc[~quarantined, "status_raw"] = ""
@@ -127,8 +132,8 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
     if {"home", "away"}.issubset(df.columns):
         country_by_comp: dict[str, str | None] = {}
 
-        def _country_hint(row) -> str | None:
-            comp_name = str(row.get("competition") or "")
+        def _country_hint(comp_value) -> str | None:
+            comp_name = str(comp_value or "")
             if comp_name not in country_by_comp:
                 comp = comp_get(comp_name)
                 value = getattr(comp, "country", None) if comp is not None else None
@@ -137,18 +142,67 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
                 )
             return country_by_comp[comp_name]
 
+        countries = df.get(
+            "competition", pd.Series("", index=df.index)
+        ).map(_country_hint).astype(object)
+        # A Series containing only missing country hints is otherwise coerced
+        # to float NaN. NaN is truthy, so it can accidentally become the
+        # literal scope "nan" in canonical_id() for continental fixtures.
+        countries = countries.where(pd.notna(countries), None)
         changed = 0
-        for i, row in df.iterrows():
-            country_hint = _country_hint(row)
-            source = str(row.get("source") or "")
-            for side in ("home", "away"):
-                raw = row.get(side)
-                canon = _canonicalise(raw, source=source, country_hint=country_hint)
-                if canon != raw:
-                    df.at[i, side] = canon
-                    changed += 1
+        for side in ("home", "away"):
+            keys = list(zip(df[side].tolist(), countries.tolist()))
+            mapping = {
+                key: _canonicalise(key[0], country_hint=key[1])
+                for key in set(keys)
+            }
+            canonical = pd.Series(
+                (mapping[key] for key in keys), index=df.index
+            )
+            changed += int((canonical != df[side]).sum())
+            df[side] = canonical
+            id_mapping = {
+                key: _canonical_id(key[0], country_hint=key[1])
+                for key in set(zip(canonical.tolist(), countries.tolist()))
+            }
+            df[f"{side}_club_id"] = [
+                id_mapping[key]
+                for key in zip(canonical.tolist(), countries.tolist())
+            ]
         if changed:
             print(f"   write_fixtures: canonicalised {changed} team-name value(s)")
+
+        # One stable ID must mean one model identity. The model intentionally
+        # uses the display name as its dictionary key, so allowing one ID to
+        # retain several registry spellings (Accrington / Accrington Stanley)
+        # still splits its history even though duplicate reconciliation sees
+        # the rows as one club. Pick the most-observed display deterministically
+        # across the complete frame and rewrite every occurrence to it.
+        identity_names = pd.concat([
+            df[["home_club_id", "home"]].rename(
+                columns={"home_club_id": "club_id", "home": "name"}
+            ),
+            df[["away_club_id", "away"]].rename(
+                columns={"away_club_id": "club_id", "away": "name"}
+            ),
+        ], ignore_index=True)
+        counts = (
+            identity_names.groupby(["club_id", "name"], dropna=False)
+            .size()
+            .reset_index(name="n")
+            .sort_values(["club_id", "n", "name"],
+                         ascending=[True, False, True])
+        )
+        preferred = counts.drop_duplicates("club_id").set_index("club_id")["name"]
+        unified = 0
+        for side in ("home", "away"):
+            replacement = df[f"{side}_club_id"].map(preferred)
+            change = replacement.notna() & replacement.ne(df[side])
+            unified += int(change.sum())
+            df.loc[change, side] = replacement[change]
+        if unified:
+            print(f"   write_fixtures: unified {unified} team-name value(s) "
+                  "onto one display identity per club ID")
 
     # Drop self-matches. A team cannot play itself, so home == away is always
     # corrupt — and BSD does emit it: querying event 185564 returns
@@ -164,6 +218,14 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
             print(f"   write_fixtures: dropped {int(selfmatch.sum())} self-match row(s) "
                   "(home == away — corrupt provider data)")
             df = df[~selfmatch].copy()
+
+        conflicts = conflicting_score_identity_count(df)
+        if conflicts:
+            raise ValueError(
+                f"refusing to reconcile {conflicts} canonical match "
+                "identity group(s) with conflicting scores; resolve or "
+                "quarantine the provider rows explicitly"
+            )
 
         before_dedupe = len(df)
         df = dedupe_fixtures(df)

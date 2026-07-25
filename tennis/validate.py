@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -33,6 +34,9 @@ import pandas as pd
 
 from . import model as M
 from . import simulate as S
+from .rounds import (
+    QUALIFYING_ROUNDS, ROUND_RANK, ROUND_SEQ, canonical_round, next_deeper,
+)
 
 DATA_DIR = Path(__file__).parent / "data"
 PRED_CSV = DATA_DIR / "validation_predictions.csv"
@@ -44,9 +48,7 @@ ALL_MARKETS = MATCH_MARKETS + OUTRIGHT_MARKETS
 GATE_TOL = 0.005          # allowed headline (match_winner) Brier regression
 EPS = 1e-12
 
-# Knockout round labels, shallow (final) → deep (first round).
-ROUND_SEQ = ["F", "SF", "QF", "R16", "R32", "R64", "R128", "R256"]
-_ROUND_RANK = {r: i for i, r in enumerate(ROUND_SEQ)}
+_ROUND_RANK = ROUND_RANK
 
 
 # ─────────────────────────────────────────────
@@ -109,6 +111,21 @@ def walk_forward(df: pd.DataFrame, tour: str, since: str, retrain_days: int = 28
     # Markov board across matches that share a matchup probability (a big speed-up
     # over thousands of matches with a small player pool). Reset on each refit.
     _mk_cache: dict[tuple[float, int], dict] = {}
+    elo: dict[str, float] = {}
+    elo_k = 24.0
+
+    def _elo_prob(a: str, b: str) -> float:
+        return 1.0 / (1.0 + 10.0 ** ((elo.get(b, 1500.0) - elo.get(a, 1500.0)) / 400.0))
+
+    def _elo_update(winner: str, loser: str) -> None:
+        expected = _elo_prob(winner, loser)
+        delta = elo_k * (1.0 - expected)
+        elo[winner] = elo.get(winner, 1500.0) + delta
+        elo[loser] = elo.get(loser, 1500.0) - delta
+
+    # Seed the control only from matches strictly before the scoring window.
+    for prior in sub[sub["date"] < since_ts].itertuples(index=False):
+        _elo_update(str(prior.winner), str(prior.loser))
 
     def _markets(p_a: float, best_of: int) -> dict:
         # 0.01 granularity on the match prob: set-handicap / first-set are smooth
@@ -141,6 +158,18 @@ def walk_forward(df: pd.DataFrame, tour: str, since: str, retrain_days: int = 28
         best_of = int(r.best_of) if not pd.isna(r.best_of) else 3
         a, b = sorted([winner, loser], key=M.fold_name)
         p_a = M.predict_match(a, b, surface, params)["p_a"]
+        p_elo = _elo_prob(a, b)
+        winner_rank = float(getattr(r, "winner_rank", M.DEFAULT_RANK))
+        loser_rank = float(getattr(r, "loser_rank", M.DEFAULT_RANK))
+        rank_by_name = {winner: winner_rank, loser: loser_rank}
+        rank_a, rank_b = rank_by_name[a], rank_by_name[b]
+        if (rank_a <= 0 or rank_b <= 0
+                or rank_a >= M.DEFAULT_RANK or rank_b >= M.DEFAULT_RANK):
+            p_rank = 0.5
+        else:
+            # Ranking ratio control. The fixed slope is intentionally simple;
+            # its purpose is to expose whether the larger fit earns complexity.
+            p_rank = 1.0 / (1.0 + math.exp(0.85 * (math.log(rank_a) - math.log(rank_b))))
         # The scored markets here (match-winner / set-handicap / first-set) are
         # independent of the serve base and games calibration, so the fixed base
         # is used (and memoised) to keep the walk-forward fast; serve_base/
@@ -159,9 +188,11 @@ def walk_forward(df: pd.DataFrame, tour: str, since: str, retrain_days: int = 28
             "tour": tour, "date": str(date.date()), "tourney_id": str(r.tourney_id),
             "player_a": a, "player_b": b,
             "p_match_winner": p_a, "y_match_winner": a_won,
+            "p_rank_logistic": p_rank, "p_elo": p_elo,
             "p_set_hcp": mk["p_a_minus_1_5_sets"], "y_set_hcp": y_set,
             "p_first_set": mk["p_first_set"], "y_first_set": y_first,
         })
+        _elo_update(winner, loser)
     if verbose:
         print(f"  {tour}: {len(rows):,} match predictions over {n_refits} refits")
     return pd.DataFrame(rows)
@@ -188,6 +219,26 @@ def summarize(pred: pd.DataFrame) -> dict:
             "logloss": round(logloss(p, y), 5),
             "reliability": reliability(p, y),
         }
+        if mkt == "match_winner":
+            controls = {}
+            for label, column in (
+                ("rank_logistic", "p_rank_logistic"),
+                ("elo", "p_elo"),
+            ):
+                if column not in pred.columns:
+                    continue
+                control_sub = pred[[column, ycol]].dropna()
+                if control_sub.empty:
+                    continue
+                cp = control_sub[column].to_numpy(dtype=float)
+                cy = control_sub[ycol].to_numpy(dtype=float)
+                cb = brier(cp, cy)
+                controls[label] = {
+                    "n": int(len(cy)),
+                    "brier": round(cb, 5),
+                    "model_delta": round(b - cb, 5),
+                }
+            report[mkt]["controls"] = controls
     report["headline_brier"] = report.get("match_winner", {}).get("brier", 1.0)
     return report
 
@@ -204,6 +255,12 @@ def print_report(rep: dict) -> None:
               f"{r['brier_base']:>9.4f}{r['skill']:>8.1%}{r['logloss']:>9.4f}")
     print(f"\nHeadline Brier (match_winner): {rep['headline_brier']:.5f}")
     if "match_winner" in rep:
+        controls = rep["match_winner"].get("controls", {})
+        if controls:
+            print("\nHeadline controls  (negative model Δ means the model wins):")
+            for name, control in controls.items():
+                print(f"  {name:<14} Brier {control['brier']:.5f}  "
+                      f"model Δ {control['model_delta']:+.5f}")
         print("\nMatch-winner reliability  (pred → actual, n):")
         for pp, yy, nn in rep["match_winner"]["reliability"]:
             bar = "█" * int(yy * 30)
@@ -223,30 +280,57 @@ def reconstruct_bracket(matches: pd.DataFrame):
     node dict, or None for non-knockout / irregular events (round-robin, no
     single final, fewer than 8 entrants).
     """
-    rounds = set(matches["round"].astype(str))
+    matches = matches.copy().reset_index(drop=True)
+    raw_rounds = matches["round"].fillna("").astype(str)
+    round_counts = raw_rounds.value_counts().to_dict()
+    matches["_round"] = [
+        canonical_round(raw, 2 * round_counts.get(raw, 0))
+        for raw in raw_rounds
+    ]
+    rounds = set(matches["_round"])
     if "RR" in rounds:
         return None
-    finals = matches[matches["round"].astype(str) == "F"]
+    finals = matches[matches["_round"] == "F"]
     if len(finals) != 1:
         return None
 
-    won_at: dict[str, dict[str, pd.Series]] = {}
-    for _, m in matches.iterrows():
-        r = str(m["round"])
-        if r in _ROUND_RANK:
-            won_at.setdefault(r, {})[str(m["winner"])] = m
+    winners: dict[str, list[tuple[int, pd.Series]]] = {}
+    for index, match in matches.iterrows():
+        if match["_round"] in QUALIFYING_ROUNDS:
+            continue
+        winners.setdefault(str(match["winner"]), []).append((index, match))
 
-    def build(match: pd.Series):
-        r = str(match["round"])
-        di = _ROUND_RANK[r]
-        deeper = ROUND_SEQ[di + 1] if di + 1 < len(ROUND_SEQ) else None
+    used: set[int] = set()
+
+    def build(index: int, match: pd.Series, expected_round: str):
+        used.add(index)
+        deeper = next_deeper(expected_round)
         kids = []
         for player in (str(match["winner"]), str(match["loser"])):
-            child = won_at.get(deeper, {}).get(player) if deeper else None
-            kids.append(build(child) if child is not None else player)
-        return {"round": r, "a": kids[0], "b": kids[1]}
+            candidates = [
+                (candidate_index, candidate)
+                for candidate_index, candidate in winners.get(player, [])
+                if candidate_index not in used and candidate_index != index
+            ]
+            if deeper:
+                exact = [c for c in candidates if c[1]["_round"] == deeper]
+                blank = [c for c in candidates if not str(c[1]["_round"]).strip()]
+                candidates = exact or blank
+            else:
+                candidates = []
+            if candidates:
+                # Latest match is the closest predecessor when the source left
+                # round labels blank.
+                candidate_index, child = max(
+                    candidates, key=lambda c: pd.Timestamp(c[1]["date"]),
+                )
+                kids.append(build(candidate_index, child, deeper))
+            else:
+                kids.append(player)
+        return {"round": expected_round, "a": kids[0], "b": kids[1], "winner": ""}
 
-    root = build(finals.iloc[0])
+    final_index = int(finals.index[0])
+    root = build(final_index, finals.iloc[0], "F")
     if len(S._bracket_leaves(root)) < 8:
         return None
     return root
@@ -256,8 +340,11 @@ def _outright_actuals(matches: pd.DataFrame) -> dict[str, dict]:
     """Per-player actual reach (win/final/sf/qf) for one tournament, from the
     shallowest knockout round each player appears in."""
     best: dict[str, int] = {}
+    raw = matches["round"].fillna("").astype(str)
+    counts = raw.value_counts().to_dict()
     for _, m in matches.iterrows():
-        r = str(m["round"])
+        r_raw = "" if pd.isna(m["round"]) else str(m["round"])
+        r = canonical_round(r_raw, 2 * counts.get(r_raw, 0))
         if r not in _ROUND_RANK:
             continue
         rank = _ROUND_RANK[r]

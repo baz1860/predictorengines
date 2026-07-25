@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -32,7 +33,12 @@ LATEST = DATA / "validation_latest.json"               # validation-owned, descr
 CALIB_FILE = DATA / "calibration.json"
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
 CALIBRATION_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
-GATE_TOL = 0.01
+GATE_TOLERANCES = {
+    "brier": 0.0010,
+    "log_loss": 0.0015,
+    "brier_ou25": 0.0010,
+    "brier_btts": 0.0010,
+}
 ENSEMBLE_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
 ENSEMBLE_REGRESS_TOL = 0.0015
 
@@ -93,13 +99,12 @@ def _metrics_arr(P: np.ndarray, A: np.ndarray) -> tuple[float, float, float]:
 
 
 def walk_forward(min_train: int = 200, verbose: bool = False,
-                 league_adjustments: bool = False,
+                 opponent_adjusted_xg: bool | None = None,
                  fixtures: pd.DataFrame | None = None,
                  test_from: str | None = None,
                  test_to: str | None = None,
                  use_cache: bool = True,
-                 league_seed: bool | None = None,
-                 variance_inflation: bool | None = None) -> tuple[list[dict], dict]:
+                 league_seed: bool | None = None) -> tuple[list[dict], dict]:
     """Monthly-refit walk-forward: refit once per calendar month on all prior
     matches, then predict that month. O(months) fits, not O(matches) — required
     once fixtures.csv holds real (thousands of rows) data rather than the seed.
@@ -124,11 +129,13 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
     # before it reaches the cache key — caching under `None` would collide two
     # different models under one entry the moment the production default moved.
     league_seed = M.LEAGUE_SEED_DEFAULT if league_seed is None else bool(league_seed)
-    variance_inflation = (M.VARIANCE_INFLATION_DEFAULT if variance_inflation is None
-                          else bool(variance_inflation))
-    cache_opts = {"min_train": min_train, "league_adjustments": league_adjustments,
-                  "league_seed": league_seed,
-                  "variance_inflation": variance_inflation}
+    opponent_adjusted_xg = (
+        M.OPPONENT_ADJUSTED_XG_DEFAULT
+        if opponent_adjusted_xg is None else bool(opponent_adjusted_xg)
+    )
+    cache_opts = {"min_train": min_train,
+                  "opponent_adjusted_xg": opponent_adjusted_xg,
+                  "league_seed": league_seed}
     row_hash = WFC.row_hashes(df) if use_cache else None
     hits = misses = 0
     seen_keys: set[tuple[str, str]] = set()
@@ -160,7 +167,7 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
             # Seed from coefficients that existed at this fold's cutoff, not
             # today's — the walk-forward must not leak future UEFA rankings.
             cutoff = str(test["date"].min())[:10]
-            params = M.fit(train, league_adjustments=league_adjustments,
+            params = M.fit(train, opponent_adjusted_xg=opponent_adjusted_xg,
                            league_seed=league_seed, coef_as_of=cutoff)
         except Exception:
             continue
@@ -173,25 +180,12 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
                 continue
             try:
                 # Validate the same date-aware path used by the card and edge
-                # layers — EXCEPT the context coefficients. The production
-                # context artifact is fitted on full history, so loading it
-                # here would leak future information into past predictions
-                # (look-ahead bias). context_coef={} disables it; a proper
-                # per-window context refit is the planned upgrade, and until
-                # then walk-forward metrics measure the context-free model.
-                # ensemble_weights: the production ensemble_weights.json was
-                # selected on the full component history, so loading it here
-                # would leak future information (same pattern as the context
-                # artifact). The fixed DEFAULT_ENSEMBLE_W blend is the only
-                # weight set that is honest for every historical fold until
-                # per-window weight selection is implemented.
+                # layers.
                 pred = M.predict_match(
                     r.home, r.away, r.competition, str(r.date.date()), "ensemble",
                     bool(r.neutral), params=params,
                     fixture_id=getattr(r, "fixture_id", None),
-                    context_coef={},
                     ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W),
-                    variance_inflation=variance_inflation,
                 )
             except Exception:
                 skipped += 1
@@ -223,217 +217,6 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
         if verbose:
             print(f"  (folds: {hits} cached, {misses} recomputed)")
     return rows, metrics(rows)
-
-
-def component_walk_forward(min_train: int = 200, verbose: bool = False,
-                           league_adjustments: bool = False) -> pd.DataFrame:
-    """Walk-forward component probabilities for ensemble tuning.
-
-    No model is fit on or after the tested month. The returned frame is pure
-    predictions + labels, so weight searches can be repeated without refitting.
-    """
-    df = M.played(M.load_fixtures()).sort_values("date").reset_index(drop=True)
-    df["_ym"] = df["date"].dt.to_period("M")
-    rows: list[dict] = []
-    skipped = 0
-    months = sorted(df["_ym"].unique())
-    for k, ym in enumerate(months, 1):
-        test = df[df["_ym"] == ym]
-        train = df[df["date"] < test["date"].min()]
-        if len(train) < min_train:
-            continue
-        try:
-            params = M.fit(train, league_adjustments=league_adjustments)
-        except Exception:
-            continue
-        seen = set(params["teams"])
-        kept = 0
-        for r in test.itertuples(index=False):
-            if r.home not in seen or r.away not in seen:
-                skipped += 1
-                continue
-            try:
-                parts = M.component_matrices(params, r.home, r.away,
-                                             r.competition, bool(r.neutral),
-                                             match_date=r.date)
-            except Exception:
-                skipped += 1
-                continue
-            actual = 0 if r.home_goals > r.away_goals else (
-                1 if r.home_goals == r.away_goals else 2)
-            row = {"date": str(r.date.date()), "home": r.home, "away": r.away,
-                   "competition": r.competition, "type": r.type,
-                   "fixture_id": getattr(r, "fixture_id", None),
-                   "xg_source": getattr(r, "xg_source", ""),
-                   "actual": actual}
-            for name, mat in parts.items():
-                p = M.probs_from_matrix(mat)
-                row[f"{name}_home"] = p["home"]
-                row[f"{name}_draw"] = p["draw"]
-                row[f"{name}_away"] = p["away"]
-            rows.append(row)
-            kept += 1
-        if verbose:
-            print(f"  [{k:>2}/{len(months)}] {ym}  components tested {kept}")
-    if verbose and skipped:
-        print(f"  ({skipped} component rows skipped)")
-    return pd.DataFrame(rows)
-
-
-def _component_array(df: pd.DataFrame, component: str) -> np.ndarray:
-    return df[[f"{component}_home", f"{component}_draw", f"{component}_away"]].to_numpy(float)
-
-
-def ensemble_probs(df: pd.DataFrame, weights: dict[str, float]) -> np.ndarray:
-    w = M._normalise_weights(weights)
-    P = np.zeros((len(df), 3), dtype=float)
-    for comp, wt in w.items():
-        if wt:
-            P += wt * _component_array(df, comp)
-    s = P.sum(axis=1, keepdims=True)
-    s[s <= 0] = 1.0
-    return P / s
-
-
-def score_ensemble(df: pd.DataFrame, weights: dict[str, float]) -> dict:
-    A = df["actual"].to_numpy(int)
-    acc, brier, ll = _metrics_arr(ensemble_probs(df, weights), A)
-    return {"weights": {k: round(v, 3) for k, v in M._normalise_weights(weights).items()},
-            "accuracy": round(acc, 5), "brier": round(brier, 6),
-            "log_loss": round(ll, 6), "n": int(len(df))}
-
-
-def choose_ensemble_weights(df: pd.DataFrame, grid_step: float = 0.05) -> dict:
-    vals = [round(x, 2) for x in np.arange(0.0, 1.0 + 1e-9, grid_step)]
-    best = None
-    for wg in vals:
-        for we in vals:
-            if wg + we > 1.0 + 1e-9:
-                continue
-            for wx in vals:
-                if wg + we + wx > 1.0 + 1e-9:
-                    continue
-                for wxf in vals:
-                    wxp = round(1.0 - wg - we - wx - wxf, 2)
-                    if wxp < -1e-9:
-                        continue
-                    weights = {"goals": wg, "elo": we, "xg": wx,
-                               "xgf": wxf, "xpress": wxp}
-                    row = score_ensemble(df, weights)
-                    if best is None or (row["brier"], row["log_loss"]) < (best["brier"], best["log_loss"]):
-                        best = row
-    return best
-
-
-def tune_ensemble(write: bool = False, verbose: bool = True) -> dict:
-    df = component_walk_forward(verbose=verbose)
-    if df.empty:
-        raise SystemExit("No component walk-forward rows to tune.")
-    current_w = M.load_ensemble_weights()
-    current = score_ensemble(df, current_w)
-    chosen = choose_ensemble_weights(df)
-    split_results = []
-    split_wins = 0
-    max_regress = 0.0
-    for split in ENSEMBLE_SPLITS:
-        tr = df[pd.to_datetime(df["date"]) < pd.Timestamp(split)]
-        te = df[pd.to_datetime(df["date"]) >= pd.Timestamp(split)]
-        if len(tr) < 1000 or len(te) < 100:
-            continue
-        split_choice = choose_ensemble_weights(tr)
-        cur_te = score_ensemble(te, current_w)
-        ch_te = score_ensemble(te, split_choice["weights"])
-        delta = ch_te["brier"] - cur_te["brier"]
-        split_wins += int(delta < 0)
-        max_regress = max(max_regress, delta)
-        split_results.append({"split": split, "train_n": int(len(tr)), "test_n": int(len(te)),
-                              "weights": split_choice["weights"],
-                              "current_brier": cur_te["brier"],
-                              "chosen_brier": ch_te["brier"],
-                              "delta_brier": round(delta, 6),
-                              "current_log_loss": cur_te["log_loss"],
-                              "chosen_log_loss": ch_te["log_loss"]})
-    promotes = (
-        chosen["brier"] < current["brier"]
-        and chosen["log_loss"] <= current["log_loss"]
-        and split_wins >= 2
-        and max_regress <= ENSEMBLE_REGRESS_TOL
-    )
-    out = {"current": current, "chosen": chosen, "splits": split_results,
-           "promote": bool(promotes), "split_wins": split_wins,
-           "max_split_regression": round(max_regress, 6)}
-    print(f"\nClub ensemble tuning · {len(df)} predictions")
-    print(f"  current Brier {current['brier']:.6f} log-loss {current['log_loss']:.6f} weights {current['weights']}")
-    print(f"  chosen  Brier {chosen['brier']:.6f} log-loss {chosen['log_loss']:.6f} weights {chosen['weights']}")
-    for r in split_results:
-        print(f"  split {r['split']} n={r['test_n']}: ΔBrier {r['delta_brier']:+.6f} weights {r['weights']}")
-    print(f"  verdict: {'PROMOTE' if promotes else 'reject'}")
-    if write:
-        # REPORT-ONLY, permanently. This tuner selects weights on overlapping
-        # splits of the full component history — exactly the leakage pattern
-        # that got ensemble_weights.json deactivated. Writing the artifact
-        # here (with or without an "active" flag) would either reintroduce
-        # the leak or destroy the deactivation record while claiming a
-        # promotion that never deploys. Only a future nested-holdout promoter
-        # (owner memo 3: hierarchical weights, untouched final season) may
-        # write ensemble_weights.json or move the baseline.
-        print("  --write is disabled: this tuner is report-only. Promotion "
-              "requires the nested-holdout promoter (not yet built); see "
-              "ensemble_weights.json deactivated_reason.")
-    return out
-
-
-def compare_league_adjustments(verbose: bool = True, write: bool = False) -> dict:
-    """Compare incumbent and league-season candidate on identical walk-forward
-    fixtures. The candidate is diagnostic-only; this function never changes
-    production parameters or ensemble weights."""
-    baseline_rows, baseline = walk_forward(verbose=False, league_adjustments=False)
-    candidate_rows, candidate = walk_forward(verbose=False, league_adjustments=True)
-    baseline_by_comp = metrics_by_group(baseline_rows)
-    candidate_by_comp = metrics_by_group(candidate_rows)
-    groups = sorted(set(baseline_by_comp) | set(candidate_by_comp))
-    by_comp = {}
-    for group in groups:
-        b = baseline_by_comp.get(group, metrics([]))
-        c = candidate_by_comp.get(group, metrics([]))
-        by_comp[group] = {
-            "baseline": b, "candidate": c,
-            "delta_brier": round(c["brier"] - b["brier"], 6),
-            "delta_log_loss": round(c["log_loss"] - b["log_loss"], 6),
-        }
-    source = metrics_by_group(candidate_rows, "xg_source")
-    out = {
-        "baseline": baseline, "candidate": candidate,
-        "delta_brier": round(candidate["brier"] - baseline["brier"], 6),
-        "delta_log_loss": round(candidate["log_loss"] - baseline["log_loss"], 6),
-        "by_competition": by_comp, "candidate_by_xg_source": source,
-        "promote": bool(candidate["brier"] < baseline["brier"]
-                         and candidate["log_loss"] <= baseline["log_loss"]),
-    }
-    if verbose:
-        print(f"\nLeague-season adjustment experiment · baseline n={baseline['n']} "
-              f"candidate n={candidate['n']}")
-        print(f"  baseline Brier {baseline['brier']:.6f} log-loss {baseline['log_loss']:.6f}")
-        print(f"  candidate Brier {candidate['brier']:.6f} log-loss {candidate['log_loss']:.6f}")
-        print(f"  overall ΔBrier {out['delta_brier']:+.6f} "
-              f"Δlog-loss {out['delta_log_loss']:+.6f}")
-        print("\n  By competition (positive deltas are worse):")
-        for group, row in by_comp.items():
-            if row["candidate"]["n"]:
-                print(f"    {group:24} n={row['candidate']['n']:>5} "
-                      f"ΔBrier {row['delta_brier']:+.6f} "
-                      f"ΔLL {row['delta_log_loss']:+.6f}")
-        print("\n  Candidate by xG source:")
-        for group, row in source.items():
-            print(f"    {group:12} n={row['n']:>5} Brier {row['brier']:.6f} "
-                  f"LL {row['log_loss']:.6f}")
-        print(f"\n  verdict: {'PROMOTE' if out['promote'] else 'keep incumbent'}")
-    if write:
-        path = DATA / "validation_league_adjustments.json"
-        path.write_text(json.dumps(out, indent=2))
-        if verbose:
-            print(f"  wrote diagnostic -> {path.name}")
-    return out
 
 
 # ── Probability calibration: isotonic regression per outcome ─────────────────
@@ -670,17 +453,71 @@ def cmd_calibrate(verbose=True):
 def load_promotion_baseline() -> dict | None:
     """The promotion gate reference, or None if none has been established.
 
-    Read-only from validation's perspective. Falls back to the legacy
-    validation_baseline.json so an existing gate keeps working until the
-    promoter (build 3) takes ownership."""
-    for path in (PROMOTION_BASELINE, BASELINE):
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-            except (ValueError, OSError):
-                return None
-            return data if isinstance(data, dict) else None
-    return None
+    Read-only from validation's perspective. The legacy expanding-window
+    baseline is deliberately not a fallback: comparing different samples is
+    not a regression test."""
+    if not PROMOTION_BASELINE.exists():
+        return None
+    try:
+        data = json.loads(PROMOTION_BASELINE.read_text())
+    except (ValueError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _evaluation_hash(rows: list[dict]) -> str:
+    """Identity/outcome hash for the exact fixed evaluation population."""
+    h = hashlib.sha256()
+    for row in rows:
+        payload = [
+            row.get("date"), row.get("competition"), row.get("fixture_id"),
+            row.get("home"), row.get("away"), row.get("actual"),
+            row.get("total_goals"), row.get("btts_actual"),
+        ]
+        h.update(json.dumps(payload, separators=(",", ":"), default=str).encode())
+        h.update(b"\n")
+    return h.hexdigest()[:20]
+
+
+def gate_failures(rows: list[dict], measured: dict, baseline: dict) -> list[str]:
+    """Validate a model on the baseline's identical fixed folds and metrics."""
+    failures: list[str] = []
+    for key in ("test_from", "test_to", "evaluation_hash", "n"):
+        if key not in baseline:
+            failures.append(f"promotion baseline lacks {key}")
+    if failures:
+        return failures
+    if int(measured.get("n", -1)) != int(baseline["n"]):
+        failures.append(
+            f"evaluation row count {measured.get('n')} != baseline {baseline['n']}"
+        )
+    current_hash = _evaluation_hash(rows)
+    if current_hash != baseline["evaluation_hash"]:
+        failures.append(
+            f"evaluation population hash {current_hash} != "
+            f"baseline {baseline['evaluation_hash']}"
+        )
+    tolerances = baseline.get("tolerances", GATE_TOLERANCES)
+    if not isinstance(tolerances, dict):
+        failures.append("promotion baseline tolerances must be an object")
+        return failures
+    for metric in GATE_TOLERANCES:
+        try:
+            value = float(measured[metric])
+            reference = float(baseline[metric])
+            tolerance = float(tolerances.get(metric, GATE_TOLERANCES[metric]))
+        except (KeyError, TypeError, ValueError):
+            failures.append(f"{metric}: malformed current/baseline value")
+            continue
+        if not (math.isfinite(value) and math.isfinite(reference)
+                and math.isfinite(tolerance) and tolerance >= 0):
+            failures.append(f"{metric}: non-finite value or tolerance")
+        elif value > reference + tolerance:
+            failures.append(
+                f"{metric} {value:.6f} > baseline {reference:.6f} "
+                f"+ tolerance {tolerance:.6f}"
+            )
+    return failures
 
 
 def main() -> None:
@@ -689,30 +526,35 @@ def main() -> None:
     ap.add_argument("--calibrate", action="store_true",
                     help="fit isotonic 1X2 calibration, report held-out improvement, "
                          "and write data/calibration.json")
-    ap.add_argument("--tune-ensemble", action="store_true",
-                    help="tune goals/elo/xg/xgf/xpress ensemble weights")
-    ap.add_argument("--compare-league-adjustments", action="store_true",
-                    help="compare the incumbent model with the gated "
-                         "league-season environment/HFA candidate")
-    ap.add_argument("--write", action="store_true",
-                    help="with --tune-ensemble, write promoted weights and baseline")
     ap.add_argument("--benchmark-clubelo", action="store_true",
                     help="report-only: compare ClubElo-implied 1X2 Brier to ours "
                          "near the most recent walk-forward date; never a model input")
     args = ap.parse_args()
-    if args.tune_ensemble:
-        tune_ensemble(write=args.write)
-        return
-    if args.compare_league_adjustments:
-        compare_league_adjustments(write=args.write)
-        return
     if args.calibrate:
         cmd_calibrate()
         return
     if args.benchmark_clubelo:
         benchmark_clubelo()
         return
-    rows, m = walk_forward(verbose=True)
+    base = load_promotion_baseline()
+    if args.gate:
+        if base is None:
+            sys.exit(
+                f"--gate needs {PROMOTION_BASELINE.name}, owned by the "
+                "model promoter and established deliberately in a commit."
+            )
+        test_from = base.get("test_from")
+        test_to = base.get("test_to")
+        if not test_from or not test_to:
+            sys.exit(
+                f"{PROMOTION_BASELINE.name} must pin test_from and test_to; "
+                "an expanding-window baseline is not comparable."
+            )
+    else:
+        test_from = test_to = None
+    rows, m = walk_forward(
+        verbose=True, test_from=test_from, test_to=test_to
+    )
     print(f"Walk-forward Club Soccer validation (n={m['n']})")
     print(f"accuracy {m['accuracy']:.1%}  Brier {m['brier']:.4f}  log-loss {m['log_loss']:.4f}")
     print(f"OU2.5 Brier {m['brier_ou25']:.4f}  BTTS Brier {m['brier_btts']:.4f}")
@@ -733,22 +575,17 @@ def main() -> None:
     print(f"Validation metrics -> {LATEST.name} "
           "(descriptive; the promotion gate is unchanged)")
 
-    base = load_promotion_baseline()
     if base and "brier_ou25" in base:
         print(f"  Δ vs promotion baseline: "
               f"OU2.5 {m['brier_ou25'] - base['brier_ou25']:+.4f}  "
               f"BTTS {m['brier_btts'] - base.get('brier_btts', 0):+.4f}")
     if args.gate:
-        if base is None:
-            sys.exit(
-                f"--gate needs {PROMOTION_BASELINE.name}, which is owned by the "
-                "nested-holdout promoter (build 3). Validation may not create or "
-                "move it; establish it deliberately, in a commit.")
-        limit = float(base["brier"]) + float(base.get("gate_tol", GATE_TOL))
-        ok = m["brier"] <= limit
-        print(f"[gate] Brier {m['brier']:.4f} vs baseline {base['brier']:.4f} "
-              f"(limit {limit:.4f}) -> {'PASS' if ok else 'FAIL'}")
-        if not ok:
+        failures = gate_failures(rows, m, base)
+        print(f"[gate] fixed window {base['test_from']}..{base['test_to']} "
+              f"(n={m['n']}) -> {'PASS' if not failures else 'FAIL'}")
+        for failure in failures:
+            print(f"  - {failure}")
+        if failures:
             sys.exit(1)
 
 

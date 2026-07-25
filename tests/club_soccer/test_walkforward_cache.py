@@ -22,7 +22,7 @@ def _hashes(values):
 
 
 def _opts(**kw):
-    base = {"min_train": 200, "league_adjustments": False}
+    base = {"min_train": 200, "opponent_adjusted_xg": True}
     base.update(kw)
     return base
 
@@ -71,7 +71,7 @@ def test_key_changes_with_month():
 def test_key_changes_with_fit_options():
     a = WFC.fold_key("2025-01", _hashes([1, 2]), _hashes([4]), _opts())
     b = WFC.fold_key("2025-01", _hashes([1, 2]), _hashes([4]),
-                     _opts(league_adjustments=True))
+                     _opts(opponent_adjusted_xg=False))
     c = WFC.fold_key("2025-01", _hashes([1, 2]), _hashes([4]),
                      _opts(min_train=500))
     assert len({a, b, c}) == 3
@@ -87,12 +87,10 @@ def test_key_changes_with_code_fingerprint(monkeypatch):
 # ── the fingerprint must cover behaviour-changing data files ──────────────
 
 def test_code_fingerprint_covers_model_and_competition_sources():
-    """comp_strength.json and ensemble_weights.json change predictions with no
-    code edit at all — the classic way a cache goes quietly stale."""
     assert "model.py" in WFC._CODE_FILES
     assert "competitions.py" in WFC._CODE_FILES
-    assert "comp_strength.json" in WFC._DATA_FILES
-    assert "ensemble_weights.json" in WFC._DATA_FILES
+    assert "uefa_coefficients.json" in WFC._DATA_FILES
+    assert "club_alias_map.json" in WFC._DATA_FILES
 
 
 def test_code_fingerprint_is_stable_within_a_process():

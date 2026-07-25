@@ -1,0 +1,27 @@
+{
+  "status": "promoted",
+  "promoted_on": "2026-07-25",
+  "method": "monthly walk-forward with identical training cutoffs",
+  "test_from": "2024-07-01",
+  "n": 27363,
+  "incumbent": {
+    "brier": 0.6129961399,
+    "log_loss": 1.0223253658,
+    "brier_ou25": 0.2518762952,
+    "brier_btts": 0.2513822448
+  },
+  "opponent_adjusted_xg": {
+    "brier": 0.6117686032,
+    "log_loss": 1.0204494444,
+    "brier_ou25": 0.2472432248,
+    "brier_btts": 0.2481166031
+  },
+  "deltas": {
+    "brier": -0.0012275367,
+    "log_loss": -0.0018759214,
+    "brier_ou25": -0.0046330704,
+    "brier_btts": -0.0032656417
+  },
+  "decision": "promote",
+  "notes": "Re-run after registry-backed identity migration removed 454 cross-provider duplicates. The estimator removes home and competition offsets, then alternates shrunk attack and defence updates against the opponents each club actually faced."
+}

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # tennis/update.sh — daily refresh: accumulate results → refit ATP + WTA →
-# walk-forward validate (gate) → recalibrate. Offline-safe: the accumulate step
-# degrades to cached CSVs and the pipeline still finishes. Sim / edge run on
+# walk-forward validate (gate) → recalibrate. The provider may use cached CSVs
+# offline, but any failed or stale step stops the pipeline. Sim / edge run on
 # demand from the app (they need a loaded draw / odds).
 #
 # Usage: bash tennis/update.sh [--since 2023-01-01]
-set -uo pipefail
+set -euo pipefail
 # Run from the repo root so the tennis package resolves (package-relative
 # imports; invoke modules with `python3 -m tennis.X`).
 cd "$(dirname "$0")/.."
@@ -23,23 +23,23 @@ echo "  Tennis engine update  $(date '+%Y-%m-%d %H:%M')"
 echo "════════════════════════════════════════════"
 
 echo ""; echo "── 1/5 Accumulate latest matches → matches.csv ──"
-python3 -m tennis.fetch --accumulate || echo "  accumulate skipped (offline)"
+python3 -m tennis.fetch --accumulate
+python3 -m app.provenance --engine tennis --write
 
 echo ""; echo "── 2/5 Refit ATP model ──"
-python3 -m tennis.model --fit --tour atp --top 10 || echo "  ATP fit skipped"
+python3 -m tennis.model --fit --tour atp --top 10
 
 echo ""; echo "── 3/5 Refit WTA model ──"
-python3 -m tennis.model --fit --tour wta --top 10 || echo "  WTA fit skipped"
+python3 -m tennis.model --fit --tour wta --top 10
 
 echo ""; echo "── 4/5 Walk-forward validate (gate) ──"
-python3 -m tennis.validate --since "$SINCE" --gate --quiet \
-  || echo "  validation gate warning (model may have regressed)"
+python3 -m tennis.validate --since "$SINCE" --gate --quiet
 
 echo ""; echo "── 5/5 Refit calibration ──"
-python3 -m tennis.calibrate --fit || echo "  calibration skipped"
+python3 -m tennis.calibrate --fit
 
 # Record data provenance (offline, never blocks).
-python3 -m app.provenance --engine tennis --write || echo "  manifest skipped"
+python3 -m app.provenance --engine tennis --write
 
 echo ""; echo "Done. Load a draw/odds then price on demand:"
 echo "  python3 -m tennis.fetch --draw-template   # then fill tennis/data/draw.csv"

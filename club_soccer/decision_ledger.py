@@ -40,14 +40,16 @@ import argparse
 import csv
 import hashlib
 import math
+import os
 from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-DECISIONS = DATA / "decision_ledger.csv"
-SETTLEMENTS = DATA / "settlement_ledger.csv"
+RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
+DECISIONS = RUNTIME / "decision_ledger.csv"
+SETTLEMENTS = RUNTIME / "settlement_ledger.csv"
 
 # Decision window: a snapshot must sit at least this far before kick-off (the
 # gate's floor) and no earlier than the far edge, so the recorded lead is a
@@ -69,6 +71,7 @@ DECISION_FIELDS = [
     "competition", "raw_home", "raw_away", "club_home", "club_away",
     "resolver_version", "market", "side", "book", "odds_executed",
     "p_book_devig", "p_consensus_devig", "p_model", "edge", "decision_lead_min",
+    "lineup_confidence", "strategy_eligible",
     "train_cutoff", "model_hash", "code_hash", "prior_hash",
 ]
 SETTLEMENT_FIELDS = [
@@ -93,10 +96,22 @@ def resolver_version() -> str:
 
 
 def _code_hash() -> str:
+    """Stable pricing-strategy version.
+
+    Learned parameters deliberately do not belong here: a normal refit changes
+    model_params.json and must not erase all accumulated forward evidence.
+    Every code path that can change a priced or selected row does belong here.
+    """
     h = hashlib.sha256()
-    for name in ("model.py", "competitions.py", "club_identity.py"):
+    for name in (
+        "model.py", "competitions.py", "club_identity.py", "edge.py",
+        "decision_ledger.py", "evidence_gate.py", "player_features.py",
+        "availability.py", "calibrate.py", "market_model.py",
+    ):
         p = HERE / name
         h.update(p.read_bytes() if p.exists() else b"")
+    shared_blend = HERE.parent / "app" / "market_blend.py"
+    h.update(shared_blend.read_bytes() if shared_blend.exists() else b"")
     return h.hexdigest()[:16]
 
 
@@ -174,7 +189,7 @@ def market_consensus_devig(side_odds: dict[str, dict[str, float]],
 def _append(path: Path, fields: list[str], rows: list[dict]) -> None:
     if not rows:
         return
-    DATA.mkdir(exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     new = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
@@ -223,6 +238,27 @@ def record(api_key: str | None = None, verbose: bool = True) -> int:
     train_cutoff = str(now.date())
     seen = _existing_decision_ids()
 
+    # Match the production probability pipeline. Evidence from a bare model
+    # must not authorize availability-adjusted, calibrated or market-blended
+    # prices that were never recorded.
+    from .calibrate import apply as apply_calibration, load_active_maps
+    from . import market_model as MM
+    from app.market_blend import blend_two, is_default_on, weight_for
+
+    calib_maps = load_active_maps()
+    dnb_active = MM.history_age_days() >= MM.WARMUP_DAYS
+    blend_active = is_default_on("club_soccer")
+    blend_w = weight_for("club_soccer") if blend_active else None
+    try:
+        from .availability import match_availability, match_confidence
+        from .player_features import PlayerFeatureStore
+
+        player_store = PlayerFeatureStore().load()
+        if not player_store._player_records():
+            player_store.refresh_from_cache()
+    except Exception:
+        player_store = None
+
     try:
         events = get_all_events(key, status="notstarted",
                                 date_from=str(now.date()),
@@ -255,13 +291,28 @@ def record(api_key: str | None = None, verbose: bool = True) -> int:
         club_away = canonical_name(raw_away, country=comp.country)
         if club_home not in params["teams"] or club_away not in params["teams"]:
             continue
+        player_adj = None
+        lineup_confidence = 1.0
+        if player_store is not None:
+            try:
+                player_adj = player_store.adjustments_for_match(ev)
+                lineup_confidence = match_confidence(
+                    match_availability(player_store, ev)
+                )
+            except Exception:
+                player_adj = None
+                lineup_confidence = 1.0
         try:
             pred = M.predict_match(club_home, club_away, comp.name,
                                    str(kickoff.date()), "ensemble",
-                                   params=params)
+                                   params=params, player_adj=player_adj)
         except Exception:
             continue
         p = pred["probs"]
+        if calib_maps is not None:
+            p["home"], p["draw"], p["away"] = apply_calibration(
+                p["home"], p["draw"], p["away"], calib_maps
+            )
         model_p = {"1x2": {"home": p["home"], "draw": p["draw"], "away": p["away"]},
                    "total25": {"over": p["over25"], "under": 1.0 - p["over25"]}}
 
@@ -289,13 +340,28 @@ def record(api_key: str | None = None, verbose: bool = True) -> int:
                 if quote is None:
                     continue
                 book, odds, devig = quote
-                # Edge benchmark = consensus across all complete-market books,
-                # selected independently of which book is cheapest for us. Falls
-                # back to the executed book's own de-vig only when a single book
-                # quotes the market (then no de-biasing is possible).
+                # Keep consensus for diagnostics, but select on the SAME
+                # executing-book de-vig used by edge.rows_from_odds. A gate
+                # trained on a different edge definition authorizes a different
+                # betting strategy.
                 consensus = market_consensus_devig(side_odds, list(side_odds))
-                p_bench = float(consensus[our_side]) if consensus else float(devig[our_side])
+                p_consensus = (
+                    float(consensus[our_side])
+                    if consensus else float(devig[our_side])
+                )
+                p_bench = float(devig[our_side])
                 pm = float(model_p[market][our_side])
+                if blend_active and blend_w is not None:
+                    pm = blend_two(pm, p_bench, blend_w)
+                edge = pm - p_bench
+                strategy_eligible = True
+                if dnb_active:
+                    decision = MM.do_not_bet({
+                        "home": club_home, "away": club_away,
+                        "date": str(kickoff.date()), "market": market,
+                        "side": our_side, "edge": edge,
+                    }, asof=now.isoformat())
+                    strategy_eligible = not bool(decision["suppress"])
                 out.append({
                     "decision_id": did, "decision_ts": now.isoformat(),
                     "provider_fixture_id": fid, "kickoff_utc": kickoff.isoformat(),
@@ -304,9 +370,11 @@ def record(api_key: str | None = None, verbose: bool = True) -> int:
                     "resolver_version": rv, "market": market, "side": our_side,
                     "book": book, "odds_executed": round(odds, 4),
                     "p_book_devig": round(float(devig[our_side]), 5),
-                    "p_consensus_devig": round(p_bench, 5),
-                    "p_model": round(pm, 5), "edge": round(pm - p_bench, 5),
+                    "p_consensus_devig": round(p_consensus, 5),
+                    "p_model": round(pm, 5), "edge": round(edge, 5),
                     "decision_lead_min": round(lead, 1),
+                    "lineup_confidence": round(float(lineup_confidence), 4),
+                    "strategy_eligible": int(strategy_eligible),
                     "train_cutoff": train_cutoff, "model_hash": mh,
                     "code_hash": ch, "prior_hash": ph,
                 })
@@ -333,14 +401,6 @@ def load_decisions() -> list[dict]:
 
 def load_settlements() -> list[dict]:
     return _load(SETTLEMENTS)
-
-
-def _side_won(market, side, hg, ag) -> bool:
-    if market == "1x2":
-        return ((side == "home" and hg > ag) or (side == "away" and ag > hg)
-                or (side == "draw" and hg == ag))
-    total = hg + ag
-    return (side == "over" and total > 2.5) or (side == "under" and total < 2.5)
 
 
 def _match_result(d: dict,
@@ -389,7 +449,7 @@ def settle(verbose: bool = True) -> int:
 
     from . import model as M
     from .club_identity import canonical_name
-    from .decision_time_backtest import _closing_probs, _key
+    from .market_settlement import closing_probs, match_key, side_won
     from .schema import OFFICIAL_RESULT_STATUSES, normalize_status
 
     decisions = load_decisions()
@@ -417,8 +477,8 @@ def settle(verbose: bool = True) -> int:
             except (TypeError, ValueError):
                 continue
             results[(canonical_name(str(r.home)), canonical_name(str(r.away)))].append(
-                (fd, hg, ag, _key(r.date, r.home, r.away)))
-    close_1x2, close_tot = _closing_probs()
+                (fd, hg, ag, match_key(r.date, r.home, r.away)))
+    close_1x2, close_tot = closing_probs()
 
     out = []
     now = datetime.now(timezone.utc).isoformat()
@@ -431,7 +491,7 @@ def settle(verbose: bool = True) -> int:
         if match is None:
             continue
         hg, ag, mkey = match
-        won = _side_won(d["market"], d["side"], hg, ag)
+        won = side_won(d["market"], d["side"], hg, ag)
         cmap = close_1x2 if d["market"] == "1x2" else close_tot
         pc = (cmap.get(mkey) or {}).get(d["side"])
         clv = None

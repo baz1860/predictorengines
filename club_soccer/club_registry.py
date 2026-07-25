@@ -44,9 +44,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import unicodedata
 import urllib.request
 from pathlib import Path
+
+from .normalization import normalise_club_text
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -198,11 +199,7 @@ def build(paths: list[str] | None = None, verbose: bool = True) -> dict:
 
 
 def _norm(value: str) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(c for c in text if not unicodedata.combining(c)).casefold()
-    text = text.replace("&", " and ")
-    text = re.sub(r"[^a-z0-9 ]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    return normalise_club_text(value)
 
 
 _cache: dict | None = None

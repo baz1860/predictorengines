@@ -9,7 +9,7 @@ Covers 2011-12 .. current, INCLUDING the 36-team league phase from 2024-25 on.
 
 Why bother: UEFA ties are the only matches that connect teams from different
 domestic leagues, so they sharpen cross-league strength in elo + goals. NOTE:
-openfootball has results only — no shots — so the xg/xgf ensemble members fall
+openfootball has results only — no shots — so the xg ensemble member falls
 back to the goals/elo maps for these matches (handled in model._lambdas_xg).
 
 Use --merge to APPEND onto the existing football-data league fixtures (which keep

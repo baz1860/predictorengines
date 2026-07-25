@@ -10,12 +10,13 @@ import pytest
 
 from club_soccer import decision_time_backtest as B
 from club_soccer import evidence_gate as G
+from club_soccer import market_settlement as MS
 
 
 # ── de-vig ────────────────────────────────────────────────────────────────
 
 def test_devig_removes_the_overround():
-    probs = B._devig({"home": 2.0, "draw": 4.0, "away": 4.0})
+    probs = MS.devig({"home": 2.0, "draw": 4.0, "away": 4.0})
     assert abs(sum(probs.values()) - 1.0) < 1e-9
     assert probs["home"] > probs["draw"]
 
@@ -32,30 +33,30 @@ def test_devig_removes_the_overround():
     ("total25", "under", 1, 1, True),
 ])
 def test_settlement(market, side, hg, ag, won):
-    assert B._side_won(market, side, hg, ag) is won
+    assert MS.side_won(market, side, hg, ag) is won
 
 
 def test_clv_is_positive_when_you_beat_the_close():
     # executed at 2.20, close de-vigged prob 0.50 -> log(2.20*0.50) = log(1.10) > 0
-    clv = B._clv("1x2", "home", 2.20, {"home": 0.50})
+    clv = MS.clv("1x2", "home", 2.20, {"home": 0.50})
     assert clv > 0
 
 
 def test_clv_computes_for_totals_when_a_close_is_supplied():
     """A closing-totals feed now exists (Pinnacle PC>2.5/PC<2.5) for the
     European leagues, so totals CLV is real where the close is present."""
-    clv = B._clv("total25", "over", 2.10, {"over": 0.52, "under": 0.48})
+    clv = MS.clv("total25", "over", 2.10, {"over": 0.52, "under": 0.48})
     assert clv is not None and clv > 0      # 2.10 * 0.52 > 1
 
 
 def test_clv_is_none_for_totals_without_a_close():
     """The non-UEFA leagues have no closing-totals feed, so their totals CLV
     stays None — that market can never open the gate for them."""
-    assert B._clv("total25", "over", 2.0, None) is None
+    assert MS.clv("total25", "over", 2.0, None) is None
 
 
 def test_closing_probs_returns_both_markets():
-    one, tot = B._closing_probs()
+    one, tot = MS.closing_probs()
     # 1X2 close is broad; totals close exists for the European leagues.
     assert isinstance(one, dict) and isinstance(tot, dict)
 
@@ -177,13 +178,6 @@ def test_gate_stays_closed_on_insufficient_volume(tmp_path, monkeypatch):
     ok, _reasons = G.staking_allowed()
     assert ok is False
     assert not any(G.market_staking_allowed().values())
-
-
-def test_legacy_backtest_no_longer_writes_the_gate_file():
-    """The closing-odds backtest must not own backtest_market.json, or it could
-    masquerade as decision-time evidence."""
-    from club_soccer import backtest_market as BM
-    assert BM.REPORT_JSON.name != "backtest_market.json"
 
 
 def test_decision_time_owns_the_gate_file():

@@ -13,9 +13,9 @@ measuring hit-rate and yield, not just edge-threshold ROI.
 odds are almost all we have historically.**
 
 - `market_history.csv` — **16,778 matches, 2022–2026**, but these are *closing*
-  prices (B365, Pinnacle close `psc`). The current `backtest_market.py` uses
-  them, and that is exactly why its evidence can never open the gate: selecting
-  and executing at the close is not a strategy you can run — you don't know the
+  prices (B365, Pinnacle close `psc`). The retired `backtest_market.py` used
+  them, which is why its evidence could never open the gate: selecting and
+  executing at the close is not a strategy you can run — you don't know the
   close until kick-off.
 - `odds_history_club.csv` — point-in-time snapshots captured *before* kick-off,
   which is the right data. But it is **17 days old, 623 rows, ~2 snapshots per

@@ -15,7 +15,7 @@ from . import model as M
 def cmd_schema(_p: dict | None = None) -> dict:
     df = M.load_fixtures()
     return {"kind": "match", "names": M.team_names(df),
-            "models": ["ensemble", "goals", "elo", "xg", "xpress"],
+            "models": ["ensemble", "goals", "elo", "xg"],
             "supports_home": False, "neutral_toggle": True,
             "team_label": "Club",
             "filters": [
@@ -106,7 +106,10 @@ def cmd_edge(p: dict) -> dict:
         odds, source="manual" if odds_source == "manual" else "live")
     for msg in quote_issues:
         note += f" · {msg}"
-    rows = E.rows_from_odds(odds, model_name, bankroll) if not odds.empty else []
+    blend = p.get("market_blend") if "market_blend" in p else None
+    rows = E.rows_from_odds(
+        odds, model_name, bankroll, market_blend=blend
+    ) if not odds.empty else []
     comp = (p.get("competition") or "").strip()
     if comp:
         rows = [r for r in rows if r.get("competition") == comp]
@@ -119,8 +122,19 @@ def cmd_edge(p: dict) -> dict:
     date_to = (p.get("date_to") or "").strip()
     if date_to:
         rows = [r for r in rows if str(r.get("date", "")) <= date_to]
-    return {"note": f"{note} · {len(rows)} priced outcome(s)",
-            "columns": _columns(), "rows": rows}
+    result = {"note": f"{note} · {len(rows)} priced outcome(s)",
+              "columns": _columns(), "rows": rows}
+    blend_weights = sorted({
+        float(r["market_blend_w"]) for r in rows if "market_blend_w" in r
+    })
+    if blend_weights:
+        from app.market_blend import is_default_on
+        result["market_blend"] = {
+            "applied": True, "w": blend_weights[0],
+            "experimental": not is_default_on("club_soccer"),
+        }
+        result["note"] += f" · market-blended (w={blend_weights[0]:.2f})"
+    return result
 
 
 def cmd_edge_template(_p: dict | None = None) -> dict:

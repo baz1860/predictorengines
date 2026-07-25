@@ -99,15 +99,12 @@ fixed time splits, with the result recorded in
 
 | Feature | Fit with | Gated by |
 |---|---|---|
-| Per-competition home advantage + rho | `model.py::fit()` (automatic) | `comp_adj_active` in `model_params.json` |
-| League-season scoring environment + HFA | `model.py::fit(league_adjustments=True)` | `league_adjustments_active` in fitted params; currently rejected by walk-forward gate |
+| Opponent-adjusted xG attack/defence | `model.py::fit()` (automatic) | promoted evidence in `data/opponent_adjusted_xg_evidence.json` |
 | 1X2 temperature calibration | `python3 -m club_soccer.validate --calibrate` | `active` in `data/calibration.json`; promoted after all three fixed splits improved |
-| Fitted competition strength | `python3 -m club_soccer.model --fit-comp-strength` | `active` in `data/comp_strength.json` |
-| Promoted/relegated shrinkage prior | `python3 -m club_soccer.model --tune-promo-prior --write` | `promo_prior.active` in `model_params.json` |
-| Season-boundary Elo regression + half-life | `python3 -m club_soccer.model --tune-season-boundary --write` | `season_regress_rho.active` / `half_life_days.active` |
-| Context GLM (rest/congestion/motivation/tier-gap/weather) | `python3 -m club_soccer.context --fit` | `active` in `data/context_coef_club.json` |
-| Point-in-time player quality (shrunk xG/90 + pass completion) | `python3 -m club_soccer.player_quality --validate` | `active` in `data/player_quality.json`; currently inactive until coverage and fixed-split scores pass |
 | Market blend (1X2 / OU2.5) | `python3 -m club_soccer.fit_market_blend --write` | `app/market_blend.DEFAULT_BLEND_ON` (code change) |
+
+Rejected experiments and their evidence remain listed in `experiments.json`;
+their runtime implementations are not kept in the production package.
 
 ### Player layer
 
@@ -134,18 +131,13 @@ that widens on doubtful absences or a missing GK) are computed by
 (alias `--availability`) — haircuts the Kelly stake by lineup confidence,
 never the point estimate.
 
-The paper-informed quality layer is separate from availability. It uses only
-appearances before the match date, selects the recent top XI by recency-
-weighted minutes, shrinks xG/90 by position and pass completion by a pass-count
-prior, and reports coverage/uncertainty. It is validated by fixed walk-forward
-splits and remains neutral unless every split improves both Brier score and
-log-loss. BSD currently supplies enough player history for availability and
-lineup work, but not enough historical team coverage to activate this layer.
-
 ```bash
-python3 -m club_soccer.player_quality --validate          # report + gated artifact
 python3 -m club_soccer.player_features --refresh-cached --oldest-first --max-events 500  # BSD backfill for cached events
 ```
+
+The rejected point-in-time player-quality experiment is retained only as a
+result artifact in `data/player_quality.json`; its unused runtime
+implementation has been removed.
 
 ### Bzzoiro v2 enrichment
 
@@ -176,34 +168,20 @@ shotmaps without player-level coverage.
 python3 -m club_soccer.standings "Premier League" --date 2026-05-01
 ```
 
-Point-in-time tables (3-1-0 points, uniform points/GD/GF tiebreak — no
-per-league head-to-head rule). Feeds motivation features (`ppg_diff`,
-title/Europe/relegation "fight" and mathematically-"dead" flags) into the
-context GLM.
+Point-in-time tables use 3-1-0 points and uniform points/GD/GF tiebreaks; they
+do not attempt competition-specific head-to-head rules.
 
 ### Market layer
 
 ```bash
 python3 -m club_soccer.fetch_fdcouk                # historical closing odds (backtest teacher)
 python3 -m club_soccer.snapshot_odds                # live multi-bookmaker snapshots
-python3 -m club_soccer.backtest_market              # model vs de-vigged closing-line log-loss + simulated ROI
+python3 -m club_soccer.decision_time_backtest       # settled decision-time evidence used by the staking gate
 ```
 
 `edge.py` applies the do-not-bet filter (suppress steam-chasing or
 unanimous-books-thin-edge bets) automatically once 30 days of snapshot
 history exist; before that it prints "market-model warming up: N days".
-
-### Weather
-
-```bash
-python3 -m club_soccer.weather --missing-venues     # teams with no data/venues.csv row
-python3 -m club_soccer.weather --build              # backfill (played) + forecast (<=16d out)
-```
-
-City-level (not stadium-level) lat/lon, Open-Meteo (free, no key).
-`data/venues.csv` covers the 12 core tracked leagues fully; Champions/Europa/
-Conference League opponents are filled in iteratively as `--missing-venues`
-surfaces them.
 
 ### Additional xG sources
 
@@ -228,12 +206,10 @@ settlement and regulation markets are not conflated.
 ```bash
 python3 -m club_soccer.validate            # walk-forward report (1X2, OU2.5, BTTS Brier)
 python3 -m club_soccer.validate --gate     # pass/fail vs data/validation_baseline.json
-python3 -m club_soccer.validate --tune-ensemble [--write]
 python3 -m club_soccer.validate --calibrate       # temperature calibration; activates only after multi-split gate
-python3 -m club_soccer.validate --compare-league-adjustments --write  # diagnostic only
 python3 -m club_soccer.fit_market_blend           # diagnostic; promotion remains gated
 python3 -m club_soccer.validate --benchmark-clubelo   # report-only sanity check, never a model input
-python3 test_club_soccer.py
+python3 -m pytest tests/club_soccer
 ```
 
 Calibration and market anchoring are explicit promotion gates. Temperature

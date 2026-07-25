@@ -151,22 +151,29 @@ def test_lookup_is_spelling_insensitive():
 
 # ── integration with the identity guard ───────────────────────────────────
 
-def test_canonical_name_falls_back_to_the_registry_for_country():
+def test_canonical_name_falls_back_to_the_registry_for_country(monkeypatch):
     """Our own country index only knows clubs with domestic league data, which
     is silent exactly where the guard is needed."""
-    import inspect
-
     from club_soccer import club_identity as CI
-    src = inspect.getsource(CI.canonical_name)
-    assert "club_registry" in src
+
+    monkeypatch.setattr(CI, "team_countries", lambda refresh=False: {})
+    assert CI.canonical_name("FC Bayern München", country="Germany") == "Bayern Munich"
+    assert CI.canonical_name("FC Bayern München", country="Brazil") == "FC Bayern München"
 
 
-def test_propose_domestic_merges_consults_the_registry():
-    import inspect
-
+def test_country_veto_also_scopes_the_stable_id():
     from club_soccer import club_identity as CI
-    src = inspect.getsource(CI.propose_domestic_merges)
-    assert "same_club_possible" in src
+
+    german = CI.canonical_id("FC Bayern München", country_hint="Germany")
+    brazilian = CI.canonical_id("FC Bayern München", country_hint="Brazil")
+    assert german != brazilian
+
+
+def test_stable_ids_use_registry_confirmation_without_a_fuzzy_merge_workflow():
+    from club_soccer import club_identity as CI
+
+    assert CI.canonical_id("Aarhus") == CI.canonical_id("AGF Aarhus")
+    assert not hasattr(CI, "propose_domestic_merges")
 
 
 # ── same-club confirmation requires the same canonical identity (finding 5) ─

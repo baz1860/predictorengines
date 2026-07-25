@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -103,24 +103,14 @@ def test_model_math():
     check("BTTS probabilities sum to one", abs(p["btts_yes"] + p["btts_no"] - 1.0) < 0.002)
     check("score matrix normalizes", abs(float(pred["matrix"].sum()) - 1.0) < 1e-9)
     parts = M.component_matrices(params, "Arsenal", "Chelsea", "Premier League", False)
-    check("retired zero-weight shot-pressure component is absent", "xpress" not in parts)
+    check("only production ensemble components remain",
+          set(parts) == {"goals", "elo", "xg"})
+    check("retired models are absent from the public schema",
+          set(ENGINE.cmd_schema()["models"]) == {"ensemble", "goals", "elo", "xg"})
     check("component matrices normalize",
           all(abs(float(mx.sum()) - 1.0) < 1e-9 for mx in parts.values()))
-    with tempfile.TemporaryDirectory() as td:
-        f = Path(td) / "ensemble_weights.json"
-        # The artifact only applies with an explicit "active": true — inactive
-        # (or legacy flag-less) artifacts fall back to DEFAULT_ENSEMBLE_W so
-        # production and validation stay the same predictor.
-        f.write_text(json.dumps({"active": True,
-                                 "weights": {"goals": 2, "elo": 1, "retired": 1}}))
-        w = M.load_ensemble_weights(f)
-        check("ensemble weights normalize from artifact", abs(sum(w.values()) - 1.0) < 1e-12)
-        check("missing ensemble components default to zero", w["xg"] == 0.0 and w["xgf"] == 0.0)
-        check("retired ensemble keys are ignored", "retired" not in w)
-        f.write_text(json.dumps({"weights": {"goals": 2, "elo": 1, "retired": 1}}))
-        w_inactive = M.load_ensemble_weights(f)
-        check("flag-less weights artifact is ignored (defaults used)",
-              w_inactive == dict(M.DEFAULT_ENSEMBLE_W))
+    check("production ensemble weights are fixed in code",
+          M.DEFAULT_ENSEMBLE_W == {"goals": 0.2, "elo": 0.4, "xg": 0.4})
     try:
         M.predict("Not A Club", "Chelsea", "Premier League", params=params)
         check("unknown team raises", False)
@@ -186,7 +176,7 @@ def test_health_and_repair():
     from club_soccer import health as H
     from club_soccer import fetch as F
 
-    report = H.run_checks()
+    report = H.run_checks(network=False)
     check("future_ft_rows is 0 on shipped data", report["future_ft_rows"] == 0)
     check("duplicate_fixture_ids is 0 on shipped data", report["duplicate_fixture_ids"] == 0)
     check("health report ok flag set", report["ok"] is True)
@@ -369,36 +359,8 @@ def test_transfer_reattribution():
           and hit.iloc[0]["to_team"] == "Club B")
 
 
-def test_player_quality_pit():
-    print("10b. point-in-time player quality")
-    from club_soccer import player_quality as PQ
-
-    with tempfile.TemporaryDirectory() as td:
-        path = Path(td) / "player_stats_cache.json"
-        apps = [
-            {"date": "2026-01-01", "team": "Club A", "mins": 450,
-             "xg": 2.25, "metrics": {"total_pass": 200, "accurate_pass": 160}},
-            {"date": "2026-04-01", "team": "Club A", "mins": 450,
-             "xg": 9.0, "metrics": {"total_pass": 200, "accurate_pass": 200}},
-        ]
-        path.write_text(json.dumps({"v": 3, "id:1": {
-            "name": "Test Forward", "player_id": 1, "pos": "FW", "apps": apps}}))
-        store = PQ.PlayerQualityStore(path).load()
-        before = store.team_quality("Club A", "2026-03-01")
-        after = store.team_quality("Club A", "2026-06-01")
-        check("quality snapshot excludes future appearances",
-              before["n_players"] == 1 and after["n_players"] == 1
-              and after["attack_xg90"] > before["attack_xg90"])
-        check("quality match features require sufficient XI coverage",
-              not store.match_features("Club A", "Club B", "2026-06-01")["usable"])
-
-    p = PQ.quality_probs(np.array([0.45, 0.25, 0.30]), 0.5, 0.03,
-                         {"attack_xg90": 0.2, "pass_pct": 1.0})
-    check("quality probability correction stays normalized", abs(float(p.sum()) - 1.0) < 1e-12)
-
-
 def test_adjustments_enter_at_lambda_level():
-    print("10b. availability/quality/context adjustments are lambda-level")
+    print("10b. availability adjustments are lambda-level")
     params = M.fit()
     h, a, comp = "Arsenal", "Chelsea", "Premier League"
     base = M.predict(h, a, comp, "ensemble", params=params)
@@ -407,40 +369,17 @@ def test_adjustments_enter_at_lambda_level():
     # code rebuilt a single Poisson from the blended matrix's marginals, which
     # discards the ensemble mixture's dispersion. All-1.0 multipliers moved
     # BTTS by +0.0041 and Over 2.5 by +0.0031.
-    identity = (
-        ("player_adj", {"player_adj": {"home": {"attack_mult": 1.0, "defense_mult": 1.0},
-                                       "away": {"attack_mult": 1.0, "defense_mult": 1.0}}}),
-        ("context_adj", {"context_adj": {"home": {"mult": 1.0}, "away": {"mult": 1.0}}}),
-        ("quality_adj", {"quality_adj": {"active": True, "shift": 0.0}}),
-    )
-    for label, kwargs in identity:
-        out = M.predict(h, a, comp, "ensemble", params=params, **kwargs)
-        check(f"identity {label} is an exact no-op on the matrix",
-              np.allclose(out["matrix"], base["matrix"], atol=0, rtol=0))
+    identity = {"home": {"attack_mult": 1.0, "defense_mult": 1.0},
+                "away": {"attack_mult": 1.0, "defense_mult": 1.0}}
+    out = M.predict(h, a, comp, "ensemble", params=params, player_adj=identity)
+    check("identity player adjustment is an exact no-op on the matrix",
+          np.allclose(out["matrix"], base["matrix"], atol=0, rtol=0))
 
-    # Corrections are multiplicative on lambdas, so they must compose exactly:
-    # two adjustments == one adjustment carrying the product of their factors.
     p_adj = {"home": {"attack_mult": 0.90, "defense_mult": 1.10},
              "away": {"attack_mult": 1.05, "defense_mult": 0.95}}
-    c_adj = {"home": {"mult": 1.04}, "away": {"mult": 0.97}}
-    both = M.predict(h, a, comp, "ensemble", params=params,
-                     player_adj=p_adj, context_adj=c_adj)
-    mh, ma = M._adj_multipliers(p_adj, None, c_adj)
-    combined = M.predict(h, a, comp, "ensemble", params=params,
-                         context_adj={"home": {"mult": mh}, "away": {"mult": ma}})
-    check("player+context compose into one multiplier pair",
-          np.allclose(both["matrix"], combined["matrix"], atol=0, rtol=0))
-
-    # The rebuild also dropped rho, substituting the global DC_RHO for the
-    # per-competition value. Exercise a params dict where they differ.
-    rho_params = dict(params)
-    rho_params["comp_adj_active"] = True
-    rho_params["comp_adj"] = {comp: {"hfa_mult": 1.0, "rho": -0.18}}
-    rho_base = M.predict(h, a, comp, "ensemble", params=rho_params)
-    rho_adj = M.predict(h, a, comp, "ensemble", params=rho_params,
-                        player_adj=identity[0][1]["player_adj"])
-    check("per-competition rho survives an adjustment",
-          np.allclose(rho_adj["matrix"], rho_base["matrix"], atol=0, rtol=0))
+    mh, ma = M._adj_multipliers(p_adj)
+    check("availability terms compose into the expected multiplier pair",
+          abs(mh - 0.855) < 1e-12 and abs(ma - 1.155) < 1e-12)
 
     # And a real adjustment must still bite, in the right direction.
     out = M.predict(h, a, comp, "ensemble", params=params,
@@ -450,54 +389,6 @@ def test_adjustments_enter_at_lambda_level():
     check("missing home attackers lower P(home win)",
           out["probs"]["home"] < base["probs"]["home"])
     check("adjusted matrix still normalizes", abs(float(out["matrix"].sum()) - 1.0) < 1e-9)
-
-
-def test_context_apply():
-    print("11. context GLM application")
-    lam_h, lam_a = 1.4, 1.1
-    mat = M.score_matrix(lam_h, lam_a)
-    coef = {"rest_diff": 0.02}
-    rd = 5.0
-    mult_h = np.exp(coef["rest_diff"] * rd)
-    mult_a = np.exp(coef["rest_diff"] * (-rd))
-    context_adj = {"home": {"mult": mult_h}, "away": {"mult": mult_a}}
-    adjusted = M.apply_context_adj(mat, context_adj)
-    xg_h0 = sum(i * mat[i, :].sum() for i in range(mat.shape[0]))
-    xg_a0 = sum(j * mat[:, j].sum() for j in range(mat.shape[1]))
-    xg_h1 = sum(i * adjusted[i, :].sum() for i in range(adjusted.shape[0]))
-    xg_a1 = sum(j * adjusted[:, j].sum() for j in range(adjusted.shape[1]))
-    # score_matrix's Dixon-Coles low-score correction perturbs the marginal
-    # mean slightly away from the raw lambda it's built from (same as
-    # apply_player_adj), so this is approximate, not exact.
-    check("context_adj raises home lambda by ~exp(+0.02*rd)",
-          abs(xg_h1 - xg_h0 * mult_h) < 1e-3)
-    check("context_adj lowers away lambda by ~exp(-0.02*rd)",
-          abs(xg_a1 - xg_a0 * mult_a) < 1e-3)
-    check("opposite-direction shift (home up, away down)", mult_h > 1.0 and mult_a < 1.0)
-
-    empty = M.apply_context_adj(mat, {})
-    check("apply_context_adj no-op on empty dict", np.allclose(empty, mat))
-
-    from club_soccer import context as CTX
-    hangover = CTX._euro_hangover_flags(pd.DataFrame([
-        {"fixture_id": 1, "date": pd.Timestamp("2026-01-01"), "home": "A", "away": "X",
-         "competition": "Champions League", "type": "europe"},
-        {"fixture_id": 2, "date": pd.Timestamp("2026-01-03"), "home": "A", "away": "Y",
-         "competition": "Premier League", "type": "league"},
-    ]))
-    check("euro_hangover_h fires 2 days after a Europe match",
-          hangover[hangover["fixture_id"] == 2].iloc[0]["euro_hangover_h"] == 1)
-
-    tier = CTX._cup_tier_gap(pd.DataFrame([
-        {"fixture_id": 10, "date": pd.Timestamp("2026-01-01"), "home": "A", "away": "X",
-         "competition": "Premier League", "type": "league"},
-        {"fixture_id": 11, "date": pd.Timestamp("2026-01-01"), "home": "Y", "away": "X",
-         "competition": "League Two", "type": "league"},
-        {"fixture_id": 12, "date": pd.Timestamp("2026-01-08"), "home": "A", "away": "Y",
-         "competition": "FA Cup", "type": "cup"},
-    ]))
-    check("tier_gap = away tier(4) - home tier(1) = 3 for a top-flight-vs-League-Two cup tie",
-          tier[tier["fixture_id"] == 12].iloc[0]["tier_gap"] == 3.0)
 
 
 def test_standings_asof():
@@ -527,30 +418,6 @@ def test_standings_asof():
     table_later = ST.table_asof("Test League", 2025, "2026-01-09", fixtures=fx)
     a2 = table_later[table_later["team"] == "A"].iloc[0]
     check("match 3 counted once asof moves past it", a2["played"] == 2 and a2["points"] == 6)
-
-
-def test_weather_features():
-    print("13. weather feature formulas")
-    from club_soccer import weather as W
-
-    calm = W.features(temp_c=15.0, precip_mm=0.0, wind_kmh=10.0)
-    check("calm/mild weather has zero shift on every term",
-          all(v == 0.0 for v in calm.values()))
-
-    windy = W.features(temp_c=15.0, precip_mm=0.0, wind_kmh=35.0)
-    check("wind_high = max(0, 35-25)/10 = 1.0", windy["wind_high"] == 1.0)
-
-    wet = W.features(temp_c=15.0, precip_mm=20.0, wind_kmh=0.0)
-    check("precip caps at min(20,10)/5 = 2.0", wet["precip"] == 2.0)
-
-    cold = W.features(temp_c=-10.0, precip_mm=0.0, wind_kmh=0.0)
-    check("temp_cold = max(0, 0-(-10))/5 = 2.0", cold["temp_cold"] == 2.0)
-
-    hot = W.features(temp_c=38.0, precip_mm=0.0, wind_kmh=0.0)
-    check("temp_hot = max(0, 38-28)/5 = 2.0", hot["temp_hot"] == 2.0)
-
-    missing = W.missing_venues()
-    check("missing_venues() returns a list without crashing", isinstance(missing, list))
 
 
 def test_snapshot_odds_dedupe():
@@ -655,6 +522,7 @@ def test_card_written():
         card = Path(td) / "card.md"
         env = os.environ.copy()
         env["CLUB_SOCCER_CARD_PATH"] = str(card)
+        env["CLUB_SOCCER_RUNTIME_DIR"] = td
         proc = subprocess.run(
             [sys.executable, "-m", "club_soccer.season", "--no-network", "--fast"],
             cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=120)
@@ -830,31 +698,16 @@ def test_gated_production_layers():
     M.predict("Arsenal", "Chelsea", "Premier League", params=params, player_adj=adj)
     check("prediction does not mutate caller-owned player adjustments", adj == original)
     base = M.predict("Arsenal", "Chelsea", "Premier League", params=params)
-    inactive = M.predict("Arsenal", "Chelsea", "Premier League", params=params,
-                         quality_adj={"active": False, "shift": 0.2})
-    check("inactive player quality is an exact no-op",
-          np.allclose([base["probs"][k] for k in ("home", "draw", "away")],
-                      [inactive["probs"][k] for k in ("home", "draw", "away")]))
-    active = M.predict("Arsenal", "Chelsea", "Premier League", params=params,
-                       quality_adj={"active": True, "shift": 0.1, "coverage": 1.0})
-    check("active quality adjustment remains normalized",
-          abs(sum(active["probs"][k] for k in ("home", "draw", "away")) - 1.0) < 0.002)
-
     from club_soccer import schema as S
     check("fixture schema includes xG provenance", "xg_source" in S.FIXTURE_COLUMNS)
 
 
 def test_validation_leak_free_paths():
-    print("20. historical evaluation never reads production artifacts")
-    from club_soccer import context as CTX
+    print("20. historical evaluation uses the production model")
     from club_soccer import validate as V
 
-    # Run the REAL walk_forward on a synthetic league with the production
-    # artifact loaders booby-trapped to raise. walk_forward swallows
-    # per-prediction exceptions, so the leak signal is n == 0: if anyone
-    # removes the explicit context_coef/ensemble_weights arguments from
-    # validate.py, every prediction trips a loader and the fold produces
-    # nothing. (No source-string inspection — a comment can't satisfy this.)
+    # Run the real production path on a deterministic synthetic league. The
+    # exact row count catches swallowed per-prediction failures.
     rng = np.random.default_rng(7)
     teams = [f"Club {c}" for c in "ABCDEF"]
     rows, fid = [], 0
@@ -872,61 +725,10 @@ def test_validation_leak_free_paths():
         d += pd.Timedelta(days=16)
     fx = pd.DataFrame(rows)
 
-    # Counter traps, not raise-only traps: walk_forward swallows per-row
-    # exceptions, so "n > 0" alone would tolerate PARTIAL leakage (some folds
-    # tripping, some clean). Zero calls + the exact expected fold size are
-    # both required.
-    calls = {"coef": 0, "weights": 0}
-
-    def _boom_coef(*a, **k):
-        calls["coef"] += 1
-        raise AssertionError("production context artifact read in validation")
-
-    def _boom_weights(*a, **k):
-        calls["weights"] += 1
-        raise AssertionError("production ensemble weights read in validation")
-
-    orig_coef, orig_w = CTX.load_coef, M.load_ensemble_weights
-    CTX.load_coef, M.load_ensemble_weights = _boom_coef, _boom_weights
-    try:
-        preds, metrics = V.walk_forward(min_train=30, fixtures=fx, verbose=False)
-        # Deterministic synthetic league (seeded rng): the eligible test
-        # months yield exactly 12 out-of-fold predictions. Any swallowed
-        # exception (leak or regression) shrinks this count.
-        wf_ok = metrics.get("n", 0) == 12
-        # Snapshot the counters BEFORE the negative control runs: the control
-        # deliberately fires the traps, so reporting the live dict afterwards
-        # printed "coef=1" under a passing "zero calls" line.
-        wf_calls = calls.copy()
-        zero_calls = wf_calls["coef"] == 0 and wf_calls["weights"] == 0
-        # Negative control: the booby traps must actually fire on the
-        # artifact-loading default path, or the main check proves nothing.
-        try:
-            params = M.fit(fx)
-            M.predict_match("Club A", "Club B", "Synthetic League",
-                            "2025-08-01", "ensemble", params=params)
-            traps_fire = False
-        except AssertionError:
-            traps_fire = True
-    finally:
-        CTX.load_coef, M.load_ensemble_weights = orig_coef, orig_w
-    check(f"walk_forward yields exactly 12 folds with loaders disabled "
+    _preds, metrics = V.walk_forward(min_train=30, fixtures=fx, verbose=False)
+    wf_ok = metrics.get("n", 0) == 12
+    check(f"walk_forward yields exactly 12 out-of-fold predictions "
           f"(n={metrics.get('n', 0)})", wf_ok)
-    check(f"zero production-loader calls during walk_forward "
-          f"(coef={wf_calls['coef']}, weights={wf_calls['weights']})", zero_calls)
-    check("booby-trapped loaders fire on the default (production) path",
-          traps_fire)
-    # NOTE (known gaps, awaiting the PredictionConfig work in owner plan 3):
-    # competitions._load_comp_strength() and calibrate.load_active_maps()
-    # are also production-artifact reads reachable from prediction paths.
-    # Both are currently inactive; they cannot be zero-call-trapped until
-    # competition strength and calibration are passed explicitly per fold.
-    from club_soccer import competitions as COMP
-    import json as _json
-    comp_strength = _json.loads(COMP._COMP_STRENGTH_FILE.read_text()) \
-        if COMP._COMP_STRENGTH_FILE.exists() else {}
-    check("competition-strength artifact stays inactive until per-fold "
-          "plumbing exists", not comp_strength.get("active", False))
 
 
 if __name__ == "__main__":
@@ -941,11 +743,8 @@ if __name__ == "__main__":
     test_fdcouk_alias_coverage()
     test_minutes_windows()
     test_transfer_reattribution()
-    test_player_quality_pit()
     test_adjustments_enter_at_lambda_level()
-    test_context_apply()
     test_standings_asof()
-    test_weather_features()
     test_snapshot_odds_dedupe()
     test_do_not_bet()
     test_card_written()

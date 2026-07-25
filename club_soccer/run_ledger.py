@@ -38,12 +38,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-LEDGER = DATA / "run_history.jsonl"
+RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
+LEDGER = RUNTIME / "run_history.jsonl"
 
 MAX_ENTRIES = 400
 REQUIRED_GREEN_RUNS = 14          # the P6 acceptance gate
@@ -54,7 +56,7 @@ def append(record: dict) -> None:
     """Append one run outcome. Never raises — a ledger failure must not fail
     the pipeline it is only observing."""
     try:
-        DATA.mkdir(exist_ok=True)
+        LEDGER.parent.mkdir(parents=True, exist_ok=True)
         entry = dict(record)
         entry.setdefault("recorded_at_utc", datetime.now(timezone.utc).isoformat())
         with LEDGER.open("a", encoding="utf-8") as fh:
@@ -254,7 +256,7 @@ def snapshot() -> dict:
     # toward the gate's 1,000-bet bar. Surfaced so the operator can watch the
     # gate approach rather than guess when it might open.
     try:
-        bt = json.loads((DATA / "backtest_market.json").read_text())
+        bt = json.loads((RUNTIME / "backtest_market.json").read_text())
         sim = bt.get("simulated_betting", {})
         n = max((row.get("n_bets", 0) or 0)
                 for m in sim.values() for row in m.values()) if sim else 0
