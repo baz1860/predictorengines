@@ -125,12 +125,19 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
     safe_flags.update(feature_flags or {})
     event_columns = ["tournament_id", "date", "course", "is_major"]
     event_columns += [
-        c for c in ("cut_count", "total_rounds", "no_cut")
+        c for c in (
+            "cut_count", "total_rounds", "no_cut", "course_par", "course_yards"
+        )
         if c in df.columns
     ]
     events = (df[event_columns]
               .drop_duplicates("tournament_id")
               .sort_values("date"))
+    for column in ("par3_holes", "par4_holes", "par5_holes"):
+        if column in df.columns:
+            events[column] = events["tournament_id"].map(
+                df.groupby("tournament_id")[column].max()
+            )
     rng = np.random.default_rng(seed)
     rows = []
     since_ts = pd.Timestamp(since)
@@ -155,6 +162,11 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
         except ValueError:
             continue
         rated = model.predict_field(field, params, course=str(ev.course),
+                                    course_par=int(getattr(ev, "course_par", 0) or 0),
+                                    course_yards=int(getattr(ev, "course_yards", 0) or 0),
+                                    par3_holes=int(getattr(ev, "par3_holes", 0) or 0),
+                                    par4_holes=int(getattr(ev, "par4_holes", 0) or 0),
+                                    par5_holes=int(getattr(ev, "par5_holes", 0) or 0),
                                     is_major=bool(ev.is_major),
                                     feature_flags=safe_flags)
         event_no_cut = bool(int(getattr(ev, "no_cut", 0) or 0))

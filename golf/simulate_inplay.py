@@ -104,11 +104,18 @@ def simulate_inplay(
     means = -ratings
     rc, tdf, blowup_mix = pre.load_sim_config()
     shifts = pre._weather_score_shifts(survivors)
+    birdie_rates = np.array([
+        getattr(player, "birdie_rate", 0.18) for player in survivors
+    ])
+    bogey_rates = np.array([
+        getattr(player, "bogey_rate", 0.14) for player in survivors
+    ])
     blowup_rates = np.array([
         getattr(player, "blowup_rate", 0.02) for player in survivors
     ])
     drawn = pre._draw_scores(rng, means, sigmas, n_sims, n, rc, tdf,
-                             score_shifts=shifts, blowup_rates=blowup_rates,
+                             score_shifts=shifts, birdie_rates=birdie_rates,
+                             bogey_rates=bogey_rates, blowup_rates=blowup_rates,
                              blowup_mix=blowup_mix)
     future_scores = drawn[:, :, :rounds_left]
     totals = base_scores[np.newaxis, :] + future_scores.sum(axis=2)

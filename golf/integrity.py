@@ -115,6 +115,18 @@ def check_model_params(path: Path = MODEL_PARAMS, *, history_max_date: str = "")
         errors.append("model_params.json has no fitted players")
     if not payload.get("fitted_rounds"):
         errors.append("model_params.json has no fitted rounds")
+    for key in ("birdie_rate_field", "bogey_rate_field", "double_bogey_rate_field"):
+        if not payload.get(key):
+            errors.append(f"model_params.json missing fitted scoring-shape field {key}")
+    context = payload.get("course_context") or {}
+    if not all(context.get(key) for key in ("par_mean", "par_sd", "yards_mean", "yards_sd")):
+        errors.append("model_params.json missing measured course context")
+    profiled = sum(
+        bool(row.get("course_profile") or row.get("par_profile"))
+        for row in (payload.get("players") or {}).values()
+    )
+    if profiled == 0:
+        errors.append("model_params.json has no fitted player course profiles")
     asof = str(payload.get("asof") or "")[:10]
     if history_max_date:
         try:

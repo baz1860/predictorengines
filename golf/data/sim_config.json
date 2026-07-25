@@ -4,12 +4,12 @@
   "blowup_mix": 0.2,
   "source": "golf.validate walk-forward, 2024-06-01 through 2026-07-16",
   "metrics": {
-    "headline_brier": 0.12551,
-    "cut_brier": 0.20182,
-    "win_logloss": 0.0425,
-    "win_surprise": 4.404,
+    "headline_brier": 0.12556,
+    "cut_brier": 0.2019,
+    "win_logloss": 0.0427,
+    "win_surprise": 4.437,
     "events_with_winner": 135,
     "player_events": 22048,
-    "note": "One coherent joint draw for win, place and cut markets. Right-tail variance comes from each player's EB-shrunk double-bogey rate; blowup_mix is the transient variance share assigned to that measured skew."
+    "note": "One coherent joint draw for win, place and cut markets. Transient scoring shape comes from each player's EB-shrunk birdie, bogey and double-bogey rates; blowup_mix is the variance share assigned to that measured hole-outcome process."
   }
 }

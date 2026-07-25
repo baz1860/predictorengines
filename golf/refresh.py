@@ -28,10 +28,7 @@ from .providers.odds_manual import (ManualOddsProvider, THREEBALLS_RAW,
 from .providers.odds_theoddsapi import MAJOR_SPORT_KEYS, TheOddsApiGolfProvider
 from .providers.pgatour_stats import PgaTourStatsProvider, write_stats_csv
 from .providers.weather import OpenMeteoProvider
-from .tee_times import RAW_TXT as TEE_TIMES_RAW, parse_tee_sheet_text, write_tee_times_csv
-
 DATA_DIR = Path(__file__).parent / "data"
-TEE_TIMES_CSV = DATA_DIR / "tee_times.csv"
 
 
 def main() -> None:
@@ -45,8 +42,6 @@ def main() -> None:
     ap.add_argument("--manual-raw", default="",
                     help="manual round-group raw paste path "
                          "(default: golf/data/threeballs_r{round}_raw.txt)")
-    ap.add_argument("--tee-raw", default=str(TEE_TIMES_RAW),
-                    help="manual tee-sheet raw paste path")
     ap.add_argument("--round", type=int, default=1, dest="round_no",
                     help="round number for manual 3-ball raw paste")
     ap.add_argument("--fit", action="store_true", help="refit model_params.json after refresh")
@@ -61,7 +56,6 @@ def main() -> None:
         weather=args.weather,
         odds_api_sport=args.odds_api_sport,
         manual_raw=args.manual_raw,
-        tee_raw=args.tee_raw,
         round_no=args.round_no,
         fit=args.fit,
         use_cache=args.use_cache,
@@ -79,7 +73,6 @@ def run_refresh(
     weather: bool = False,
     odds_api_sport: str = "",
     manual_raw: str = "",
-    tee_raw: str = str(TEE_TIMES_RAW),
     round_no: int = 1,
     fit: bool = False,
     use_cache: bool = False,
@@ -107,35 +100,7 @@ def run_refresh(
         if event:
             with store.connect() as con:
                 store.upsert_events(con, [event.as_store_row()])
-            tee_raw_path = Path(tee_raw)
-            if tee_raw_path.exists():
-                tee_rows = parse_tee_sheet_text(
-                    tee_raw_path.read_text(errors="replace"),
-                    event_id=event.event_id,
-                    event=event.name,
-                    default_round=round_no,
-                )
-                if tee_rows:
-                    write_tee_times_csv(tee_rows)
-                    checks.append(qa.SourceCheck(
-                        "manual_tee_sheet",
-                        True,
-                        "info",
-                        f"parsed {len(tee_rows)} tee-time row(s) from paste",
-                        len(tee_rows),
-                    ))
         field_rows = espn.field(event.event_id if event else (event_id or None), use_cache=use_cache)
-        if event and field_rows:
-            tee_overrides = _load_tee_time_overrides(event.event_id, event.name)
-            if tee_overrides:
-                field_rows = _apply_tee_time_overrides(field_rows, tee_overrides)
-                checks.append(qa.SourceCheck(
-                    "manual_tee_times",
-                    True,
-                    "info",
-                    f"applied tee times for {len(tee_overrides)} player(s)",
-                    len(tee_overrides),
-                ))
         checks.extend(espn.qa_checks(field_rows))
         provider_rows["espn_field"] = len(field_rows)
         if event and field_rows:
@@ -554,58 +519,6 @@ def _infer_major_sport(event_name: str) -> str:
     if "open championship" in n or n.startswith("the open"):
         return MAJOR_SPORT_KEYS["the_open"]
     return ""
-
-
-def _course_key(name: str) -> str:
-    return " ".join(str(name or "").lower().split())
-
-
-def _norm_name(name: str) -> str:
-    return model._fold_name(name)
-
-
-def _load_tee_time_overrides(event_id: str, event_name: str) -> dict[str, dict]:
-    """Manual tee sheet: event_id,event,name,round,tee_time,start_hole."""
-    if not TEE_TIMES_CSV.exists():
-        return {}
-    import csv
-
-    out: dict[str, dict] = {}
-    with TEE_TIMES_CSV.open() as f:
-        for row in csv.DictReader(f):
-            row_event_id = str(row.get("event_id") or "").strip()
-            row_event = str(row.get("event") or row.get("event_name") or "").strip()
-            if row_event_id and row_event_id != str(event_id):
-                continue
-            if row_event and _course_key(row_event) != _course_key(event_name):
-                continue
-            name = str(row.get("name") or row.get("player") or "").strip()
-            if not name:
-                continue
-            try:
-                rnd = int(float(row.get("round") or row.get("round_no") or 1))
-            except (TypeError, ValueError):
-                rnd = 1
-            if rnd not in (1, 2):
-                continue
-            entry = out.setdefault(_norm_name(name), {})
-            tee_time = str(row.get("tee_time") or "").strip()
-            start_hole = str(row.get("start_hole") or "").strip()
-            if tee_time:
-                entry[f"tee_time_r{rnd}"] = tee_time
-            if start_hole:
-                entry[f"start_hole_r{rnd}"] = start_hole
-    return out
-
-
-def _apply_tee_time_overrides(field_rows: list, overrides: dict[str, dict]) -> list:
-    out = []
-    for row in field_rows:
-        data = row.as_store_row() if hasattr(row, "as_store_row") else dict(row)
-        patch = overrides.get(_norm_name(data.get("name", ""))) or {}
-        data.update(patch)
-        out.append(data)
-    return out
 
 
 def _tee_time_counts(field_rows: list) -> dict[str, int]:

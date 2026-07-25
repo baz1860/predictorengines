@@ -89,13 +89,25 @@ def _field_names() -> list[str]:
 def _rated_field(course="", major=False):
     """Rated Player objects from the fitted model, with legacy fallback."""
     from .model import load_field, load_players
+    context = model.load_field_context()
+    course = course or context.get("course", "")
     try:
         field_items = load_field(players=load_players())
     except FileNotFoundError:
         field_items = _field_names()
     params = model.load_params()
     if params:
-        return model.predict_field(field_items, params, course=course, is_major=major), True
+        return model.predict_field(
+            field_items,
+            params,
+            course=course,
+            course_par=int(context.get("course_par") or 0),
+            course_yards=int(context.get("course_yards") or 0),
+            par3_holes=int(context.get("par3_holes") or 0),
+            par4_holes=int(context.get("par4_holes") or 0),
+            par5_holes=int(context.get("par5_holes") or 0),
+            is_major=major,
+        ), True
     # legacy path: players.csv composite ratings
     from .model import compute_ratings, load_course_history, load_recent_form
     field = load_field(players=load_players())

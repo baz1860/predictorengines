@@ -78,6 +78,8 @@ class Player:
     # Computed composite
     rating: float = 0.0
     sigma: float = DEFAULT_SIGMA
+    birdie_rate: float = 0.18  # birdie-or-better holes / holes played
+    bogey_rate: float = 0.14   # exactly-bogey holes / holes played
     blowup_rate: float = 0.02  # double-bogey-or-worse holes / holes played
 
 
@@ -190,6 +192,29 @@ def load_field_event(path: Path | None = None) -> str:
             if ev:
                 return ev
     return ""
+
+
+def load_field_context(path: Path | None = None) -> dict:
+    """Current event/course metadata embedded in ``field.csv`` by refresh."""
+    path = path or DATA_DIR / "field.csv"
+    if not path.exists():
+        return {}
+    try:
+        with path.open() as handle:
+            row = next(csv.DictReader(handle), None) or {}
+    except (OSError, csv.Error):
+        return {}
+    return {
+        "event_id": str(row.get("event_id") or "").strip(),
+        "event": str(row.get("event") or "").strip(),
+        "course": str(row.get("course") or "").strip(),
+        "course_id": str(row.get("course_id") or "").strip(),
+        "course_par": _safe_int(row.get("course_par"), 0),
+        "course_yards": _safe_int(row.get("course_yards"), 0),
+        "par3_holes": _safe_int(row.get("par3_holes"), 0),
+        "par4_holes": _safe_int(row.get("par4_holes"), 0),
+        "par5_holes": _safe_int(row.get("par5_holes"), 0),
+    }
 
 
 def load_course_history(
@@ -352,6 +377,8 @@ FORM_WINDOW_DAYS = 70           # only rounds inside this window feed form
 FORM_K = 12.0                   # EB shrink for form (equivalent rounds)
 FORM_WEIGHT = 0.7               # how much form nudges the rating (validate tunes)
 COURSE_K = 12.0                 # EB shrink for course fit
+COURSE_PROFILE_RIDGE = 40.0     # shrink player par/yardage sensitivity
+COURSE_PROFILE_WEIGHT = 0.5     # conservative general-course adjustment
 DEFAULT_SKILL_QUANTILE = 0.20   # rating for unknown players (weak-field default)
 
 DEFAULT_MODEL_CONFIG = {
@@ -361,11 +388,14 @@ DEFAULT_MODEL_CONFIG = {
     "form_halflife_days": FORM_HALFLIFE_DAYS,
     "form_weight": FORM_WEIGHT,
     "course_k": COURSE_K,
+    "course_profile_ridge": COURSE_PROFILE_RIDGE,
+    "course_profile_weight": COURSE_PROFILE_WEIGHT,
 }
 
 PUBLIC_STAT_BLEND = 0.15
 GLOBAL_PRIOR_MAX_BLEND = 0.25
 WEATHER_WAVE_MAX_ABS = 0.35
+COURSE_PROFILE_MAX_ABS = 0.35
 
 
 def load_model_config(path: Path | None = None) -> dict:
@@ -535,6 +565,8 @@ def fit(rounds_df, asof=None, config: dict | None = None,
     form_halflife = float(cfg["form_halflife_days"])
     form_weight = float(cfg["form_weight"])
     course_k = float(cfg["course_k"])
+    course_profile_ridge = float(cfg["course_profile_ridge"])
+    course_profile_weight = float(cfg["course_profile_weight"])
 
     df = rounds_df
     if asof is not None:
@@ -602,22 +634,90 @@ def fit(rounds_df, asof=None, config: dict | None = None,
     holes = df.get(
         "holes_scored", pd.Series(0, index=df.index)
     ).fillna(0).values.astype(float)
+    birdies = df.get(
+        "birdies_or_better", pd.Series(0, index=df.index)
+    ).fillna(0).values.astype(float)
+    bogeys = df.get(
+        "bogeys", pd.Series(0, index=df.index)
+    ).fillna(0).values.astype(float)
     doubles = df.get(
         "double_bogeys_or_worse", pd.Series(0, index=df.index)
     ).fillna(0).values.astype(float)
     total_holes = float(holes[hole_mask].sum())
+    birdie_rate_field = (
+        float(birdies[hole_mask].sum() / total_holes)
+        if total_holes > 0 else 0.18
+    )
+    bogey_rate_field = (
+        float(bogeys[hole_mask].sum() / total_holes)
+        if total_holes > 0 else 0.14
+    )
     double_bogey_rate_field = (
         float(doubles[hole_mask].sum() / total_holes)
         if total_holes > 0 else 0.02
     )
     holes_p = np.bincount(pidx, weights=holes, minlength=np_)
+    birdies_p = np.bincount(pidx, weights=birdies, minlength=np_)
+    bogeys_p = np.bincount(pidx, weights=bogeys, minlength=np_)
     doubles_p = np.bincount(pidx, weights=doubles, minlength=np_)
     # Twenty rounds of field-rate pseudo-observations prevent tiny scorecards
     # from creating extreme simulated tails.
     blowup_prior_holes = 360.0
+    birdie_rate_p = (
+        birdies_p + blowup_prior_holes * birdie_rate_field
+    ) / (holes_p + blowup_prior_holes)
+    bogey_rate_p = (
+        bogeys_p + blowup_prior_holes * bogey_rate_field
+    ) / (holes_p + blowup_prior_holes)
     blowup_rate_p = (
         doubles_p + blowup_prior_holes * double_bogey_rate_field
     ) / (holes_p + blowup_prior_holes)
+
+    # ── par-3 / par-4 / par-5 player profile ──
+    # Each observation is net of that tournament-round's field scoring rate for
+    # the same par type. The profile therefore captures relative suitability,
+    # not an easier setup or a hot scoring week. Shrink by 20 rounds of holes.
+    par_profiles = [dict() for _ in range(np_)]
+    par_profile_prior_holes = 360.0
+    for par in (3, 4, 5):
+        value_col = pd.to_numeric(
+            df.get(f"par{par}_to_par", pd.Series(0, index=df.index)),
+            errors="coerce",
+        ).fillna(0.0)
+        holes_col = pd.to_numeric(
+            df.get(f"par{par}_holes", pd.Series(0, index=df.index)),
+            errors="coerce",
+        ).fillna(0.0)
+        tr_total = value_col.groupby(df["tr"]).transform("sum")
+        tr_holes = holes_col.groupby(df["tr"]).transform("sum")
+        tr_rate = np.divide(
+            tr_total.values,
+            tr_holes.values,
+            out=np.zeros(len(df), dtype=float),
+            where=tr_holes.values > 0,
+        )
+        par_holes = holes_col.values.astype(float)
+        par_sg = -(value_col.values.astype(float) - par_holes * tr_rate)
+        player_holes = np.bincount(pidx, weights=par_holes, minlength=np_)
+        player_sg = np.bincount(pidx, weights=par_sg, minlength=np_)
+        player_rounds = np.bincount(
+            pidx, weights=(par_holes > 0).astype(float), minlength=np_
+        )
+        par_skill = player_sg / (player_holes + par_profile_prior_holes)
+        centers = np.divide(
+            player_holes,
+            player_rounds,
+            out=np.zeros(np_, dtype=float),
+            where=player_rounds > 0,
+        )
+        for i in range(np_):
+            if player_holes[i] >= 72:
+                par_profiles[i][f"par{par}_skill_per_hole"] = round(
+                    float(par_skill[i]), 6
+                )
+                par_profiles[i][f"par{par}_center_holes"] = round(
+                    float(centers[i]), 3
+                )
 
     # ── major σ multiplier ──
     is_major = df["is_major"].astype(int).values == 1
@@ -650,6 +750,64 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         course_fit_lookup.get((str(course), str(player)), 0.0)
         for course, player in zip(df["course"].values, df["player"].values)
     ])
+
+    # ── player sensitivity to measured course par and yardage ──
+    # Estimate within-player slopes on field/difficulty-adjusted residuals.
+    # Centering each player's observed course mix keeps durable skill from being
+    # counted again; ridge shrinkage prevents sparse schedules producing large
+    # course-style claims. Exact-venue course fit takes precedence at prediction.
+    par_values = pd.to_numeric(
+        df.get("course_par", pd.Series(np.nan, index=df.index)), errors="coerce"
+    ).values.astype(float)
+    yard_values = pd.to_numeric(
+        df.get("course_yards", pd.Series(np.nan, index=df.index)), errors="coerce"
+    ).values.astype(float)
+    valid_course = (
+        np.isfinite(par_values) & np.isfinite(yard_values)
+        & (par_values >= 68) & (par_values <= 75)
+        & (yard_values >= 5000) & (yard_values <= 9000)
+    )
+    if valid_course.any():
+        course_weights = w[valid_course] ** 2
+        par_mean = float(np.average(par_values[valid_course], weights=course_weights))
+        yard_mean = float(np.average(yard_values[valid_course], weights=course_weights))
+        par_sd = float(np.sqrt(np.average(
+            (par_values[valid_course] - par_mean) ** 2, weights=course_weights
+        ))) or 1.0
+        yard_sd = float(np.sqrt(np.average(
+            (yard_values[valid_course] - yard_mean) ** 2, weights=course_weights
+        ))) or 1.0
+    else:
+        par_mean, par_sd = 72.0, 1.0
+        yard_mean, yard_sd = 7200.0, 500.0
+    z_par = np.where(valid_course, (par_values - par_mean) / par_sd, 0.0)
+    z_yards = np.where(valid_course, (yard_values - yard_mean) / yard_sd, 0.0)
+    course_profile = [None] * np_
+    player_order = np.argsort(pidx, kind="stable")
+    player_stops = np.cumsum(counts.astype(int))
+    player_start = 0
+    for i, player_stop in enumerate(player_stops):
+        player_rows = player_order[player_start:player_stop]
+        player_start = player_stop
+        rows_valid = player_rows[valid_course[player_rows]]
+        n_profile = len(rows_valid)
+        if n_profile < 12:
+            continue
+        ww = w[rows_valid] ** 2
+        x = np.column_stack((z_par[rows_valid], z_yards[rows_valid]))
+        center = np.average(x, axis=0, weights=ww)
+        xc = x - center
+        target = -course_net_resid[rows_valid]
+        target = target - np.average(target, weights=ww)
+        xtwx = (xc.T * ww) @ xc + course_profile_ridge * np.eye(2)
+        beta = np.linalg.solve(xtwx, (xc.T * ww) @ target)
+        course_profile[i] = {
+            "par_slope": round(float(beta[0]), 5),
+            "yards_slope": round(float(beta[1]), 5),
+            "par_center_z": round(float(center[0]), 5),
+            "yards_center_z": round(float(center[1]), 5),
+            "rounds": n_profile,
+        }
     recent_cut = asof - pd.Timedelta(days=FORM_WINDOW_DAYS)
     rmask = df["date"].values >= np.datetime64(recent_cut)
     fw = np.sqrt(0.5 ** (age / form_halflife)) * rmask
@@ -670,12 +828,22 @@ def fit(rounds_df, asof=None, config: dict | None = None,
         "sigma_field": round(sigma_field, 4),
         "major_sigma_mult": major_sigma_mult,
         "double_bogey_rate_field": round(double_bogey_rate_field, 6),
+        "birdie_rate_field": round(birdie_rate_field, 6),
+        "bogey_rate_field": round(bogey_rate_field, 6),
+        "course_context": {
+            "par_mean": round(par_mean, 4),
+            "par_sd": round(par_sd, 4),
+            "yards_mean": round(yard_mean, 2),
+            "yards_sd": round(yard_sd, 2),
+        },
         "skill_halflife_days": skill_halflife,
         "ridge_skill": ridge_skill,
         "sigma_shrink_rounds": sigma_shrink,
         "form_halflife_days": form_halflife,
         "form_weight": form_weight,
         "course_k": course_k,
+        "course_profile_ridge": course_profile_ridge,
+        "course_profile_weight": course_profile_weight,
         "model_config": {k: float(cfg[k]) for k in DEFAULT_MODEL_CONFIG},
         "default_skill": round(default_skill, 4),
         "public_stat_blend": PUBLIC_STAT_BLEND,
@@ -687,8 +855,12 @@ def fit(rounds_df, asof=None, config: dict | None = None,
                 "sigma": round(float(sigma_p[i]), 4),
                 "form": round(float(form[i]), 4),
                 "n_rounds": int(counts[i]),
+                "birdie_rate": round(float(birdie_rate_p[i]), 6),
+                "bogey_rate": round(float(bogey_rate_p[i]), 6),
                 "blowup_rate": round(float(blowup_rate_p[i]), 6),
                 "hole_sample": int(holes_p[i]),
+                **({"par_profile": par_profiles[i]} if par_profiles[i] else {}),
+                **({"course_profile": course_profile[i]} if course_profile[i] else {}),
             } for i, p in enumerate(players)
         },
         "courses": courses,
@@ -1012,7 +1184,61 @@ def _weather_round_adjustments(player: Player, weather_features: dict) -> dict[i
     }
 
 
+def _course_profile_adjustment(
+    player_params: dict,
+    params: dict,
+    course_par: int = 0,
+    course_yards: int = 0,
+    par3_holes: int = 0,
+    par4_holes: int = 0,
+    par5_holes: int = 0,
+) -> float:
+    profile = player_params.get("course_profile") or {}
+    par_profile = player_params.get("par_profile") or {}
+    context = params.get("course_context") or {}
+    if not profile and not par_profile:
+        return 0.0
+    raw = 0.0
+    if profile and course_par and course_yards:
+        par_sd = float(context.get("par_sd") or 1.0)
+        yards_sd = float(context.get("yards_sd") or 1.0)
+        z_par = (
+            float(course_par) - float(context.get("par_mean") or 72.0)
+        ) / par_sd
+        z_yards = (
+            float(course_yards) - float(context.get("yards_mean") or 7200.0)
+        ) / yards_sd
+        raw += (
+            float(profile.get("par_slope") or 0.0)
+            * (z_par - float(profile.get("par_center_z") or 0.0))
+            + float(profile.get("yards_slope") or 0.0)
+            * (z_yards - float(profile.get("yards_center_z") or 0.0))
+        )
+    if par_profile:
+        # Standard layouts have four par 3s; when the feed omits hole objects,
+        # total par still identifies the usual par-5 count (par = 68 + n_par5).
+        if not any((par3_holes, par4_holes, par5_holes)) and course_par:
+            par3_holes = 4
+            par5_holes = max(0, min(6, int(course_par) - 68))
+            par4_holes = 18 - par3_holes - par5_holes
+        for par, count in (
+            (3, par3_holes),
+            (4, par4_holes),
+            (5, par5_holes),
+        ):
+            if count:
+                raw += (
+                    float(count)
+                    - float(par_profile.get(f"par{par}_center_holes") or count)
+                ) * float(par_profile.get(f"par{par}_skill_per_hole") or 0.0)
+    weight = float(params.get("course_profile_weight", COURSE_PROFILE_WEIGHT))
+    return max(-COURSE_PROFILE_MAX_ABS, min(COURSE_PROFILE_MAX_ABS, weight * raw))
+
+
 def _rating_for_components(name: str, params: dict, course: str = "",
+                           course_par: int = 0, course_yards: int = 0,
+                           par3_holes: int = 0, par4_holes: int = 0,
+                           par5_holes: int = 0,
                            world_rank: int | None = None,
                            global_priors: dict | None = None,
                            feature_flags: dict | None = None) -> tuple[float, float, dict]:
@@ -1020,7 +1246,7 @@ def _rating_for_components(name: str, params: dict, course: str = "",
     canon = resolve_name(name, params)
     pl = params.get("players", {}).get(canon) if canon else None
     fw = params.get("form_weight", FORM_WEIGHT)
-    flags = {"public_stat": True, "global_priors": True,
+    flags = {"public_stat": True, "global_priors": True, "course_profile": True,
              **(feature_flags or {})}
     stat_prior = _public_stat_prior(name, params, canon) if flags["public_stat"] else None
     manual_global = _global_player_prior(name, canon, global_priors) if flags["global_priors"] else None
@@ -1030,6 +1256,7 @@ def _rating_for_components(name: str, params: dict, course: str = "",
         "form": 0.0,
         "public_stat": 0.0,
         "course_fit": 0.0,
+        "course_profile": 0.0,
         "global_prior": 0.0,
     }
     if pl is None:
@@ -1066,22 +1293,44 @@ def _rating_for_components(name: str, params: dict, course: str = "",
             components["global_prior"] = blend * (gp - rating)
             rating = (1 - blend) * rating + blend * gp
         sigma = pl.get("sigma", params.get("sigma_field", DEFAULT_SIGMA))
-    if course:
-        cf = params.get("courses", {}).get(course, {}).get(canon, 0.0)
+    course_rows = params.get("courses", {}).get(course, {}) if course else {}
+    has_exact_course = bool(canon and canon in course_rows)
+    if has_exact_course:
+        cf = course_rows.get(canon, 0.0)
         components["course_fit"] = cf
         rating += cf
+    elif pl is not None and flags["course_profile"]:
+        profile_adj = _course_profile_adjustment(
+            pl,
+            params,
+            course_par=course_par,
+            course_yards=course_yards,
+            par3_holes=par3_holes,
+            par4_holes=par4_holes,
+            par5_holes=par5_holes,
+        )
+        components["course_profile"] = profile_adj
+        rating += profile_adj
     return rating, sigma, components
 
 
 def rating_for(name: str, params: dict, course: str = "",
+               course_par: int = 0, course_yards: int = 0,
+               par3_holes: int = 0, par4_holes: int = 0,
+               par5_holes: int = 0,
                world_rank: int | None = None) -> tuple[float, float]:
     """(rating, sigma) for one player from fitted params. Unknown → default."""
     rating, sigma, _components = _rating_for_components(
-        name, params, course, world_rank=world_rank)
+        name, params, course, course_par=course_par, course_yards=course_yards,
+        par3_holes=par3_holes, par4_holes=par4_holes, par5_holes=par5_holes,
+        world_rank=world_rank)
     return rating, sigma
 
 
 def predict_field(field_names, params: dict, course: str = "",
+                  course_par: int = 0, course_yards: int = 0,
+                  par3_holes: int = 0, par4_holes: int = 0,
+                  par5_holes: int = 0,
                   is_major: bool = False, weather_features: dict | None = None,
                   round_no: int = 1, feature_flags: dict | None = None) -> list[Player]:
     """Build rated Player objects for a field from fitted params.
@@ -1090,8 +1339,14 @@ def predict_field(field_names, params: dict, course: str = "",
     field mean (= 0) so simulate.py reads them directly; σ keeps absolute scale.
     """
     maj_mult = params.get("major_sigma_mult", 1.0) if is_major else 1.0
-    flags = {"weather": True, "public_stat": True,
-             "global_priors": True, **(feature_flags or {})}
+    flags = {
+        "weather": True,
+        "public_stat": True,
+        "global_priors": True,
+        "course_profile": True,
+        "scoring_shape": True,
+        **(feature_flags or {}),
+    }
     global_priors = load_global_player_priors() if flags["global_priors"] else {}
     weather_features = load_weather_features() if weather_features is None else weather_features
     out: list[Player] = []
@@ -1099,7 +1354,10 @@ def predict_field(field_names, params: dict, course: str = "",
         name = item.name if isinstance(item, Player) else str(item)
         world_rank = getattr(item, "owgr", None) if isinstance(item, Player) else None
         rating, sigma, comps = _rating_for_components(
-            name, params, course, world_rank=world_rank,
+            name, params, course, course_par=course_par,
+            course_yards=course_yards, par3_holes=par3_holes,
+            par4_holes=par4_holes, par5_holes=par5_holes,
+            world_rank=world_rank,
             global_priors=global_priors,
             feature_flags=flags)
         canon = resolve_name(name, params)
@@ -1114,6 +1372,14 @@ def predict_field(field_names, params: dict, course: str = "",
             p.start_hole_r2 = item.start_hole_r2
         p.rating = rating
         p.sigma = sigma * maj_mult
+        p.birdie_rate = (
+            float(pl.get("birdie_rate", params.get("birdie_rate_field", 0.18)))
+            if flags["scoring_shape"] else 0.0
+        )
+        p.bogey_rate = (
+            float(pl.get("bogey_rate", params.get("bogey_rate_field", 0.14)))
+            if flags["scoring_shape"] else 0.0
+        )
         p.blowup_rate = float(
             pl.get("blowup_rate", params.get("double_bogey_rate_field", 0.02))
         )

@@ -105,7 +105,13 @@ CREATE TABLE IF NOT EXISTS events (
     name TEXT NOT NULL,
     start_date TEXT NOT NULL DEFAULT '',
     end_date TEXT NOT NULL DEFAULT '',
+    course_id TEXT NOT NULL DEFAULT '',
     course_name TEXT NOT NULL DEFAULT '',
+    course_par INTEGER NOT NULL DEFAULT 0,
+    course_yards INTEGER NOT NULL DEFAULT 0,
+    par3_holes INTEGER NOT NULL DEFAULT 0,
+    par4_holes INTEGER NOT NULL DEFAULT 0,
+    par5_holes INTEGER NOT NULL DEFAULT 0,
     city TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL DEFAULT '',
     country TEXT NOT NULL DEFAULT '',
@@ -198,7 +204,26 @@ def init_db(path: Path | str | None = None) -> Path:
     p = Path(path) if path is not None else active_db_path()
     with connect(p) as con:
         con.executescript(SCHEMA)
+        # Existing live-cache databases predate the current course context.
+        # SQLite has no portable ADD COLUMN IF NOT EXISTS, so migrate explicitly.
+        for name, definition in {
+            "course_id": "TEXT NOT NULL DEFAULT ''",
+            "course_par": "INTEGER NOT NULL DEFAULT 0",
+            "course_yards": "INTEGER NOT NULL DEFAULT 0",
+            "par3_holes": "INTEGER NOT NULL DEFAULT 0",
+            "par4_holes": "INTEGER NOT NULL DEFAULT 0",
+            "par5_holes": "INTEGER NOT NULL DEFAULT 0",
+        }.items():
+            _ensure_column(con, "events", name, definition)
     return Path(p)
+
+
+def _ensure_column(
+    con: sqlite3.Connection, table: str, column: str, definition: str
+) -> None:
+    existing = {str(row[1]) for row in con.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def _pid(name: str, source_id: str = "") -> str:
@@ -253,10 +278,12 @@ def upsert_events(con: sqlite3.Connection, events: Iterable[Mapping]) -> int:
         con.execute(
             """
             INSERT INTO events(event_id, source, source_event_id, tour, season, name,
-                               start_date, end_date, course_name, city, state,
-                               country, latitude, longitude, timezone, is_major,
-                               cut_rule, no_cut, status, updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                               start_date, end_date, course_id, course_name,
+                               course_par, course_yards, par3_holes, par4_holes,
+                               par5_holes, city, state, country, latitude,
+                               longitude, timezone, is_major, cut_rule, no_cut,
+                               status, updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
             ON CONFLICT(event_id) DO UPDATE SET
                 source=excluded.source,
                 source_event_id=excluded.source_event_id,
@@ -265,7 +292,13 @@ def upsert_events(con: sqlite3.Connection, events: Iterable[Mapping]) -> int:
                 name=excluded.name,
                 start_date=excluded.start_date,
                 end_date=excluded.end_date,
+                course_id=excluded.course_id,
                 course_name=excluded.course_name,
+                course_par=excluded.course_par,
+                course_yards=excluded.course_yards,
+                par3_holes=excluded.par3_holes,
+                par4_holes=excluded.par4_holes,
+                par5_holes=excluded.par5_holes,
                 city=excluded.city,
                 state=excluded.state,
                 country=excluded.country,
@@ -287,7 +320,13 @@ def upsert_events(con: sqlite3.Connection, events: Iterable[Mapping]) -> int:
                 name,
                 str(r.get("start_date") or r.get("date") or "")[:10],
                 str(r.get("end_date") or "")[:10],
+                str(r.get("course_id") or ""),
                 str(r.get("course_name") or r.get("course") or ""),
+                _int_or_none(r.get("course_par")) or 0,
+                _int_or_none(r.get("course_yards")) or 0,
+                _int_or_none(r.get("par3_holes")) or 0,
+                _int_or_none(r.get("par4_holes")) or 0,
+                _int_or_none(r.get("par5_holes")) or 0,
                 str(r.get("city") or ""),
                 str(r.get("state") or ""),
                 str(r.get("country") or ""),
@@ -366,7 +405,9 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
         rows = con.execute(
             """
             SELECT p.display_name AS name, f.world_rank, f.status,
-                   e.event_id, e.name AS event, e.course_name AS course,
+                   e.event_id, e.name AS event, e.course_id,
+                   e.course_name AS course, e.course_par, e.course_yards,
+                   e.par3_holes, e.par4_holes, e.par5_holes,
                    e.cut_rule, e.no_cut,
                    f.tee_time_r1, f.tee_time_r2,
                    f.start_hole_r1, f.start_hole_r2,
@@ -382,7 +423,9 @@ def export_field_csv(event_id: str, path: Path | str = FIELD_CSV,
             (event_id,),
         ).fetchall()
     cols = [
-        "name", "world_rank", "status", "event_id", "event", "course",
+        "name", "world_rank", "status", "event_id", "event",
+        "course_id", "course", "course_par", "course_yards",
+        "par3_holes", "par4_holes", "par5_holes",
         "cut_rule", "no_cut",
         "tee_time_r1", "tee_time_r2", "start_hole_r1", "start_hole_r2",
         "course_sigma",

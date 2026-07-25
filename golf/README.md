@@ -108,7 +108,7 @@ golf/
 ├── fetch.py        # --rebuild / --seed / --accumulate → rounds.csv (history)
 ├── refresh.py      # free-source weekly refresh → field.csv + live SQLite cache
 ├── model.py        # fit(): time-decayed ridge skill + per-player σ + form +
-│                   #   course fit → model_params.json;  predict_field()
+│                   #   venue fit + measured course profiles → model_params.json
 ├── simulate.py     # 4-round Monte Carlo with cut; joint matchups / 3-balls
 ├── round_pricer.py # single-round group pricing (2-/3-balls; driven by season.py)
 ├── market.py       # power de-vig, log-odds market blend, CLV tracking
@@ -145,12 +145,14 @@ score_to_par[player, tournament, round] = mu + difficulty[t,r] − skill[player]
 - **σ (fitted, per player)** — round-to-round variance from fit residuals,
   Empirical-Bayes shrunk toward the field σ (~2.85); drives longshot value.
 - **form** — short-window residual nudge after removing the fitted course term;
-  **course fit** — shrunk per-(player, real venue) residual.
-- **blow-up rate** — EB-shrunk double-bogey-or-worse frequency from cached
-  hole scorecards; it gives each player a measured asymmetric right tail.
+  **course fit** — shrunk per-(player, real venue) residual. At unseen venues,
+  EB-shrunk par-3/4/5 performance and within-player par/yardage sensitivities
+  provide a capped general-course adjustment.
+- **scoring shape** — EB-shrunk birdie, bogey, and double-bogey frequencies from
+  cached hole scorecards give each player a measured asymmetric round shape.
 
 `predict_field()` turns these into per-player `rating` + `σ`; `simulate.py` draws
-four correlated rounds with player-specific blow-up tails
+four correlated rounds with player-specific scoring-shape tails
 (`data/sim_config.json`: `round_corr`, `blowup_mix`). Win, top-N, make-cut,
 matchup and 2-/3-ball probabilities all come from that one joint distribution,
 so market nesting is true by construction.

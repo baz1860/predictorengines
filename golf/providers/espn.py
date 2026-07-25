@@ -59,6 +59,9 @@ class EspnEvent:
     course_id: str = ""
     course_par: int = 0
     course_yards: int = 0
+    par3_holes: int = 0
+    par4_holes: int = 0
+    par5_holes: int = 0
     cut_round: int = 2
     cut_score: float | None = None
 
@@ -676,6 +679,7 @@ def _event_from_payload(ev: dict, tour: str = "pga") -> EspnEvent:
         )
         cut_round = 0 if no_cut else 2
     course = _course(ev, comp)
+    hole_counts = _course_hole_counts(course)
     return EspnEvent(
         event_id=str(ev.get("id") or ""),
         source_event_id=str(ev.get("id") or ""),
@@ -690,6 +694,9 @@ def _event_from_payload(ev: dict, tour: str = "pga") -> EspnEvent:
         course_id=str(course.get("id") or ""),
         course_par=_safe_int(course.get("shotsToPar")) or 0,
         course_yards=_safe_int(course.get("totalYards")) or 0,
+        par3_holes=hole_counts[3],
+        par4_holes=hole_counts[4],
+        par5_holes=hole_counts[5],
         cut_round=cut_round or 0,
         cut_score=_safe_float(tournament.get("cutScore")),
         tour=tour,
@@ -720,6 +727,15 @@ def _course(ev: dict, comp: dict) -> dict:
         if isinstance(src, dict):
             return src
     return {}
+
+
+def _course_hole_counts(course: dict) -> dict[int, int]:
+    counts = {3: 0, 4: 0, 5: 0}
+    for hole in course.get("holes") or []:
+        par = _safe_int(hole.get("shotsToPar"))
+        if par in counts:
+            counts[par] += 1
+    return counts
 
 
 def _status_name(comp: dict) -> str:

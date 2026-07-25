@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import sqlite3
 from pathlib import Path
 
 from golf import model
@@ -53,6 +54,12 @@ def _event_payload() -> dict:
                     "host": True,
                     "shotsToPar": 72,
                     "totalYards": 7600,
+                    "holes": [
+                        {"number": hole, "shotsToPar": (
+                            3 if hole <= 4 else 5 if hole <= 8 else 4
+                        )}
+                        for hole in range(1, 19)
+                    ],
                 },
             ],
             "competitions": [{
@@ -91,6 +98,13 @@ def test_history_uses_per_event_status_course_rules_and_tee_times(monkeypatch):
 
 def test_espn_live_and_history_names_resolve_to_one_provider():
     assert legacy.EspnProvider is EspnGolfProvider
+
+
+def test_event_exposes_measured_course_hole_mix():
+    from golf.providers.espn import _event_from_payload
+
+    event = _event_from_payload(_event_payload()["events"][0])
+    assert (event.par3_holes, event.par4_holes, event.par5_holes) == (4, 10, 4)
 
 
 class _StaticProvider:
@@ -274,3 +288,92 @@ def test_integrity_rejects_duplicate_round_keys(tmp_path):
     stats, errors = integrity.check_rounds(rounds)
     assert stats["rows"] == 2
     assert any("duplicate round key" in error for error in errors)
+
+
+def test_course_profile_uses_par_mix_and_yardage():
+    params = {
+        "course_profile_weight": 0.5,
+        "course_context": {
+            "par_mean": 71.0,
+            "par_sd": 1.0,
+            "yards_mean": 7200.0,
+            "yards_sd": 200.0,
+        },
+    }
+    player = {
+        "course_profile": {
+            "par_slope": 0.2,
+            "yards_slope": 0.1,
+            "par_center_z": 0.0,
+            "yards_center_z": 0.0,
+        },
+        "par_profile": {
+            "par3_skill_per_hole": 0.02,
+            "par3_center_holes": 4.0,
+            "par4_skill_per_hole": -0.01,
+            "par4_center_holes": 10.0,
+            "par5_skill_per_hole": 0.03,
+            "par5_center_holes": 4.0,
+        },
+    }
+    adjustment = model._course_profile_adjustment(
+        player,
+        params,
+        course_par=72,
+        course_yards=7400,
+        par3_holes=4,
+        par4_holes=9,
+        par5_holes=5,
+    )
+    assert adjustment > 0.15
+
+
+def test_scoring_shape_consumes_birdie_and_bogey_rates():
+    import numpy as np
+    from golf import simulate
+
+    common = dict(
+        means=np.zeros(1),
+        sigmas=np.ones(1),
+        n_sims=20_000,
+        n=1,
+        round_corr=0.3,
+        tail_df=None,
+        blowup_rates=np.array([0.02]),
+        blowup_mix=0.4,
+    )
+    shaped = simulate._draw_scores(
+        np.random.default_rng(4),
+        birdie_rates=np.array([0.24]),
+        bogey_rates=np.array([0.11]),
+        **common,
+    )
+    doubles_only = simulate._draw_scores(
+        np.random.default_rng(4),
+        birdie_rates=np.array([0.0]),
+        bogey_rates=np.array([0.0]),
+        **common,
+    )
+    assert not np.array_equal(shaped, doubles_only)
+    assert abs(float(shaped.mean())) < 0.05
+
+
+def test_store_migrates_old_round_mirror_and_course_columns(tmp_path):
+    from golf import store
+
+    db = tmp_path / "golf.db"
+    with sqlite3.connect(db) as con:
+        con.execute("CREATE TABLE rounds(x)")
+        con.execute("CREATE TABLE events(event_id TEXT PRIMARY KEY, name TEXT NOT NULL)")
+    store.init_db(db)
+    with store.connect(db) as con:
+        tables = {
+            row[0]
+            for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        columns = {row[1] for row in con.execute("PRAGMA table_info(events)")}
+    assert "rounds" not in tables
+    assert {
+        "course_id", "course_par", "course_yards",
+        "par3_holes", "par4_holes", "par5_holes",
+    } <= columns

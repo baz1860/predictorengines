@@ -66,7 +66,8 @@ _USE_CONFIG = object()   # sentinel: "fall back to load_sim_config()"
 
 
 def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
-                 score_shifts=None, blowup_rates=None, blowup_mix: float = 0.0):
+                 score_shifts=None, birdie_rates=None, bogey_rates=None,
+                 blowup_rates=None, blowup_mix: float = 0.0):
     """Draw scores under the one joint round-correlation / t-tail model."""
     rc = float(min(max(round_corr, 0.0), 0.95))
     if rc <= 0.0 and tail_df is None:
@@ -81,18 +82,43 @@ def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
         trans_sd = sigmas * math.sqrt(1.0 - rc)      # per-round component
         u = rng.standard_normal((n_sims, n)) * persist_sd[np.newaxis, :]
         mix = min(max(float(blowup_mix or 0.0), 0.0), 0.9)
-        if mix > 0.0 and blowup_rates is not None:
-            rate = np.clip(np.asarray(blowup_rates, dtype=float), 0.001, 0.15)
+        if (
+            mix > 0.0
+            and birdie_rates is not None
+            and bogey_rates is not None
+            and blowup_rates is not None
+        ):
+            birdie = np.clip(np.asarray(birdie_rates, dtype=float), 0.0, 0.40)
+            bogey = np.clip(np.asarray(bogey_rates, dtype=float), 0.0, 0.35)
+            double = np.clip(np.asarray(blowup_rates, dtype=float), 0.001, 0.15)
+            total = birdie + bogey + double
+            scale = np.maximum(1.0, total / 0.95)
+            birdie, bogey, double = birdie / scale, bogey / scale, double / scale
             normal = rng.standard_normal((n_sims, n, 4))
-            counts = rng.binomial(
-                18, rate[np.newaxis, :, np.newaxis], size=(n_sims, n, 4)
+            shape = (n_sims, n, 4)
+            birdie_counts = rng.binomial(
+                18, birdie[np.newaxis, :, np.newaxis], size=shape
             )
-            mean_b = 18.0 * rate
-            sd_b = np.sqrt(18.0 * rate * (1.0 - rate))
-            blowup = (
-                counts - mean_b[np.newaxis, :, np.newaxis]
-            ) / sd_b[np.newaxis, :, np.newaxis]
-            z = math.sqrt(1.0 - mix) * normal + math.sqrt(mix) * blowup
+            remaining = 18 - birdie_counts
+            bogey_cond = bogey / np.maximum(1e-9, 1.0 - birdie)
+            bogey_counts = rng.binomial(
+                remaining, bogey_cond[np.newaxis, :, np.newaxis]
+            )
+            remaining = remaining - bogey_counts
+            double_cond = double / np.maximum(1e-9, 1.0 - birdie - bogey)
+            double_counts = rng.binomial(
+                remaining, double_cond[np.newaxis, :, np.newaxis]
+            )
+            shape_score = -birdie_counts + bogey_counts + 2.0 * double_counts
+            mean_hole = -birdie + bogey + 2.0 * double
+            second_hole = birdie + bogey + 4.0 * double
+            shape_sd = np.sqrt(
+                np.maximum(1e-9, 18.0 * (second_hole - mean_hole ** 2))
+            )
+            shape_z = (
+                shape_score - (18.0 * mean_hole)[np.newaxis, :, np.newaxis]
+            ) / shape_sd[np.newaxis, :, np.newaxis]
+            z = math.sqrt(1.0 - mix) * normal + math.sqrt(mix) * shape_z
         elif tail_df is not None and float(tail_df) > 2.0:
             df = float(tail_df)
             # variance-standardise the t so the marginal per-round spread stays
@@ -163,9 +189,9 @@ def simulate_tournament(
         independent-round noise averages out. `round_corr = 0.0` reproduces the
         legacy independent-rounds behaviour exactly.
       * `blowup_mix`: share of transient variance assigned to a standardized
-        binomial double-bogey process parameterized by each player's fitted
-        blow-up rate. This preserves the marginal variance while adding measured
-        player-specific right skew.
+        hole-outcome process parameterized by each player's fitted birdie,
+        bogey, and double-bogey rates. This preserves marginal variance while
+        adding measured player-specific scoring skew.
       * `tail_df`: legacy symmetric Student-t alternative, used only when
         `blowup_mix` is zero. The shipped configuration leaves it disabled.
 
@@ -201,6 +227,8 @@ def simulate_tournament(
     idx_of  = {nm: i for i, nm in enumerate(names)}
     ratings = np.array([p.rating for p in players])   # expected SG vs field
     sigmas  = np.array([p.sigma  for p in players])
+    birdie_rates = np.array([getattr(p, "birdie_rate", 0.18) for p in players])
+    bogey_rates = np.array([getattr(p, "bogey_rate", 0.14) for p in players])
     blowup_rates = np.array([getattr(p, "blowup_rate", 0.02) for p in players])
 
     # Resolve requested pairings to index tuples (skip any unknown name)
@@ -231,7 +259,8 @@ def simulate_tournament(
     # Every tournament market uses this same joint draw.
     scores_all = _draw_scores(
         rng, means, sigmas, n_sims, n, round_corr, tail_df,
-        score_shifts=score_shifts, blowup_rates=blowup_rates,
+        score_shifts=score_shifts, birdie_rates=birdie_rates,
+        bogey_rates=bogey_rates, blowup_rates=blowup_rates,
         blowup_mix=blowup_mix)
 
     # R1+R2 totals
@@ -458,7 +487,18 @@ def main():
     params = M.load_params()
     if params:
         print("Ratings: fitted model (model_params.json)")
-        field = M.predict_field(field, params, course=args.course, is_major=args.major)
+        context = M.load_field_context()
+        field = M.predict_field(
+            field,
+            params,
+            course=args.course or context.get("course", ""),
+            course_par=int(context.get("course_par") or 0),
+            course_yards=int(context.get("course_yards") or 0),
+            par3_holes=int(context.get("par3_holes") or 0),
+            par4_holes=int(context.get("par4_holes") or 0),
+            par5_holes=int(context.get("par5_holes") or 0),
+            is_major=args.major,
+        )
     else:
         print("Ratings: legacy players.csv composite")
         field = compute_ratings(

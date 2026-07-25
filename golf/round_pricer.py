@@ -137,8 +137,19 @@ def price_round_groups(
                 start_hole_r2=item.start_hole_r2,
             )
         field_items.append(item)
+    context = M.load_field_context()
     rated = M.predict_field(
-        field_items, params, course=course, is_major=is_major, round_no=int(round_no or 1))
+        field_items,
+        params,
+        course=course or context.get("course", ""),
+        course_par=int(context.get("course_par") or 0),
+        course_yards=int(context.get("course_yards") or 0),
+        par3_holes=int(context.get("par3_holes") or 0),
+        par4_holes=int(context.get("par4_holes") or 0),
+        par5_holes=int(context.get("par5_holes") or 0),
+        is_major=is_major,
+        round_no=int(round_no or 1),
+    )
     rating = {
         p.name: p.rating + float((getattr(p, "weather_round_adj", {}) or {}).get(int(round_no or 1), 0.0))
         for p in rated

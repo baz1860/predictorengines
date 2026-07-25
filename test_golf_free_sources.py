@@ -14,7 +14,6 @@ from golf.providers.odds_manual import ManualOddsProvider, parse_skybet_threebal
 from golf.providers.pgatour_stats import parse_stat_page
 from golf.providers.weather import OpenMeteoProvider
 from golf.round_pricer import price_round_3balls
-from golf.tee_times import parse_tee_sheet_text
 from golf import simulate as golf_sim
 from golf import edge as golf_edge
 from golf import portfolio as golf_portfolio
@@ -217,7 +216,7 @@ def test_model_feature_adjustments():
           str(by_name["Early Player"].global_prior_adj))
 
 
-def test_weather_resolution_and_tee_overrides():
+def test_weather_resolution():
     provider = OpenMeteoProvider()
     loc, matched = provider.resolve_location(
         course_name="Travelers Championship",
@@ -227,41 +226,8 @@ def test_weather_resolution_and_tee_overrides():
           loc is not None and loc.course_name == "TPC River Highlands",
           f"{loc} matched={matched}")
 
-    with tempfile.TemporaryDirectory() as td:
-        path = Path(td) / "tee_times.csv"
-        old = golf_refresh.TEE_TIMES_CSV
-        path.write_text(
-            "event_id,event,name,round,tee_time,start_hole\n"
-            "E1,Test Event,Alex Smith,1,08:10,1\n"
-            "E1,Test Event,Alex Smith,2,13:20,10\n"
-        )
-        golf_refresh.TEE_TIMES_CSV = path
-        try:
-            overrides = golf_refresh._load_tee_time_overrides("E1", "Test Event")
-            rows = [{"name": "Alex Smith", "status": "active", "source_player_id": "1"}]
-            patched = golf_refresh._apply_tee_time_overrides(rows, overrides)
-        finally:
-            golf_refresh.TEE_TIMES_CSV = old
-        check("loads manual tee overrides",
-              overrides["alex smith"]["tee_time_r1"] == "08:10",
-              str(overrides))
-        check("applies manual tee overrides before field export",
-              patched[0]["tee_time_r2"] == "13:20" and patched[0]["start_hole_r2"] == "10",
-              str(patched))
 
-
-def test_tee_sheet_parser_and_weather_shift():
-    raw = """
-    Round 1
-    8:05 AM Tee 1 Scottie Scheffler / Rory McIlroy / Xander Schauffele
-    13:20 10 Tommy Fleetwood, Justin Rose
-    """
-    rows = parse_tee_sheet_text(raw, event_id="E1", event="Test", default_round=1)
-    check("parses pasted tee sheet groups", len(rows) == 5, str(rows))
-    check("parses tee time and start hole",
-          rows[0]["tee_time"] == "8:05 AM" and rows[0]["start_hole"] == "1",
-          str(rows[0]))
-
+def test_espn_tee_times_drive_weather_shift():
     early = model.Player(name="Early", tee_time_r1="08:00")
     late = model.Player(name="Late", tee_time_r1="14:00")
     weather = {"rounds": {"1": {"wave_penalty": {
