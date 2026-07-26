@@ -147,12 +147,15 @@ score_to_par[player, tournament, round] = mu + difficulty[t,r] − skill[player]
 - **form** — short-window residual nudge. Sparse exact-venue effects are disabled;
   EB-shrunk par-3/4/5 performance and within-player par/yardage sensitivities use
   only single-course events and provide a capped general-course adjustment.
-- **scoring shape** — EB-shrunk birdie, bogey, and double-bogey frequencies from
-  cached hole scorecards give each player a measured asymmetric round shape.
+- **scoring shape inputs** — EB-shrunk birdie, bogey, and double-bogey
+  frequencies from cached hole scorecards are available for an asymmetric round
+  shape, but the production mix remains zero after validation rejected it.
 
 `predict_field()` turns these into per-player `rating` + `σ`; `simulate.py` draws
 integer-stroke rounds. Correlation and player-specific scoring tails are disabled
-until they are retuned on the repaired cut history. Win, top-N, make-cut,
+because the 2026-07-26 pre-holdout retune did not clear its promotion gate. The
+general-course adjustment remains at its conservative 0.50 weight for the same
+reason. Win, top-N, make-cut,
 matchup and 2-/3-ball probabilities all come from that one joint distribution,
 so market nesting is true by construction.
 
@@ -170,7 +173,10 @@ so market nesting is true by construction.
 
 ```bash
 python3 -m golf.integrity                                    # offline data/model checks
-python3 -m golf.validate --since 2024-06-01 --sims 8000   # walk-forward + gate
+python3 -m golf.validate --since 2024-06-01 --sims 8000      # walk-forward + gate
+python3 -m golf.validate --tune-shape --since 2024-06-01 \
+  --selection-split 2025-07-01 --holdout 2026-01-01 \
+  --sims 8000 --write                                        # sealed-holdout retune
 ```
 
 `validate.py` excludes current-only public stats, global priors, weather, and

@@ -2,9 +2,14 @@
   "round_corr": 0.0,
   "tail_df": null,
   "blowup_mix": 0.0,
-  "source": "disabled pending honest retuning after 2026-07-25 cut-rule leakage repair",
+  "source": "golf.validate --tune-shape; retained control",
   "metrics": {
-    "status": "invalidated",
-    "note": "Previous tuning used realized ESPN cutCount as a pre-event rule. Independent integer-stroke rounds are the conservative fallback until the corrected history is retuned."
+    "status": "retained",
+    "selection_split": "2025-07-01",
+    "holdout": "2026-01-01",
+    "holdout_opened": false,
+    "screen_sims": 600,
+    "confirm_sims": 2666,
+    "reason": "No challenger cleared the pre-holdout improvement and market/winner guardrails."
   }
 }

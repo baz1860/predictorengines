@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # golf is a real package (Phase 4) — import its modules package-qualified.
-from golf import model
+from golf import model, simulate, validate
 
 PASS, FAIL = 0, 0
 
@@ -96,6 +96,46 @@ def test_historical_fit_excludes_current_public_stats(tmp_path, monkeypatch):
     monkeypatch.setattr(model, "PUBLIC_STATS_CSV", stats)
     params = model.fit(synthetic_rounds(), asof="2024-07-01")
     assert params["public_stat_priors"] == {}
+
+
+def test_shape_grid_contains_current_and_course_ablation():
+    current = {"round_corr": 0.0, "tail_df": None, "blowup_mix": 0.0}
+    candidates = validate._shape_candidates(current, 0.5)
+    assert {
+        **current,
+        "course_profile_weight": 0.5,
+    } in candidates
+    assert any(row["course_profile_weight"] == 0.0 for row in candidates)
+    assert any(
+        row["round_corr"] > 0.0 and row["blowup_mix"] > 0.0
+        for row in candidates
+    )
+
+
+def test_blowup_shape_applies_without_round_correlation():
+    import numpy as np
+
+    means = np.zeros(2)
+    sigmas = np.full(2, 3.0)
+    rates = np.full(2, 0.18)
+    kwargs = {
+        "means": means,
+        "sigmas": sigmas,
+        "n_sims": 20,
+        "n": 2,
+        "round_corr": 0.0,
+        "tail_df": None,
+        "birdie_rates": rates,
+        "bogey_rates": np.full(2, 0.14),
+        "blowup_rates": np.full(2, 0.02),
+    }
+    plain = simulate._draw_scores(
+        np.random.default_rng(7), blowup_mix=0.0, **kwargs
+    )
+    shaped = simulate._draw_scores(
+        np.random.default_rng(7), blowup_mix=0.2, **kwargs
+    )
+    assert not np.array_equal(plain, shaped)
 
 
 def main():

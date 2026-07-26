@@ -35,6 +35,7 @@ DATA_DIR = Path(__file__).parent / "data"
 PRED_CSV = DATA_DIR / "validation_predictions.csv"
 BASELINE_JSON = DATA_DIR / "validation_baseline.json"
 WEATHER_CONFIG_JSON = DATA_DIR / "weather_config.json"
+SHAPE_TUNING_JSON = DATA_DIR / "shape_tuning.json"
 
 MARKETS = ["win", "top5", "top10", "top20", "cut"]
 TOPN = {"top5": 5, "top10": 10, "top20": 20}
@@ -220,6 +221,161 @@ def walk_forward(df: pd.DataFrame, since: str, sims: int,
         if verbose:
             print(f"  {str(start.date())}  {ev.tournament_id}  "
                   f"{len(field):>3} players  (train={len(prior):,})")
+    return pd.DataFrame(rows)
+
+
+def _prepare_walk_forward_cases(
+    df: pd.DataFrame,
+    since: str,
+    config: dict | None = None,
+    verbose: bool = True,
+) -> list[dict]:
+    """Fit each historical event once for simulation/profile tuning.
+
+    The returned cases contain only point-in-time model parameters and event
+    facts. Candidate scoring shapes can therefore reuse the expensive fits
+    without changing the information available to any prediction.
+    """
+    event_columns = [
+        "tournament_id", "date", "course", "is_major", "event_name", "tour"
+    ]
+    event_columns += [
+        c for c in (
+            "cut_rule", "total_rounds", "no_cut", "course_par", "course_yards"
+        )
+        if c in df.columns
+    ]
+    events = (
+        df[event_columns]
+        .drop_duplicates("tournament_id")
+        .sort_values("date")
+    )
+    for column in ("par3_holes", "par4_holes", "par5_holes"):
+        if column in df.columns:
+            events[column] = events["tournament_id"].map(
+                df.groupby("tournament_id")[column].max()
+            )
+    since_ts = pd.Timestamp(since)
+    cases: list[dict] = []
+    for ev in events.itertuples():
+        start = pd.Timestamp(ev.date)
+        if start < since_ts:
+            continue
+        prior_count = int((df["date"] < start).sum())
+        if prior_count < MIN_TRAIN_ROUNDS:
+            continue
+        event_rounds = df[df["tournament_id"] == ev.tournament_id]
+        total_rounds = int(getattr(ev, "total_rounds", 4) or 4)
+        if total_rounds != 4 or int(event_rounds["round"].max()) != total_rounds:
+            continue
+        field_rows = (
+            event_rounds[["player", "dg_id"]]
+            .drop_duplicates("player")
+            .sort_values("player")
+        )
+        field = [
+            model.Player(name=str(row.player), dg_id=str(row.dg_id))
+            for row in field_rows.itertuples()
+        ]
+        if len(field) < 30:
+            continue
+        try:
+            params = model.fit(
+                df, asof=start, config=config, include_public_stats=False
+            )
+        except ValueError:
+            continue
+        cases.append({
+            "tournament_id": ev.tournament_id,
+            "date": start,
+            "course": str(ev.course),
+            "is_major": bool(ev.is_major),
+            "cut_rule": int(getattr(ev, "cut_rule", 65) or 65),
+            "no_cut": bool(int(getattr(ev, "no_cut", 0) or 0)),
+            "course_par": int(getattr(ev, "course_par", 0) or 0),
+            "course_yards": int(getattr(ev, "course_yards", 0) or 0),
+            "par3_holes": int(getattr(ev, "par3_holes", 0) or 0),
+            "par4_holes": int(getattr(ev, "par4_holes", 0) or 0),
+            "par5_holes": int(getattr(ev, "par5_holes", 0) or 0),
+            "field": field,
+            "params": params,
+            "actual": _actuals(event_rounds),
+        })
+        if verbose:
+            print(
+                f"  fit {str(start.date())}  {ev.tournament_id}  "
+                f"{len(field):>3} players  (train={prior_count:,})"
+            )
+    return cases
+
+
+def _simulate_cases(
+    cases: list[dict],
+    sims: int,
+    seed: int,
+    sim_config: dict,
+    course_profile_weight: float,
+) -> pd.DataFrame:
+    """Simulate cached point-in-time cases under one candidate configuration."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    safe_flags = {
+        "public_stat": False,
+        "global_priors": False,
+        "weather": False,
+        "exact_course": False,
+        "course_profile": course_profile_weight != 0.0,
+    }
+    for case in cases:
+        params = dict(case["params"])
+        params["course_profile_weight"] = float(course_profile_weight)
+        rated = model.predict_field(
+            case["field"],
+            params,
+            course=case["course"],
+            course_par=case["course_par"],
+            course_yards=case["course_yards"],
+            par3_holes=case["par3_holes"],
+            par4_holes=case["par4_holes"],
+            par5_holes=case["par5_holes"],
+            is_major=case["is_major"],
+            feature_flags=safe_flags,
+        )
+        res = gsim.simulate_tournament(
+            rated,
+            n_sims=sims,
+            cut_rule=case["cut_rule"],
+            no_cut=case["no_cut"],
+            rng=rng,
+            round_corr=float(sim_config["round_corr"]),
+            tail_df=sim_config.get("tail_df"),
+            blowup_mix=float(sim_config["blowup_mix"]),
+        )
+        for player in rated:
+            actual = case["actual"].get(player.name)
+            if actual is None:
+                continue
+            result = res[player.name]
+            rows.append({
+                "tournament_id": case["tournament_id"],
+                "date": str(case["date"].date()),
+                "point_in_time_safe": 1,
+                "validation_schema_version": VALIDATION_SCHEMA_VERSION,
+                "cut_rule": case["cut_rule"],
+                "no_cut": int(case["no_cut"]),
+                "is_major": int(case["is_major"]),
+                "player": player.name,
+                "p_win": result["win"],
+                "p_top5": result["top5"],
+                "p_top10": result["top10"],
+                "p_top20": result["top20"],
+                "p_cut": result["made_cut"],
+                "y_win": actual["win"],
+                "y_top5": actual["top5"],
+                "y_top10": actual["top10"],
+                "y_top20": actual["top20"],
+                "y_cut": actual["made_cut"],
+            })
     return pd.DataFrame(rows)
 
 
@@ -412,6 +568,387 @@ def tune_config(since: str, sims: int, seed: int = 0, write: bool = False,
     return out
 
 
+def _shape_candidates(
+    current_sim: dict,
+    current_course_weight: float,
+) -> list[dict]:
+    """Conservative joint grid for scoring shape and general course profile."""
+    correlations = [0.0, 0.10, 0.20, 0.30]
+    blowup_mixes = [0.0, 0.10, 0.20]
+    course_weights = sorted({0.0, 0.25, float(current_course_weight)})
+    candidates = [{
+        "round_corr": rc,
+        "tail_df": None,
+        "blowup_mix": mix,
+        "course_profile_weight": weight,
+    } for rc in correlations for mix in blowup_mixes for weight in course_weights]
+    current = {
+        "round_corr": float(current_sim["round_corr"]),
+        "tail_df": current_sim.get("tail_df"),
+        "blowup_mix": float(current_sim["blowup_mix"]),
+        "course_profile_weight": float(current_course_weight),
+    }
+    if current not in candidates:
+        candidates.insert(0, current)
+    return candidates
+
+
+def _shape_label(candidate: dict) -> str:
+    return (
+        f"corr={candidate['round_corr']:.2f},"
+        f" blowup={candidate['blowup_mix']:.2f},"
+        f" course={candidate['course_profile_weight']:.2f}"
+    )
+
+
+def _shape_result(candidate: dict, report: dict) -> dict:
+    return {
+        "candidate": candidate,
+        "label": _shape_label(candidate),
+        "headline": report["headline_brier"],
+        "top10": report["top10"]["brier"],
+        "top20": report["top20"]["brier"],
+        "cut": report["cut"]["brier"],
+        "winner_surprise": report["win_event"]["mean_surprise"],
+        "events": report["win_event"]["events"],
+    }
+
+
+def _shape_metrics(report: dict) -> dict:
+    """Compact promotion metrics suitable for the persisted tuning audit."""
+    return {
+        "headline": report["headline_brier"],
+        "win": report["win"]["brier"],
+        "top5": report["top5"]["brier"],
+        "top10": report["top10"]["brier"],
+        "top20": report["top20"]["brier"],
+        "cut": report["cut"]["brier"],
+        "winner_surprise": report["win_event"]["mean_surprise"],
+        "events": report["win_event"]["events"],
+    }
+
+
+def _shape_market_deltas(chosen: dict, current: dict) -> dict:
+    return {
+        market: chosen[market]["brier"] - current[market]["brier"]
+        for market in ("top10", "top20", "cut")
+    }
+
+
+def tune_shape(
+    since: str,
+    sims: int,
+    seed: int = 0,
+    write: bool = False,
+    split: str = "2025-07-01",
+    holdout: str = "2026-01-01",
+) -> dict:
+    """Tune joint round shape and course-profile weight without holdout peeking.
+
+    All candidates are screened before ``holdout``. Only the single challenger
+    selected there is evaluated on the final holdout, alongside the frozen
+    current configuration.
+    """
+    since_ts = pd.Timestamp(since)
+    split_ts = pd.Timestamp(split)
+    holdout_ts = pd.Timestamp(holdout)
+    if not since_ts < split_ts < holdout_ts:
+        raise SystemExit("Shape tuning requires since < split < holdout.")
+    df = model.load_rounds_df()
+    base_model_config = model.load_model_config()
+    rc, tail_df, blowup_mix = gsim.load_sim_config()
+    current_sim = {
+        "round_corr": rc, "tail_df": tail_df, "blowup_mix": blowup_mix
+    }
+    current_course_weight = float(base_model_config["course_profile_weight"])
+    current_candidate = {
+        **current_sim,
+        "course_profile_weight": current_course_weight,
+    }
+    candidates = _shape_candidates(current_sim, current_course_weight)
+    screen_sims = max(300, min(600, sims // 10))
+    confirm_sims = max(1500, min(3000, sims // 3))
+
+    print(
+        f"Golf shape tuning · {len(candidates)} candidates · "
+        f"{screen_sims} screen / {confirm_sims} confirm / {sims} holdout sims"
+    )
+    print(
+        f"  selection windows: {since}..{split} stability, "
+        f"{split}..{holdout} choice; final holdout {holdout}+"
+    )
+    print("Preparing point-in-time event fits (one fit per event)…")
+    cases = _prepare_walk_forward_cases(
+        df, since=since, config=base_model_config, verbose=True
+    )
+    development = [case for case in cases if case["date"] < split_ts]
+    selection = [
+        case for case in cases if split_ts <= case["date"] < holdout_ts
+    ]
+    final_holdout = [case for case in cases if case["date"] >= holdout_ts]
+    if not development or not selection or not final_holdout:
+        raise SystemExit(
+            "Shape tuning requires non-empty stability, selection, and holdout windows."
+        )
+    print(
+        f"Prepared {len(cases)} events: {len(development)} stability, "
+        f"{len(selection)} selection, {len(final_holdout)} sealed holdout."
+    )
+
+    screened = []
+    current_screen = None
+    print("\nPre-holdout screen:")
+    pre_holdout = development + selection
+    for index, candidate in enumerate(candidates, 1):
+        pred = _simulate_cases(
+            pre_holdout,
+            sims=screen_sims,
+            seed=seed,
+            sim_config=candidate,
+            course_profile_weight=candidate["course_profile_weight"],
+        )
+        dev_report = _rep_for_dates(pred, before=split)
+        selection_report = _rep_for_dates(pred, after=split, before=holdout)
+        row = {
+            **_shape_result(candidate, selection_report),
+            "stability_headline": dev_report["headline_brier"],
+            "stability_top10": dev_report["top10"]["brier"],
+            "stability_top20": dev_report["top20"]["brier"],
+            "stability_cut": dev_report["cut"]["brier"],
+        }
+        screened.append(row)
+        if candidate == current_candidate:
+            current_screen = row
+        print(
+            f"  [{index:>2}/{len(candidates)}] {row['label']:<43} "
+            f"stability {row['stability_headline']:.5f} "
+            f"selection {row['headline']:.5f}"
+        )
+    if current_screen is None:
+        raise RuntimeError("Current production shape is missing from candidate grid.")
+    feasible = [
+        row for row in screened
+        if row["stability_top10"] <= current_screen["stability_top10"] + 0.0015
+        and row["stability_top20"] <= current_screen["stability_top20"] + 0.0015
+        and row["stability_cut"] <= current_screen["stability_cut"] + 0.0015
+    ]
+    shortlist = sorted(
+        feasible or screened, key=lambda row: row["headline"]
+    )[:4]
+    if not any(row["candidate"] == current_candidate for row in shortlist):
+        shortlist.append(current_screen)
+
+    print("\nPre-holdout confirmation:")
+    confirmed = []
+    for row in shortlist:
+        candidate = row["candidate"]
+        pred = _simulate_cases(
+            pre_holdout,
+            sims=confirm_sims,
+            seed=seed,
+            sim_config=candidate,
+            course_profile_weight=candidate["course_profile_weight"],
+        )
+        dev_report = _rep_for_dates(pred, before=split)
+        selection_report = _rep_for_dates(pred, after=split, before=holdout)
+        result = {
+            **_shape_result(candidate, selection_report),
+            "stability": dev_report,
+            "selection": selection_report,
+        }
+        confirmed.append(result)
+        print(
+            f"  {result['label']:<43} stability "
+            f"{dev_report['headline_brier']:.5f} selection "
+            f"{selection_report['headline_brier']:.5f} winner "
+            f"{selection_report['win_event']['mean_surprise']:.4f}"
+        )
+    current_confirm = next(
+        row for row in confirmed if row["candidate"] == current_candidate
+    )
+    eligible = [
+        row for row in confirmed
+        if row["candidate"] != current_candidate
+        and row["stability"]["headline_brier"]
+        <= current_confirm["stability"]["headline_brier"] + 0.0005
+        and all(
+            row["selection"][market]["brier"]
+            <= current_confirm["selection"][market]["brier"] + 0.001
+            for market in ("top10", "top20", "cut")
+        )
+        and row["selection"]["win_event"]["mean_surprise"]
+        <= current_confirm["selection"]["win_event"]["mean_surprise"] + 0.05
+    ]
+    challenger = min(
+        eligible, key=lambda row: row["selection"]["headline_brier"]
+    ) if eligible else None
+    selection_pass = bool(
+        challenger
+        and challenger["selection"]["headline_brier"]
+        <= current_confirm["selection"]["headline_brier"] - 0.00015
+    )
+
+    holdout_current = None
+    holdout_chosen = None
+    promote = False
+    if selection_pass:
+        print(
+            "\nOpening final holdout for one challenger: "
+            f"{challenger['label']}"
+        )
+        holdout_current_pred = _simulate_cases(
+            final_holdout,
+            sims=sims,
+            seed=seed,
+            sim_config=current_candidate,
+            course_profile_weight=current_course_weight,
+        )
+        holdout_chosen_pred = _simulate_cases(
+            final_holdout,
+            sims=sims,
+            seed=seed,
+            sim_config=challenger["candidate"],
+            course_profile_weight=challenger["candidate"]["course_profile_weight"],
+        )
+        holdout_current = summarize(holdout_current_pred)
+        holdout_chosen = summarize(holdout_chosen_pred)
+        market_deltas = _shape_market_deltas(holdout_chosen, holdout_current)
+        winner_delta = (
+            holdout_chosen["win_event"]["mean_surprise"]
+            - holdout_current["win_event"]["mean_surprise"]
+        )
+        promote = bool(
+            holdout_chosen["headline_brier"]
+            <= holdout_current["headline_brier"] - 0.00005
+            and all(delta <= 0.001 for delta in market_deltas.values())
+            and winner_delta <= 0.05
+        )
+        print(
+            f"  current    headline {holdout_current['headline_brier']:.5f} "
+            f"winner {holdout_current['win_event']['mean_surprise']:.4f}"
+        )
+        print(
+            f"  challenger headline {holdout_chosen['headline_brier']:.5f} "
+            f"winner {holdout_chosen['win_event']['mean_surprise']:.4f}"
+        )
+        print(
+            "  market deltas: "
+            + " ".join(f"{key} {value:+.5f}" for key, value in market_deltas.items())
+        )
+    else:
+        print("\nNo challenger cleared the pre-holdout gate; holdout remains sealed.")
+
+    chosen_candidate = (
+        challenger["candidate"] if challenger is not None else current_candidate
+    )
+    out = {
+        "schema_version": 1,
+        "since": since,
+        "selection_split": split,
+        "holdout": holdout,
+        "screen_sims": screen_sims,
+        "confirm_sims": confirm_sims,
+        "holdout_sims": sims,
+        "current_candidate": current_candidate,
+        "chosen_candidate": chosen_candidate,
+        "selection_pass": selection_pass,
+        "promote": promote,
+        "screened": screened,
+        "confirmed": [{
+            "candidate": row["candidate"],
+            "label": row["label"],
+            "stability": _shape_metrics(row["stability"]),
+            "selection": _shape_metrics(row["selection"]),
+        } for row in confirmed],
+        "holdout_current": holdout_current,
+        "holdout_chosen": holdout_chosen,
+    }
+    print(f"\nVerdict: {'PROMOTE' if promote else 'reject'}")
+    if write:
+        _write_json(SHAPE_TUNING_JSON, out)
+        print(f"  wrote audit report {SHAPE_TUNING_JSON}")
+        if promote:
+            sim_payload = {
+                "round_corr": chosen_candidate["round_corr"],
+                "tail_df": chosen_candidate["tail_df"],
+                "blowup_mix": chosen_candidate["blowup_mix"],
+                "source": "golf.validate --tune-shape",
+                "metrics": {
+                    "selection_split": split,
+                    "holdout": holdout,
+                    "holdout_sims": sims,
+                    "current_headline_brier": holdout_current["headline_brier"],
+                    "chosen_headline_brier": holdout_chosen["headline_brier"],
+                    "current_winner_surprise":
+                        holdout_current["win_event"]["mean_surprise"],
+                    "chosen_winner_surprise":
+                        holdout_chosen["win_event"]["mean_surprise"],
+                },
+            }
+            _write_json(gsim.SIM_CONFIG_JSON, sim_payload)
+            updated_model_config = {
+                **base_model_config,
+                "course_profile_weight":
+                    chosen_candidate["course_profile_weight"],
+            }
+            model.save_model_config(updated_model_config, metrics={
+                "source": "golf.validate --tune-shape",
+                "selection_split": split,
+                "holdout": holdout,
+                "holdout_sims": sims,
+                "current_headline_brier": holdout_current["headline_brier"],
+                "chosen_headline_brier": holdout_chosen["headline_brier"],
+            })
+            final_predictions = _simulate_cases(
+                cases,
+                sims=sims,
+                seed=seed,
+                sim_config=chosen_candidate,
+                course_profile_weight=chosen_candidate["course_profile_weight"],
+            )
+            from .io_utils import atomic_write_csv
+            atomic_write_csv(
+                PRED_CSV,
+                list(final_predictions.columns),
+                final_predictions.to_dict(orient="records"),
+            )
+            final_report = summarize(final_predictions)
+            _write_json(BASELINE_JSON, {
+                "headline_brier": final_report["headline_brier"],
+                "gate_tol": GATE_TOL,
+                "asof": final_predictions["date"].max(),
+                "schema_version": VALIDATION_SCHEMA_VERSION,
+                "point_in_time_safe": True,
+                "reason": "honest joint scoring-shape and course-profile retune",
+            })
+            out["full_promoted"] = final_report
+            _write_json(SHAPE_TUNING_JSON, out)
+            print(f"  wrote {gsim.SIM_CONFIG_JSON}")
+            print(f"  wrote {model.MODEL_CONFIG_JSON}")
+            print(f"  refreshed {PRED_CSV} and {BASELINE_JSON}")
+        else:
+            _write_json(gsim.SIM_CONFIG_JSON, {
+                "round_corr": current_candidate["round_corr"],
+                "tail_df": current_candidate["tail_df"],
+                "blowup_mix": current_candidate["blowup_mix"],
+                "source": "golf.validate --tune-shape; retained control",
+                "metrics": {
+                    "status": "retained",
+                    "selection_split": split,
+                    "holdout": holdout,
+                    "holdout_opened": bool(selection_pass),
+                    "screen_sims": screen_sims,
+                    "confirm_sims": confirm_sims,
+                    "reason": (
+                        "No challenger cleared the pre-holdout improvement "
+                        "and market/winner guardrails."
+                    ),
+                },
+            })
+            print(f"  recorded retained control in {gsim.SIM_CONFIG_JSON}")
+    return out
+
+
 def tune_weather_coefficients(write: bool = False) -> dict:
     """Estimate conservative weather score coefficients from enriched rounds.
 
@@ -509,6 +1046,13 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--tune-config", action="store_true",
                     help="screen/tune free-data fit hyperparameters")
+    ap.add_argument("--tune-shape", action="store_true",
+                    help="retune round correlation, scoring shape, and "
+                         "general course-profile weight")
+    ap.add_argument("--selection-split", default="2025-07-01",
+                    help="start of the shape-tuning confirmation window")
+    ap.add_argument("--holdout", default="2026-01-01",
+                    help="start of the sealed shape-tuning holdout")
     ap.add_argument("--tune-weather", action="store_true",
                     help="fit weather coefficients from weather-enriched historical rounds")
     ap.add_argument("--ablate", nargs="*", default=None,
@@ -522,6 +1066,17 @@ def main():
 
     if args.tune_config:
         tune_config(args.since, sims=args.sims, seed=args.seed, write=args.write)
+        return
+
+    if args.tune_shape:
+        tune_shape(
+            args.since,
+            sims=args.sims,
+            seed=args.seed,
+            write=args.write,
+            split=args.selection_split,
+            holdout=args.holdout,
+        )
         return
 
     if args.tune_weather:

@@ -77,7 +77,7 @@ def _draw_scores(rng, means, sigmas, n_sims, n, round_corr, tail_df,
     continuous draws erase cut ties, matchup pushes and placement dead heats.
     """
     rc = float(min(max(round_corr, 0.0), 0.95))
-    if rc <= 0.0 and tail_df is None:
+    if rc <= 0.0 and tail_df is None and float(blowup_mix or 0.0) <= 0.0:
         # Legacy path: independent Gaussian rounds (bit-for-bit unchanged).
         scores = rng.normal(
             loc=means[np.newaxis, :, np.newaxis],
