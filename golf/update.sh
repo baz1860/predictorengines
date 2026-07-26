@@ -53,6 +53,7 @@ python3 -m golf.integrity
 
 echo ""; echo "── 5/5 Refit calibration ──"
 python3 -m golf.calibrate --fit
+python3 -m golf.economic --report
 
 # Record data provenance (offline, never blocks) — run from the repo root.
 python3 -m app.provenance --engine golf --write || echo "  manifest skipped"

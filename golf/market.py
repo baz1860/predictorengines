@@ -9,13 +9,11 @@ mirroring the root clv.py.
 
   fair = devig(odds_list, method="power")     # list of fair probabilities
   p    = blend(p_model, p_market, w)           # w = weight on market
-  snapshot_fair(...) / clv_report(...)         # → data/odds_history.csv
+  golf.economic                                # prospective CLV / ROI evidence
 """
 
 from __future__ import annotations
 
-import csv
-import datetime as _dt
 import json
 import math
 import argparse
@@ -23,7 +21,6 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent / "data"
 BLEND_JSON = DATA_DIR / "market_blend.json"
-ODDS_HISTORY = DATA_DIR / "odds_history.csv"
 
 # Market blending is disabled until weights are estimated from timestamped,
 # point-in-time odds/outcome history. Guessed weights silently rewrite the model.
@@ -156,54 +153,23 @@ def blend_weights() -> dict:
 # CLV tracking
 # ─────────────────────────────────────────────
 
-CLV_COLS = ["ts", "event", "player", "market", "odds", "fair_odds", "fair_prob"]
-
-
 def snapshot_fair(odds_by_market: dict[str, dict[str, float]], event: str = "",
                   method: str = "power") -> int:
-    """Append a timestamped de-vigged snapshot of the current board to
-    odds_history.csv. odds_by_market: {market: {player: decimal_odds}}.
-    Returns rows written. The latest snapshot before settlement is the close."""
-    if not event:
-        return 0  # cross-event history is unusable; provenance is mandatory
-    ts = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
-    rows = []
-    for market, board in odds_by_market.items():
-        if market in LINE_MARKETS:
-            fair = {player: devig_line(o, market) for player, o in board.items()}
-        else:
-            fair = fair_prob_map(board, method=method)
-        for player, o in board.items():
-            fp = fair.get(player)
-            rows.append({
-                "ts": ts, "event": event, "player": player, "market": market,
-                "odds": round(float(o), 3),
-                "fair_odds": round(1.0 / fp, 3) if fp else "",
-                "fair_prob": round(fp, 5) if fp else "",
-            })
-    if not rows:
-        return 0
-    exists = ODDS_HISTORY.exists()
-    with open(ODDS_HISTORY, "a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=CLV_COLS)
-        if not exists:
-            w.writeheader()
-        w.writerows(rows)
-    return len(rows)
+    """Retired name-only snapshot API.
+
+    Event names cannot safely identify consecutive boards and this call lacks
+    bookmaker/group/phase provenance. Provider refresh now records quotes via
+    :func:`golf.economic.record_odds_snapshot`.
+    """
+    raise RuntimeError(
+        "snapshot_fair is retired; run golf.refresh so golf.economic can "
+        "capture an event-ID/provider/phase-aware snapshot"
+    )
 
 
 def closing_fair(player: str, market: str, event: str = "") -> float | None:
-    """Most recent recorded fair probability for a player/market (the close)."""
-    if not event or not ODDS_HISTORY.exists():
-        return None
-    best_ts, best = "", None
-    with open(ODDS_HISTORY) as f:
-        for r in csv.DictReader(f):
-            if r["player"] == player and r["market"] == market and \
-               r["event"] == event and r["fair_prob"]:
-                if r["ts"] >= best_ts:
-                    best_ts, best = r["ts"], float(r["fair_prob"])
-    return best
+    """Retired ambiguous event-name lookup; use ``golf.economic``."""
+    return None
 
 
 def clv_pct(bet_odds: float, player: str, market: str, event: str = "") -> float | None:
@@ -217,59 +183,10 @@ def clv_pct(bet_odds: float, player: str, market: str, event: str = "") -> float
 
 def clv_report(edge_path: Path | None = None, predictions_path: Path | None = None,
                event: str = "") -> dict:
-    """CLV grouped by market and feature regime.
+    """Compatibility entry point for the prospective economic report."""
+    from .economic import economic_report
 
-    Uses edge_report.csv rows as placed/candidate prices and odds_history.csv as
-    the close. Feature regimes are inferred from predictions.csv adjustment
-    columns: weather/course/global.
-    """
-    edge_path = edge_path or DATA_DIR / "edge_report.csv"
-    predictions_path = predictions_path or DATA_DIR / "predictions.csv"
-    if not edge_path.exists():
-        raise FileNotFoundError(f"No edge report at {edge_path}")
-    pred = {}
-    if predictions_path.exists():
-        with predictions_path.open() as f:
-            for r in csv.DictReader(f):
-                pred[r.get("name", "")] = r
-    groups: dict[str, list[float]] = {}
-    rows = []
-    with edge_path.open() as f:
-        for r in csv.DictReader(f):
-            player = r.get("player", "")
-            side = r.get("side", "")
-            market_name = side.split(":", 1)[0] if ":" in side else side
-            try:
-                odds = float(r.get("odds") or 0)
-            except ValueError:
-                continue
-            val = clv_pct(odds, player, market_name, event=event)
-            if val is None:
-                continue
-            p = pred.get(player, {})
-            regimes = [f"market:{market_name}"]
-            for key, label in (
-                ("weather_wave_adj", "weather"),
-                ("global_prior_adj", "global_prior"),
-            ):
-                try:
-                    if abs(float(p.get(key) or 0.0)) > 1e-9:
-                        regimes.append(f"feature:{label}")
-                except ValueError:
-                    pass
-            for g in regimes:
-                groups.setdefault(g, []).append(val)
-            rows.append({"player": player, "market": market_name, "clv": val})
-    summary = {
-        g: {
-            "n": len(vals),
-            "mean_clv": round(sum(vals) / len(vals), 4),
-            "hit_rate": round(sum(1 for v in vals if v > 0) / len(vals), 4),
-        }
-        for g, vals in sorted(groups.items())
-        if vals
-    }
-    return {"rows": rows, "summary": summary}
+    return economic_report()
 
 
 def _demo() -> None:
@@ -302,9 +219,7 @@ def main() -> None:
     args = ap.parse_args()
     if args.clv_report:
         rep = clv_report(event=args.event)
-        print("CLV report")
-        for group, row in rep["summary"].items():
-            print(f"  {group:<24} n={row['n']:<4} mean={row['mean_clv']:+.2%} hit={row['hit_rate']:.1%}")
+        print(json.dumps(rep, indent=2))
     else:
         _demo()
 

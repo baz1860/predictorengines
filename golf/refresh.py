@@ -22,7 +22,8 @@ from .io_utils import atomic_write_csv, atomic_write_text
 from .providers.bovada import (BovadaGolfProvider, _dedupe as _bovada_dedupe,
                                export_csvs as bovada_export_csvs)
 from .providers.espn import EspnGolfProvider
-from .providers.odds_manual import (ManualOddsProvider, THREEBALLS_RAW,
+from .providers.odds_manual import (ManualOddsProvider, MATCHUPS_CSV, ODDS_CSV,
+                                    THREEBALLS_RAW, board_event, norm_event,
                                     threeballs_csv_path, threeballs_raw_path,
                                     write_threeballs_csv)
 from .providers.odds_theoddsapi import MAJOR_SPORT_KEYS, TheOddsApiGolfProvider
@@ -91,6 +92,7 @@ def run_refresh(
     db = store.init_db()
     checks: list[qa.SourceCheck] = []
     provider_rows = {}
+    collected_quotes = []
 
     espn = EspnGolfProvider()
     event = None
@@ -257,6 +259,7 @@ def run_refresh(
             except Exception as exc:  # noqa: BLE001 — live feed is a bonus, not a gate
                 checks.append(qa.SourceCheck("bovada.live", False, "warning", str(exc), 0))
             if b_quotes:
+                collected_quotes.extend(b_quotes)
                 written = bovada_export_csvs(b_quotes, event=event.name)
                 checks.extend(provider.qa_checks(b_quotes))
                 with store.connect() as con:
@@ -277,9 +280,23 @@ def run_refresh(
     manual = ManualOddsProvider()
     quotes = []
     if event:
-        quotes.extend(manual.load_outrights(event_id=event.event_id))
-        quotes.extend(manual.load_matchups(event_id=event.event_id))
-        quotes.extend(manual.load_threeballs(event_id=event.event_id, round_no=round_no))
+        board_loaders = (
+            ("outright", ODDS_CSV, lambda:
+                manual.load_outrights(event_id=event.event_id)),
+            ("matchup", MATCHUPS_CSV, lambda:
+                manual.load_matchups(event_id=event.event_id)),
+            ("round_group", threeballs_csv_path(round_no), lambda:
+                manual.load_threeballs(event_id=event.event_id, round_no=round_no)),
+        )
+        for label, board_path, loader in board_loaders:
+            tag = board_event(board_path)
+            if board_path.exists() and norm_event(tag) != norm_event(event.name):
+                checks.append(qa.SourceCheck(
+                    f"manual_odds.{label}", False, "warning",
+                    f"ignored {board_path.name}: tagged for "
+                    f"'{tag or 'unknown event'}', not '{event.name}'", 0))
+                continue
+            quotes.extend(loader())
     raw_path = Path(manual_raw)
     if raw_path.exists():
         # A paste last touched before this event's week is last week's board:
@@ -317,6 +334,7 @@ def run_refresh(
                                      round_no=round_no)
     quotes = _dedupe_quotes(quotes)
     if quotes:
+        collected_quotes.extend(quotes)
         checks.extend(manual.qa_checks(quotes))
         with store.connect() as con:
             store.upsert_odds_quotes(con, [q.as_dict() for q in quotes])
@@ -326,6 +344,7 @@ def run_refresh(
         odds_api = TheOddsApiGolfProvider()
         odds_quotes = odds_api.fetch_outrights(odds_api_sport, event_id=event.event_id if event else "")
         if odds_quotes:
+            collected_quotes.extend(odds_quotes)
             with store.connect() as con:
                 store.upsert_odds_quotes(con, [q.as_dict() for q in odds_quotes])
         provider_rows["the_odds_api"] = len(odds_quotes)
@@ -338,6 +357,46 @@ def run_refresh(
                 "info",
                 f"major outright sport key available: {inferred}; pass --odds-api-sport to fetch",
             ))
+
+    event_complete = bool(
+        event and rounds_done >= int(getattr(event, "total_rounds", 4) or 4)
+    )
+    odds_phase = (
+        "between_rounds" if rounds_done >= 1
+        else "in_play" if _field_has_teed_off(field_rows)
+        else "pre_event"
+    )
+    economic_quotes = _economic_quotes_for_phase(
+        collected_quotes,
+        rounds_done=rounds_done,
+        phase=odds_phase,
+        event_complete=event_complete,
+    )
+    if event and economic_quotes and use_cache:
+        provider_rows["economic_odds_snapshot"] = 0
+        checks.append(qa.SourceCheck(
+            "economic.odds_snapshot", True, "warning",
+            "cached odds were not recorded as a contemporaneous market observation",
+            0,
+        ))
+    elif event and economic_quotes:
+        try:
+            from . import economic
+
+            captured = economic.record_odds_snapshot(
+                economic_quotes,
+                event_id=event.event_id,
+                event_name=event.name,
+                event_start_date=event.start_date,
+                phase=odds_phase,
+            )
+            provider_rows["economic_odds_snapshot"] = captured
+        except Exception as exc:  # noqa: BLE001 — do not block the live refresh
+            provider_rows["economic_odds_snapshot"] = 0
+            checks.append(qa.SourceCheck(
+                "economic.odds_snapshot", False, "warning", str(exc), 0))
+    elif event:
+        provider_rows["economic_odds_snapshot"] = 0
 
     if fit:
         from . import model
@@ -528,6 +587,58 @@ def _tee_time_counts(field_rows: list) -> dict[str, int]:
         "r1": sum(1 for r in rows if r.get("tee_time_r1")),
         "r2": sum(1 for r in rows if r.get("tee_time_r2")),
     }
+
+
+def _field_has_teed_off(
+    field_rows: list,
+    now: dt.datetime | None = None,
+) -> bool:
+    """Whether round one has begun, using authoritative ISO tee times."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    tee_times = []
+    for raw_row in field_rows:
+        row = (
+            raw_row.as_store_row()
+            if hasattr(raw_row, "as_store_row") else dict(raw_row)
+        )
+        raw = str(row.get("tee_time_r1") or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        tee_times.append(parsed.astimezone(dt.timezone.utc))
+    return bool(tee_times and now >= min(tee_times))
+
+
+def _economic_quotes_for_phase(
+    quotes: list,
+    *,
+    rounds_done: int,
+    phase: str,
+    event_complete: bool,
+) -> list:
+    """Exclude already-started/settled round boards from economic history."""
+    if event_complete:
+        return []
+    round_markets = {"round_matchup", "2ball", "3ball"}
+    accepted = []
+    for quote in quotes:
+        row = quote.as_dict() if hasattr(quote, "as_dict") else dict(quote)
+        if row.get("market") not in round_markets:
+            accepted.append(quote)
+            continue
+        target = int(row.get("round_no") or 0)
+        if phase == "pre_event" and target == 1:
+            accepted.append(quote)
+        elif phase == "between_rounds" and target > rounds_done:
+            accepted.append(quote)
+        elif phase == "in_play" and target > rounds_done + 1:
+            accepted.append(quote)
+    return accepted
 
 
 def _clear_weather_features() -> None:

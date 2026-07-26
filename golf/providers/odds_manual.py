@@ -133,7 +133,10 @@ class ManualOddsProvider:
                             market=market,
                             player_name=name,
                             decimal_odds=odds,
-                            timestamp=_ts(),
+                            book=(row.get("book") or "manual").strip(),
+                            source=(row.get("source") or "manual").strip(),
+                            timestamp=(row.get("captured_at")
+                                       or row.get("timestamp") or _ts()).strip(),
                             settlement_rule="dead_heat" if market.startswith("top") else "",
                         ))
         return out
@@ -153,6 +156,10 @@ class ManualOddsProvider:
                     continue
                 gid = row.get("group_id") or f"matchup-{i}:{a}|{b}"
                 market = "round_matchup" if round_no else "tournament_matchup"
+                captured_at = (row.get("captured_at")
+                               or row.get("timestamp") or _ts()).strip()
+                book = (row.get("book") or "manual").strip()
+                source = (row.get("source") or "manual").strip()
                 out.extend([
                     OddsQuote(
                         event_id=event_id,
@@ -161,8 +168,10 @@ class ManualOddsProvider:
                         decimal_odds=oa,
                         round_no=round_no,
                         group_id=gid,
+                        book=book,
+                        source=source,
                         settlement_rule="push_tie",
-                        timestamp=_ts(),
+                        timestamp=captured_at,
                     ),
                     OddsQuote(
                         event_id=event_id,
@@ -171,8 +180,10 @@ class ManualOddsProvider:
                         decimal_odds=ob,
                         round_no=round_no,
                         group_id=gid,
+                        book=book,
+                        source=source,
                         settlement_rule="push_tie",
-                        timestamp=_ts(),
+                        timestamp=captured_at,
                     ),
                 ])
         return out
@@ -222,8 +233,11 @@ class ManualOddsProvider:
                         decimal_odds=float(price),
                         round_no=round_no,
                         group_id=gid,
+                        book=(row.get("book") or "manual").strip(),
+                        source=(row.get("source") or "manual").strip(),
                         settlement_rule=row.get("settlement_rule") or "dead_heat",
-                        timestamp=_ts(),
+                        timestamp=(row.get("captured_at")
+                                   or row.get("timestamp") or _ts()).strip(),
                     ))
         return out
 
@@ -340,7 +354,8 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
     with path.open("w", newline="") as f:
         cols = [
             "group_id", "player_a", "player_b", "player_c",
-            "odds_a", "odds_b", "odds_c", "settlement_rule", "event", "captured_at",
+            "odds_a", "odds_b", "odds_c", "settlement_rule",
+            "book", "source", "event", "captured_at",
         ]
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
@@ -349,6 +364,8 @@ def write_threeballs_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
                 continue
             row = {"group_id": gid,
                    "settlement_rule": qs[0].settlement_rule or "dead_heat",
+                   "book": qs[0].book,
+                   "source": qs[0].source,
                    "event": event,
                    "captured_at": qs[0].timestamp or _ts()}
             for slot, q in zip("abc", qs):  # player_c/odds_c stay blank for 2-balls

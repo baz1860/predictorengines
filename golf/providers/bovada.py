@@ -239,13 +239,16 @@ def write_outrights_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
     wins = [q for q in quotes if q.market == "win"]
     if not wins:
         return None
-    cols = ["name", "odds_win", "odds_top5", "odds_top10", "odds_top20", "odds_cut",
-            "event", "captured_at"]
+    cols = [
+        "name", "odds_win", "odds_top5", "odds_top10", "odds_top20",
+        "odds_cut", "book", "source", "event", "captured_at",
+    ]
     with path.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         for q in wins:
             w.writerow({"name": q.player_name, "odds_win": round(q.decimal_odds, 3),
+                        "book": q.book, "source": q.source,
                         "event": event, "captured_at": q.timestamp or _ts()})
     return path
 
@@ -264,14 +267,20 @@ def write_matchups_csv(quotes: Iterable[OddsQuote], path: Path | None = None,
     if not pairs:
         return None
     with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["group_id", "player_a", "player_b",
-                                          "odds_a", "odds_b", "event", "captured_at"])
+        w = csv.DictWriter(
+            f,
+            fieldnames=[
+                "group_id", "player_a", "player_b", "odds_a", "odds_b",
+                "book", "source", "event", "captured_at",
+            ],
+        )
         w.writeheader()
         for gid, qs in pairs.items():
             w.writerow({"group_id": gid,
                         "player_a": qs[0].player_name, "player_b": qs[1].player_name,
                         "odds_a": round(qs[0].decimal_odds, 3),
                         "odds_b": round(qs[1].decimal_odds, 3),
+                        "book": qs[0].book, "source": qs[0].source,
                         "event": event, "captured_at": qs[0].timestamp or _ts()})
     return path
 

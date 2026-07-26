@@ -14,6 +14,7 @@ Commands:
 """
 import json
 import csv
+import datetime as dt
 from pathlib import Path
 
 import numpy as np
@@ -55,6 +56,28 @@ def _current_event_context() -> dict:
         "cut_rule": int(row.get("cut_rule") or 65),
         "no_cut": str(row.get("no_cut") or "").strip().lower() in {"1", "true", "yes"},
     }
+
+
+def _event_has_teed_off(now: dt.datetime | None = None) -> bool:
+    """Whether the earliest recorded round-one tee time has passed."""
+    path = DATA_DIR / "field.csv"
+    if not path.exists():
+        return False
+    now = now or dt.datetime.now(dt.timezone.utc)
+    tee_times = []
+    try:
+        with path.open() as handle:
+            for row in csv.DictReader(handle):
+                raw = str(row.get("tee_time_r1") or "").strip()
+                if not raw:
+                    continue
+                parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=dt.timezone.utc)
+                tee_times.append(parsed.astimezone(dt.timezone.utc))
+    except (OSError, csv.Error, ValueError):
+        return False
+    return bool(tee_times and now >= min(tee_times))
 
 
 def _simulation_rules(p: dict) -> tuple[int, bool]:
@@ -479,6 +502,16 @@ def cmd_edge(p):
     # edges (e.g. backing a player who now leads by 10). Drop any board older
     # than the latest refresh so we never bet a stale price.
     state = _live_state(p)
+    if state is None and _event_has_teed_off():
+        return {
+            "note": (
+                "Event has teed off but no completed-round snapshot is "
+                "available; refusing to compare live prices with the "
+                "pre-tournament model."
+            ),
+            "columns": [],
+            "rows": [],
+        }
     if state is not None:
         ref = _refresh_mtime()
         stale = []
@@ -504,18 +537,6 @@ def cmd_edge(p):
         raise ValueError("No odds. Add golf/data/odds.csv (name, odds_win, "
                          "odds_top5, odds_top10, odds_top20, odds_cut) and/or "
                          "matchups.csv / threeballs.csv.")
-    # Record accepted, event-tagged prices for future CLV analysis. One-sided
-    # place/cut lines remain raw implied prices; only complete outright boards
-    # can be normalized honestly.
-    if current_event and odds_data:
-        history_boards = {}
-        for mkt, col in (("win", "odds_win"), ("top5", "odds_top5"),
-                         ("top10", "odds_top10"), ("top20", "odds_top20"),
-                         ("cut", "odds_cut")):
-            board = {od["name"]: od[col] for od in odds_data.values() if od.get(col)}
-            if board:
-                history_boards[mkt] = board
-        GE.market.snapshot_fair(history_boards, event=current_event)
     bankroll = float(p.get("bankroll", 100.0))
     peak = float(p.get("peak", bankroll))
     kelly = float(p.get("kelly", GE.DEFAULT_KELLY))
@@ -579,6 +600,26 @@ def cmd_edge(p):
         r["stake_gbp"] = stake_by.get((r["player"], r["side"]), 0.0)
         r["recommended"] = (r["player"], r["side"]) in staked_keys
 
+    history_note = ""
+    context = _current_event_context()
+    history_event_id = str(
+        context.get("event_id") or (state or {}).get("event_id") or ""
+    )
+    if history_event_id and current_event:
+        try:
+            from . import economic
+
+            captured = economic.record_decisions(
+                rows,
+                event_id=history_event_id,
+                event_name=current_event,
+                phase="pre_event" if state is None else "between_rounds",
+            )
+            if captured:
+                history_note = f" · {captured} prospective decisions captured"
+        except Exception as exc:  # noqa: BLE001 — evidence capture must not block pricing
+            history_note = f" · ⚠ economic capture failed: {exc}"
+
     columns = [
         {"key": "player", "label": "Player", "fmt": "text"},
         {"key": "market", "label": "Market", "fmt": "text"},
@@ -592,7 +633,7 @@ def cmd_edge(p):
             f"priced · {GPORT.summary(staked, bankroll, peak)}"
             f"{' · calibrated' if calibrated else ''}"
             f"{' · market-blend' if blended else ''}{calibration_note}"
-            f"{inplay_note}{stale_note}")
+            f"{inplay_note}{stale_note}{history_note}")
     if not results.get("__cut_binds__", True) and state is None:
         note += (f" · ⚠ cut does not bind (field {len(rated)} ≤ cut rule): "
                  "make-cut suppressed")

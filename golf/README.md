@@ -111,7 +111,8 @@ golf/
 │                   #   measured course profiles → model_params.json
 ├── simulate.py     # 4-round Monte Carlo with cut; joint matchups / 3-balls
 ├── round_pricer.py # single-round group pricing (2-/3-balls; driven by season.py)
-├── market.py       # complete-board de-vig + raw implied-price tracking
+├── market.py       # complete-board de-vig + raw implied-price utilities
+├── economic.py     # prospective odds/decision ledger, settlement, CLV + ROI
 ├── calibrate.py    # isotonic per-market maps (win ≤ T5 ≤ … ≤ cut guard)
 ├── edge.py         # raw model and final EV probabilities across all markets
 ├── portfolio.py    # opt-in capped Kelly; automatic staking disabled by default
@@ -121,11 +122,13 @@ golf/
     ├── rounds.csv          # SOURCE OF TRUTH: one row per player per round;
     │                       # real venue/rules/tee time from ESPN per-event data
     ├── golf.db             # rebuildable LIVE cache only: current event/field,
-    │                       # odds, public-stat snapshots, provider runs
+    │                       # current odds, public-stat snapshots, provider runs
     ├── model_params.json   # fitted skill/σ/form/course params
     ├── field.csv           # current field (written by refresh)
     ├── card.md             # ← the output you read
-    ├── calibration.json, market_blend.json, odds_history.csv (CLV)
+    ├── calibration.json, market_blend.json
+    ├── odds_history.csv, decision_history.csv  # local prospective evidence
+    ├── settled_decisions.csv, economic_report.json
     ├── odds.csv, matchups.csv, threeballs.csv   # book prices you provide
     └── predictions.csv, edge_report.csv, round_edges.csv  # raw tables
 ```
@@ -168,6 +171,29 @@ so market nesting is true by construction.
   market blending are disabled.
 - **portfolio.py** — stake sizing is opt-in (`--kelly`); the default is zero until
   timestamped offered-price history supports an economic backtest.
+
+### Prospective economic evidence
+
+`refresh` now records every fresh provider quote with stable event ID,
+book/source, market group, round, phase and provider timestamp. Cached pulls are
+explicitly excluded because replaying a cache is not a contemporaneous market
+observation. `edge` records the exact model probability and offered price seen
+at decision time; repeat screen runs cannot inflate the independent paper-bet
+count.
+
+```bash
+python3 -m golf.refresh             # lightweight fresh odds observation
+python3 -m golf.season              # prices and records prospective decisions
+python3 -m golf.economic --report   # settle completed events; report CLV + ROI
+```
+
+The evidence files are local runtime data ignored by Git; back them up or sync
+them between the machines that collect prices. The primary paper rule is fixed
+prospectively at model EV ≥2% with adequate player history. The report remains
+`collecting` until it has at least 300 settled paper bets over 30 events, at
+least 75% closing-line coverage, positive mean CLV, and a positive event-block
+bootstrap lower bound for ROI. Passing makes blending/staking eligible for
+manual review only—it never activates either automatically.
 
 ### Validating the model
 
