@@ -208,4 +208,8 @@ club_soccer/data/season.lock
 club_soccer/data/bet_card.md
 club_soccer/data/forward_predictions_club.csv
 club_soccer/data/validation_latest.json
+club_soccer/data/transfers_bsd.sqlite3*
+# Resumable transfer-import staging lives outside the Syncthing data folder,
+# but is still local runtime state rather than source.
+club_soccer/.transfer_import/
 # <<< Syncthing-owned club_soccer working data <<<

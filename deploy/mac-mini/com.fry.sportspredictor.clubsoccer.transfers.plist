@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fry.sportspredictor.clubsoccer.transfers</string>
+
+  <!-- Incremental refresh only. The full-history backfill remains a one-time
+       manual command and can never be triggered by this schedule. -->
+  <key>UserName</key>
+  <string>fry</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/fry/.pyenv/versions/3.12.7/bin/python3</string>
+    <string>-m</string>
+    <string>club_soccer.import_bsd_transfers</string>
+    <string>--update</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/fry/Soccer Prediction</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/fry/.pyenv/versions/3.12.7/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- Refresh before the heavy Club Soccer pipeline starts at 07:30. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>6</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+
+  <!-- Loading the daemon must not launch an unexpected refresh. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/fry/Soccer Prediction/logs/club_soccer_transfers.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/fry/Soccer Prediction/logs/club_soccer_transfers.log</string>
+</dict>
+</plist>

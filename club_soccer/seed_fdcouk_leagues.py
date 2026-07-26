@@ -61,6 +61,15 @@ NEW_URL = "https://www.football-data.co.uk/new/{code}.csv"
 SEASONS = ["2122", "2223", "2324", "2425", "2526", "2627"]
 MIN_SEASON_START = 2021
 
+# football-data.co.uk's per-season files (/mmz4281/{season}/) are IMMUTABLE once
+# a season ends — only the current (and, across the Aug rollover, the previous)
+# season file gains new results. So a daily refresh must re-download ONLY these,
+# and read every completed season from the on-disk cache. Re-fetching all six
+# files for every BSD-less league on every run was ~24 network round-trips with
+# a 40s timeout each, which is what made the "Refresh BSD-less leagues" step
+# appear to hang on a slow link.
+REFRESHABLE_SEASONS = set(SEASONS[-2:])
+
 # A refresh only cares about rows that could have changed since the last run.
 # Generous enough to absorb a missed week plus late score corrections.
 REFRESH_LOOKBACK_DAYS = 30
@@ -164,12 +173,22 @@ def _make_row(comp, date: pd.Timestamp, home: str, away: str,
     return row
 
 
-def load_main(comp, refresh: bool = False) -> list[dict]:
-    """Parse /mmz4281/ season files for one division."""
+def load_main(comp, refresh: bool = False,
+              refresh_seasons: set | None = None) -> list[dict]:
+    """Parse /mmz4281/ season files for one division.
+
+    `refresh_seasons` limits which season files bypass the cache when
+    `refresh` is set. None means "all" (a full backfill). The daily refresh
+    passes REFRESHABLE_SEASONS so only the current/previous files are
+    re-downloaded and completed seasons are served from cache — the fix for the
+    hang on the BSD-less refresh step. A season with no cache yet is fetched
+    regardless, so the first run still populates everything.
+    """
     rows: list[dict] = []
     for ss in SEASONS:
+        do_refresh = refresh and (refresh_seasons is None or ss in refresh_seasons)
         text = _fetch(MAIN_URL.format(ss=ss, code=comp.fdcouk_code),
-                      f"{comp.fdcouk_code}_{ss}.csv", refresh)
+                      f"{comp.fdcouk_code}_{ss}.csv", do_refresh)
         if text is None:
             continue
         frame = pd.read_csv(io.StringIO(text), low_memory=False)
@@ -231,9 +250,10 @@ def load_new(comp, refresh: bool = False) -> list[dict]:
     return rows
 
 
-def load_competition(comp, refresh: bool = False) -> list[dict]:
+def load_competition(comp, refresh: bool = False,
+                     refresh_seasons: set | None = None) -> list[dict]:
     if comp.fdcouk_code:
-        return load_main(comp, refresh)
+        return load_main(comp, refresh, refresh_seasons)
     if comp.fdcouk_new:
         return load_new(comp, refresh)
     return []
@@ -326,9 +346,15 @@ def refresh(comps: list | None = None, write: bool = True,
     comps = needs_fdcouk_refresh() if comps is None else comps
     rows: list[dict] = []
     per_comp: dict[str, int] = {}
-    for comp in comps:
+    for i, comp in enumerate(comps, 1):
+        if verbose:
+            # Print BEFORE the network fetch so a slow link looks like progress,
+            # not a hang. Only the current/previous season files are downloaded;
+            # completed seasons come from cache.
+            print(f"  [{i}/{len(comps)}] {comp.name} …", flush=True)
         try:
-            fetched = load_competition(comp, refresh=True)
+            fetched = load_competition(comp, refresh=True,
+                                       refresh_seasons=REFRESHABLE_SEASONS)
         except Exception as exc:
             if verbose:
                 print(f"  {comp.name}: refresh FAILED ({exc})")

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fry.sportspredictor.clubsoccer.capture</string>
+
+  <!-- LaunchDaemon (system domain) so it runs 24/7 without a GUI login.
+       Runs as fry so it sees that user's home, pyenv and API key.
+       Records the frozen (fixture, market, side) decision for every fixture in
+       the [60,120] min pre-kickoff window, then settles finished ones. -->
+  <key>UserName</key>
+  <string>fry</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/fry/.pyenv/versions/3.12.7/bin/python3</string>
+    <string>-m</string>
+    <string>club_soccer.decision_ledger</string>
+    <string>--record</string>
+    <string>--settle</string>
+  </array>
+
+  <!-- launchd does NOT expand ~, so this must be an absolute path. -->
+  <key>WorkingDirectory</key>
+  <string>/Users/fry/Soccer Prediction</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/fry/.pyenv/versions/3.12.7/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- Every 15 minutes. A fixture must be seen once while its lead is in
+       [60,120]; a 60-min span survives a skipped run. -->
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <!-- Fire once immediately on load, so you can verify it works. -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/fry/Soccer Prediction/logs/club_soccer_capture.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/fry/Soccer Prediction/logs/club_soccer_capture.log</string>
+</dict>
+</plist>

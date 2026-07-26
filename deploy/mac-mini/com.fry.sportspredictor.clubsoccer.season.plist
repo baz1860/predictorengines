@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fry.sportspredictor.clubsoccer.season</string>
+
+  <!-- The heavy daily pipeline (refit, backtest, gate). Runs once at 07:30 as
+       fry. This is what produces the model/fixtures the capture job
+       prices against, so it belongs on the same always-on machine. -->
+  <key>UserName</key>
+  <string>fry</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/fry/Soccer Prediction/club_soccer/update.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/fry/Soccer Prediction</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/fry/.pyenv/versions/3.12.7/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+
+  <!-- Don't run the heavy job the moment it's loaded; wait for 07:30. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/fry/Soccer Prediction/logs/club_soccer_season.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/fry/Soccer Prediction/logs/club_soccer_season.log</string>
+</dict>
+</plist>

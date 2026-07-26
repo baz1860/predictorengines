@@ -85,3 +85,37 @@ def test_all_seed_writers_use_the_canonical_season_helper():
         source = inspect.getsource(module)
         assert "season_for_date" in source
         assert "if month >= 7 else year - 1" not in source
+
+
+def test_refresh_only_redownloads_recent_season_files(monkeypatch):
+    """The daily refresh must NOT re-download the immutable completed-season
+    files — only the current/previous ones. Re-fetching all six per league was
+    the cause of the 'Refresh BSD-less leagues' hang on a slow link."""
+    calls = []
+
+    def fake_fetch(url, cache_name, refresh=False):
+        calls.append((cache_name, refresh))
+        return None                      # skip parsing; we only care about I/O
+
+    monkeypatch.setattr(S, "_fetch", fake_fetch)
+    comp = next(c for c in S.needs_fdcouk_refresh() if c.fdcouk_code)
+    S.load_main(comp, refresh=True, refresh_seasons=S.REFRESHABLE_SEASONS)
+
+    for cache_name, refreshed in calls:
+        ss = cache_name.rsplit("_", 1)[1].split(".")[0]     # code_2122.csv -> 2122
+        assert refreshed is (ss in S.REFRESHABLE_SEASONS), \
+            f"{ss} refreshed={refreshed} but recent={ss in S.REFRESHABLE_SEASONS}"
+    # exactly the recent seasons were re-downloaded; the rest came from cache
+    assert sum(1 for _, r in calls if r) == len(S.REFRESHABLE_SEASONS)
+    assert sum(1 for _, r in calls if not r) == len(S.SEASONS) - len(S.REFRESHABLE_SEASONS)
+
+
+def test_full_backfill_still_refreshes_every_season(monkeypatch):
+    """Backfill (refresh_seasons=None) must still force every season, so a
+    from-scratch ingest is unaffected."""
+    calls = []
+    monkeypatch.setattr(S, "_fetch",
+                        lambda url, name, refresh=False: calls.append(refresh) or None)
+    comp = next(c for c in S.needs_fdcouk_refresh() if c.fdcouk_code)
+    S.load_main(comp, refresh=True, refresh_seasons=None)
+    assert all(calls) and len(calls) == len(S.SEASONS)
