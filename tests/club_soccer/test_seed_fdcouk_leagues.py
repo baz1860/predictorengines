@@ -103,11 +103,10 @@ def test_refresh_only_redownloads_recent_season_files(monkeypatch):
 
     for cache_name, refreshed in calls:
         ss = cache_name.rsplit("_", 1)[1].split(".")[0]     # code_2122.csv -> 2122
-        assert refreshed is (ss in S.REFRESHABLE_SEASONS), \
-            f"{ss} refreshed={refreshed} but recent={ss in S.REFRESHABLE_SEASONS}"
-    # exactly the recent seasons were re-downloaded; the rest came from cache
-    assert sum(1 for _, r in calls if r) == len(S.REFRESHABLE_SEASONS)
-    assert sum(1 for _, r in calls if not r) == len(S.SEASONS) - len(S.REFRESHABLE_SEASONS)
+        assert ss in S.REFRESHABLE_SEASONS
+        assert refreshed is True
+    # Daily work neither downloads nor parses immutable completed seasons.
+    assert len(calls) == len(S.REFRESHABLE_SEASONS)
 
 
 def test_full_backfill_still_refreshes_every_season(monkeypatch):

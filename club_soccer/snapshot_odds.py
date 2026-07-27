@@ -19,6 +19,7 @@ Run from season.py; BSD is free so 2x/day is fine.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,11 +37,33 @@ from bsd_client import get_all_events, league_name as bsd_league_name, odds_comp
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 ODDS_HISTORY_CSV = DATA / "odds_history_club.csv"
+POLL_STATE = DATA / "odds_poll_state.json"
 COLUMNS = ["snapshot_time", "match_date", "competition", "home", "away",
           "market", "side", "odds_median", "n_books", "disp"]
 
 DEDUPE_WINDOW_HOURS = 6
 SNAPSHOT_HORIZON_DAYS = 14   # only near-term events realistically have odds posted
+NEAR_HORIZON_DAYS = 3
+NEAR_POLL_HOURS = 18
+FAR_POLL_HOURS = 72
+
+
+def _load_poll_state() -> dict[str, str]:
+    try:
+        raw = json.loads(POLL_STATE.read_text())
+    except (OSError, ValueError):
+        return {}
+    return {
+        str(k): str(v) for k, v in raw.items()
+        if isinstance(k, str) and isinstance(v, str)
+    } if isinstance(raw, dict) else {}
+
+
+def _save_poll_state(state: dict[str, str]) -> None:
+    POLL_STATE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = POLL_STATE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
+    tmp.replace(POLL_STATE)
 
 
 def _devig_per_book(side_odds: dict[str, dict[str, float]]) -> dict[str, list[float]]:
@@ -92,21 +115,39 @@ def _market_rows(markets: dict, outcome_map: dict[str, str]) -> dict[str, dict]:
 
 
 def build_snapshot_rows(api_key: str, days_ahead: int = SNAPSHOT_HORIZON_DAYS,
-                        verbose: bool = True) -> list[dict]:
+                        verbose: bool = True,
+                        events: list[dict] | None = None,
+                        odds_cache: dict[str, dict] | None = None) -> list[dict]:
     from .competitions import comp_from_bsd_league
 
     today = datetime.now(timezone.utc).date()
     snap_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    try:
-        events = get_all_events(api_key, status="notstarted",
-                                date_from=str(today), date_to=str(today + timedelta(days=days_ahead)))
-    except Exception as exc:
-        if verbose:
-            print(f"  snapshot_odds: BSD fetch failed ({exc}) — skipped")
-        return []
+    if events is None:
+        try:
+            events = get_all_events(
+                api_key, status="notstarted", date_from=str(today),
+                date_to=str(today + timedelta(days=days_ahead))
+            )
+        except Exception as exc:
+            if verbose:
+                print(f"  snapshot_odds: BSD fetch failed ({exc}) — skipped")
+            return []
+    else:
+        from .schema import normalize_status
+        end = str(today + timedelta(days=days_ahead))
+        events = [
+            ev for ev in events
+            if normalize_status(ev.get("status")) == "NOT"
+            and str(ev.get("event_date") or ev.get("date") or "")[:10] >= str(today)
+            and str(ev.get("event_date") or ev.get("date") or "")[:10] <= end
+        ]
 
     rows: list[dict] = []
     n_with_odds = 0
+    n_polled = 0
+    poll_state = _load_poll_state()
+    live_ids = {str(ev.get("id")) for ev in events if ev.get("id") is not None}
+    poll_state = {eid: stamp for eid, stamp in poll_state.items() if eid in live_ids}
     for ev in events:
         comp = comp_from_bsd_league(bsd_league_name(ev))
         if comp is None:
@@ -114,10 +155,42 @@ def build_snapshot_rows(api_key: str, days_ahead: int = SNAPSHOT_HORIZON_DAYS,
         eid = ev.get("id")
         if eid is None:
             continue
+        cache_key = str(eid)
         try:
-            cmp = odds_comparison(api_key, eid)
-        except Exception:
+            kickoff = datetime.fromisoformat(
+                str(ev.get("event_date") or ev.get("date") or "")
+                .replace("Z", "+00:00")
+            )
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            lead_days = (kickoff - datetime.now(timezone.utc)).total_seconds() / 86400
+        except (TypeError, ValueError):
+            lead_days = 0
+        due_hours = (
+            NEAR_POLL_HOURS if lead_days <= NEAR_HORIZON_DAYS
+            else FAR_POLL_HOURS
+        )
+        try:
+            last_poll = datetime.fromisoformat(
+                poll_state.get(cache_key, "").replace("Z", "+00:00")
+            )
+            age_hours = (
+                datetime.now(timezone.utc) - last_poll
+            ).total_seconds() / 3600
+        except (TypeError, ValueError):
+            age_hours = float("inf")
+        if age_hours < due_hours:
             continue
+        cmp = odds_cache.get(cache_key) if odds_cache is not None else None
+        if cmp is None:
+            try:
+                cmp = odds_comparison(api_key, eid)
+            except Exception:
+                continue
+            if odds_cache is not None:
+                odds_cache[cache_key] = cmp
+        poll_state[cache_key] = snap_time
+        n_polled += 1
         markets = cmp.get("markets") or {}
         if not markets or cmp.get("bookmakers_count", 0) == 0:
             continue
@@ -144,9 +217,11 @@ def build_snapshot_rows(api_key: str, days_ahead: int = SNAPSHOT_HORIZON_DAYS,
             if vals["odds_median"] is not None:
                 rows.append({**base, "market": "total25", "side": side, **vals})
 
+    _save_poll_state(poll_state)
     if verbose:
         print(f"  snapshot_odds: {n_with_odds} events with live odds "
-              f"(of {len(events)} upcoming), {len(rows)} side-rows")
+              f"({n_polled} polled of {len(events)} upcoming), "
+              f"{len(rows)} side-rows")
     return rows
 
 

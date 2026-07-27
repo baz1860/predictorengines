@@ -62,6 +62,8 @@ RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
 CARD = Path(os.environ.get("CLUB_SOCCER_CARD_PATH", str(DATA / "card.md")))
 CARD_HORIZON_DAYS = 7
 FDCOUK_STALE_DAYS = 6
+DAILY_FIXTURE_HORIZON_DAYS = 90
+DAILY_RESULT_LOOKBACK_DAYS = 14
 # Manual odds.csv is opt-in (--allow-manual-odds); freshness/future-kickoff
 # rules live in edge.validate_quotes — the one gate shared with the app.
 MANUAL_ODDS_MAX_AGE_DAYS = E.MANUAL_ODDS_MAX_AGE_DAYS
@@ -103,18 +105,39 @@ def _rebuild_squads_and_transfers(store: PF.PlayerFeatureStore) -> None:
     print(f"   {len(squads)} squad rows, {len(transfers)} detected transfer(s)")
 
 
-def run_network_steps(api_key: str) -> None:
-    _step("Fetch results + upcoming fixtures", F.fetch_fixtures, current=True,
-          api_key=api_key, required=True)
+def run_network_steps(api_key: str) -> tuple[list[dict], dict[str, dict]]:
+    """Run network capture once and share its responses between consumers."""
+    today = datetime.now(timezone.utc).date()
+    all_events = _step(
+        "Fetch BSD daily event index", F._fetch_bsd_events, api_key,
+        date_from=str(today - timedelta(days=DAILY_RESULT_LOOKBACK_DAYS)),
+        date_to=str(today + timedelta(days=DAILY_FIXTURE_HORIZON_DAYS)),
+        required=True,
+    )
+    if all_events is None:
+        return [], {}
 
-    _step("Pull absences", PF.pull_absences, api_key)
+    _step(
+        "Merge results + upcoming fixtures", F.fetch_fixtures,
+        current=True, api_key=api_key, events=all_events, required=True,
+    )
+
+    upcoming_events = [
+        ev for ev in all_events
+        if F.schema.normalize_status(ev.get("status")) == "NOT"
+    ]
+    _step("Pull absences", PF.pull_absences, api_key, events=upcoming_events)
     store = PF.PlayerFeatureStore().load()
     n = _step("Refresh player cache from bsd_cache", store.refresh_from_cache)
     if n:
         _step("Rebuild squads + transfers", _rebuild_squads_and_transfers, store)
 
+    odds_cache: dict[str, dict] = {}
+
     def _snapshot():
-        rows = SO.build_snapshot_rows(api_key)
+        rows = SO.build_snapshot_rows(
+            api_key, events=upcoming_events, odds_cache=odds_cache
+        )
         return SO.append_snapshots(rows)
     _step("Snapshot odds", _snapshot)
 
@@ -125,13 +148,27 @@ def run_network_steps(api_key: str) -> None:
     # rather than on a staleness heuristic.
     def _refresh_expansion():
         from . import seed_fdcouk_leagues as SFL
-        return SFL.refresh(verbose=True)
-    _step("Refresh BSD-less leagues (fd.co.uk)", _refresh_expansion)
+        result = SFL.refresh(verbose=True)
+        failed = [
+            comp for comp, count
+            in result.get("per_competition", {}).items()
+            if int(count) < 0
+        ]
+        if failed:
+            raise RuntimeError(
+                "fd.co.uk refresh failed for: " + ", ".join(sorted(failed))
+            )
+        return result
+    _step(
+        "Refresh BSD-less leagues (fd.co.uk)", _refresh_expansion,
+        required=True,
+    )
 
     if _fdcouk_is_stale():
         _step("Refresh fd.co.uk market history (weekly)", FD.build)
     else:
         print("\n== fd.co.uk market history: fresh (< 6 days old), skipped ==")
+    return upcoming_events, odds_cache
 
 
 # ── card sections ──────────────────────────────────────────────────────────
@@ -735,8 +772,11 @@ def run(fast: bool = False, no_network: bool = False,
 
 def _run_steps(fast: bool, no_network: bool,
                allow_manual_odds: bool) -> tuple[list[dict], str | None]:
-    _step("Prune recoverable caches", CR.prune_all)
-    report = H.run_checks(network=not no_network)
+    _step("Prune recoverable caches if due", CR.prune_all_if_due)
+    # Source freshness used to download fd.co.uk here and then download it
+    # again in run_network_steps. Daily health is deliberately offline; the
+    # following refresh is the single authoritative source fetch.
+    report = H.run_checks(network=False)
     if not report.get("ok", True):
         _FAILED_REQUIRED.append("Health hard checks failed "
                                 "(see health output above)")
@@ -745,14 +785,16 @@ def _run_steps(fast: bool, no_network: bool,
                  "`python3 -m club_soccer.fetch --repair` before continuing.")
 
     api_key = get_key("bsd", env="BSD_API_KEY")
+    upcoming_events: list[dict] | None = None
+    odds_cache: dict[str, dict] | None = None
     if no_network or not api_key:
         reason = "--no-network" if no_network else "no BSD key"
         print(f"\n== Network steps skipped ({reason}) ==")
     else:
-        run_network_steps(api_key)
+        upcoming_events, odds_cache = run_network_steps(api_key)
 
     if not fast:
-        _step("Refit model", lambda: M.save_params(M.fit()), required=True)
+        _step("Fit model if training data changed", M.fit_if_changed, required=True)
     else:
         print("\n== Refit skipped (--fast) ==")
 
@@ -764,7 +806,10 @@ def _run_steps(fast: bool, no_network: bool,
     if not no_network and api_key:
         def _record():
             from . import decision_ledger as DL
-            return DL.record(api_key, verbose=True)
+            return DL.record(
+                api_key, verbose=True, events=upcoming_events,
+                odds_cache=odds_cache,
+            )
         _step("Record staking decisions (ledger)", _record)
     def _settle():
         from . import decision_ledger as DL
@@ -780,7 +825,10 @@ def _run_steps(fast: bool, no_network: bool,
     from .calibrate import load_active_maps
     calib_maps = load_active_maps()
     if not no_network and api_key:
-        player_adj_map = _step("Player availability adjustments", E.fetch_player_adjustments, api_key)
+        player_adj_map = _step(
+            "Player availability adjustments", E.fetch_player_adjustments,
+            api_key, events=upcoming_events,
+        )
 
     edge_rows: list[dict] = []
     pricing_note: str | None = None
@@ -789,7 +837,10 @@ def _run_steps(fast: bool, no_network: bool,
         # not report success when the odds fetch itself failed. ("Provider
         # has no quoted markets" raises inside fetch_bsd_odds too — that's a
         # visible failure by design, not silently zero rows.)
-        odds = _step("Fetch BSD odds", E.fetch_bsd_odds, api_key, required=True)
+        odds = _step(
+            "Fetch BSD odds", E.fetch_bsd_odds, api_key,
+            events=upcoming_events, required=True,
+        )
         if odds is not None:
             odds, issues = E.validate_quotes(odds, source="live")
             for msg in issues:

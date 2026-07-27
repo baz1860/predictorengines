@@ -15,7 +15,8 @@ SETTINGS = ROOT / "data" / "app_settings.json"
 
 # Odds sources the UI offers a key field for.
 ODDS_SOURCES = [
-    {"id": "the-odds-api", "label": "The Odds API (major golf outrights / odds)"},
+    {"id": "the-odds-api", "label": "The Odds API (odds/history)"},
+    {"id": "oddspapi", "label": "OddsPapi (free NHL history)"},
     {"id": "api-football", "label": "API-Football (injuries.py)"},
 ]
 

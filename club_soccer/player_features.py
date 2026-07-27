@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 import unicodedata
@@ -70,6 +71,7 @@ from bsd_client import (
 from api_keys import get_key
 
 CACHE_SCHEMA_VERSION = 3
+EVENT_MANIFEST_KEY = "_event_manifest"
 
 DATA = HERE / "data"
 PLAYER_CACHE = DATA / "player_stats_cache.json"
@@ -323,8 +325,54 @@ class PlayerFeatureStore:
     # ── I/O ────────────────────────────────────────────────────────────────
 
     def _player_records(self) -> "list[tuple[str, dict]]":
-        """(key, record) pairs, skipping the "v" schema-version sentinel."""
-        return [(k, v) for k, v in self._data.items() if isinstance(v, dict)]
+        """(key, record) pairs, skipping schema/manifest sentinels."""
+        return [
+            (k, v) for k, v in self._data.items()
+            if not k.startswith("_") and isinstance(v, dict)
+        ]
+
+    def _event_manifest(self) -> dict[str, str]:
+        """Return the processed-event signature map.
+
+        It is stored as a list rather than a dict so older readers that treat
+        every top-level dict as a player cannot mistake metadata for a player.
+        """
+        raw = self._data.get(EVENT_MANIFEST_KEY, [])
+        if not isinstance(raw, list):
+            return {}
+        out: dict[str, str] = {}
+        for item in raw:
+            if isinstance(item, list) and len(item) == 2:
+                out[str(item[0])] = str(item[1])
+        return out
+
+    def _set_event_manifest(self, manifest: dict[str, str]) -> None:
+        self._data[EVENT_MANIFEST_KEY] = [
+            [event_id, signature]
+            for event_id, signature in sorted(manifest.items())
+        ]
+
+    def _remove_event_apps(self, event_id: str) -> None:
+        """Remove a superseded event before ingesting its changed payload."""
+        for _key, record in self._player_records():
+            apps = record.get("apps")
+            if isinstance(apps, list):
+                record["apps"] = [
+                    app for app in apps
+                    if str(app.get("event_id", "")) != str(event_id)
+                ]
+
+    @staticmethod
+    def _event_signature(event_path: Path, stats_path: Path) -> str:
+        """Cheap change detector for Syncthing-managed immutable responses."""
+        parts = []
+        for path in (event_path, stats_path):
+            try:
+                stat = path.stat()
+                parts.append(f"{stat.st_mtime_ns}:{stat.st_size}")
+            except OSError:
+                parts.append("missing")
+        return "|".join(parts)
 
     def load(self) -> "PlayerFeatureStore":
         if self._path.exists():
@@ -346,7 +394,9 @@ class PlayerFeatureStore:
     def save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._data["v"] = CACHE_SCHEMA_VERSION
-        self._path.write_text(json.dumps(self._data, indent=2, ensure_ascii=False))
+        tmp = self._path.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(self._data, indent=2, ensure_ascii=False))
+        tmp.replace(self._path)
 
     def _load_team_baselines(self) -> None:
         """Load team-level expected-goals baselines from model_params.json."""
@@ -409,6 +459,7 @@ class PlayerFeatureStore:
 
         processed = 0
         stats_rows = 0
+        manifest = self._event_manifest()
         for ev in selected_events:
             eid = str(ev.get("id") or "")
             if not eid:
@@ -451,6 +502,8 @@ class PlayerFeatureStore:
                 stats_rows += len(rows)
             else:
                 self._ingest_event_players(detail, home, away, date, eid)
+            manifest[eid] = self._event_signature(cache_file, stats_cache)
+            self._set_event_manifest(manifest)
             processed += 1
             if processed % 50 == 0:
                 print(f"  ...{processed}/{len(selected_events)}")
@@ -466,25 +519,42 @@ class PlayerFeatureStore:
         return processed
 
     def refresh_from_cache(self) -> int:
-        """Build player stats from already-downloaded bsd_cache/ files (no API calls)."""
+        """Ingest only new or changed bsd_cache event bundles.
+
+        The first run after upgrading has no manifest and performs one full
+        migration. Later runs stat every event bundle but only read JSON for a
+        new/changed event, avoiding thousands of parses and a 23 MiB rewrite.
+        """
         if not self._loaded:
             self.load()
         if not STATS_CACHE.exists():
             return 0
-        cached = []
+        manifest = self._event_manifest()
+        pending = []
         for cache_file in STATS_CACHE.glob("event_*.json"):
+            eid = cache_file.stem.removeprefix("event_")
+            stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+            signature = self._event_signature(cache_file, stats_cache)
+            if manifest.get(eid) == signature:
+                continue
             try:
                 detail = json.loads(cache_file.read_text())
             except Exception:
                 continue
-            cached.append((event_date_utc(detail), cache_file, detail))
+            pending.append((
+                event_date_utc(detail), eid, cache_file, stats_cache, detail,
+                signature,
+            ))
         processed = 0
-        for _, cache_file, detail in sorted(cached, key=lambda item: item[0]):
+        for _, manifest_id, cache_file, stats_cache, detail, signature in sorted(
+            pending, key=lambda item: item[0]
+        ):
             date = event_date_utc(detail)[:10]
             home = str(detail.get("home_team") or "")
             away = str(detail.get("away_team") or "")
             eid = str(detail.get("id") or cache_file.stem.removeprefix("event_"))
-            stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
+            if manifest_id in manifest:
+                self._remove_event_apps(eid)
             rows = None
             if stats_cache.exists():
                 try:
@@ -495,8 +565,13 @@ class PlayerFeatureStore:
                 self._ingest_player_stats(rows, home, away, date, eid)
             else:
                 self._ingest_event_players(detail, home, away, date, eid)
+            manifest[manifest_id] = signature
             processed += 1
         if processed:
+            self._set_event_manifest(manifest)
+            self.save()
+        elif EVENT_MANIFEST_KEY not in self._data and manifest:
+            self._set_event_manifest(manifest)
             self.save()
         return processed
 
@@ -555,6 +630,7 @@ class PlayerFeatureStore:
         # payload was received.
         if stat_rows:
             self._data = {"v": CACHE_SCHEMA_VERSION}
+            manifest: dict[str, str] = {}
             for _, cache_file, detail in sorted(cached, key=lambda row: row[0]):
                 eid = str(detail.get("id") or cache_file.stem.removeprefix("event_"))
                 stats_cache = STATS_CACHE / f"player_stats_{eid}.json"
@@ -576,6 +652,8 @@ class PlayerFeatureStore:
                 else:
                     self._ingest_event_players(detail, home, away,
                                                detail_date[:10], eid)
+                manifest[eid] = self._event_signature(cache_file, stats_cache)
+            self._set_event_manifest(manifest)
             self.save()
         print(f"  Player-stat responses fetched: {fetched}, rows: {stat_rows}.")
         return fetched
@@ -987,7 +1065,8 @@ def market_dispersion(event: dict) -> dict[str, float | None]:
 
 # ── Dated absences (P2.4) ───────────────────────────────────────────────────────
 
-def pull_absences(api_key: str, days_ahead: int = 14) -> int:
+def pull_absences(api_key: str, days_ahead: int = 14,
+                  events: list[dict] | None = None) -> int:
     """Pull unavailable_players for upcoming BSD events in our competitions
     and append to data/absences_club.csv.
 
@@ -999,12 +1078,24 @@ def pull_absences(api_key: str, days_ahead: int = 14) -> int:
     from .competitions import comp_from_bsd_league
 
     today = datetime.now(timezone.utc).date()
-    try:
-        events = get_all_events(api_key, status="notstarted",
-                                date_from=str(today), date_to=str(today + timedelta(days=days_ahead)))
-    except Exception as exc:
-        print(f"  pull_absences: BSD fetch failed ({exc}) — skipped")
-        return 0
+    if events is None:
+        try:
+            events = get_all_events(
+                api_key, status="notstarted", date_from=str(today),
+                date_to=str(today + timedelta(days=days_ahead))
+            )
+        except Exception as exc:
+            print(f"  pull_absences: BSD fetch failed ({exc}) — skipped")
+            return 0
+    else:
+        from .schema import normalize_status
+        end = str(today + timedelta(days=days_ahead))
+        events = [
+            ev for ev in events
+            if normalize_status(ev.get("status")) == "NOT"
+            and str(event_date_utc(ev))[:10] >= str(today)
+            and str(event_date_utc(ev))[:10] <= end
+        ]
 
     recorded_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = []

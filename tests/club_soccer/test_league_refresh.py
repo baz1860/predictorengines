@@ -105,15 +105,19 @@ def test_refresh_health_flags_only_genuine_lag(monkeypatch):
     from club_soccer.competitions import get
 
     comp = get("Austrian Bundesliga")
-    monkeypatch.setattr(SFL, "load_competition",
-                        lambda c, refresh=False: [{"date": "2026-05-17"}])
+    monkeypatch.setattr(
+        SFL, "load_competition",
+        lambda c, refresh=False, refresh_seasons=None: [{"date": "2026-05-17"}],
+    )
     # our fixtures.csv latest for Austria is 2026-05-17 too -> not behind
     rows = SFL.refresh_health([comp])
     assert rows and rows[0]["behind"] is False
 
     # source jumps ahead -> genuinely behind
-    monkeypatch.setattr(SFL, "load_competition",
-                        lambda c, refresh=False: [{"date": "2026-08-30"}])
+    monkeypatch.setattr(
+        SFL, "load_competition",
+        lambda c, refresh=False, refresh_seasons=None: [{"date": "2026-08-30"}],
+    )
     rows = SFL.refresh_health([comp])
     assert rows[0]["behind"] is True
 

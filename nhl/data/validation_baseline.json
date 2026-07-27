@@ -1,10 +1,15 @@
 {
- "results_path": "/sessions/festive-zen-cray/mnt/Soccer Prediction/nhl/data/results_2025_26.csv",
- "n_games": 1394,
- "model": "blend",
- "accuracy": 0.5065,
- "brier": 0.25783,
- "logloss": 0.70995,
- "margin_mae": 2.181,
- "total_mae": 1.842
+  "results_path": "nhl/data/results_2025_26.csv",
+  "n_games": 1394,
+  "model": "blend",
+  "mode": "walk_forward",
+  "accuracy": 0.5466,
+  "always_home_accuracy": 0.5194,
+  "brier": 0.24679,
+  "home_rate_brier": 0.24962,
+  "constant_50_brier": 0.25,
+  "logloss": 0.68666,
+  "margin_mae": 2.154,
+  "total_mae": 1.844,
+  "beats_trivial_baselines": true
 }

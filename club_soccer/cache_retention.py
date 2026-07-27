@@ -1,12 +1,16 @@
 """Bound recoverable provider caches by age and size."""
 from __future__ import annotations
 
+import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
+RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
+STATE = RUNTIME / "cache_retention_state.json"
 
 
 @dataclass(frozen=True)
@@ -62,4 +66,23 @@ def prune_all() -> dict[str, dict[str, int]]:
                 f"  {policy.path.name}: removed {result['files_removed']} files "
                 f"({result['bytes_removed'] / 1024 / 1024:.1f} MiB)"
             )
+    return results
+
+
+def prune_all_if_due(interval_days: int = 7,
+                     now: float | None = None) -> dict[str, dict[str, int]]:
+    """Run the recoverable-cache directory walk at most once per interval."""
+    now = time.time() if now is None else float(now)
+    try:
+        last = float(json.loads(STATE.read_text()).get("last_prune_epoch", 0))
+    except (OSError, ValueError, TypeError):
+        last = 0.0
+    if now - last < interval_days * 86400:
+        print(f"  cache retention: not due (< {interval_days} days)")
+        return {}
+    results = prune_all()
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = STATE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"last_prune_epoch": now}, indent=2))
+    tmp.replace(STATE)
     return results

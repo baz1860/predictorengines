@@ -1,11 +1,29 @@
 {
   "status": "FAIL",
+  "forecast_validation_status": "PASS",
+  "roi_validation_status": "FAIL",
   "staking_enabled": false,
-  "reason": "NHL staking is disabled until a leak-free walk-forward validation beats trivial baselines and timestamped odds validation supports betting ROI.",
+  "reason": "Walk-forward validation beats trivial moneyline baselines, but NHL staking is disabled until timestamped sportsbook odds prove positive ROI out of sample.",
+  "updated_at": "2026-07-26T00:00:00+00:00",
+  "metrics": {
+    "results_path": "nhl/data/results_2025_26.csv",
+    "n_games": 1394,
+    "model": "blend",
+    "mode": "walk_forward",
+    "accuracy": 0.5466,
+    "always_home_accuracy": 0.5194,
+    "brier": 0.24679,
+    "home_rate_brier": 0.24962,
+    "constant_50_brier": 0.25,
+    "logloss": 0.68666,
+    "margin_mae": 2.154,
+    "total_mae": 1.844,
+    "beats_trivial_baselines": true
+  },
   "required_to_enable": [
     "walk-forward validation using only pre-game information",
     "moneyline Brier better than the observed home-rate baseline",
     "accuracy better than always-pick-home baseline",
-    "timestamped sportsbook odds with source/bookmaker metadata for ROI validation"
+    "timestamped sportsbook odds from The Odds API or an equivalent provider for ROI validation"
   ]
 }

@@ -70,6 +70,6 @@ echo "loaded daemons:"
 sudo launchctl list | grep clubsoccer || echo "  (none found — check the logs)"
 echo
 echo "Done. Capture ran once just now and repeats every 15 min; transfer data"
-echo "updates incrementally at 06:30; the heavy job runs at 07:30."
+echo "updates incrementally at 06:30; the incremental card job runs at 07:30."
 echo "Logs: $PROJECT_DIR/logs/"
 echo "Tail it:  tail -f \"$PROJECT_DIR/logs/club_soccer_capture.log\""

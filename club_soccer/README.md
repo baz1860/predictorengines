@@ -6,8 +6,8 @@ the major domestic cups, and the Champions/Europa/Conference Leagues.
 
 ## Use it
 
-One command. It refreshes results/fixtures/absences/squads/odds, refits the
-model, prices upcoming matches, and writes a card:
+One command. It refreshes results/fixtures/absences/squads/odds, updates the
+model when training data changed, prices upcoming matches, and writes a card:
 
 ```bash
 python3 -m club_soccer.season
@@ -52,6 +52,21 @@ python3 -m club_soccer.season --no-network    # cached data only, no API calls
 
 `club_soccer/update.sh` is a thin wrapper around the same command for the
 app's scheduler / launchd-style invocation (`./club_soccer/update.sh --fast`).
+The normal daily path is incremental:
+
+- one 90-day BSD event-index response is shared by fixtures, absences, player
+  adjustments, pricing and the decision ledger;
+- the player store ingests only new or changed cached event bundles;
+- model parameters are reused when the played training rows and model inputs
+  are unchanged;
+- the fixed-window promotion gate and decision-time evidence are reused only
+  on an exact fingerprint match;
+- recoverable cache pruning runs weekly, and far-ahead odds are polled every
+  three days rather than every day.
+
+The first run after deploying model/validation code or creating the player
+manifest can still be slow. That is an intentional full rebuild; subsequent
+unchanged runs take the incremental path.
 
 ## How it's built
 
@@ -114,6 +129,8 @@ defensive actions), with confirmed lineups as a fallback. Unused substitutes
 are retained as zero-minute selection records and never treated as appearances.
 Refreshes select the newest events first, ingest chronologically, and
 checkpoint every 25 matches so a slow provider response cannot lose a rebuild.
+The offline daily refresh keeps an event-file manifest and therefore parses
+only new or changed bundles. `--from-cache` remains the explicit full rebuild.
 
 ```bash
 python3 -m club_soccer.player_features --refresh --max-events 400 --days-back 90  # BSD stats

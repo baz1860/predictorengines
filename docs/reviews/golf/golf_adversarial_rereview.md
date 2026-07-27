@@ -151,7 +151,7 @@ Full root sweep (run in batches; sandbox constrained long single runs):
 test_bankroll, test_baseline_ownership, test_blend_gate, test_cfb_blend,
 test_clv_suite, test_daily_card, test_edge_api, test_evidence_gate,
 test_market_blend, test_model_audit                       → 88 passed
-test_club_soccer + 5 horse-racing files                   → 23 passed, 1 failed
+test_club_soccer + then-current auxiliary suites         → 23 passed, 1 failed
 test_m2..m7, nfl, nhl, quote_provenance, release,
 run_status, status_normalization, tennis                  → 99 passed, 1 error
 test_v5, test_v6                                          → 7 passed, 4 failed

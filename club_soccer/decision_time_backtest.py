@@ -67,6 +67,7 @@ THRESHOLDS = {"2%": 0.02, "4%": 0.04, "6%": 0.06}
 # Confidence buckets for the hit-rate table (the "regular winners" view).
 CONF_BUCKETS = [(0.50, 0.55), (0.55, 0.60), (0.60, 0.65), (0.65, 1.01)]
 KELLY_FRACTION = 0.25
+MAX_REUSE_DAYS = 6
 
 
 # ── frozen-ledger replay ─────────────────────────────────────────────────
@@ -301,7 +302,47 @@ def _provenance(bets: pd.DataFrame) -> dict:
     }
 
 
-def run(verbose: bool = True) -> dict:
+def _input_fingerprint() -> str:
+    """Hash the frozen ledgers and code that determines the evidence artifact."""
+    from . import decision_ledger as DL
+
+    digest = hashlib.sha256()
+    for path in (
+        DL.DECISIONS, DL.SETTLEMENTS, Path(__file__),
+        HERE / "decision_ledger.py", HERE / "market_settlement.py",
+    ):
+        digest.update(path.read_bytes() if path.exists() else b"")
+    return digest.hexdigest()[:32]
+
+
+def _reusable_artifact(fingerprint: str) -> dict | None:
+    if not ARTIFACT.exists():
+        return None
+    try:
+        artifact = json.loads(ARTIFACT.read_text())
+        generated = datetime.fromisoformat(
+            str(artifact["generated_at_utc"]).replace("Z", "+00:00")
+        )
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+    age_days = (datetime.now(timezone.utc) - generated).total_seconds() / 86400
+    if (
+        artifact.get("input_fingerprint") == fingerprint
+        and 0 <= age_days < MAX_REUSE_DAYS
+    ):
+        return artifact
+    return None
+
+
+def run(verbose: bool = True, force: bool = False) -> dict:
+    fingerprint = _input_fingerprint()
+    if not force:
+        cached = _reusable_artifact(fingerprint)
+        if cached is not None:
+            if verbose:
+                print("Decision-time backtest unchanged — reused cached artifact")
+            return cached
+
     bets = build_bets(verbose=verbose)
 
     if not bets.empty and (LEDGER.exists() or True):
@@ -318,6 +359,7 @@ def run(verbose: bool = True) -> dict:
         "clv_reference": "pinnacle_closing_devigged",
         "decision_lead_minutes": round(lead, 1),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "input_fingerprint": fingerprint,
         "simulated_betting": _threshold_metrics(bets),
         "simulated_betting_by_league": _threshold_metrics_by_league(bets),
         "model_log_loss_1x2": ll_model,
@@ -413,11 +455,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--report", action="store_true",
                     help="print the last artifact without recomputing")
+    ap.add_argument("--force", action="store_true",
+                    help="recompute even when ledgers and backtest code are unchanged")
     args = ap.parse_args()
     if args.report and ARTIFACT.exists():
         _print(json.loads(ARTIFACT.read_text()))
         return
-    run()
+    run(force=args.force)
 
 
 if __name__ == "__main__":

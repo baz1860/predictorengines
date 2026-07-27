@@ -29,6 +29,13 @@ TEAM_ALIASES = {
     "utah hockey club": "Utah Mammoth",
 }
 
+REQUIRED_STATS = {
+    "team", "games", "goals_for", "goals_against", "shots_for",
+    "shots_against", "power_play_pct", "penalty_kill_pct", "save_pct",
+    "point_pct",
+}
+NUMERIC_STATS = sorted(REQUIRED_STATS - {"team"})
+
 
 @dataclass(frozen=True)
 class TeamRating:
@@ -64,21 +71,20 @@ def load_team_stats() -> pd.DataFrame:
     if not TEAM_STATS_CSV.exists():
         raise FileNotFoundError(f"Missing NHL team stats file: {TEAM_STATS_CSV}")
     df = pd.read_csv(TEAM_STATS_CSV)
-    required = {
-        "team", "games", "goals_for", "goals_against", "shots_for",
-        "shots_against", "power_play_pct", "penalty_kill_pct", "save_pct",
-        "point_pct",
-    }
-    missing = sorted(required - set(df.columns))
+    return _coerce_stats_frame(df, source=str(TEAM_STATS_CSV))
+
+
+def _coerce_stats_frame(stats: pd.DataFrame, *, source: str) -> pd.DataFrame:
+    missing = sorted(REQUIRED_STATS - set(stats.columns))
     if missing:
-        raise ValueError(f"nhl/data/team_stats.csv missing columns: {missing}")
+        raise ValueError(f"{source} missing columns: {missing}")
+    df = stats.copy()
     if df["team"].duplicated().any():
         dupes = sorted(df.loc[df["team"].duplicated(), "team"].astype(str).unique())
         raise ValueError(f"Duplicate NHL team rows: {dupes}")
-    numeric = sorted(required - {"team"})
-    for col in numeric:
+    for col in NUMERIC_STATS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    bad = df[df[numeric].isna().any(axis=1)]
+    bad = df[df[NUMERIC_STATS].isna().any(axis=1)]
     if not bad.empty:
         raise ValueError(f"NHL team stats contain non-numeric values for: {bad['team'].tolist()}")
     if (df["games"] <= 0).any():
@@ -92,14 +98,20 @@ def team_names() -> list[str]:
 
 @lru_cache(maxsize=1)
 def _ratings() -> tuple[dict[str, TeamRating], dict[str, float]]:
-    df = load_team_stats()
+    return ratings_from_stats(load_team_stats())
+
+
+def ratings_from_stats(stats: pd.DataFrame) -> tuple[dict[str, TeamRating], dict[str, float]]:
+    """Build ratings from an explicit as-of stats table."""
+    df = _coerce_stats_frame(stats, source="NHL stats frame")
     games = df["games"].sum()
     league_gf_pg = float(df["goals_for"].sum() / games)
     league_ga_pg = float(df["goals_against"].sum() / games)
     league_sf_pg = float(df["shots_for"].sum() / games)
     league_sa_pg = float(df["shots_against"].sum() / games)
-    league_pp = float(df["power_play_pct"].mean())
+    league_pp = max(float(df["power_play_pct"].mean()), EPS)
     league_pk = float(df["penalty_kill_pct"].mean())
+    league_pk_allowed = max(1.0 - league_pk, EPS)
     league_pt = float(df["point_pct"].mean())
 
     ratings: dict[str, TeamRating] = {}
@@ -117,7 +129,7 @@ def _ratings() -> tuple[dict[str, TeamRating], dict[str, float]]:
         defence_allowed = (
             0.70 * (ga_pg / league_ga_pg)
             + 0.20 * (sa_pg / league_sa_pg)
-            + 0.10 * ((1.0 - float(r.penalty_kill_pct)) / (1.0 - league_pk))
+            + 0.10 * ((1.0 - float(r.penalty_kill_pct)) / league_pk_allowed)
         )
         form = (float(r.point_pct) - league_pt) / 0.100
         ratings[str(r.team)] = TeamRating(
@@ -136,8 +148,7 @@ def _ratings() -> tuple[dict[str, TeamRating], dict[str, float]]:
     return ratings, meta
 
 
-def _require_team(team: str) -> TeamRating:
-    ratings, _meta = _ratings()
+def _require_team_from(ratings: dict[str, TeamRating], team: str) -> TeamRating:
     if team not in ratings:
         folded = _fold_name(team)
         alias = TEAM_ALIASES.get(folded)
@@ -150,8 +161,20 @@ def _require_team(team: str) -> TeamRating:
     return ratings[team]
 
 
-def _power_lambdas(home: TeamRating, away: TeamRating, neutral: bool) -> tuple[float, float]:
-    _ratings_map, meta = _ratings()
+def _require_team(team: str) -> TeamRating:
+    ratings, _meta = _ratings()
+    return _require_team_from(ratings, team)
+
+
+def canonical_team_name(team: str, stats_df: pd.DataFrame | None = None) -> str:
+    ratings, _meta = ratings_from_stats(stats_df) if stats_df is not None else _ratings()
+    return _require_team_from(ratings, team).team
+
+
+def _power_lambdas(home: TeamRating, away: TeamRating, neutral: bool,
+                   meta: dict[str, float] | None = None) -> tuple[float, float]:
+    if meta is None:
+        _ratings_map, meta = _ratings()
     base = meta["league_goals_pg"]
     h_adv = 1.0 if neutral else HOME_GOAL_ADV
     a_adv = 1.0 if neutral else AWAY_GOAL_ADV
@@ -160,8 +183,9 @@ def _power_lambdas(home: TeamRating, away: TeamRating, neutral: bool) -> tuple[f
     return _clip(lam_h, 1.35, 4.60), _clip(lam_a, 1.35, 4.60)
 
 
-def _form_lambdas(home: TeamRating, away: TeamRating, neutral: bool) -> tuple[float, float]:
-    power_h, power_a = _power_lambdas(home, away, neutral)
+def _form_lambdas(home: TeamRating, away: TeamRating, neutral: bool,
+                  meta: dict[str, float] | None = None) -> tuple[float, float]:
+    power_h, power_a = _power_lambdas(home, away, neutral, meta)
     total = power_h + power_a
     home_edge = 0.0 if neutral else 0.18
     margin = 0.44 * (home.form - away.form) + home_edge
@@ -170,21 +194,29 @@ def _form_lambdas(home: TeamRating, away: TeamRating, neutral: bool) -> tuple[fl
     return _clip(lam_h, 1.25, 4.75), _clip(lam_a, 1.25, 4.75)
 
 
-def expected_goals(home_team: str, away_team: str, *, neutral: bool = False,
-                   model: str = "blend") -> tuple[float, float]:
-    """Expected regulation goals for `home_team` and `away_team`."""
-    home = _require_team(home_team)
-    away = _require_team(away_team)
+def _expected_goals_from_ratings(home: TeamRating, away: TeamRating, *,
+                                 neutral: bool, model: str,
+                                 meta: dict[str, float]) -> tuple[float, float]:
     model = str(model or "blend").lower()
     if model == "power":
-        return _power_lambdas(home, away, neutral)
+        return _power_lambdas(home, away, neutral, meta)
     if model == "form":
-        return _form_lambdas(home, away, neutral)
+        return _form_lambdas(home, away, neutral, meta)
     if model != "blend":
         raise ValueError(f"Unknown NHL model: {model!r}")
-    ph, pa = _power_lambdas(home, away, neutral)
-    fh, fa = _form_lambdas(home, away, neutral)
+    ph, pa = _power_lambdas(home, away, neutral, meta)
+    fh, fa = _form_lambdas(home, away, neutral, meta)
     return 0.65 * ph + 0.35 * fh, 0.65 * pa + 0.35 * fa
+
+
+def expected_goals(home_team: str, away_team: str, *, neutral: bool = False,
+                   model: str = "blend",
+                   stats_df: pd.DataFrame | None = None) -> tuple[float, float]:
+    """Expected regulation goals for `home_team` and `away_team`."""
+    ratings, meta = ratings_from_stats(stats_df) if stats_df is not None else _ratings()
+    home = _require_team_from(ratings, home_team)
+    away = _require_team_from(ratings, away_team)
+    return _expected_goals_from_ratings(home, away, neutral=neutral, model=model, meta=meta)
 
 
 def _poisson(mu: float) -> list[float]:
@@ -223,7 +255,8 @@ def _outcome_core(lambda_home: float, lambda_away: float, ot_home: float) -> dic
                 away_by_2 += p
         else:
             tie_reg += p
-        if h + a > 5.5:
+        final_total = h + a + (1 if h == a else 0)
+        if final_total > 5.5:
             over_55 += p
     p_home = home_reg + tie_reg * ot_home
     return {
@@ -241,15 +274,19 @@ def _outcome_core(lambda_home: float, lambda_away: float, ot_home: float) -> dic
 
 
 def predict_match(home_team: str, away_team: str, *, neutral: bool = False,
-                  model: str = "blend") -> dict[str, Any]:
+                  model: str = "blend",
+                  stats_df: pd.DataFrame | None = None) -> dict[str, Any]:
     if home_team == away_team:
         raise ValueError("Pick two different NHL teams.")
-    home = _require_team(home_team)
-    away = _require_team(away_team)
-    lam_h, lam_a = expected_goals(home_team, away_team, neutral=neutral, model=model)
+    ratings, meta = ratings_from_stats(stats_df) if stats_df is not None else _ratings()
+    home = _require_team_from(ratings, home_team)
+    away = _require_team_from(ratings, away_team)
+    lam_h, lam_a = _expected_goals_from_ratings(home, away, neutral=neutral,
+                                                model=model, meta=meta)
     ot_home = _ot_home_prob(lam_h, lam_a, home, away, neutral)
     probs = _outcome_core(lam_h, lam_a, ot_home)
-    total = lam_h + lam_a
+    regulation_total = lam_h + lam_a
+    total = regulation_total + float(probs["p_reg_tie"])
     margin = lam_h - lam_a
     return {
         "home": home_team,
@@ -258,6 +295,7 @@ def predict_match(home_team: str, away_team: str, *, neutral: bool = False,
         "neutral": bool(neutral),
         "lambda_home": lam_h,
         "lambda_away": lam_a,
+        "regulation_total": regulation_total,
         "total": total,
         "margin": margin,
         **probs,
@@ -288,7 +326,7 @@ def market_probs(pred: dict[str, Any], market: str, side: str,
         if side not in {"over", "under"}:
             raise ValueError(f"Unknown NHL total side: {side!r}")
         for h, a, p in _score_probs(lh, la):
-            total = h + a
+            total = h + a + (1 if h == a else 0)
             if abs(total - line) < EPS:
                 p_push += p
             elif (total > line and side == "over") or (total < line and side == "under"):

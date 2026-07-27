@@ -210,7 +210,9 @@ def _decision_id(fixture_id, market: str, side: str) -> str:
     return hashlib.sha256(f"{fixture_id}|{market}|{side}".encode()).hexdigest()[:20]
 
 
-def record(api_key: str | None = None, verbose: bool = True) -> int:
+def record(api_key: str | None = None, verbose: bool = True,
+           events: list[dict] | None = None,
+           odds_cache: dict[str, dict] | None = None) -> int:
     """Append immutable decision rows for fixtures now in the decision window.
 
     Idempotent per (fixture, market, side): a decision is recorded ONCE, the
@@ -259,14 +261,24 @@ def record(api_key: str | None = None, verbose: bool = True) -> int:
     except Exception:
         player_store = None
 
-    try:
-        events = get_all_events(key, status="notstarted",
-                                date_from=str(now.date()),
-                                date_to=str((now.date())))
-    except Exception as exc:
-        if verbose:
-            print(f"  decision_ledger: BSD fetch failed ({exc})")
-        return 0
+    if events is None:
+        try:
+            events = get_all_events(
+                key, status="notstarted", date_from=str(now.date()),
+                date_to=str(now.date())
+            )
+        except Exception as exc:
+            if verbose:
+                print(f"  decision_ledger: BSD fetch failed ({exc})")
+            return 0
+    else:
+        from .schema import normalize_status
+        events = [
+            ev for ev in events
+            if normalize_status(ev.get("status")) == "NOT"
+            and str(ev.get("event_date") or ev.get("date") or "")[:10]
+            == str(now.date())
+        ]
 
     out: list[dict] = []
     for ev in events:
@@ -316,10 +328,15 @@ def record(api_key: str | None = None, verbose: bool = True) -> int:
         model_p = {"1x2": {"home": p["home"], "draw": p["draw"], "away": p["away"]},
                    "total25": {"over": p["over25"], "under": 1.0 - p["over25"]}}
 
-        try:
-            cmp = odds_comparison(key, fid)
-        except Exception:
-            continue
+        cache_key = str(fid)
+        cmp = odds_cache.get(cache_key) if odds_cache is not None else None
+        if cmp is None:
+            try:
+                cmp = odds_comparison(key, fid)
+            except Exception:
+                continue
+            if odds_cache is not None:
+                odds_cache[cache_key] = cmp
         markets = cmp.get("markets") or {}
 
         for market, bsd_map in (("1x2", {"home": "HOME", "draw": "DRAW", "away": "AWAY"}),

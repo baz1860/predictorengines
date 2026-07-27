@@ -39,14 +39,6 @@ tennis/data/edge_report.csv
 tennis/data/predictions*.csv
 tennis/data/validation_predictions.csv
 tennis/data/odds_history.csv
-horse_racing/data/model_params.json
-horse_racing/data/validation_report.json
-# Licensed provider payloads and derived datasets remain local.
-horse_racing/data/theracingapi/
-horse_racing/data/rpscrape/
-horse_racing/data/betfair/
-horse_racing/data.tar
-horse_racing/data1.tar
 
 # Data provenance manifests (written by update scripts; carry local mtimes).
 data_manifest.json
@@ -155,7 +147,6 @@ golf/data/threeballs_r*.*
 # Manual odds boards are filled in locally per betting day; every engine can
 # regenerate its blank template. (Matches odds.csv in any directory.)
 odds.csv
-!horse_racing/data/odds.csv
 threeballs.csv
 matchups.csv
 
@@ -208,6 +199,9 @@ club_soccer/data/season.lock
 club_soccer/data/bet_card.md
 club_soccer/data/forward_predictions_club.csv
 club_soccer/data/validation_latest.json
+club_soccer/data/validation_gate_state.json
+club_soccer/data/cache_retention_state.json
+club_soccer/data/odds_poll_state.json
 club_soccer/data/transfers_bsd.sqlite3*
 # Resumable transfer-import staging lives outside the Syncthing data folder,
 # but is still local runtime state rather than source.

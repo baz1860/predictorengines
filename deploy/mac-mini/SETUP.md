@@ -60,7 +60,7 @@ Fill these in once and reuse them below:
    cd "REPLACE_PROJECT_DIR"
    python3 -m club_soccer.decision_ledger --record --settle   # the capture job
    python3 -m club_soccer.decision_ledger --status            # should print counts
-   bash club_soccer/update.sh                                  # the heavy job (slow)
+   bash club_soccer/update.sh                   # first cache migration may be slow
    ```
 
 ---
@@ -282,6 +282,21 @@ Code development stays on the laptop; the mini just runs what git gives it.
 In short: git owns code and tracked inputs (edit anywhere, mini pulls);
 Syncthing owns the five generated runtime files (mini writes, laptop mirrors).
 They never touch the same file.
+
+### Incremental-run behaviour
+
+The 07:30 job retains the same fail-closed safety checks, but unchanged work is
+reused. Expect one slow run after installing this version: it creates the
+player-event manifest and invalidates validation/model fingerprints because
+their code changed. Normal later runs ingest only new event files and refit or
+revalidate only when the relevant inputs change. To deliberately bypass the
+caches:
+
+```bash
+python3 -m club_soccer.model --fit
+python3 -m club_soccer.validate --gate
+python3 -m club_soccer.decision_time_backtest --force
+```
 
 ## Troubleshooting quick hits
 

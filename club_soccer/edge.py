@@ -537,7 +537,8 @@ def _map_api_bet(bet_name: str, value_name: str, odd,
     return None
 
 
-def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
+def fetch_bsd_odds(api_key: str | None = None,
+                   events: list[dict] | None = None) -> pd.DataFrame:
     """Fetch BSD odds for upcoming local fixtures.
 
     BSD embeds 1X2 odds directly in each event response
@@ -573,7 +574,14 @@ def fetch_bsd_odds(api_key: str | None = None) -> pd.DataFrame:
     # BSD's canonical enum is notstarted. bsd_client also accepts the human
     # alias, but keep the wire value explicit here because a silent empty
     # response is worse than a visible fetch failure.
-    events = get_all_events(key, status="notstarted")
+    if events is None:
+        events = get_all_events(key, status="notstarted")
+    else:
+        from .schema import normalize_status
+        events = [
+            ev for ev in events
+            if normalize_status(ev.get("status")) == "NOT"
+        ]
     CACHE.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
@@ -735,7 +743,8 @@ def fetch_the_odds_api(api_key: str | None = None) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def fetch_player_adjustments(api_key: str | None = None) -> dict:
+def fetch_player_adjustments(api_key: str | None = None,
+                             events: list[dict] | None = None) -> dict:
     """Build player availability adjustments for all upcoming BSD matches.
 
     Fetches upcoming BSD events (which embed ``unavailable_players``),
@@ -772,16 +781,21 @@ def fetch_player_adjustments(api_key: str | None = None) -> dict:
         if n:
             print(f"  player_adj: built player stats from {n} cached events.")
 
-    try:
-        # BSD's status enum is notstarted|inprogress|finished|postponed|
-        # cancelled — "upcoming" isn't a real value and silently matches 0
-        # rows. BSD also defaults to a ~7-day forward window with no
-        # date_from/date_to, which is exactly the near-term horizon we want
-        # for pricing, so it's left unset here (unlike fetch.py's --current).
-        events = get_all_events(key, status="notstarted")
-    except Exception as exc:
-        print(f"  player_adj: BSD fetch failed ({exc}), skipping.")
-        return {}
+    if events is None:
+        try:
+            # BSD's status enum is notstarted|inprogress|finished|postponed|
+            # cancelled — "upcoming" isn't a real value and silently matches 0
+            # rows. BSD defaults to a near-term window when dates are omitted.
+            events = get_all_events(key, status="notstarted")
+        except Exception as exc:
+            print(f"  player_adj: BSD fetch failed ({exc}), skipping.")
+            return {}
+    else:
+        from .schema import normalize_status
+        events = [
+            ev for ev in events
+            if normalize_status(ev.get("status")) == "NOT"
+        ]
 
     adj_map: dict = {}
     n_adj = 0

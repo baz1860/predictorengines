@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,27 @@ from ._inproc import run_inprocess
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE_DIR = ROOT / "nhl"
 RESULTS_CSV = ENGINE_DIR / "data" / "results.csv"
+RESULTS_FILES = [ENGINE_DIR / "data" / "results_2025_26.csv", RESULTS_CSV]
+
+
+def _fold_team(name: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(name or ""))
+    ascii_text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(ascii_text.lower().replace(".", "").split())
+
+
+def _date_key(value: Any) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.notna(parsed):
+        return parsed.strftime("%Y-%m-%d")
+    return str(value or "")[:10]
+
+
+def _id_key(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
 
 
 class NHLAdapter(EngineAdapter):
@@ -38,6 +60,7 @@ class NHLAdapter(EngineAdapter):
         return {**self._schema, "freshness": provenance.freshness_warnings(self.id)}
 
     def edge_schema(self) -> dict[str, Any]:
+        from nhl import gate as nhl_gate
         return {
             "models": ["blend", "power", "form"],
             "odds_sources": [{"id": "manual", "label": "Manual nhl/data/odds.csv"}],
@@ -45,6 +68,7 @@ class NHLAdapter(EngineAdapter):
                          "label": "Market blend (experimental)",
                          "default": False}],
             "has_template": True,
+            "staking_gate": nhl_gate.load_gate(),
         }
 
     def predict(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -53,6 +77,7 @@ class NHLAdapter(EngineAdapter):
     def edge(self, params: dict[str, Any]) -> dict[str, Any]:
         from .. import bankroll_store
         from .. import provenance
+        from nhl import gate as nhl_gate
         model = str(params.get("model") or "blend")
         bankroll = bankroll_store.current_bankroll()
         result = self._run("edge", {**params, "bankroll": bankroll})
@@ -70,7 +95,16 @@ class NHLAdapter(EngineAdapter):
             result["market_blend"] = {"applied": True, "w": w, "experimental": True}
             result["note"] = (result.get("note", "")
                               + f" · market-blended (experimental, w={w:.2f})")
-        self._mark_recommended(rows)
+        gate = nhl_gate.load_gate()
+        result["staking_gate"] = gate
+        if nhl_gate.apply_staking_gate(rows, gate):
+            if "staking disabled" not in str(result.get("note", "")).lower():
+                result["note"] = (
+                    result.get("note", "")
+                    + f" · staking disabled: {gate.get('reason', 'validation gate failed')}"
+                )
+        else:
+            self._mark_recommended(rows)
 
         if params.get("record"):
             recs = [r for r in rows if r.get("recommended")]
@@ -89,7 +123,14 @@ class NHLAdapter(EngineAdapter):
         for r in rows:
             r["recommended"] = False
             if float(r.get("edge", 0.0)) >= self.EDGE_THRESHOLD and float(r.get("ev_per_unit", 0.0)) > 0:
-                k = (r.get("match_date") or r.get("date"), r.get("home"), r.get("away"), r.get("market"))
+                k = (
+                    r.get("match_date") or r.get("date"),
+                    r.get("home"),
+                    r.get("away"),
+                    r.get("market"),
+                    r.get("line", ""),
+                    r.get("bookmaker") or r.get("source", "manual"),
+                )
                 if k not in best or float(r["edge"]) > float(best[k]["edge"]):
                     best[k] = r
         for r in best.values():
@@ -100,20 +141,47 @@ class NHLAdapter(EngineAdapter):
         return enrich_template_result(self._run("edge_template"))
 
     def grade_open_bets(self, rows: pd.DataFrame) -> dict[int, tuple]:
-        if not RESULTS_CSV.exists():
+        frames = []
+        for path in RESULTS_FILES:
+            if path.exists():
+                df = pd.read_csv(path)
+                df["_result_source"] = str(path)
+                frames.append(df)
+        if not frames:
             return {}
-        games = pd.read_csv(RESULTS_CSV)
+        games = pd.concat(frames, ignore_index=True, sort=False)
         games["home_goals"] = pd.to_numeric(games["home_goals"], errors="coerce")
         games["away_goals"] = pd.to_numeric(games["away_goals"], errors="coerce")
-        games = games.dropna(subset=["home_goals", "away_goals"]).sort_values("date")
+        games = games.dropna(subset=["home_goals", "away_goals"]).copy()
+        games["_date_key"] = games["date"].map(_date_key)
+        games["_home_key"] = games["home"].map(_fold_team)
+        games["_away_key"] = games["away"].map(_fold_team)
+        if "game_id" not in games.columns:
+            games["game_id"] = ""
+        if "event_id" not in games.columns:
+            games["event_id"] = ""
+        games["_game_id_key"] = games["game_id"].map(_id_key)
+        games["_event_id_key"] = games["event_id"].map(_id_key)
+        games = games.drop_duplicates(
+            subset=["_game_id_key", "_date_key", "_home_key", "_away_key",
+                    "home_goals", "away_goals"],
+            keep="first",
+        )
         out: dict[int, tuple] = {}
         for idx, r in rows.iterrows():
-            match = games[
-                (games["home"].astype(str) == str(r.get("home")))
-                & (games["away"].astype(str) == str(r.get("away")))
-                & (games["date"].astype(str) >= str(r.get("match_date") or ""))
-            ]
-            if match.empty:
+            event_id = _id_key(r.get("event_id") or r.get("game_id") or "")
+            if event_id:
+                match = games[
+                    (games["_game_id_key"] == event_id) | (games["_event_id_key"] == event_id)
+                ]
+            else:
+                match_date = _date_key(r.get("match_date") or r.get("date") or "")
+                match = games[
+                    (games["_date_key"] == match_date)
+                    & (games["_home_key"] == _fold_team(r.get("home")))
+                    & (games["_away_key"] == _fold_team(r.get("away")))
+                ]
+            if len(match) != 1:
                 continue
             g = match.iloc[0]
             home_goals = int(g["home_goals"])

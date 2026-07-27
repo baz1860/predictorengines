@@ -18,7 +18,7 @@ status=0
 
 python3 -m club_soccer.season "$@" || { status=$?; echo "season.py FAILED (exit $status) — see output above"; }
 
-python3 -m club_soccer.validate --gate || { s=$?; echo "validation gate FAILED (exit $s)"; if [ "$status" -eq 0 ]; then status=$s; fi; }
+python3 -m club_soccer.validate --gate --if-needed || { s=$?; echo "validation gate FAILED (exit $s)"; if [ "$status" -eq 0 ]; then status=$s; fi; }
 
 # Record data provenance (offline, best-effort — never blocks).
 python3 -m app.provenance --engine club_soccer --write || echo "manifest skipped"

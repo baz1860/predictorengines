@@ -30,6 +30,7 @@ DATA = HERE / "data"
 BASELINE = DATA / "validation_baseline.json"          # legacy, read-only fallback
 PROMOTION_BASELINE = DATA / "promotion_baseline.json"  # promoter-owned gate
 LATEST = DATA / "validation_latest.json"               # validation-owned, descriptive
+GATE_STATE = DATA / "validation_gate_state.json"       # derived exact-input cache
 CALIB_FILE = DATA / "calibration.json"
 OPPONENT_XG_EVIDENCE = DATA / "opponent_adjusted_xg_evidence.json"
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
@@ -521,6 +522,70 @@ def gate_failures(rows: list[dict], measured: dict, baseline: dict) -> list[str]
     return failures
 
 
+def gate_input_fingerprint(baseline: dict) -> str:
+    """Fingerprint exactly the fixed-window rows and behaviour used by --gate.
+
+    Results after the pinned test window cannot affect any gate fold and
+    therefore do not invalidate this cache. Historical corrections, identity
+    changes, model/validation code, coefficients and baseline edits all do.
+    """
+    frame = M.played(M.load_fixtures()).sort_values("date").reset_index(drop=True)
+    cutoff = pd.Timestamp(str(baseline["test_to"])).to_period("M").start_time
+    relevant = frame[frame["date"] < cutoff].reset_index(drop=True)
+    digest = hashlib.sha256()
+    digest.update(WFC.code_fingerprint().encode())
+    digest.update(
+        json.dumps(baseline, sort_keys=True, separators=(",", ":")).encode()
+    )
+    digest.update(WFC.row_hashes(relevant).tobytes())
+    return digest.hexdigest()[:32]
+
+
+def _load_gate_state(fingerprint: str) -> dict | None:
+    if not GATE_STATE.exists():
+        return None
+    try:
+        state = json.loads(GATE_STATE.read_text())
+    except (OSError, ValueError):
+        return None
+    if (
+        isinstance(state, dict)
+        and state.get("fingerprint") == fingerprint
+        and isinstance(state.get("passed"), bool)
+        and isinstance(state.get("metrics"), dict)
+    ):
+        return state
+    return None
+
+
+def _write_gate_state(fingerprint: str, passed: bool, measured: dict,
+                      failures: list[str]) -> None:
+    payload = {
+        "fingerprint": fingerprint,
+        "passed": bool(passed),
+        "metrics": measured,
+        "failures": failures,
+        "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    GATE_STATE.parent.mkdir(exist_ok=True)
+    tmp = GATE_STATE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.replace(GATE_STATE)
+
+
+def _write_latest(measured: dict, reused: bool = False) -> None:
+    LATEST.write_text(json.dumps(
+        {"brier": measured["brier"], "log_loss": measured["log_loss"],
+         "n": measured["n"], "brier_ou25": measured["brier_ou25"],
+         "brier_btts": measured["brier_btts"],
+         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+         "source": "deduplicated canonical match identities",
+         "reused_exact_inputs": reused,
+         "note": "Descriptive validation output. This file does NOT move the "
+                 "promotion gate; promotion_baseline.json is promoter-owned."},
+        indent=2))
+
+
 def opponent_xg_ab(test_from: str, test_to: str,
                     write: bool = False, verbose: bool = True) -> dict:
     """Reproducible fixed-window A/B for opponent-adjusted xG.
@@ -589,6 +654,9 @@ def opponent_xg_ab(test_from: str, test_to: str,
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gate", action="store_true")
+    ap.add_argument("--if-needed", action="store_true",
+                    help="with --gate, reuse the exact prior result when all "
+                         "fixed-window inputs are unchanged")
     ap.add_argument("--opponent-xg-ab", action="store_true",
                     help="run a fixed-window opponent-adjusted-xG A/B")
     ap.add_argument("--test-from", default="2024-07-01")
@@ -614,6 +682,8 @@ def main() -> None:
     if args.benchmark_clubelo:
         benchmark_clubelo()
         return
+    if args.if_needed and not args.gate:
+        sys.exit("--if-needed is valid only with --gate")
     base = load_promotion_baseline()
     if args.gate:
         if base is None:
@@ -630,6 +700,23 @@ def main() -> None:
             )
     else:
         test_from = test_to = None
+
+    gate_fingerprint = None
+    if args.gate:
+        gate_fingerprint = gate_input_fingerprint(base)
+        if args.if_needed:
+            state = _load_gate_state(gate_fingerprint)
+            if state is not None:
+                _write_latest(state["metrics"], reused=True)
+                result = "PASS" if state["passed"] else "FAIL"
+                print(
+                    f"[gate] fixed-window inputs unchanged -> cached {result}"
+                )
+                for failure in state.get("failures", []):
+                    print(f"  - {failure}")
+                if not state["passed"]:
+                    sys.exit(1)
+                return
     rows, m = walk_forward(
         verbose=True, test_from=test_from, test_to=test_to
     )
@@ -639,17 +726,7 @@ def main() -> None:
     DATA.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(DATA / "validation_predictions.csv", index=False)
     # Descriptive output: always written, owned by validation, never a gate.
-    LATEST.write_text(json.dumps(
-        {"brier": m["brier"], "log_loss": m["log_loss"], "n": m["n"],
-         "brier_ou25": m["brier_ou25"], "brier_btts": m["brier_btts"],
-         # Consumers read this instead of recomputing (season.py's weekly
-         # footer). Without a timestamp a stale file would be displayed as if
-         # current, so the reader can check age and say so.
-         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-         "source": "deduplicated canonical match identities",
-         "note": "Descriptive validation output. This file does NOT move the "
-                 "promotion gate; promotion_baseline.json is promoter-owned."},
-        indent=2))
+    _write_latest(m)
     print(f"Validation metrics -> {LATEST.name} "
           "(descriptive; the promotion gate is unchanged)")
 
@@ -659,6 +736,9 @@ def main() -> None:
               f"BTTS {m['brier_btts'] - base.get('brier_btts', 0):+.4f}")
     if args.gate:
         failures = gate_failures(rows, m, base)
+        _write_gate_state(
+            gate_fingerprint, passed=not failures, measured=m, failures=failures
+        )
         print(f"[gate] fixed window {base['test_from']}..{base['test_to']} "
               f"(n={m['n']}) -> {'PASS' if not failures else 'FAIL'}")
         for failure in failures:

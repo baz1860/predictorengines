@@ -6,9 +6,9 @@
   <key>Label</key>
   <string>com.fry.sportspredictor.clubsoccer.season</string>
 
-  <!-- The heavy daily pipeline (refit, backtest, gate). Runs once at 07:30 as
-       fry. This is what produces the model/fixtures the capture job
-       prices against, so it belongs on the same always-on machine. -->
+  <!-- The incremental daily pipeline. Model, validation and evidence artifacts
+       are rebuilt only when their exact inputs change. Runs once at 07:30 as
+       fry and produces the fixtures/model the capture job prices against. -->
   <key>UserName</key>
   <string>fry</string>
 

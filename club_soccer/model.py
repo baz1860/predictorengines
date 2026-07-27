@@ -8,6 +8,7 @@ while the model can always run from local CSV fallbacks.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -515,9 +516,58 @@ def fit(df: pd.DataFrame | None = None,
     return params
 
 
-def save_params(params: dict, path: Path = PARAMS) -> None:
+def save_params(params: dict, path: Path | None = None) -> None:
+    path = PARAMS if path is None else path
     path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps(params, indent=2))
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(params, indent=2))
+    tmp.replace(path)
+
+
+def training_fingerprint(df: pd.DataFrame | None = None) -> str:
+    """Hash only inputs that can change a production fit.
+
+    Upcoming fixtures and odds change every day but do not affect ratings, so
+    they must not invalidate the model cache. The row hashes include ordering
+    because Elo is sequential; the code fingerprint covers model behaviour and
+    active coefficient/identity artifacts.
+    """
+    from . import walkforward_cache as WFC
+
+    frame = played(load_fixtures() if df is None else df)
+    frame = frame.sort_values("date").reset_index(drop=True)
+    digest = hashlib.sha256()
+    digest.update(WFC.code_fingerprint().encode())
+    digest.update(str(LEAGUE_SEED_DEFAULT).encode())
+    digest.update(str(OPPONENT_ADJUSTED_XG_DEFAULT).encode())
+    digest.update(WFC.row_hashes(frame).tobytes())
+    return digest.hexdigest()[:32]
+
+
+def fit_if_changed(force: bool = False) -> tuple[dict, bool]:
+    """Return current params, fitting and atomically saving only when needed."""
+    fixtures = load_fixtures()
+    fingerprint = training_fingerprint(fixtures)
+    if not force and PARAMS.exists():
+        try:
+            current = json.loads(PARAMS.read_text())
+        except Exception:
+            current = {}
+        if current.get("_training_fingerprint") == fingerprint:
+            print(
+                f"  model unchanged — reused {current.get('fitted_matches', '?')} "
+                "fitted matches"
+            )
+            return current, False
+
+    params = fit(fixtures)
+    params["_training_fingerprint"] = fingerprint
+    save_params(params)
+    print(
+        f"  fitted {params['fitted_matches']} matches across "
+        f"{len(params['teams'])} teams"
+    )
+    return params, True
 
 
 def load_params() -> dict:
@@ -805,8 +855,7 @@ def main() -> None:
     ap.add_argument("--fit", action="store_true")
     args = ap.parse_args()
     if args.fit:
-        params = fit()
-        save_params(params)
+        params, _changed = fit_if_changed(force=True)
         print(f"Saved {len(params['teams'])} teams from {params['fitted_matches']} matches -> {PARAMS}")
         return
     if not args.home or not args.away:

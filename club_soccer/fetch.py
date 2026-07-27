@@ -56,7 +56,9 @@ _STATUS_TO_BSD = {
 # date_to/season is given. To get a useful "current" fetch (recent results +
 # real upcoming fixtures) we must always pass an explicit window.
 _DEFAULT_LOOKBACK_DAYS = 14   # re-pull recent results to catch late score/status corrections
-_DEFAULT_HORIZON_DAYS = 1095  # ~3 years: effectively "everything BSD has scheduled"
+# Daily capture only needs the operational horizon. Existing distant fixtures
+# remain in fixtures.csv and are refreshed once they enter this window.
+_DEFAULT_HORIZON_DAYS = 90
 
 # Finished rows dated further than this into the future are corrupt (mirrors
 # the guard in _bsd_to_fixture_row below).
@@ -595,7 +597,8 @@ def fetch_fixtures(season: int | None = None,
                    days_ahead: int | None = None,
                    enrich_stats: bool = True,
                    max_details: int = 400,
-                   pause: float = 0.1) -> pd.DataFrame:
+                   pause: float = 0.1,
+                   events: list[dict] | None = None) -> pd.DataFrame:
     """Fetch club soccer fixtures from BSD and return as a DataFrame.
 
     Parameters
@@ -608,13 +611,15 @@ def fetch_fixtures(season: int | None = None,
     date_from:  ISO date lower bound. Defaults to today - 14d (catches late
                 score/status corrections on recent results) when both
                 date_from and date_to are omitted.
-    date_to:    ISO date upper bound. Defaults to today + days_ahead (or
-                ~3 years, i.e. "everything BSD has scheduled") when both
-                date_from and date_to are omitted.
+    date_to:    ISO date upper bound. Defaults to today + days_ahead (90 days
+                for the daily pipeline) when both bounds are omitted.
     days_ahead: Caps the default upper bound; ignored if date_to is given.
     enrich_stats: Pull/cache BSD event detail for finished rows with missing
         shots/xG/corners. Existing rows are never overwritten by blanks.
     max_details: Maximum detail requests per run.
+    events:     Optional already-fetched BSD event list. The daily pipeline
+                supplies this so absences, odds and pricing can reuse the same
+                event-index response instead of each downloading it again.
     """
     key = api_key or get_key("bsd", env="BSD_API_KEY")
     if not key:
@@ -629,7 +634,10 @@ def fetch_fixtures(season: int | None = None,
         horizon = days_ahead if days_ahead is not None else _DEFAULT_HORIZON_DAYS
         date_to = str(today + timedelta(days=horizon))
 
-    events = _fetch_bsd_events(key, status=status, date_from=date_from, date_to=date_to)
+    if events is None:
+        events = _fetch_bsd_events(
+            key, status=status, date_from=date_from, date_to=date_to
+        )
 
     # Build a name->Competition lookup for fast resolution
     rows: list[dict] = []

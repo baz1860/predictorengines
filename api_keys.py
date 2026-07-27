@@ -16,6 +16,8 @@ ALIASES = {
     "odds": "the-odds-api",
     "odds-api": "the-odds-api",
     "the_odds_api": "the-odds-api",
+    "oddspapi": "oddspapi",
+    "odds_papi": "oddspapi",
     "api_football": "api-football",
     "football": "api-football",
     "dg": "datagolf",

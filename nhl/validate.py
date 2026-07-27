@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
 """NHL validation gate.
 
-Honesty note up front: this is NOT a leak-free walk-forward backtest like
-nfl.validate or tennis.validate. Those refit their model as-of each date
-because their underlying data supports historical snapshots. nhl/model.py
-currently has no such capability -- team_stats.csv is a single current
-season-to-date snapshot with no asof parameter, so there's nothing to walk
-forward against yet. What this gate does instead: score the model's CURRENT
-ratings against every completed game of the season in
-nhl/data/results_2025_26.csv (in-sample re: ratings, since a team's rating
-reflects games throughout the season including ones being scored -- but
-still a legitimate regression check for "did today's ratings/blend get
-worse"). A genuine walk-forward validator is a documented follow-up once
-team_stats.csv (or an equivalent) gains dated historical snapshots.
+The default validation path is leak-free for the data available in this module:
+each game is priced from league-average priors plus only earlier results from
+the same season. Games on the same date are all priced before that date's
+results are applied because the results file has dates, not start times.
 
-Metrics -> nhl/data/validation_baseline.json; gate fails (exit 1) if
-moneyline Brier or margin MAE regress beyond tolerance versus the stored
-baseline. Skips the gate (exit 0, with a warning) if there aren't enough
-completed games this season for the numbers to be meaningful.
+Metrics -> nhl/data/validation_baseline.json for regression tracking. The gate
+fails if the walk-forward model does not beat trivial baselines, or if it
+regresses materially versus the stored baseline.
 
 Usage:
   python3 -m nhl.validate                        # print metrics only
@@ -30,9 +21,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import backtest as B
+from . import gate as G
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_RESULTS = HERE / "data" / "results_2025_26.csv"
@@ -45,17 +38,22 @@ MAE_TOL = 0.25           # goals, on margin MAE
 
 def evaluate(results_path: Path | str = DEFAULT_RESULTS, model: str = "blend") -> dict:
     games = B.load_results(results_path)
-    report = B.run_backtest(games, model=model)
+    report = B.run_backtest(games, model=model, walk_forward=True, strict=True)
     s = report["summary"]
     return {
         "results_path": str(results_path),
         "n_games": s["games"],
         "model": model,
+        "mode": s["mode"],
         "accuracy": s["accuracy"],
+        "always_home_accuracy": s["always_home_accuracy"],
         "brier": s["brier"],
+        "home_rate_brier": s["home_rate_brier"],
+        "constant_50_brier": s["constant_50_brier"],
         "logloss": s["logloss"],
         "margin_mae": s["margin_mae"],
         "total_mae": s["total_mae"],
+        "beats_trivial_baselines": s["beats_trivial_baselines"],
     }
 
 
@@ -75,15 +73,27 @@ def gate(metrics: dict) -> int:
         print(f"  only {metrics['n_games']} completed games (< {MIN_GAMES}) "
               "-- skipping gate, numbers too noisy to trust")
         return 0
+    ok = True
+    if metrics.get("mode") != "walk_forward":
+        print(f"GATE FAIL  mode: expected walk_forward, got {metrics.get('mode')}")
+        ok = False
+    if not metrics.get("beats_trivial_baselines"):
+        print(
+            "GATE FAIL  trivial baselines: "
+            f"accuracy {metrics['accuracy']:.1%} vs always-home "
+            f"{metrics['always_home_accuracy']:.1%}; "
+            f"Brier {metrics['brier']:.4f} vs home-rate "
+            f"{metrics['home_rate_brier']:.4f}"
+        )
+        ok = False
     baseline = _load_baseline()
     if baseline is None:
         print("no baseline yet -- run with --update-baseline to establish one")
-        return 0
+        return 0 if ok else 1
     if baseline["n_games"] < MIN_GAMES:
         print("stored baseline predates enough games -- run --update-baseline "
               "to refresh it before gating")
-        return 0
-    ok = True
+        return 0 if ok else 1
     for key, tol in (("margin_mae", MAE_TOL), ("brier", BRIER_TOL)):
         cur, base = metrics[key], baseline[key]
         if cur > base + tol:
@@ -100,6 +110,9 @@ def _print_metrics(m: dict, quiet: bool) -> None:
     print(f"\nNHL validation -- {m['n_games']} games ({m['model']}), {m['results_path']}")
     print(f"  accuracy   {m['accuracy']:.1%}")
     print(f"  brier      {m['brier']:.4f}")
+    print(f"  baselines  always-home {m['always_home_accuracy']:.1%}, "
+          f"home-rate Brier {m['home_rate_brier']:.4f}")
+    print(f"  beats trivial baselines: {m['beats_trivial_baselines']}")
     print(f"  logloss    {m['logloss']:.4f}")
     print(f"  margin MAE {m['margin_mae']:.3f}")
     print(f"  total MAE  {m['total_mae']:.3f}")
@@ -126,6 +139,21 @@ def main() -> int:
     if args.update_baseline:
         _save_baseline(metrics)
         print(f"baseline updated -> {BASELINE}")
+        forecast_passed = bool(metrics["beats_trivial_baselines"])
+        G.GATE_JSON.write_text(json.dumps({
+            "status": "FAIL",
+            "forecast_validation_status": "PASS" if forecast_passed else "FAIL",
+            "roi_validation_status": "FAIL",
+            "staking_enabled": False,
+            "reason": (
+                "Walk-forward validation beats trivial baselines; staking still requires "
+                "explicit timestamped-odds ROI approval."
+                if forecast_passed
+                else "Walk-forward validation does not beat trivial baselines; staking disabled."
+            ),
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "metrics": metrics,
+        }, indent=2))
         return 0
     if args.gate:
         return gate(metrics)

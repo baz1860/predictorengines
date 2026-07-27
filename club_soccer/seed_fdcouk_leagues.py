@@ -185,7 +185,14 @@ def load_main(comp, refresh: bool = False,
     regardless, so the first run still populates everything.
     """
     rows: list[dict] = []
-    for ss in SEASONS:
+    # A daily refresh does not need to parse four immutable completed-season
+    # files merely to discard them below the lookback cutoff. A full backfill
+    # still passes None and traverses every configured season.
+    seasons = (
+        SEASONS if refresh_seasons is None
+        else [ss for ss in SEASONS if ss in refresh_seasons]
+    )
+    for ss in seasons:
         do_refresh = refresh and (refresh_seasons is None or ss in refresh_seasons)
         text = _fetch(MAIN_URL.format(ss=ss, code=comp.fdcouk_code),
                       f"{comp.fdcouk_code}_{ss}.csv", do_refresh)
@@ -349,8 +356,8 @@ def refresh(comps: list | None = None, write: bool = True,
     for i, comp in enumerate(comps, 1):
         if verbose:
             # Print BEFORE the network fetch so a slow link looks like progress,
-            # not a hang. Only the current/previous season files are downloaded;
-            # completed seasons come from cache.
+            # not a hang. Only current/previous seasons are downloaded and
+            # parsed; completed-season files belong to the backfill path.
             print(f"  [{i}/{len(comps)}] {comp.name} …", flush=True)
         try:
             fetched = load_competition(comp, refresh=True,
@@ -469,7 +476,9 @@ def refresh_health(comps: list | None = None) -> list[dict]:
     out = []
     for comp in comps:
         try:
-            rows = load_competition(comp, refresh=True)
+            rows = load_competition(
+                comp, refresh=True, refresh_seasons=REFRESHABLE_SEASONS
+            )
         except Exception as exc:
             out.append({"competition": comp.name, "error": str(exc),
                         "behind": True})
