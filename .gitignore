@@ -178,6 +178,9 @@ _wtest*
 *_backup.csv
 
 # >>> Syncthing-owned club_soccer working data >>>
+# Syncthing's folder marker is machine-local metadata. Tracking it prevents a
+# fresh clone from being attached safely and blocks pulls on existing folders.
+club_soccer/data/.stfolder/
 # These change on essentially every pipeline run, or are written continuously
 # by the capture agent, so they are replicated via Syncthing (mini -> laptop),
 # NOT versioned in git — that keeps history clean and stops a stale committed
