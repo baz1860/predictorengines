@@ -552,6 +552,7 @@ def fetch_bsd_odds(api_key: str | None = None,
     from bsd_client import get_all_events, league_name as bsd_league_name, \
         event_date_utc
     from .competitions import comp_from_bsd_league
+    from .club_identity import canonical_name
 
     key = api_key or get_key("bsd", env="BSD_API_KEY")
     if not key:
@@ -591,15 +592,12 @@ def fetch_bsd_odds(api_key: str | None = None,
             continue
         home_raw = str(ev.get("home_team") or "")
         away_raw = str(ev.get("away_team") or "")
-        lookup_key = (home_raw.lower(), away_raw.lower(), comp.name)
+        lookup_key = (
+            str(canonical_name(home_raw, country=comp.country)).lower(),
+            str(canonical_name(away_raw, country=comp.country)).lower(),
+            comp.name,
+        )
         fixture = fixture_lookup.get(lookup_key)
-        if fixture is None:
-            # Try partial match (BSD names may differ slightly)
-            for (fh, fa, fc), fx in fixture_lookup.items():
-                if fc == comp.name and (fh in home_raw.lower() or home_raw.lower() in fh):
-                    if fa in away_raw.lower() or away_raw.lower() in fa:
-                        fixture = fx
-                        break
         if fixture is None:
             continue
 

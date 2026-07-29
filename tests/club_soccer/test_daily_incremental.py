@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pandas as pd
 
 from club_soccer import cache_retention as CR
+from club_soccer import edge as E
 from club_soccer import model as M
 from club_soccer import player_features as PF
 from club_soccer import season
@@ -185,6 +186,40 @@ def test_daily_network_index_is_fetched_once_and_shared(monkeypatch):
     assert seen == {
         "fixtures": events, "absences": events, "snapshots": events,
     }
+
+
+def test_pricing_horizon_does_not_inherit_the_90_day_capture_board():
+    events = [
+        {"id": 1, "event_date": "2026-07-30T12:00:00Z"},
+        {"id": 2, "event_date": "2026-08-05T12:00:00Z"},
+        {"id": 3, "event_date": "2026-08-28T12:00:00Z"},
+    ]
+    selected = season._events_within(
+        events, season.CARD_HORIZON_DAYS, today=date(2026, 7, 29)
+    )
+    assert [event["id"] for event in selected] == [1, 2]
+
+
+def test_bsd_odds_match_canonical_identity_without_quadratic_fallback(
+    monkeypatch
+):
+    fixtures = pd.DataFrame([{
+        "fixture_id": "local", "date": pd.Timestamp("2026-08-01"),
+        "competition": "Bundesliga", "home": "Bayern Munich",
+        "away": "Borussia Dortmund", "home_goals": None,
+        "away_goals": None, "status": "NOT",
+    }])
+    monkeypatch.setattr(M, "load_fixtures", lambda: fixtures)
+    event = {
+        "id": 55, "status": "notstarted",
+        "event_date": "2026-08-01T12:00:00Z",
+        "league": {"name": "Bundesliga"},
+        "home_team": "FC Bayern München", "away_team": "Borussia Dortmund",
+        "odds_home": 1.8, "odds_draw": 3.8, "odds_away": 4.5,
+    }
+    rows = E.fetch_bsd_odds("key", events=[event])
+    assert set(rows["home"]) == {"Bayern Munich"}
+    assert set(rows["side"]) == {"home", "draw", "away"}
 
 
 def test_far_odds_events_are_not_polled_again_every_day(tmp_path, monkeypatch):

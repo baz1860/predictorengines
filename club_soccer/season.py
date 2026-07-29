@@ -30,6 +30,7 @@ import fcntl
 import json
 import os
 import sys
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -77,14 +78,38 @@ _FAILED_REQUIRED: list[str] = []
 
 def _step(title: str, fn: Callable, *args, required: bool = False, **kwargs):
     print(f"\n== {title} ==")
+    started = time.monotonic()
     try:
-        return fn(*args, **kwargs)
+        result = fn(*args, **kwargs)
     except Exception as exc:
         print(f"   {'FAILED' if required else 'skipped'} "
               f"({type(exc).__name__}: {exc})")
         if required:
             _FAILED_REQUIRED.append(f"{title}: {type(exc).__name__}: {exc}")
         return None
+    finally:
+        elapsed = time.monotonic() - started
+        print(f"   elapsed {elapsed:.1f}s", flush=True)
+    return result
+
+
+def _events_within(events: list[dict] | None, days_ahead: int,
+                   today=None) -> list[dict] | None:
+    """Slice a capture payload to the operational pricing horizon."""
+    if events is None:
+        return None
+    today = today or datetime.now(timezone.utc).date()
+    end = today + timedelta(days=days_ahead)
+    out = []
+    for event in events:
+        raw = F.event_date_utc(event)
+        try:
+            date = datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
+        except (TypeError, ValueError):
+            continue
+        if today <= date <= end:
+            out.append(event)
+    return out
 
 
 def _fdcouk_is_stale() -> bool:
@@ -792,6 +817,12 @@ def _run_steps(fast: bool, no_network: bool,
         print(f"\n== Network steps skipped ({reason}) ==")
     else:
         upcoming_events, odds_cache = run_network_steps(api_key)
+    pricing_events = _events_within(upcoming_events, CARD_HORIZON_DAYS)
+    if pricing_events is not None:
+        print(
+            f"\n== Pricing horizon: {len(pricing_events)} event(s) in the next "
+            f"{CARD_HORIZON_DAYS} days =="
+        )
 
     if not fast:
         _step("Fit model if training data changed", M.fit_if_changed, required=True)
@@ -807,7 +838,7 @@ def _run_steps(fast: bool, no_network: bool,
         def _record():
             from . import decision_ledger as DL
             return DL.record(
-                api_key, verbose=True, events=upcoming_events,
+                api_key, verbose=True, events=pricing_events,
                 odds_cache=odds_cache,
             )
         _step("Record staking decisions (ledger)", _record)
@@ -827,7 +858,7 @@ def _run_steps(fast: bool, no_network: bool,
     if not no_network and api_key:
         player_adj_map = _step(
             "Player availability adjustments", E.fetch_player_adjustments,
-            api_key, events=upcoming_events,
+            api_key, events=pricing_events,
         )
 
     edge_rows: list[dict] = []
@@ -839,7 +870,7 @@ def _run_steps(fast: bool, no_network: bool,
         # visible failure by design, not silently zero rows.)
         odds = _step(
             "Fetch BSD odds", E.fetch_bsd_odds, api_key,
-            events=upcoming_events, required=True,
+            events=pricing_events, required=True,
         )
         if odds is not None:
             odds, issues = E.validate_quotes(odds, source="live")
