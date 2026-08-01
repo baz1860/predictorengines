@@ -40,6 +40,9 @@ club_soccer/data/last_run.json
 club_soccer/data/season.lock
 club_soccer/data/bet_card.md
 club_soccer/data/forward_predictions_club.csv
+club_soccer/data/forecast_ledger.csv
+club_soccer/data/forecast_settlements.csv
+club_soccer/data/forecast_performance.json
 club_soccer/data/validation_latest.json
 # <<< Syncthing-owned club_soccer working data <<<
 EOF
@@ -63,6 +66,9 @@ for f in \
   club_soccer/data/season.lock \
   club_soccer/data/bet_card.md \
   club_soccer/data/forward_predictions_club.csv \
+  club_soccer/data/forecast_ledger.csv \
+  club_soccer/data/forecast_settlements.csv \
+  club_soccer/data/forecast_performance.json \
   club_soccer/data/validation_latest.json ; do
   git rm --cached --quiet --ignore-unmatch "$f" || true
 done

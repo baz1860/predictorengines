@@ -94,7 +94,7 @@ echo "# COMMIT 3 (tertiary) — refreshed generated data / fitted params"
 echo "############################################################"
 
 git status --porcelain | awk '{print $2}' | grep -E '\.(csv|json|jsonl)$' \
-  | grep -vE '(^|/)(last_run\.json|season\.lock|decision_time_ledger\.csv|forward_predictions_club\.csv|validation_latest\.json|run_history\.jsonl)$' \
+  | grep -vE '(^|/)(last_run\.json|season\.lock|decision_time_ledger\.csv|forward_predictions_club\.csv|forecast_ledger\.csv|forecast_settlements\.csv|forecast_performance\.json|validation_latest\.json|run_history\.jsonl)$' \
   | while read -r f; do git add "$f"; done
 
 commit_if_staged "data: refresh fitted params and regenerated datasets
@@ -107,7 +107,8 @@ echo
 echo "############################################################"
 echo "# Left UNCOMMITTED on purpose (Syncthing / scratch):"
 echo "#   ledgers, season.lock, last_run.json, bet_card.md,"
-echo "#   forward_predictions_club.csv, validation_latest.json,"
+echo "#   forward_predictions_club.csv, forecast_ledger.csv,"
+echo "#   forecast_settlements.csv, forecast_performance.json, validation_latest.json,"
 echo "#   _score_run.txt, springbreak.zip, codex_*.md review prompts"
 echo "############################################################"
 git status --short

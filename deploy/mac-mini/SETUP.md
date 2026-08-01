@@ -150,9 +150,9 @@ code-vs-sync conflict. The folder to share:
 REPLACE_PROJECT_DIR/club_soccer/data
 ```
 
-That holds the decision/settlement ledgers, `model_params.json`, the gate
-artifact `backtest_market.json`, and the coefficient files — everything the
-viewer needs. (If you also want the root-level `dashboard.html` /
+That holds the decision/settlement ledgers, the card forecast/scoring ledgers,
+`model_params.json`, the gate artifact `backtest_market.json`, and the
+coefficient files — everything the viewer needs. (If you also want the root-level `dashboard.html` /
 `edge_report.csv` / `daily_card.md`, add a second shared folder for those later.)
 
 ### C1. Install Syncthing
@@ -208,12 +208,12 @@ changes" — that's the safety net working as intended.)
 
 `club_soccer/data` holds two disjoint kinds of file:
 
-- **git-tracked inputs** (23 of them): `club_alias_map.json`, `club_registry.json`,
+- **git-tracked inputs**: `club_alias_map.json`, `club_registry.json`,
   `uefa_coefficients*.json`, calibration/evidence files, etc. These are managed by
   **git** and may be edited during development on the laptop.
-- **git-ignored runtime outputs**: `decision_ledger.csv`, `settlement_ledger.csv`,
-  `backtest_market.json`, `model_params.json`, `fixtures.csv`. These are produced by
-  the pipeline on the mini.
+- **git-ignored runtime outputs**: decision and forecast ledgers,
+  `backtest_market.json`, `forecast_performance.json`, `model_params.json`, and
+  `fixtures.csv`. These are produced by the pipeline on the mini.
 
 You only want Syncthing to carry the **runtime outputs**. If it also synced the
 tracked inputs, editing one on the laptop would fight the Receive-Only mirror.
@@ -227,14 +227,28 @@ else:
 ```
 !/decision_ledger.csv
 !/settlement_ledger.csv
+!/decision_time_ledger.csv
 !/backtest_market.json
+!/forecast_ledger.csv
+!/forecast_settlements.csv
+!/forecast_performance.json
 !/model_params.json
 !/fixtures.csv
+!/card.md
+!/last_run.json
+!/run_history.jsonl
+!/validation_latest.json
+!/odds_history_club.csv
+!/absences_club.csv
+!/transfers_bsd.sqlite3
+!/market_history.csv
+!/squads_club.csv
+!/transfers_detected.csv
 *
 ```
 
 Set the **same** ignore patterns on every device sharing the folder. Now
-Syncthing touches only the five generated files; git owns the rest.
+Syncthing touches only the allow-listed generated files; git owns the rest.
 
 ### C5. Secure the remote GUI (if you'll admin it remotely)
 

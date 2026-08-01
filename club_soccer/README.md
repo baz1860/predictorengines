@@ -198,6 +198,36 @@ python3 -m club_soccer.decision_time_backtest       # settled decision-time evid
 unanimous-books-thin-edge bets) automatically once 30 days of snapshot
 history exist; before that it prints "market-model warming up: N days".
 
+### Forward forecast scoring
+
+Every fixture probability published in the card is frozen before rendering in
+an append-only forecast ledger. This is deliberately separate from betting
+evidence: it measures whether the displayed probabilities are accurate even
+when a fixture has no odds, while `decision_ledger.py` measures whether an
+executable quote-backed strategy makes money.
+
+```bash
+python3 -m club_soccer.forecast_ledger --status
+python3 -m club_soccer.forecast_ledger --settle --report
+```
+
+The normal season run handles both automatically. Runtime artifacts are:
+
+- `data/forecast_ledger.csv` — every published snapshot, with model/data/code
+  provenance, final H/D/A, OU2.5 and BTTS probabilities, evidence tier,
+  availability adjustments and lead time;
+- `data/forecast_settlements.csv` — one immutable official result per frozen
+  fixture identity;
+- `data/forecast_performance.json` — first-published, T-24 and latest
+  pre-kickoff Brier/log-loss/accuracy summaries, plus rolling, competition and
+  calibration views.
+
+Repeated card appearances are retained so movement toward kick-off can be
+measured, but the headline T-24 cohort selects only the closest forecast at or
+before 24 hours for each fixture. Cached/offline runs are recorded as
+non-primary evidence; only successful network production rows enter headline
+metrics.
+
 ### Additional xG sources
 
 BSD now supplies real team xG in event detail (`live_stats.expected_goals`

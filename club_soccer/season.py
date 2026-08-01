@@ -20,8 +20,10 @@ Steps (in order):
   7. Price the card: BSD odds only (manual odds.csv needs --allow-manual-odds,
      is age-limited, and only prices future fixtures), with availability
      adjustments and the do-not-bet filter.
-  8. Write club_soccer/data/card.md.
-  9. Mondays only: append the latest validate --gate summary to the card.
+  8. Build one structured forecast set; freeze it and render the card from the
+     exact same rows.
+  9. Settle prior card forecasts and refresh forward performance metrics.
+ 10. Mondays only: append the latest validate --gate summary to the card.
 """
 from __future__ import annotations
 
@@ -54,6 +56,7 @@ from . import snapshot_odds as SO
 from . import market_model as MM
 from . import fetch_fdcouk as FD
 from . import cache_retention as CR
+from . import forecast_ledger as FL
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -263,65 +266,46 @@ def _ordinal(n: int) -> str:
     return f"{n}{suf}"
 
 
-def _upcoming_section(today_ts: pd.Timestamp, player_adj_map: dict | None,
-                      calib_maps: dict | None = None) -> list[str]:
-    fx = M.load_fixtures()
-    up = M.upcoming(fx)
-    horizon = today_ts + pd.Timedelta(days=CARD_HORIZON_DAYS)
-    up = up[(up["date"] >= today_ts) & (up["date"] <= horizon)].sort_values(
-        ["date", "competition", "home"])
-    if up.empty:
-        return ["## Next 7 days", "", "No upcoming fixtures found.", ""]
+def _upcoming_section(forecasts: list[dict]) -> list[str]:
+    """Render the exact structured rows frozen by ``forecast_ledger``.
 
-    params = M.load_params()
+    Prediction used to happen inside this Markdown loop, which made it
+    impossible to prove that a separately tracked probability was the one a
+    user actually saw. Forecast construction now happens once; rendering is a
+    pure consumer of those immutable rows.
+    """
+    if not forecasts:
+        return ["## Next 7 days", "", "No upcoming fixtures found.", ""]
+    up = pd.DataFrame(forecasts).sort_values(
+        ["match_date", "competition", "home"]
+    )
     tables = _TableCache()
     lines = ["## Next 7 days", ""]
-    for day, day_grp in up.groupby(up["date"].dt.strftime("%Y-%m-%d")):
+    for day, day_grp in up.groupby("match_date"):
         lines.append(f"### {day}")
         for comp, comp_grp in day_grp.groupby("competition"):
             lines.append(f"**{comp}**")
             for r in comp_grp.itertuples(index=False):
-                if r.home not in set(params["teams"]) or r.away not in set(params["teams"]):
-                    continue
-                p_adj = None
-                if player_adj_map:
-                    p_adj = player_adj_map.get((str(r.home).lower(), str(r.away).lower(), comp))
-                try:
-                    pred = M.predict_match(
-                        r.home, r.away, comp, str(r.date.date()), "ensemble",
-                        bool(r.neutral), params=params, player_adj=p_adj,
-                        fixture_id=getattr(r, "fixture_id", None),
-                    )
-                    if calib_maps is not None:
-                        from .calibrate import apply as apply_calibration
-                        ph, pdr, pa = apply_calibration(
-                            pred["probs"]["home"], pred["probs"]["draw"],
-                            pred["probs"]["away"], calib_maps)
-                        pred["probs"].update({"home": ph, "draw": pdr, "away": pa})
-                except ValueError:
-                    continue
-                p = pred["probs"]
+                p = {"home": float(r.p_home), "draw": float(r.p_draw),
+                     "away": float(r.p_away)}
                 fair = {k: (round(1.0 / v, 2) if v > 0 else None) for k, v in p.items()}
                 bits = [f"{r.home} vs {r.away} — "
                        f"H {p['home']:.0%} D {p['draw']:.0%} A {p['away']:.0%} "
                        f"(fair {fair['home']}/{fair['draw']}/{fair['away']})"]
 
-                if p_adj:
-                    h_a, a_a = p_adj.get("home", {}), p_adj.get("away", {})
-                    conf = p_adj.get("lineup_confidence", 1.0)
-                    if h_a or a_a:
-                        n_out = int(h_a.get("n_missing", 0)) + int(a_a.get("n_missing", 0))
-                        if n_out:
-                            arrow_h = "▼" if h_a.get("attack_mult", 1.0) < 1.0 else "▲"
-                            arrow_a = "▼" if a_a.get("attack_mult", 1.0) < 1.0 else "▲"
-                            bits.append(f"availability: {r.home} {arrow_h} "
-                                       f"{h_a.get('attack_mult', 1.0):.2f} / {r.away} {arrow_a} "
-                                       f"{a_a.get('attack_mult', 1.0):.2f} (confidence {conf:.0%}, "
-                                       f"{n_out} out)")
+                n_out = int(r.n_missing_home) + int(r.n_missing_away)
+                if n_out:
+                    arrow_h = "▼" if float(r.home_attack_mult) < 1.0 else "▲"
+                    arrow_a = "▼" if float(r.away_attack_mult) < 1.0 else "▲"
+                    bits.append(f"availability: {r.home} {arrow_h} "
+                               f"{float(r.home_attack_mult):.2f} / {r.away} {arrow_a} "
+                               f"{float(r.away_attack_mult):.2f} "
+                               f"(confidence {float(r.lineup_confidence):.0%}, {n_out} out)")
 
-                if r.type == "league" and pd.notna(r.season):
-                    pos_note = tables.position_note(comp, int(r.season), str(r.date.date()),
-                                                     r.home, r.away)
+                if r.type == "league" and str(r.season).strip():
+                    pos_note = tables.position_note(
+                        comp, int(float(r.season)), str(r.match_date), r.home, r.away
+                    )
                     if pos_note:
                         bits.append(f"table: {pos_note}")
 
@@ -604,7 +588,8 @@ def _weekly_footer() -> list[str]:
 def write_card(edge_rows: list[dict], player_adj_map: dict | None,
                calib_maps: dict | None = None,
                pricing_note: str | None = None,
-               health_report: dict | None = None) -> None:
+               health_report: dict | None = None,
+               forecasts: list[dict] | None = None) -> None:
     today = datetime.now(timezone.utc)
     today_str = str(today.date())
     lines: list[str] = []
@@ -612,7 +597,15 @@ def write_card(edge_rows: list[dict], player_adj_map: dict | None,
     # Lead with likely winners — the primary use is a steady stream of bets the
     # model expects to come in. Edge is context, not the headline.
     lines += _likely_winners_section(edge_rows, today_str)
-    lines += _upcoming_section(pd.Timestamp(today.date()), player_adj_map, calib_maps)
+    if forecasts is None:
+        # Compatibility for direct callers. Production passes pre-built rows so
+        # the renderer and append-only ledger consume the identical objects.
+        forecasts = FL.build_forecasts(
+            pd.Timestamp(today.date()), player_adj_map, calib_maps,
+            run_id=f"unrecorded-{uuid.uuid4().hex}", run_mode="unrecorded",
+            primary_eligible=False, forecast_ts=today,
+        )
+    lines += _upcoming_section(forecasts)
     lines += _backed_bets_section(edge_rows, today_str, pricing_note)
     lines += _low_evidence_section(edge_rows)
     lines += _transfers_absences_section()
@@ -728,6 +721,22 @@ def _write_last_run(edge_rows: list[dict], pricing_note: str | None,
         "odds_snapshot_age_days": _file_age_days(SO.ODDS_HISTORY_CSV),
         "fast": fast, "no_network": no_network,
     }
+    try:
+        forecast_status = FL.status()
+        status.update({
+            "forecast_rows": forecast_status["forecast_rows"],
+            "forecast_fixtures": forecast_status["forecast_fixtures"],
+            "forecast_settled_fixtures": forecast_status["settled_fixtures"],
+        })
+        if FL.PERFORMANCE.exists():
+            performance = json.loads(FL.PERFORMANCE.read_text())
+            status["forecast_t24_scored"] = int(
+                ((performance.get("cohorts") or {}).get("t24") or {}).get("n", 0)
+            )
+    except Exception:
+        # Status publication is fail-safe; forecast observability is useful but
+        # must not hide the core run outcome if its artifact is unreadable.
+        pass
     _publish_status(status, run_id)
 
     # Append to the run ledger (P6). last_run.json answers "did the last run
@@ -774,7 +783,9 @@ def run(fast: bool = False, no_network: bool = False,
         crashed: str | None = None
         pending_exit: BaseException | None = None
         try:
-            edge_rows, pricing_note = _run_steps(fast, no_network, allow_manual_odds)
+            edge_rows, pricing_note = _run_steps(
+                fast, no_network, allow_manual_odds, run_id=run_id
+            )
         except SystemExit as exc:
             crashed = f"SystemExit: {exc}"
             pending_exit = exc
@@ -796,7 +807,7 @@ def run(fast: bool = False, no_network: bool = False,
 
 
 def _run_steps(fast: bool, no_network: bool,
-               allow_manual_odds: bool) -> tuple[list[dict], str | None]:
+               allow_manual_odds: bool, run_id: str) -> tuple[list[dict], str | None]:
     _step("Prune recoverable caches if due", CR.prune_all_if_due)
     # Source freshness used to download fd.co.uk here and then download it
     # again in run_network_steps. Daily health is deliberately offline; the
@@ -846,6 +857,7 @@ def _run_steps(fast: bool, no_network: bool,
         from . import decision_ledger as DL
         return DL.settle(verbose=True)
     _step("Settle staking decisions (ledger)", _settle)
+    _step("Settle published card forecasts", FL.settle)
 
     def _decision_time():
         from . import decision_time_backtest as DTB
@@ -911,7 +923,26 @@ def _run_steps(fast: bool, no_network: bool,
     if pricing_note:
         print(f"\n== {pricing_note} ==")
 
-    write_card(edge_rows, player_adj_map, calib_maps, pricing_note, report)
+    run_mode = "production_network" if not no_network and api_key else "offline"
+    forecasts = _step(
+        "Build card forecasts", FL.build_forecasts,
+        pd.Timestamp(datetime.now(timezone.utc).date()), player_adj_map, calib_maps,
+        run_id=run_id, run_mode=run_mode,
+        primary_eligible=(run_mode == "production_network" and not _FAILED_REQUIRED),
+        horizon_days=CARD_HORIZON_DAYS, required=True,
+    ) or []
+    write_card(edge_rows, player_adj_map, calib_maps, pricing_note, report,
+               forecasts=forecasts)
+    if forecasts:
+        # If forecast construction succeeded before a later required failure,
+        # preserve what the card showed but keep degraded rows out of the
+        # primary T-24 performance cohort.
+        if _FAILED_REQUIRED:
+            for forecast in forecasts:
+                forecast["primary_eligible"] = 0
+        _step("Freeze published card forecasts", FL.append_forecasts,
+              forecasts, required=True)
+    _step("Score published card forecasts", FL.write_performance_report)
     return edge_rows, pricing_note
 
 
