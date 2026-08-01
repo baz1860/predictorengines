@@ -5,12 +5,36 @@ import glob
 import os
 import subprocess
 import sys
+import tempfile
 
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = "https://github.com/sportsdataverse/cfbfastR-data"
 TMP = "/tmp/cfbfastR-data"
+
+
+def atomic_to_csv(df, dest, required_columns, *, allow_empty=False):
+    """Validate a staged CSV before atomically replacing the last-good file."""
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    if df.empty and not allow_empty:
+        raise ValueError(f"refusing to replace {dest} with an empty dataset")
+    fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(dest)}.",
+                               dir=os.path.dirname(dest))
+    os.close(fd)
+    try:
+        df.to_csv(tmp, index=False)
+        staged = pd.read_csv(tmp, nrows=1)
+        missing = set(required_columns) - set(staged.columns)
+        if missing:
+            raise ValueError(f"staged {dest} missing columns: {sorted(missing)}")
+        os.replace(tmp, dest)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def main():
@@ -46,14 +70,15 @@ def main():
     out[["home_points", "away_points"]] = out[["home_points", "away_points"]].astype(int)
     out = out.sort_values("date").reset_index(drop=True)
     dest = os.path.join(HERE, "data", "games.csv")
-    out.to_csv(dest, index=False)
+    atomic_to_csv(out, dest, names, allow_empty=False)
     print(f"{len(out)} completed games, {out['season'].min()}-{out['season'].max()} -> {dest}")
 
     from datetime import date as _date
     upc = g[(g["completed"] == False) & (g["date"] >= _date.today())][cols[:9]].copy()  # noqa: E712
     upc.columns = names[:9]
     upc = upc.sort_values("date").reset_index(drop=True)
-    upc.to_csv(os.path.join(HERE, "data", "upcoming.csv"), index=False)
+    atomic_to_csv(upc, os.path.join(HERE, "data", "upcoming.csv"), names[:9],
+                  allow_empty=True)
     print(f"{len(upc)} upcoming games -> data/upcoming.csv")
 
     build_closing_spreads(g)
@@ -100,7 +125,9 @@ def build_closing_spreads(sched):
         old = pd.read_csv(dest)
         keep = old[old["season"] > m["season"].max()]
         m = pd.concat([m, keep[m.columns]], ignore_index=True)
-    m.to_csv(dest, index=False)
+    atomic_to_csv(m, dest,
+                  ["season", "week", "home_team", "away_team", "home_line",
+                   "home_odds", "away_odds", "n_books"], allow_empty=False)
     print(f"{len(m)} games with consensus closing spreads "
           f"({int(m['season'].min())}-{int(m['season'].max())}) -> {dest}")
 

@@ -280,7 +280,9 @@ _LONG_SIDES = {
 }
 _LONG_COLUMNS = {
     "club_soccer": ["date", "competition", "home", "away", "market", "side", "line", "odds"],
-    "cfb": ["date", "home", "away", "neutral", "market", "side", "line", "odds"],
+    "cfb": ["date", "home", "away", "neutral", "market", "side", "line", "odds",
+            "event_id", "cfbd_game_id", "commence_time", "bookmaker", "quote_time",
+            "source", "identity_version"],
     "nfl": ["season", "week", "date", "home", "away", "neutral", "market", "side", "line", "odds"],
     "nhl": ["date", "home", "away", "market", "side", "line", "odds"],
 }
@@ -351,6 +353,20 @@ def validate_odds_file(engine: str, path: str | Path | None = None) -> list[dict
                 neu = (r.get("neutral") or "").strip()
                 if neu and neu not in ("0", "1"):
                     errors.append(_err(i, "neutral", neu, "0 or 1"))
+            if engine == "cfb" and str(r.get("odds") or "").strip():
+                for col in ("cfbd_game_id", "bookmaker", "quote_time", "source",
+                            "identity_version"):
+                    value = (r.get(col) or "").strip()
+                    if not value:
+                        errors.append(_err(i, col, "<blank>",
+                                           "a value for every executable CFB quote"))
+                for col in ("commence_time", "quote_time"):
+                    value = (r.get(col) or "").strip()
+                    if value:
+                        try:
+                            datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        except ValueError:
+                            errors.append(_err(i, col, value, "an ISO-8601 timestamp"))
             if engine in ("cfb", "nhl", "nfl"):
                 line_markets = ("spread", "total", "puck_line") if engine == "nhl" else ("spread", "total")
                 if market in line_markets and not line and _check_odds_value(r.get("odds")) \

@@ -102,6 +102,30 @@ def test_single_event_cap():
         check("some legs still recorded", len(placed) >= 1)
 
 
+def test_preview_matches_recording_caps():
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        _point_store_at(tmp, bankroll=100.0)
+        raw = [
+            {"candidate_id": str(i), "engine": "cfb", "event_id": "ev-preview",
+             "stake": 10.0}
+            for i in range(3)
+        ]
+        preview = B.preview_bets(raw, bankroll=100.0, peak=100.0)
+        cand = pd.DataFrame([
+            {"match_date": "2026-09-01", "home": "A", "away": "B",
+             "side": f"side-{i}", "bet": f"bet {i}", "odds": 2.0,
+             "stake": 10.0, "event_id": "ev-preview", "market": "total",
+             "line": 50.5, "source": "pinnacle", "model": "blend"}
+            for i in range(3)
+        ])
+        placed = B.place_bets("cfb", "cfb", cand, peak=100.0)
+        check("stake preview uses exact recording caps",
+              round(sum(r["stake"] for r in preview), 2)
+              == round(placed["stake"].astype(float).sum(), 2),
+              f"preview={preview}, placed={placed['stake'].tolist()}")
+
+
 # ── golf event-safe settlement ────────────────────────────────────────────────
 def test_golf_event_safe_settlement():
     with tempfile.TemporaryDirectory() as d:
@@ -177,6 +201,7 @@ def test_settle_dry_run():
 
 def main():
     for fn in [test_legacy_ledger_loads, test_dedupe, test_single_event_cap,
+               test_preview_matches_recording_caps,
                test_golf_event_safe_settlement, test_settle_dry_run]:
         print(f"\n{fn.__name__}")
         fn()

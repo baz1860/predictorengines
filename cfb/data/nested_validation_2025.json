@@ -1,0 +1,307 @@
+{
+  "selection_window": "2023-2024",
+  "selection_games": 1587,
+  "holdout_season": 2025,
+  "holdout_games": 807,
+  "locked_w_elo": 0.55,
+  "selection": {
+    "n_games": 1587,
+    "ml_brier": 0.18891,
+    "ml_acc": 0.7064,
+    "margin_mae": 12.875,
+    "total_mae": 13.128
+  },
+  "holdout": {
+    "n_games": 807,
+    "ml_brier": 0.18663,
+    "ml_acc": 0.7088,
+    "margin_mae": 12.601,
+    "total_mae": 12.817
+  },
+  "holdout_ci_95": {
+    "ml_brier": [
+      0.17592,
+      0.19758
+    ],
+    "margin_mae": [
+      11.97288,
+      13.23505
+    ],
+    "total_mae": [
+      12.20993,
+      13.39312
+    ]
+  },
+  "season_metrics": {
+    "2023": {
+      "n_games": 790,
+      "ml_brier": 0.18272,
+      "ml_acc": 0.7089,
+      "margin_mae": 12.661,
+      "total_mae": 13.356
+    },
+    "2024": {
+      "n_games": 797,
+      "ml_brier": 0.19504,
+      "ml_acc": 0.7039,
+      "margin_mae": 13.087,
+      "total_mae": 12.902
+    },
+    "2025": {
+      "n_games": 807,
+      "ml_brier": 0.18663,
+      "ml_acc": 0.7088,
+      "margin_mae": 12.601,
+      "total_mae": 12.817
+    }
+  },
+  "selection_search": {
+    "table": [
+      {
+        "w_elo": 0.0,
+        "ml_brier": 0.19956,
+        "margin_mae": 13.493,
+        "ok": false
+      },
+      {
+        "w_elo": 0.05,
+        "ml_brier": 0.19805,
+        "margin_mae": 13.386,
+        "ok": false
+      },
+      {
+        "w_elo": 0.1,
+        "ml_brier": 0.19666,
+        "margin_mae": 13.289,
+        "ok": false
+      },
+      {
+        "w_elo": 0.15,
+        "ml_brier": 0.19537,
+        "margin_mae": 13.204,
+        "ok": false
+      },
+      {
+        "w_elo": 0.2,
+        "ml_brier": 0.19418,
+        "margin_mae": 13.127,
+        "ok": false
+      },
+      {
+        "w_elo": 0.25,
+        "ml_brier": 0.19311,
+        "margin_mae": 13.06,
+        "ok": false
+      },
+      {
+        "w_elo": 0.3,
+        "ml_brier": 0.19214,
+        "margin_mae": 13.006,
+        "ok": false
+      },
+      {
+        "w_elo": 0.35,
+        "ml_brier": 0.19128,
+        "margin_mae": 12.96,
+        "ok": false
+      },
+      {
+        "w_elo": 0.4,
+        "ml_brier": 0.19053,
+        "margin_mae": 12.923,
+        "ok": false
+      },
+      {
+        "w_elo": 0.45,
+        "ml_brier": 0.18988,
+        "margin_mae": 12.895,
+        "ok": false
+      },
+      {
+        "w_elo": 0.5,
+        "ml_brier": 0.18934,
+        "margin_mae": 12.878,
+        "ok": true
+      },
+      {
+        "w_elo": 0.55,
+        "ml_brier": 0.18891,
+        "margin_mae": 12.875,
+        "ok": true
+      },
+      {
+        "w_elo": 0.6,
+        "ml_brier": 0.18858,
+        "margin_mae": 12.879,
+        "ok": false
+      },
+      {
+        "w_elo": 0.65,
+        "ml_brier": 0.18836,
+        "margin_mae": 12.889,
+        "ok": false
+      },
+      {
+        "w_elo": 0.7,
+        "ml_brier": 0.18825,
+        "margin_mae": 12.905,
+        "ok": false
+      },
+      {
+        "w_elo": 0.75,
+        "ml_brier": 0.18825,
+        "margin_mae": 12.927,
+        "ok": false
+      },
+      {
+        "w_elo": 0.8,
+        "ml_brier": 0.18835,
+        "margin_mae": 12.961,
+        "ok": false
+      },
+      {
+        "w_elo": 0.85,
+        "ml_brier": 0.18856,
+        "margin_mae": 13.002,
+        "ok": false
+      },
+      {
+        "w_elo": 0.9,
+        "ml_brier": 0.18888,
+        "margin_mae": 13.05,
+        "ok": false
+      },
+      {
+        "w_elo": 0.95,
+        "ml_brier": 0.18931,
+        "margin_mae": 13.106,
+        "ok": false
+      },
+      {
+        "w_elo": 1.0,
+        "ml_brier": 0.18984,
+        "margin_mae": 13.169,
+        "ok": false
+      }
+    ],
+    "chosen": 0.55,
+    "baseline_w": 0.5,
+    "baseline_brier": 0.18934,
+    "baseline_margin_mae": 12.878,
+    "chosen_brier": 0.18891,
+    "chosen_margin_mae": 12.875
+  },
+  "markets": {
+    "ats": {
+      "benchmark": "closing consensus",
+      "threshold": 3.0,
+      "n": 463,
+      "won": 217,
+      "lost": 239,
+      "push": 7,
+      "roi": -0.0901,
+      "roi_ci_95": [
+        -0.1759,
+        -0.0044
+      ]
+    },
+    "total": {
+      "benchmark": "closing consensus",
+      "threshold": 3.0,
+      "n": 418,
+      "won": 231,
+      "lost": 186,
+      "push": 1,
+      "roi": 0.0574,
+      "roi_ci_95": [
+        -0.0,
+        0.1191
+      ]
+    }
+  },
+  "data_fingerprint": {
+    "combined_sha256": "f78b306312505d563ebf5f0b7368f3b39a15591fac1c78e46e4bfec924610230",
+    "line_sha256": "f11daa33b1b9488a8720029654abfceda743ed9452f8ece73d6ab1f335e89d37",
+    "artifacts": {
+      "games": {
+        "sha256": "974e615b7d6b3ed8531ed9bb680c72a5179a6d0683603c8c749f5731893776bf",
+        "rows": 27521,
+        "season_counts": {
+          "2001": 684,
+          "2002": 744,
+          "2003": 743,
+          "2004": 693,
+          "2005": 690,
+          "2006": 760,
+          "2007": 766,
+          "2008": 771,
+          "2009": 774,
+          "2010": 773,
+          "2011": 777,
+          "2012": 805,
+          "2013": 813,
+          "2014": 1542,
+          "2015": 1491,
+          "2016": 1502,
+          "2017": 1505,
+          "2018": 1511,
+          "2019": 1577,
+          "2020": 563,
+          "2021": 1526,
+          "2022": 1552,
+          "2023": 1603,
+          "2024": 1669,
+          "2025": 1687
+        }
+      },
+      "closing_spreads": {
+        "sha256": "a97d034ce38ccbc15d7e45dde59b548e8038b941de8b8e587a7b7b1b3a954746",
+        "rows": 15078,
+        "season_counts": {
+          "2006": 288,
+          "2007": 465,
+          "2008": 245,
+          "2009": 503,
+          "2010": 531,
+          "2011": 563,
+          "2012": 574,
+          "2013": 658,
+          "2014": 644,
+          "2015": 652,
+          "2016": 659,
+          "2017": 670,
+          "2018": 667,
+          "2019": 664,
+          "2020": 534,
+          "2021": 843,
+          "2022": 1403,
+          "2023": 1383,
+          "2024": 1546,
+          "2025": 1586
+        }
+      },
+      "closing_totals": {
+        "sha256": "4ebad340bef049228006e90b7114154fd584296e593d965e175360c877c1a1d6",
+        "rows": 9227,
+        "season_counts": {
+          "2006": 288,
+          "2007": 465,
+          "2008": 245,
+          "2009": 488,
+          "2010": 486,
+          "2011": 539,
+          "2012": 503,
+          "2013": 657,
+          "2014": 637,
+          "2015": 652,
+          "2016": 659,
+          "2017": 675,
+          "2018": 669,
+          "2019": 670,
+          "2025": 1594
+        }
+      }
+    }
+  },
+  "method": "blend weight selected only on selection seasons; 2025 held untouched until final scoring; 95% intervals use deterministic week-block bootstrap"
+}

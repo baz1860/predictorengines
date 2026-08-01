@@ -12,6 +12,7 @@ import argparse
 import json
 import math
 import os
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -193,13 +194,15 @@ def main():
     if len(args.teams) != 2:
         raise SystemExit(__doc__)
     t1, t2 = args.teams
-    eparams = E.build()
+    eparams, state_meta = E.build_as_of(E.season_for_date(date.today()), as_of=date.today())
     pparams = P.load_params()
     xparams = X.load_params() if args.model in ("epa", "blend3") else None
     out = blend_predict(eparams, pparams, t1, t2, args.neutral, args.model,
                         xparams=xparams)
     venue = "neutral site" if args.neutral else f"{t1} at home"
     print(f"{t1} vs {t2} ({venue}, model={args.model})")
+    print(f"  State: season {state_meta['model_season']} · {state_meta['prior_mode']} · "
+          f"snapshot {state_meta['snapshot_hash']}")
     print(f"  P({t1} win) = {out['p1']:.1%}   P({t2} win) = {1 - out['p1']:.1%}")
     print(f"  Spread: {t1} {-out['margin']:+.1f}   Total: {out['total']:.1f}")
 

@@ -20,6 +20,7 @@ import pandas as pd
 
 from . import elo as E
 from . import power as P
+from .predictor import load_blend_weight
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -67,20 +68,10 @@ def main():
     args = ap.parse_args()
 
     sched = load_schedule(args.year)
-    games, ratings, slope, sigma = E.build()
+    (games, ratings, slope, sigma), state_meta = E.build_as_of(args.year)
     pparams = P.load_params()
-
-    # apply 2026 preseason carryover + priors to current ratings (season hasn't started)
-    carry, offs = E.season_priors()
-    if carry is None:
-        carry = 1.0 - E.SEASON_REGRESS
-    pre = {t: E.START_ELO + carry * (r - E.START_ELO) + offs.get((t, args.year), 0.0)
-           for t, r in ratings.items()}
-    # FBS newcomers (no FBS history): standard new-team rating + their prior
-    for r in sched.itertuples():
-        for t, fbs in ((r.home_team, r.home_fbs), (r.away_team, r.away_fbs)):
-            if fbs and t not in pre:
-                pre[t] = E.NEW_TEAM_ELO + offs.get((t, args.year), 0.0)
+    pre = ratings
+    w_elo = load_blend_weight()
 
     team_probs, team_conf = {}, {}
     skipped = 0
@@ -94,7 +85,7 @@ def main():
         p_elo = E.win_prob(pre[h] + hfa - pre[a])
         try:
             p_pow = P.predict(pparams, h, a, neutral=bool(r.neutral))["p1"]
-            p_home = 0.5 * (p_elo + p_pow)
+            p_home = w_elo * p_elo + (1.0 - w_elo) * p_pow
         except SystemExit:
             p_home = p_elo
         if r.home_fbs:
@@ -126,7 +117,9 @@ def main():
     dest = os.path.join(HERE, f"projected_win_totals_{args.year}.csv")
     out.to_csv(dest, index=False)
     print(f"{len(out)} teams, {sum(len(v) for v in team_probs.values()) // 2}+ games, "
-          f"{skipped} skipped -> {dest}\n")
+          f"{skipped} skipped -> {dest}")
+    print(f"model season {state_meta['model_season']} · state {state_meta['prior_mode']} · "
+          f"snapshot {state_meta['snapshot_hash']}\n")
     print(out.head(25).to_string(index=False))
 
 

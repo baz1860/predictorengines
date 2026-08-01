@@ -1,6 +1,11 @@
 {
-  "w_elo": 0.6,
-  "since": 2023,
-  "baseline_brier": 0.18849,
-  "chosen_brier": 0.18787
+  "w_elo": 0.55,
+  "method": "nested_season_holdout",
+  "selection_window": "2023-2024",
+  "selection_games": 1587,
+  "holdout_season": 2025,
+  "holdout_games": 807,
+  "holdout_ml_brier": 0.18663,
+  "frozen_at": "2026-08-01",
+  "data_line_sha256": "f11daa33b1b9488a8720029654abfceda743ed9452f8ece73d6ab1f335e89d37"
 }

@@ -31,6 +31,8 @@ import argparse
 import json
 import os
 import sys
+import tempfile
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -38,12 +40,14 @@ import pandas as pd
 from . import elo as E
 from . import epa as X
 from . import power as P
+from . import dataset_fingerprint as DF
 from .predictor import load_blend_weight, DEFAULT_W_ELO, _BLEND_WEIGHT_FILE
 from .ats_backtest import SPREADS_CSV, settle as ats_settle
 from .totals_backtest import TOTALS_CSV, settle as totals_settle
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASELINE = os.path.join(HERE, "data", "validation_baseline.json")
+NESTED_ARTIFACT = os.path.join(HERE, "data", "nested_validation_2025.json")
 
 THRESHOLDS = (0.0, 1.0, 2.0, 3.0, 4.0)
 BRIER_TOL = 0.005       # blend moneyline Brier may not regress beyond this
@@ -409,6 +413,7 @@ def evaluate(since: int, quiet: bool = False) -> dict:
         "total_mae": round(float((df["t_pow"] - df["total"]).abs().mean()), 3),
         "ats_roi": ats_roi, "ats_n": ats_n,
         "totals_roi": tot_roi, "totals_n": tot_n,
+        "data_fingerprint": DF.compact_snapshot(),
     }
 
 
@@ -442,6 +447,166 @@ def choose_weight(df: pd.DataFrame, grid=None) -> dict:
             "baseline_margin_mae": base["margin_mae"],
             "chosen_brier": best["ml_brier"],
             "chosen_margin_mae": best["margin_mae"]}
+
+
+def _metrics_at_weight(df: pd.DataFrame, weight: float) -> dict:
+    p = weight * df["p_elo"] + (1.0 - weight) * df["p_pow"]
+    margin = weight * df["m_elo"] + (1.0 - weight) * df["m_pow"]
+    result = (df["margin"] > 0).astype(float)
+    return {
+        "n_games": int(len(df)),
+        "ml_brier": round(float(((p - result) ** 2).mean()), 5),
+        "ml_acc": round(float(((p > 0.5) == (result > 0.5)).mean()), 4),
+        "margin_mae": round(float((margin - df["margin"]).abs().mean()), 3),
+        "total_mae": round(float((df["t_pow"] - df["total"]).abs().mean()), 3),
+    }
+
+
+def _week_block_ci(df: pd.DataFrame, weight: float, *, draws: int = 2000,
+                   seed: int = 20260801) -> dict:
+    """Deterministic week-block bootstrap intervals for held-out metrics."""
+    weeks = [group.index.to_numpy() for _, group in df.groupby("week", sort=True)]
+    if not weeks:
+        return {}
+    rng = np.random.default_rng(seed)
+    values = {"ml_brier": [], "margin_mae": [], "total_mae": []}
+    for _ in range(draws):
+        sampled = rng.integers(0, len(weeks), len(weeks))
+        idx = np.concatenate([weeks[i] for i in sampled])
+        score = _metrics_at_weight(df.loc[idx], weight)
+        for key in values:
+            values[key].append(score[key])
+    return {key: [round(float(np.quantile(samples, 0.025)), 5),
+                  round(float(np.quantile(samples, 0.975)), 5)]
+            for key, samples in values.items()}
+
+
+def nested_holdout_from_frame(df: pd.DataFrame, selection_until: int,
+                              holdout_season: int) -> dict:
+    """Choose blend weight on earlier seasons and score one untouched season."""
+    selection = df[df["season"] <= int(selection_until)]
+    holdout = df[df["season"] == int(holdout_season)]
+    if selection.empty or holdout.empty:
+        raise ValueError("nested CFB split has an empty selection or holdout frame")
+    chosen = choose_weight(selection)
+    locked = float(chosen["chosen"])
+    return {
+        "selection_window": f"{int(selection['season'].min())}-{selection_until}",
+        "selection_games": int(len(selection)),
+        "holdout_season": int(holdout_season),
+        "holdout_games": int(len(holdout)),
+        "locked_w_elo": locked,
+        "selection": _metrics_at_weight(selection, locked),
+        "holdout": _metrics_at_weight(holdout, locked),
+        "holdout_ci_95": _week_block_ci(holdout, locked),
+        "season_metrics": {
+            str(int(season)): _metrics_at_weight(group, locked)
+            for season, group in df.groupby("season", sort=True)
+        },
+        "selection_search": chosen,
+    }
+
+
+def _market_holdout(df: pd.DataFrame, weight: float, lines_csv: str,
+                    kind: str, threshold: float = 3.0) -> dict:
+    lines = pd.read_csv(lines_csv)
+    merged = df.merge(lines, on=["season", "week", "home_team", "away_team"],
+                      how="inner")
+    if kind == "ats":
+        merged["edge_pts"] = (weight * merged["m_elo"]
+                              + (1.0 - weight) * merged["m_pow"]
+                              + merged["home_line"])
+        settle = ats_settle
+    else:
+        merged["edge_pts"] = merged["t_pow"] - merged["total_line"]
+        settle = totals_settle
+    bets = merged[merged["edge_pts"].abs() >= float(threshold)].copy()
+    if bets.empty:
+        return {"threshold": threshold, "n": 0}
+    won, lost, push, pnl = settle(bets)
+    bets["pnl"] = pnl
+    weekly = [group["pnl"].to_numpy() for _, group in bets.groupby("week", sort=True)]
+    rng = np.random.default_rng(20260801)
+    rois = []
+    for _ in range(2000):
+        sampled = rng.integers(0, len(weekly), len(weekly))
+        rois.append(float(np.concatenate([weekly[i] for i in sampled]).mean()))
+    return {
+        "benchmark": "closing consensus",
+        "threshold": threshold,
+        "n": int(len(bets)), "won": won, "lost": lost, "push": push,
+        "roi": round(float(np.mean(pnl)), 4),
+        "roi_ci_95": [round(float(np.quantile(rois, 0.025)), 4),
+                      round(float(np.quantile(rois, 0.975)), 4)],
+    }
+
+
+def nested_holdout(selection_since: int = 2023, selection_until: int = 2024,
+                   holdout_season: int = 2025, quiet: bool = True) -> dict:
+    games = E.load_games()
+    frame = walk_forward(games, selection_since, quiet=quiet, w_elo=0.5)
+    frame = frame[frame["season"] <= holdout_season]
+    report = nested_holdout_from_frame(frame, selection_until, holdout_season)
+    holdout = frame[frame["season"] == holdout_season]
+    locked = report["locked_w_elo"]
+    report["markets"] = {
+        "ats": _market_holdout(holdout, locked, SPREADS_CSV, "ats"),
+        "total": _market_holdout(holdout, locked, TOTALS_CSV, "total"),
+    }
+    report["data_fingerprint"] = DF.compact_snapshot()
+    report["method"] = (
+        "blend weight selected only on selection seasons; 2025 held untouched "
+        "until final scoring; 95% intervals use deterministic week-block bootstrap"
+    )
+    return report
+
+
+def _atomic_json(path: str, payload: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.",
+                               dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def freeze_nested_holdout(report: dict) -> None:
+    _atomic_json(NESTED_ARTIFACT, report)
+    _atomic_json(_BLEND_WEIGHT_FILE, {
+        "w_elo": report["locked_w_elo"],
+        "method": "nested_season_holdout",
+        "selection_window": report["selection_window"],
+        "selection_games": report["selection_games"],
+        "holdout_season": report["holdout_season"],
+        "holdout_games": report["holdout_games"],
+        "holdout_ml_brier": report["holdout"]["ml_brier"],
+        "frozen_at": str(date.today()),
+        "data_line_sha256": report["data_fingerprint"]["line_sha256"],
+    })
+
+
+def _print_nested(report: dict) -> None:
+    print(f"CFB nested validation · selection {report['selection_window']} "
+          f"({report['selection_games']} games) · holdout {report['holdout_season']} "
+          f"({report['holdout_games']} games)")
+    print(f"  locked w_elo {report['locked_w_elo']:.2f}")
+    for label in ("selection", "holdout"):
+        score = report[label]
+        print(f"  {label:<9} Brier {score['ml_brier']:.5f} · margin MAE "
+              f"{score['margin_mae']:.3f} · total MAE {score['total_mae']:.3f}")
+    for market, result in report["markets"].items():
+        print(f"  {market:<9} closing benchmark ≥{result['threshold']:.1f}: "
+              f"{result['won']}-{result['lost']}-{result['push']} · "
+              f"ROI {result['roi']:+.1%} · 95% CI "
+              f"[{result['roi_ci_95'][0]:+.1%}, {result['roi_ci_95'][1]:+.1%}]")
 
 
 def tune_blend(since: int, write: bool = False, quiet: bool = True) -> dict:
@@ -487,8 +652,20 @@ def _load_baseline() -> dict | None:
 
 def _save_baseline(metrics: dict) -> None:
     os.makedirs(os.path.dirname(BASELINE), exist_ok=True)
-    with open(BASELINE, "w") as f:
-        json.dump(metrics, f, indent=2)
+    fd, tmp = tempfile.mkstemp(prefix=".validation_baseline.",
+                               dir=os.path.dirname(BASELINE))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(metrics, f, indent=2)
+            f.write("\n")
+        DF.write_manifest()
+        os.replace(tmp, BASELINE)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _print_metrics(m: dict) -> None:
@@ -554,16 +731,24 @@ def gate(metrics: dict) -> int:
     """Compare to baseline. Returns process exit code (0 pass, 1 fail)."""
     base = _load_baseline()
     if base is None:
-        _save_baseline(metrics)
-        print("[gate] no baseline found — stored this run as baseline. PASS")
-        return 0
+        print("[gate] FAIL no reviewed baseline found. Run --update-baseline explicitly.")
+        return 1
+    current_fp = (metrics.get("data_fingerprint") or {}).get("line_sha256")
+    baseline_fp = (base.get("data_fingerprint") or {}).get("line_sha256")
+    fingerprint_ok = bool(current_fp and baseline_fp and current_fp == baseline_fp)
+    if not fingerprint_ok:
+        print("\n[gate] FAIL validation dataset fingerprint differs from the reviewed "
+              "baseline (or the baseline predates fingerprinting).")
+        print(f"  current:  {current_fp or 'missing'}")
+        print(f"  baseline: {baseline_fp or 'missing'}")
+        print("  Review the dataset manifest, then run --update-baseline explicitly.")
     checks = [
         ("ml_brier", metrics["ml_brier"], base.get("ml_brier"), BRIER_TOL, "higher"),
         ("margin_mae", metrics["margin_mae"], base.get("margin_mae"), MAE_TOL, "higher"),
         ("total_mae", metrics["total_mae"], base.get("total_mae"), MAE_TOL, "higher"),
     ]
     print(f"\n{'metric':<12s}{'current':>10s}{'baseline':>10s}{'limit':>10s}  status")
-    failed = False
+    failed = not fingerprint_ok
     for name, cur, b, tol, _dir in checks:
         if b is None:
             print(f"{name:<12s}{cur:>10.4f}{'—':>10s}{'—':>10s}  (no baseline)")
@@ -592,10 +777,24 @@ def main() -> None:
                     help="with --ablation, test pass/rush/down-split PPA challengers")
     ap.add_argument("--write", action="store_true",
                     help="with --tune-blend, opt into the chosen weight")
+    ap.add_argument("--nested-holdout", action="store_true",
+                    help="select on 2023-24 and report untouched 2025 holdout")
+    ap.add_argument("--selection-since", type=int, default=2023)
+    ap.add_argument("--selection-until", type=int, default=2024)
+    ap.add_argument("--holdout-season", type=int, default=2025)
     args = ap.parse_args()
 
     if args.tune_blend:
         tune_blend(args.since, write=args.write, quiet=True)
+        return
+    if args.nested_holdout:
+        report = nested_holdout(args.selection_since, args.selection_until,
+                                args.holdout_season, quiet=args.quiet)
+        _print_nested(report)
+        if args.write:
+            freeze_nested_holdout(report)
+            print(f"\n[nested] froze artifact {NESTED_ARTIFACT} and runtime weight "
+                  f"w_elo={report['locked_w_elo']:.2f}")
         return
     if args.ablation:
         if args.ppa_splits:

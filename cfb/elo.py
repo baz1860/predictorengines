@@ -24,8 +24,11 @@ Usage:
   python3 elo.py --ratings                          # top 30
 """
 import argparse
+import hashlib
+import json
 import math
 import os
+from datetime import date
 
 import pandas as pd
 
@@ -41,6 +44,12 @@ FCS = "FCS"             # champion-ledger pseudo-team for all non-FBS opponents
 FCS_ANCHOR = 850.0      # FCS-ledger start + season anchor (the pooled
                         # pseudo-team self-calibrates to ~838)
 SUB_FCS = "Sub-FCS"     # FCS-ledger pool for D2/D3/unknown-division opponents
+
+
+def season_for_date(value=None):
+    """CFB season label for a calendar date (January postseason belongs prior year)."""
+    d = pd.Timestamp(value if value is not None else date.today())
+    return int(d.year - 1 if d.month == 1 else d.year)
 
 
 def load_games(path=GAMES_CSV):
@@ -59,14 +68,18 @@ def mov_multiplier(margin, elo_diff_winner):
     return math.log(abs(margin) + 1.0) * 2.2 / (elo_diff_winner * 0.001 + 2.2)
 
 
-def run_elo(games, record_pregame=False, carry=None, prior_offsets=None):
+def run_elo(games, record_pregame=False, carry=None, prior_offsets=None,
+            return_state=False):
     """Run Elo through all games chronologically.
 
     carry: between-season carryover of (rating - 1500); default 1 - SEASON_REGRESS.
     prior_offsets: dict[(team, season)] -> Elo points added at the team's first
     game of that season (preseason talent / returning-production priors).
     Returns (ratings, history) where history is a list of pregame-rating rows
-    (only if record_pregame), aligned with games' row order.
+    (only if record_pregame), aligned with games' row order. With
+    ``return_state=True`` a third value preserves the separate champion/FCS
+    ledgers and their last-seen seasons so a production snapshot can advance
+    them into an upcoming season without losing the different rating anchors.
     """
     if carry is None:
         carry = 1.0 - SEASON_REGRESS
@@ -146,6 +159,14 @@ def run_elo(games, record_pregame=False, carry=None, prior_offsets=None):
             history.append(tuple(rec))
 
     merged = {**{t: e for t, e in fcs_ratings.items() if t != SUB_FCS}, **ratings}
+    if return_state:
+        state = {
+            "champion_ratings": dict(ratings),
+            "champion_last_season": dict(last_season),
+            "fcs_ratings": dict(fcs_ratings),
+            "fcs_last_season": dict(fcs_last),
+        }
+        return merged, history, state
     return merged, history
 
 
@@ -205,6 +226,174 @@ def season_priors():
         return params["carry"], priors.offsets(feats, params)
     except Exception:
         return None, {}
+
+
+def _schedule_divisions(season):
+    """Canonical team classifications from the target-season CFBD schedule."""
+    path = os.path.join(HERE, "data", f"schedule_{int(season)}.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        data = json.load(open(path))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out = {}
+    for g in data:
+        for side in ("home", "away"):
+            team = g.get(f"{side}Team")
+            div = str(g.get(f"{side}Classification") or "").lower()
+            if team and div:
+                out[team] = div
+    return out
+
+
+def _snapshot_hash(target_season):
+    """Short content fingerprint for the files that define preseason Elo state."""
+    h = hashlib.sha256()
+    paths = [GAMES_CSV, os.path.join(HERE, "data", "prior_params.json"),
+             os.path.join(HERE, "data", f"schedule_{int(target_season)}.json"),
+             os.path.join(HERE, "data", "cfbd", f"talent_{int(target_season)}.json"),
+             os.path.join(HERE, "data", "cfbd", f"returning_{int(target_season)}.json")]
+    for path in paths:
+        h.update(os.path.basename(path).encode())
+        try:
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(chunk)
+        except OSError:
+            h.update(b"<missing>")
+    return h.hexdigest()[:16]
+
+
+def advance_state(state, target_season, carry, prior_offsets,
+                  team_divisions=None):
+    """Advance separate Elo ledgers into ``target_season`` exactly once.
+
+    Champion/FBS ratings regress around 1500. Individual FCS ratings regress
+    around the 850 FCS anchor. A target-season FBS team previously carried only
+    by the FCS ledger transitions at the stronger of its regressed FCS rating and
+    the standard 1300 new-FBS rating; this makes the transition policy explicit
+    and prevents the old win-totals path from dragging every FCS team toward 1500.
+    """
+    team_divisions = {str(k): str(v).lower() for k, v in (team_divisions or {}).items()}
+    champion = dict(state["champion_ratings"])
+    champion_last = dict(state["champion_last_season"])
+    fcs = dict(state["fcs_ratings"])
+    fcs_last = dict(state["fcs_last_season"])
+    rolled_fbs = rolled_fcs = 0
+
+    for t in list(champion):
+        if champion_last.get(t) != target_season:
+            champion[t] = (START_ELO + carry * (champion[t] - START_ELO)
+                           + (0.0 if t == FCS else prior_offsets.get((t, target_season), 0.0)))
+            champion_last[t] = target_season
+            rolled_fbs += int(t != FCS)
+
+    for t in list(fcs):
+        if fcs_last.get(t) != target_season:
+            fcs[t] = FCS_ANCHOR + carry * (fcs[t] - FCS_ANCHOR)
+            fcs_last[t] = target_season
+            rolled_fcs += int(t != SUB_FCS)
+
+    transitioned, new_fbs, new_fcs = [], [], []
+    for team, div in team_divisions.items():
+        if div == "fbs" and team not in champion:
+            if team in fcs:
+                champion[team] = (max(NEW_TEAM_ELO, fcs[team])
+                                  + prior_offsets.get((team, target_season), 0.0))
+                transitioned.append(team)
+            else:
+                champion[team] = (NEW_TEAM_ELO
+                                  + prior_offsets.get((team, target_season), 0.0))
+                new_fbs.append(team)
+            champion_last[team] = target_season
+        elif div == "fcs" and team not in fcs:
+            fcs[team] = FCS_ANCHOR
+            fcs_last[team] = target_season
+            new_fcs.append(team)
+
+    merged = {**{t: e for t, e in fcs.items() if t != SUB_FCS}, **champion}
+    # A declared target-season FCS team must use its individual ledger even if it
+    # previously appeared in the champion ledger.
+    for team, div in team_divisions.items():
+        if div == "fcs" and team in fcs:
+            merged[team] = fcs[team]
+    advanced = {
+        "champion_ratings": champion,
+        "champion_last_season": champion_last,
+        "fcs_ratings": fcs,
+        "fcs_last_season": fcs_last,
+    }
+    audit = {"rolled_fbs": rolled_fbs, "rolled_fcs": rolled_fcs,
+             "transitioned_fbs": sorted(transitioned), "new_fbs": sorted(new_fbs),
+             "new_fcs": sorted(new_fcs)}
+    return merged, advanced, audit
+
+
+def build_as_of(target_season, as_of=None, team_divisions=None):
+    """Build a production Elo snapshot for a declared season and decision date.
+
+    Unlike :func:`build`, this advances teams that have not yet played in the
+    target season and reports whether the preseason prior coverage is sufficient
+    for betting. The return value is ``(eparams, metadata)`` where ``eparams`` is
+    the existing ``(games, ratings, slope, sigma)`` tuple accepted by predictors.
+    """
+    target_season = int(target_season)
+    as_of = pd.Timestamp(as_of if as_of is not None else date.today()).tz_localize(None)
+    games = load_games()
+    games = games[games["date"] < as_of].copy()
+    if games.empty:
+        raise ValueError(f"no completed games before {as_of.date()}")
+    carry, offs = season_priors()
+    if carry is None:
+        carry = 1.0 - SEASON_REGRESS
+    ratings, history, state = run_elo(
+        games, record_pregame=True, carry=carry, prior_offsets=offs,
+        return_state=True)
+    slope, sigma = fit_spread_map(games, history)
+    _CROSS["slope"] = fit_cross_slope(games, history)
+
+    divisions = dict(_schedule_divisions(target_season))
+    divisions.update(team_divisions or {})
+    source_max_season = int(games["season"].max())
+    completed_target = int((games["season"] == target_season).sum())
+    ratings, state, audit = advance_state(
+        state, target_season, carry, offs, divisions)
+
+    try:
+        from . import priors
+        features = priors.load_features()
+    except Exception:
+        features = {}
+    target_fbs = {t for t, div in divisions.items() if str(div).lower() == "fbs"}
+    complete_prior = {t for t in target_fbs
+                      if "talent_z" in features.get((t, target_season), {})
+                      and "ret_c" in features.get((t, target_season), {})}
+    coverage = len(complete_prior) / len(target_fbs) if target_fbs else 0.0
+    if completed_target:
+        prior_mode = "in_season"
+    elif coverage >= 0.80:
+        prior_mode = "full_prior"
+    elif coverage > 0:
+        prior_mode = "partial_prior"
+    else:
+        prior_mode = "regression_only"
+    betting_eligible = prior_mode in ("full_prior", "in_season")
+    meta = {
+        "model_season": target_season,
+        "decision_date": str(as_of.date()),
+        "games_through": str(games["date"].max().date()),
+        "source_max_season": source_max_season,
+        "completed_target_games": completed_target,
+        "prior_mode": prior_mode,
+        "prior_complete_teams": len(complete_prior),
+        "prior_target_teams": len(target_fbs),
+        "prior_coverage": round(coverage, 4),
+        "betting_eligible": betting_eligible,
+        "snapshot_hash": _snapshot_hash(target_season),
+        **audit,
+    }
+    return (games, ratings, slope, sigma), meta
 
 
 def build():

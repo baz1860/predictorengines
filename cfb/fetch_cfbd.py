@@ -17,6 +17,7 @@ Usage: python3 -m cfb.fetch_cfbd [year]
 import json
 import os
 import sys
+import tempfile
 import urllib.request
 from datetime import date
 
@@ -46,8 +47,23 @@ def save(data, dest: str, label: str) -> None:
             os.path.exists(dest) and os.path.getsize(dest) > 2) else "not written"
         print(f"  {label}: CFBD has no data yet ({state})")
         return
-    with open(dest, "w") as f:
-        json.dump(data, f)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(dest)}.",
+                               dir=os.path.dirname(dest))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        with open(tmp) as f:
+            staged = json.load(f)
+        if not isinstance(staged, list) or not staged:
+            raise ValueError(f"staged {label} payload is empty or not a list")
+        os.replace(tmp, dest)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     print(f"  {label}: {len(data)} rows -> {os.path.relpath(dest, HERE)}")
 
 

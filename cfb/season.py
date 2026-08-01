@@ -28,19 +28,19 @@ import argparse
 import csv
 import json
 import os
-import re
-import statistics
+import tempfile
 import urllib.parse
 import urllib.request
-from collections import Counter, defaultdict
 from datetime import date
 
 import pandas as pd
 
 from . import elo as E
+from . import identity as IDENTITY
+from . import policy as POLICY
 from . import power as P
-from .edge import (DEFAULT_OVERROUND, HEADER, KELLY_FRACTION, MIN_EDGE,
-                   ODDS_CSV, get_bankroll, model_prob)
+from .edge import (HEADER, KELLY_FRACTION, MIN_EDGE,
+                   ODDS_CSV, get_bankroll, model_prob, prepare_odds)
 from .predictor import blend_predict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -63,25 +63,12 @@ def _odds_api_key(cli_key: str | None) -> str:
         return (os.environ.get("THE_ODDS_API_KEY") or "").strip()
 
 
-# ── team-name matching (Odds API appends mascots: "Ohio State Buckeyes") ─────
+# ── reviewed team identity ──────────────────────────────────────────────────
 
-def _fold(name: str) -> str:
-    import unicodedata
-    s = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
-    s = s.lower().replace("&", "and")
-    return re.sub(r"[^a-z0-9 ]", "", s).strip()
-
-
-def _match_team(provider_name: str, teams: list[str]) -> str | None:
-    """Longest model-team name that prefixes the provider name (mascot-tolerant)."""
-    p = _fold(provider_name)
-    best = None
-    for t in teams:
-        f = _fold(t)
-        if p == f or p.startswith(f + " "):
-            if best is None or len(f) > len(_fold(best)):
-                best = t
-    return best
+def _match_team(provider_name: str, teams: list[str], season: int) -> str | None:
+    """Resolve only canonical CFBD names or reviewed provider aliases."""
+    match = IDENTITY.resolve(provider_name, season, provider="the-odds-api")
+    return match["canonical"] if match and match["canonical"] in teams else None
 
 
 # ── slate ─────────────────────────────────────────────────────────────────────
@@ -94,7 +81,10 @@ def _slate_from_schedule_json(days: int) -> pd.DataFrame | None:
     if not files:
         return None
     sched = json.load(open(files[-1]))
-    rows = [{"date": pd.Timestamp(g["startDate"]).tz_localize(None).normalize(),
+    rows = [{"game_id": g.get("id"), "season": g.get("season"),
+             "week": g.get("week"), "season_type": g.get("seasonType"),
+             "date": pd.Timestamp(g["startDate"]).tz_localize(None).normalize(),
+             "commence_time": g.get("startDate"),
              "neutral": bool(g.get("neutralSite")),
              "home_team": g["homeTeam"], "home_div": g.get("homeClassification"),
              "away_team": g["awayTeam"], "away_div": g.get("awayClassification")}
@@ -136,21 +126,27 @@ def fetch_odds_api(slate: pd.DataFrame, api_key: str, regions: str = "us") -> in
         events = json.load(r)
 
     teams = sorted(set(slate["home_team"]) | set(slate["away_team"]))
+    seasons = {int(value) for value in slate["season"].dropna().unique()}
+    if len(seasons) != 1:
+        raise RuntimeError(f"odds slate spans ambiguous seasons: {sorted(seasons)}")
+    season = seasons.pop()
     slate_idx = {(r.home_team, r.away_team): r for r in slate.itertuples()}
 
     rows, unmatched = [], []
+    identity_version = IDENTITY.registry_version(season)
     for ev in events:
-        home = _match_team(ev.get("home_team", ""), teams)
-        away = _match_team(ev.get("away_team", ""), teams)
+        home = _match_team(ev.get("home_team", ""), teams, season)
+        away = _match_team(ev.get("away_team", ""), teams, season)
         fix = slate_idx.get((home, away)) if home and away else None
         if fix is None:
             unmatched.append(f"{ev.get('away_team')} at {ev.get('home_team')}")
             continue
         base = [str(fix.date.date()), home, away, int(bool(fix.neutral))]
-
-        # collect (point, price) per market/outcome across books
-        acc: dict[tuple, list] = defaultdict(list)
+        event_id = str(ev.get("id") or "")
+        commence_time = str(ev.get("commence_time") or "")
         for book in ev.get("bookmakers") or []:
+            bookmaker = str(book.get("key") or book.get("title") or "")
+            quote_time = str(book.get("last_update") or "")
             for mk in book.get("markets") or []:
                 for out in mk.get("outcomes") or []:
                     try:
@@ -159,44 +155,59 @@ def fetch_odds_api(slate: pd.DataFrame, api_key: str, regions: str = "us") -> in
                         continue
                     if price <= 1.0:
                         continue
-                    point = out.get("point")
-                    acc[(mk.get("key"), _fold(out.get("name", "")))].append((point, price))
+                    market_key = mk.get("key")
+                    market = {"h2h": "ml", "spreads": "spread",
+                              "totals": "total"}.get(market_key)
+                    if not market:
+                        continue
+                    name = IDENTITY.fold(out.get("name", ""))
+                    if market == "total":
+                        side = name if name in ("over", "under") else None
+                    elif name == IDENTITY.fold(ev.get("home_team", "")):
+                        side = "home"
+                    elif name == IDENTITY.fold(ev.get("away_team", "")):
+                        side = "away"
+                    else:
+                        side = None
+                    if side is None:
+                        continue
+                    line = "" if market == "ml" else out.get("point")
+                    if market != "ml" and line is None:
+                        continue
+                    rows.append(base + [market, side, line, round(price, 3),
+                                        event_id, getattr(fix, "game_id", ""),
+                                        commence_time, bookmaker,
+                                        quote_time, "the-odds-api", identity_version])
 
-        def side_row(market, side, key_name, needs_line):
-            entries = acc.get((market, key_name), [])
-            if not entries:
-                return None
-            if needs_line:
-                # consensus line = modal point across books; median price at it
-                pts = Counter(p for p, _ in entries if p is not None)
-                if not pts:
-                    return None
-                line = pts.most_common(1)[0][0]
-                prices = [pr for p, pr in entries if p == line]
-            else:
-                line, prices = "", [pr for _, pr in entries]
-            return base + [market_name(market), side, line,
-                           round(statistics.median(prices), 3)]
-
-        def market_name(k):
-            return {"h2h": "ml", "spreads": "spread", "totals": "total"}[k]
-
-        for market, sides in (("h2h", [("home", _fold(ev["home_team"])),
-                                       ("away", _fold(ev["away_team"]))]),
-                              ("spreads", [("home", _fold(ev["home_team"])),
-                                           ("away", _fold(ev["away_team"]))]),
-                              ("totals", [("over", "over"), ("under", "under")])):
-            for side, key_name in sides:
-                row = side_row(market, side, key_name, market != "h2h")
-                if row:
-                    rows.append(row)
-
-    with open(ODDS_CSV, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(HEADER)
-        w.writerows(rows)
+    if not rows:
+        raise RuntimeError("odds-api returned no usable, matched CFB quotes; last-good odds retained")
+    required_width = len(HEADER)
+    if any(len(r) != required_width for r in rows):
+        raise RuntimeError("internal odds normalization produced malformed rows")
+    fd, tmp = tempfile.mkstemp(prefix="odds.", suffix=".csv", dir=HERE)
+    try:
+        with os.fdopen(fd, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(HEADER)
+            w.writerows(rows)
+        check = pd.read_csv(tmp)
+        required = {"event_id", "cfbd_game_id", "commence_time", "bookmaker",
+                    "quote_time", "source", "identity_version"}
+        if check.empty or not required.issubset(check.columns):
+            raise RuntimeError("normalized odds snapshot failed validation")
+        if check[list(required - {"source"})].replace("", pd.NA).isna().any().any():
+            raise RuntimeError("normalized odds snapshot lacks provider provenance")
+        os.replace(tmp, ODDS_CSV)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     n_games = len({(r[1], r[2]) for r in rows})
-    print(f"odds-api: {n_games} slate game(s) priced -> {ODDS_CSV}")
+    n_books = len({r[11] for r in rows})
+    print(f"odds-api: {n_games} slate game(s), {n_books} book(s), "
+          f"{len(rows)} executable quote rows -> {ODDS_CSV}")
     if unmatched:
         print(f"  (skipped {len(unmatched)} event(s) not on this week's slate or "
               f"unmatched by name, e.g. {unmatched[0]})")
@@ -206,8 +217,7 @@ def fetch_odds_api(slate: pd.DataFrame, api_key: str, regions: str = "us") -> in
 # ── card ──────────────────────────────────────────────────────────────────────
 
 def load_market(slate: pd.DataFrame) -> dict:
-    """odds.csv → {(home, away): {market: {side: (line, odds)}}} with vig removed
-    per two-way pair (falls back to a 4.5% assumed overround one-sided)."""
+    """Best executable quote at the modal line for each matched fixture/side."""
     market: dict = {}
     if not os.path.exists(ODDS_CSV):
         return market
@@ -215,13 +225,31 @@ def load_market(slate: pd.DataFrame) -> dict:
     odds = odds[odds["odds"].notna()]
     if odds.empty:
         return market
-    odds["odds"] = pd.to_numeric(odds["odds"], errors="coerce")
-    odds = odds[odds["odds"] > 1.0]
-    odds["line"] = pd.to_numeric(odds["line"], errors="coerce")
-    for r in odds.itertuples():
-        game = market.setdefault((r.home, r.away), {})
-        game.setdefault(r.market, {})[r.side] = (
-            None if pd.isna(r.line) else float(r.line), float(r.odds))
+    seasons = {int(s) for s in slate["season"].dropna().unique()}
+    odds = prepare_odds(odds, seasons)
+    rejected = int((~odds["fixture_matched"] | ~odds["pair_complete"]).sum())
+    odds = odds[odds["fixture_matched"] & odds["pair_complete"]].copy()
+    if rejected:
+        print(f"note: rejected {rejected} unmatched or unpaired odds row(s)")
+    if odds.empty:
+        return market
+
+    picks = []
+    for (_, _, _, market_name, side), group in odds.groupby(
+            ["date", "home", "away", "market", "side"], dropna=False):
+        if market_name == "ml":
+            at_line = group
+        else:
+            mode = group["line"].mode(dropna=True)
+            if mode.empty:
+                continue
+            at_line = group[group["line"] == mode.iloc[0]]
+        picks.append(at_line.sort_values("odds", ascending=False).iloc[0])
+    for r in picks:
+        game = market.setdefault((r["date"], r["home"], r["away"]), {})
+        game.setdefault(r["market"], {})[r["side"]] = (
+            None if pd.isna(r["line"]) else float(r["line"]), float(r["odds"]),
+            float(r["p_implied"]), r["bookmaker"], bool(r["quote_eligible"]))
     return market
 
 
@@ -229,8 +257,24 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
                bankroll: float | None = None, model: str = "blend") -> dict:
     slate = load_slate(days)
     market = load_market(slate)
-    eparams = E.build()
+    seasons = sorted({int(s) for s in slate["season"].dropna().unique()})
+    if len(seasons) != 1:
+        raise SystemExit(f"slate spans ambiguous seasons: {seasons}")
+    target_season = seasons[0]
+    divisions = {r.home_team: r.home_div for r in slate.itertuples()}
+    divisions.update({r.away_team: r.away_div for r in slate.itertuples()})
+    eparams, state_meta = E.build_as_of(
+        target_season, as_of=date.today(), team_divisions=divisions)
     pparams = P.load_params()
+    market_policy = POLICY.load_policy()
+    executable_quotes = sum(
+        1 for game in market.values() for sides in game.values()
+        for quote in sides.values() if quote[4])
+    recordable_quotes = sum(
+        1 for game in market.values() for market_name, sides in game.items()
+        for quote in sides.values()
+        if quote[4] and POLICY.recordable(market_name, market_policy))
+    betting_enabled = bool(state_meta["betting_eligible"] and recordable_quotes)
     # Elo rates FBS and FCS teams; blend_predict substitutes the pooled FCS
     # power entity for FCS sides, so Elo membership is the requirement.
     known = set(eparams[1])
@@ -253,9 +297,9 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
             f"- Model: **{fav}** -{abs(pred['margin']):.1f} "
             f"(home win {pred['p1']*100:.1f}%) · total {pred['total']:.1f}")
 
-        mkt = market.get((g.home_team, g.away_team), {})
+        mkt = market.get((str(g.date.date()), g.home_team, g.away_team), {})
         sp = mkt.get("spread", {})
-        home_line = sp.get("home", (None, None))[0]
+        home_line = sp.get("home", (None, None, None, None, False))[0]
         if home_line is None and "away" in sp and sp["away"][0] is not None:
             home_line = -sp["away"][0]
         if home_line is not None:
@@ -279,15 +323,14 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
             lines_md.append(f"- Total lean: {lean} {t_line:g} — "
                             f"{max(p_over, 1-p_over)*100:.1f}%")
 
-        # value: every quoted side, de-vigged in pairs
+        # value: each selected executable quote already carries the de-vigged
+        # implied probability from its same-book paired market.
         for mkey, sides in mkt.items():
-            inv = sum(1.0 / o for _, o in sides.values())
-            over_r = inv if len(sides) == 2 else DEFAULT_OVERROUND
-            for side, (line, o) in sides.items():
+            for side, (line, o, p_imp, bookmaker, quote_eligible) in sides.items():
                 if mkey != "ml" and line is None:
                     continue
                 p_model = model_prob(pred, pparams, mkey, side, line)
-                edge = p_model - (1.0 / o) / over_r
+                edge = p_model - p_imp
                 if edge >= min_edge:
                     kelly = max(0.0, (p_model * o - 1.0) / (o - 1.0))
                     if mkey == "ml":
@@ -299,20 +342,61 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
                     value.append({
                         "date": str(g.date.date()), "game": f"{g.away_team} {vs} {g.home_team}",
                         "bet": bet,
-                        "odds": o, "p_model": p_model, "edge": edge,
-                        "stake": round(KELLY_FRACTION * kelly * bk, 2)})
+                        "event_id": f"cfbd:{getattr(g, 'game_id', '')}",
+                        "market": mkey, "side": side,
+                        "bookmaker": bookmaker or "legacy", "odds": o,
+                        "p_model": p_model, "edge": edge,
+                        "market_status": POLICY.status(mkey, market_policy),
+                        "stake": (round(KELLY_FRACTION * kelly * bk, 2)
+                                  if betting_enabled and quote_eligible
+                                  and POLICY.recordable(mkey, market_policy) else 0.0),
+                        "betting_eligible": bool(
+                            betting_enabled and quote_eligible
+                            and POLICY.recordable(mkey, market_policy))})
         lines_md.append("")
 
     value.sort(key=lambda v: -v["edge"])
+    eligible = [v for v in value if v["betting_eligible"]]
+    if eligible:
+        try:
+            from app.bankroll_store import preview_bets
+            candidates = []
+            for i, v in enumerate(eligible):
+                v["_candidate_id"] = str(i)
+                candidates.append({"candidate_id": str(i), "engine": "cfb",
+                                   "event_id": v["event_id"], "stake": v["stake"]})
+            capped = {c["candidate_id"]: c for c in preview_bets(candidates, bankroll=bk)}
+            for v in eligible:
+                raw = v["stake"]
+                v["stake"] = float(capped.get(v["_candidate_id"], {}).get("stake", 0.0))
+                v["stake_capped"] = v["stake"] < raw - 1e-9
+        except Exception as exc:
+            print(f"note: portfolio preview failed closed ({exc})")
+            for v in eligible:
+                v["stake"], v["stake_capped"] = 0.0, True
+    state_label = (f"season {state_meta['model_season']} · state {state_meta['prior_mode']} · "
+                   f"as of {state_meta['decision_date']} · snapshot {state_meta['snapshot_hash']}")
     md = [f"# CFB weekly card — {date.today()}",
           f"_{len(slate)} FBS games · model: {model} · bankroll £{bk:.2f} · "
-          f"quarter-Kelly · min edge {min_edge:.0%}_", ""]
-    md.append("## Value bets")
+          f"quarter-Kelly · min edge {min_edge:.0%}_",
+          f"_{state_label}_", ""]
+    if not betting_enabled:
+        if not state_meta["betting_eligible"]:
+            reason = ("the preseason snapshot does not have adequate target-season talent "
+                      "and returning-production coverage")
+        elif not executable_quotes:
+            reason = "there are no fresh, matched, complete bookmaker quotes"
+        else:
+            reason = "no CFB market is currently approved for real-money recording"
+        md += [f"> **Staking disabled:** {reason}. Edges below are diagnostic only.", ""]
+    md.append("## Value bets" if betting_enabled
+              else "## Diagnostic edges — no staking")
     if value:
-        md.append("| Date | Game | Bet | Odds | Model % | Edge | Stake |")
-        md.append("|---|---|---|---|---|---|---|")
+        md.append("| Date | Game | Bet | Status | Book | Odds | Model % | Edge | Stake |")
+        md.append("|---|---|---|---|---|---|---|---|---|")
         for v in value:
-            md.append(f"| {v['date']} | {v['game']} | **{v['bet']}** | {v['odds']:.2f} "
+            md.append(f"| {v['date']} | {v['game']} | **{v['bet']}** | {v['market_status']} "
+                      f"| {v['bookmaker']} | {v['odds']:.2f} "
                       f"| {v['p_model']*100:.1f}% | {v['edge']*100:+.1f}% | £{v['stake']:.2f} |")
     else:
         md.append("_None at this threshold" +
@@ -326,8 +410,11 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         f.write(text + "\n")
     print(text)
     print(f"\ncard -> {CARD_MD}")
-    return {"games": len(slate), "ats_picks": ats_picks, "value_bets": len(value),
-            "card": CARD_MD}
+    return {"games": len(slate), "ats_picks": ats_picks,
+            "value_bets": sum(1 for v in value if v["betting_eligible"]),
+            "diagnostic_edges": sum(1 for v in value if not v["betting_eligible"]),
+            "betting_eligible": betting_enabled,
+            "model_state": state_meta, "card": CARD_MD}
 
 
 def main() -> None:
@@ -348,8 +435,7 @@ def main() -> None:
         from . import fetch_data
         fetch_data.main()
         params = P.fit(E.load_games())
-        with open(P.PARAMS_JSON, "w") as f:
-            json.dump(params, f, indent=1)
+        P.save_params(params)
         print(f"power refit: {len(params['teams'])} teams as of {params['asof']}")
 
     if args.odds_api:

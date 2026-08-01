@@ -18,6 +18,7 @@ import argparse
 import json
 import math
 import os
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -146,6 +147,29 @@ def load_params(path=PARAMS_JSON):
         return json.load(f)
 
 
+def save_params(params, path=PARAMS_JSON):
+    """Validate and atomically publish fitted power parameters."""
+    required = {"asof", "mu", "hfa", "sigma", "sigma_total", "teams"}
+    missing = required - set(params)
+    if missing or not isinstance(params.get("teams"), dict) or len(params["teams"]) < 20:
+        raise ValueError(f"invalid power params; missing={sorted(missing)}")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.",
+                               dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(params, f, indent=1)
+        with open(tmp) as f:
+            json.load(f)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("teams", nargs="*")
@@ -156,9 +180,7 @@ def main():
 
     if args.fit:
         params = fit(load_games())
-        os.makedirs(os.path.dirname(PARAMS_JSON), exist_ok=True)
-        with open(PARAMS_JSON, "w") as f:
-            json.dump(params, f, indent=1)
+        save_params(params)
         print(f"fitted {len(params['teams'])} teams as of {params['asof']}: "
               f"mu={params['mu']:.1f} hfa={params['hfa']:.2f} sigma={params['sigma']:.1f}")
         return

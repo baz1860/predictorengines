@@ -86,9 +86,12 @@ def test_odds_validation_cfb():
     with tempfile.TemporaryDirectory() as d:
         good = Path(d) / "good.csv"
         good.write_text(
-            "date,home,away,neutral,market,side,line,odds\n"
-            "2026-06-14,Ohio State,Michigan,0,ml,home,,1.45\n"
-            "2026-06-14,Ohio State,Michigan,0,spread,home,-6.5,1.91\n")
+            "date,home,away,neutral,market,side,line,odds,event_id,cfbd_game_id,"
+            "commence_time,bookmaker,quote_time,source,identity_version\n"
+            "2026-06-14,Ohio State,Michigan,0,ml,home,,1.45,ev1,123,"
+            "2026-06-14T16:00:00Z,pinnacle,2026-06-14T12:00:00Z,manual,abc123\n"
+            "2026-06-14,Ohio State,Michigan,0,spread,home,-6.5,1.91,ev1,123,"
+            "2026-06-14T16:00:00Z,pinnacle,2026-06-14T12:00:00Z,manual,abc123\n")
         check("valid cfb odds → no errors", PV.validate_odds_file("cfb", good) == [])
 
         bad = Path(d) / "bad.csv"

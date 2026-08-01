@@ -74,12 +74,20 @@ class CFBAdapter(EngineAdapter):
             result["market_blend"] = {"applied": True, "w": w, "experimental": True}
             result["note"] = (result.get("note", "")
                               + f" · market-blended (experimental, w={w:.2f})")
-        self._mark_recommended(rows)
+        betting_eligible = bool(result.get("betting_eligible", True))
+        self._mark_recommended(rows, betting_eligible=betting_eligible)
+        self._preview_recommended(rows, bankroll_store, bankroll)
         if params.get("record"):
+            if not betting_eligible:
+                result["recording_blocked"] = "CFB model state is not betting-eligible."
             recs = [r for r in rows if r.get("recommended")]
             if recs:
                 df = pd.DataFrame(recs).rename(
                     columns={"date": "match_date", "kelly_frac": "kelly_stake"})
+                # Pass the already-previewed currency stake. place_bets applies
+                # the same caps again against the live ledger as the final
+                # concurrency-safe backstop.
+                df["stake"] = df["stake_gbp"]
                 df["source"] = "manual"
                 df["model"] = model
                 placed = bankroll_store.place_bets(self.id, self.sport, df)
@@ -87,19 +95,57 @@ class CFBAdapter(EngineAdapter):
         return normalize_edge_result(result, source="manual", model=model,
                                      sport=self.sport)
 
-    def _mark_recommended(self, rows: list[dict]) -> None:
+    def _mark_recommended(self, rows: list[dict], betting_eligible: bool = True) -> None:
         """Flag the bets recording would place: best edge per (home, away, market)
         clearing the edge threshold. Recording then places exactly these rows —
         no separate ad-hoc filter."""
         best: dict[tuple, dict] = {}
         for r in rows:
             r["recommended"] = False
-            if float(r.get("edge", 0.0)) >= self.EDGE_THRESHOLD:
+            if (betting_eligible and bool(r.get("betting_eligible", True))
+                    and float(r.get("edge", 0.0)) >= self.EDGE_THRESHOLD):
                 k = (r.get("home"), r.get("away"), r.get("market"))
                 if k not in best or float(r["edge"]) > float(best[k]["edge"]):
                     best[k] = r
         for r in best.values():
             r["recommended"] = True
+
+    @staticmethod
+    def _preview_recommended(rows: list[dict], bankroll_store, bankroll: float) -> None:
+        """Make displayed CFB stakes match the suite portfolio cap preview."""
+        recs = [r for r in rows if r.get("recommended")]
+        if not recs:
+            return
+        candidates = []
+        for i, r in enumerate(recs):
+            candidate_id = str(i)
+            r["_portfolio_candidate_id"] = candidate_id
+            candidates.append({
+                "candidate_id": candidate_id,
+                "engine": "cfb",
+                "event_id": r.get("event_id", ""),
+                "stake": float(r.get("stake_gbp", 0.0)),
+            })
+        try:
+            preview = bankroll_store.preview_bets(candidates, bankroll=bankroll)
+        except Exception:
+            # Sizing is a safety boundary: if it cannot be evaluated, nothing
+            # remains recordable or carries a displayed stake.
+            preview = []
+        capped = {str(c["candidate_id"]): c for c in preview}
+        for r in recs:
+            raw = float(r.get("stake_gbp", 0.0))
+            candidate = capped.get(r.pop("_portfolio_candidate_id"))
+            if candidate is None:
+                r["recommended"] = False
+                r["stake_gbp"] = 0.0
+                r["kelly_frac"] = 0.0
+                r["stake_capped"] = raw > 0.0
+                continue
+            stake = float(candidate["stake"])
+            r["stake_gbp"] = stake
+            r["kelly_frac"] = round(stake / bankroll, 6) if bankroll > 0 else 0.0
+            r["stake_capped"] = bool(candidate.get("stake_capped", stake < raw - 1e-9))
 
     def write_odds_template(self) -> dict[str, Any]:
         from contracts import enrich_template_result
@@ -113,11 +159,28 @@ class CFBAdapter(EngineAdapter):
         games = pd.read_csv(games_path)
         out: dict[int, tuple] = {}
         for i, r in rows.iterrows():
-            g = games[(games["home_team"] == r["home"]) & (games["away_team"] == r["away"])
-                      & (games["date"].astype(str) >= str(r["match_date"]))]
-            if g.empty:
+            event_id = str(r.get("event_id", "") or "")
+            if event_id.startswith("cfbd:"):
+                target = event_id.split(":", 1)[1]
+                game_ids = games["game_id"].astype(str).str.replace(r"\.0$", "", regex=True)
+                g = games[game_ids == target]
+                if not g.empty:
+                    g = g[(g["home_team"] == r["home"]) & (g["away_team"] == r["away"])]
+            else:
+                game_dates = pd.to_datetime(games["date"], errors="coerce")
+                match_date = pd.to_datetime(r.get("match_date"), errors="coerce")
+                if pd.isna(match_date):
+                    continue
+                g = games[(games["home_team"] == r["home"])
+                          & (games["away_team"] == r["away"])
+                          & ((game_dates - match_date).abs() <= pd.Timedelta(days=2))]
+            # Ambiguity is not a settlement decision. Event IDs should be
+            # unique; the narrow legacy fallback must also identify one game.
+            if len(g) != 1:
                 continue
             g = g.iloc[0]
+            if pd.isna(g["home_points"]) or pd.isna(g["away_points"]):
+                continue
             margin = g["home_points"] - g["away_points"]
             total = g["home_points"] + g["away_points"]
             side = str(r["side"])

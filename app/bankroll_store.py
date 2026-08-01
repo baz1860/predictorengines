@@ -103,6 +103,45 @@ def _event_id_for(r, engine_id: str) -> str:
                        getattr(r, "away", ""))
 
 
+def _cap_candidate_batch(candidates: list[dict], ledger: pd.DataFrame,
+                         bankroll: float, peak: float) -> list[dict]:
+    """Apply the exact suite exposure and pooled-funds caps to a candidate batch."""
+    from .portfolio import apply_caps
+    if not candidates:
+        return []
+    open_rows = ledger[ledger["status"] == "open"].copy()
+    open_rows["stake_n"] = pd.to_numeric(open_rows["stake"], errors="coerce").fillna(0.0)
+    available = bankroll - float(open_rows["stake_n"].sum())
+    today = str(date.today())
+    prior_day = float(open_rows.loc[
+        open_rows["placed_on"].astype(str) == today, "stake_n"].sum())
+    prior_event = open_rows.groupby(
+        open_rows["event_id"].fillna(""))["stake_n"].sum().to_dict()
+    prior_engine = open_rows.groupby(
+        open_rows["engine"].fillna(""))["stake_n"].sum().to_dict()
+    capped = apply_caps(candidates, bankroll=bankroll, peak=peak,
+                        prior_event_stake=prior_event,
+                        prior_engine_stake=prior_engine, prior_day_stake=prior_day)
+    out = []
+    for c in capped:
+        row = dict(c)
+        row["stake"] = min(round(float(row["stake"]), 2),
+                           round(max(available, 0.0), 2))
+        if row["stake"] < MIN_STAKE:
+            continue
+        available -= row["stake"]
+        out.append(row)
+    return out
+
+
+def preview_bets(candidates: list[dict], bankroll: float | None = None,
+                 peak: float | None = None) -> list[dict]:
+    """Preview the same stake caps ``place_bets`` would apply, without writing."""
+    bankroll = current_bankroll() if bankroll is None else float(bankroll)
+    peak = current_peak() if peak is None else float(peak)
+    return _cap_candidate_batch(candidates, load_ledger(), bankroll, peak)
+
+
 def place_bets(engine_id: str, sport: str, candidates: pd.DataFrame,
                peak: float | None = None) -> pd.DataFrame:
     """Record new bets. `candidates` needs: match_date, home, away, side, bet,
@@ -112,21 +151,12 @@ def place_bets(engine_id: str, sport: str, candidates: pd.DataFrame,
     Dedupes against existing open bets on (engine, event_id, side); the shared
     suite caps (app.portfolio) clamp single-event / correlated / daily / drawdown
     exposure before the pooled-funds clamp."""
-    from .portfolio import apply_caps
     if candidates is None or candidates.empty:
         return pd.DataFrame(columns=COLS)
     ledger = load_ledger()
     bankroll = current_bankroll()
     peak = peak if peak is not None else current_peak()
-    open_rows = ledger[ledger["status"] == "open"].copy()
-    open_rows["stake_n"] = pd.to_numeric(open_rows["stake"], errors="coerce").fillna(0.0)
-    available = bankroll - float(open_rows["stake_n"].sum())
-
-    # prior exposure so caps see the whole open book, not just this batch
     today = str(date.today())
-    prior_day = float(open_rows.loc[open_rows["placed_on"].astype(str) == today, "stake_n"].sum())
-    prior_event = open_rows.groupby(open_rows["event_id"].fillna(""))["stake_n"].sum().to_dict()
-    prior_engine = open_rows.groupby(open_rows["engine"].fillna(""))["stake_n"].sum().to_dict()
 
     existing = set(zip(ledger["engine"], ledger["event_id"].fillna(""), ledger["side"]))
     legacy = set(zip(ledger["engine"], ledger["home"], ledger["away"], ledger["side"]))
@@ -154,16 +184,11 @@ def place_bets(engine_id: str, sport: str, candidates: pd.DataFrame,
             "source": getattr(r, "source", "") if hasattr(r, "source") else "",
             "model": getattr(r, "model", "") if hasattr(r, "model") else ""})
 
-    capped = apply_caps(cand, bankroll=bankroll, peak=peak,
-                        prior_event_stake=prior_event,
-                        prior_engine_stake=prior_engine, prior_day_stake=prior_day)
+    capped = _cap_candidate_batch(cand, ledger, bankroll, peak)
 
     new_rows = []
     for c in capped:
-        stake = min(round(c["stake"], 2), round(max(available, 0.0), 2))
-        if stake < MIN_STAKE:
-            continue
-        available -= stake
+        stake = round(float(c["stake"]), 2)
         new_rows.append({
             "placed_on": today, "engine": engine_id, "sport": sport,
             "match_date": c["match_date"], "home": c["home"], "away": c["away"],
