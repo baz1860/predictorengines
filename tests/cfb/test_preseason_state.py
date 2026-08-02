@@ -14,6 +14,7 @@ from cfb import elo as E
 from cfb import edge as CE
 from cfb import engine as CENGINE
 from cfb import fetch_data as FETCH_DATA
+from cfb import fetch_cfbd as FETCH_CFBD
 from cfb import generate_docs as GENERATE_DOCS
 from cfb import identity as IDENTITY
 from cfb import dataset_fingerprint as DATASET_FP
@@ -464,6 +465,26 @@ def test_atomic_data_publish_retains_last_good_on_validation_failure(tmp_path):
     with pytest.raises(ValueError):
         POWER.save_params({"teams": {}}, str(params))
     assert params.read_bytes() == before_params
+
+
+def test_cfbd_schedule_publisher_rejects_scope_drift_and_bad_identity():
+    base = {
+        "season": 2026, "startDate": "2026-08-29T16:00:00Z",
+        "homeTeam": "Alpha", "awayTeam": "Beta",
+    }
+    payload = [
+        {**base, "id": i,
+         "homeClassification": "fbs" if i <= 100 else "fcs",
+         "awayClassification": "fcs"}
+        for i in range(1, 102)
+    ]
+    prepared = FETCH_CFBD.prepare_schedule(payload, 2026)
+    assert len(prepared) == 100
+    assert all("fbs" in {
+        row["homeClassification"], row["awayClassification"]} for row in prepared)
+
+    with pytest.raises(ValueError, match="duplicate event ID"):
+        FETCH_CFBD.prepare_schedule(payload[:100] + [payload[0]], 2026)
 
 
 def test_settlement_prefers_cfbd_event_id_over_first_name_match(tmp_path, monkeypatch):

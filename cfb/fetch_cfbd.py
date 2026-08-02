@@ -14,6 +14,7 @@ Key: 'collegefootballdata' in data/api_keys.json (or CFBD_API_KEY).
 
 Usage: python3 -m cfb.fetch_cfbd [year]
 """
+import argparse
 import json
 import os
 import sys
@@ -67,8 +68,41 @@ def save(data, dest: str, label: str) -> None:
     print(f"  {label}: {len(data)} rows -> {os.path.relpath(dest, HERE)}")
 
 
+def prepare_schedule(data: object, year: int) -> list[dict]:
+    """Validate CFBD schedule identity and retain the model's FBS scope."""
+    if not isinstance(data, list):
+        raise ValueError("CFBD schedule payload is not a list")
+    rows: list[dict] = []
+    ids: set[str] = set()
+    for game in data:
+        if not isinstance(game, dict):
+            raise ValueError("CFBD schedule contains a non-object row")
+        if int(game.get("season", -1)) != int(year):
+            raise ValueError(f"CFBD schedule contains a non-{year} row")
+        game_id = str(game.get("id") or "").strip()
+        if not game_id or game_id in ids:
+            raise ValueError("CFBD schedule has a missing or duplicate event ID")
+        ids.add(game_id)
+        if not game.get("startDate") or not game.get("homeTeam") or not game.get("awayTeam"):
+            raise ValueError(f"CFBD schedule event {game_id} lacks kickoff/team identity")
+        divisions = {
+            str(game.get("homeClassification") or "").lower(),
+            str(game.get("awayClassification") or "").lower(),
+        }
+        if "fbs" in divisions:
+            rows.append(game)
+    if len(rows) < 100:
+        raise ValueError(f"CFBD schedule has inadequate FBS coverage: {len(rows)}")
+    return rows
+
+
 def main() -> None:
-    year = int(sys.argv[1]) if len(sys.argv) > 1 else (
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("year", nargs="?", type=int)
+    parser.add_argument("--schedule-only", action="store_true",
+                        help="refresh only the validated FBS-involved schedule")
+    args = parser.parse_args()
+    year = args.year or (
         date.today().year if date.today().month >= 2 else date.today().year - 1)
     key = _key()
     if not key:
@@ -76,11 +110,13 @@ def main() -> None:
                          "data/api_keys.json key 'collegefootballdata'.")
     os.makedirs(CFBD_DIR, exist_ok=True)
     print(f"CFBD pulls for {year}:")
-    save(pull(f"/talent?year={year}", key),
-         os.path.join(CFBD_DIR, f"talent_{year}.json"), "talent (247 composite)")
-    save(pull(f"/player/returning?year={year}", key),
-         os.path.join(CFBD_DIR, f"returning_{year}.json"), "returning production")
-    save(pull(f"/games?year={year}", key),
+    if not args.schedule_only:
+        save(pull(f"/talent?year={year}", key),
+             os.path.join(CFBD_DIR, f"talent_{year}.json"), "talent (247 composite)")
+        save(pull(f"/player/returning?year={year}", key),
+             os.path.join(CFBD_DIR, f"returning_{year}.json"), "returning production")
+    schedule = prepare_schedule(pull(f"/games?year={year}", key), year)
+    save(schedule,
          os.path.join(HERE, "data", f"schedule_{year}.json"), "season schedule")
 
 
