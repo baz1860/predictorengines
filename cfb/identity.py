@@ -12,13 +12,20 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import unicodedata
+import urllib.parse
+import urllib.request
+from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 ALIASES_JSON = DATA / "team_aliases.json"
+ODDS_API_URL = (
+    "https://api.the-odds-api.com/v4/sports/americanfootball_ncaaf/odds/"
+)
 
 
 def fold(name: object) -> str:
@@ -156,17 +163,61 @@ def registry_version(season: int) -> str:
     return h.hexdigest()[:16]
 
 
+def _odds_api_key() -> str:
+    try:
+        from api_keys import get_key
+        return (get_key("the-odds-api", env="THE_ODDS_API_KEY") or "").strip()
+    except Exception:
+        return (os.environ.get("THE_ODDS_API_KEY") or "").strip()
+
+
+def live_provider_names(through: date) -> list[str]:
+    """Fetch current Odds API event names for a bounded identity-only review."""
+    key = _odds_api_key()
+    if not key:
+        raise ValueError("The Odds API key is not configured")
+    query = urllib.parse.urlencode({
+        "apiKey": key, "regions": "us", "markets": "h2h",
+        "oddsFormat": "decimal",
+    })
+    with urllib.request.urlopen(f"{ODDS_API_URL}?{query}", timeout=30) as response:
+        payload = json.load(response)
+    if not isinstance(payload, list):
+        raise ValueError("Odds API identity response is not a list")
+    names: list[str] = []
+    for event in payload:
+        try:
+            kickoff = date.fromisoformat(str(event["commence_time"])[:10])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if kickoff <= through:
+            names.extend([event.get("home_team", ""), event.get("away_team", "")])
+    return names
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--season", type=int, required=True)
     parser.add_argument("--provider", default="the-odds-api")
-    parser.add_argument("--names", type=Path,
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--names", type=Path,
                         help="JSON Odds API payload or newline-delimited names")
+    source.add_argument("--live", action="store_true",
+                        help="fetch current provider names for read-only review")
+    parser.add_argument("--through", type=date.fromisoformat,
+                        help="last kickoff date included with --live")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
 
     names: list[str] = []
-    if args.names:
+    if args.live:
+        if args.through is None:
+            raise SystemExit("--live requires --through YYYY-MM-DD")
+        try:
+            names = live_provider_names(args.through)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    elif args.names:
         text = args.names.read_text()
         try:
             payload = json.loads(text)

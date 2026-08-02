@@ -26,22 +26,25 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import tempfile
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 
 from . import elo as E
+from . import dataset_fingerprint as DATASET_FP
 from . import identity as IDENTITY
 from . import policy as POLICY
 from . import power as P
 from .edge import (HEADER, KELLY_FRACTION, MIN_EDGE,
                    ODDS_CSV, get_bankroll, model_prob, prepare_odds)
-from .predictor import blend_predict
+from .predictor import blend_predict, load_blend_weights
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UPCOMING_CSV = os.path.join(HERE, "data", "upcoming.csv")
@@ -49,6 +52,46 @@ CARD_MD = os.path.join(HERE, "data", "card.md")
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 SPORT_KEY = "americanfootball_ncaaf"
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _sha256_file(path: str | Path) -> str | None:
+    source = Path(path)
+    return _sha256_bytes(source.read_bytes()) if source.exists() else None
+
+
+def _atomic_write(path: str | Path, payload: bytes) -> Path:
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+        os.replace(tmp, dest)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return dest
+
+
+def _publish_card(text: str, manifest: dict) -> tuple[Path, Path]:
+    """Atomically publish a card and its input/output evidence manifest."""
+    card = Path(CARD_MD)
+    card_payload = (text + "\n").encode()
+    manifest = {**manifest, "card_sha256": _sha256_bytes(card_payload)}
+    manifest_path = card.with_name("card_manifest.json")
+    _atomic_write(card, card_payload)
+    _atomic_write(
+        manifest_path,
+        (json.dumps(manifest, indent=2, sort_keys=True, default=str) + "\n").encode(),
+    )
+    return card, manifest_path
 
 
 def _odds_api_key(cli_key: str | None) -> str:
@@ -132,14 +175,23 @@ def fetch_odds_api(slate: pd.DataFrame, api_key: str, regions: str = "us") -> in
     season = seasons.pop()
     slate_idx = {(r.home_team, r.away_team): r for r in slate.itertuples()}
 
-    rows, unmatched = [], []
+    rows, unmatched, unresolved_relevant = [], [], []
     identity_version = IDENTITY.registry_version(season)
+    slate_start = pd.Timestamp(slate["date"].min()).date()
+    slate_end = pd.Timestamp(slate["date"].max()).date()
     for ev in events:
         home = _match_team(ev.get("home_team", ""), teams, season)
         away = _match_team(ev.get("away_team", ""), teams, season)
         fix = slate_idx.get((home, away)) if home and away else None
         if fix is None:
-            unmatched.append(f"{ev.get('away_team')} at {ev.get('home_team')}")
+            label = f"{ev.get('away_team')} at {ev.get('home_team')}"
+            unmatched.append(label)
+            try:
+                kickoff = pd.Timestamp(ev.get("commence_time")).date()
+            except (TypeError, ValueError):
+                kickoff = None
+            if kickoff is not None and slate_start <= kickoff <= slate_end:
+                unresolved_relevant.append(label)
             continue
         base = [str(fix.date.date()), home, away, int(bool(fix.neutral))]
         event_id = str(ev.get("id") or "")
@@ -179,6 +231,12 @@ def fetch_odds_api(slate: pd.DataFrame, api_key: str, regions: str = "us") -> in
                                         commence_time, bookmaker,
                                         quote_time, "the-odds-api", identity_version])
 
+    if unresolved_relevant:
+        preview = "; ".join(unresolved_relevant[:3])
+        raise RuntimeError(
+            f"{len(unresolved_relevant)} in-window Odds API event(s) failed exact "
+            f"schedule/identity matching ({preview}); last-good odds retained"
+        )
     if not rows:
         raise RuntimeError("odds-api returned no usable, matched CFB quotes; last-good odds retained")
     required_width = len(HEADER)
@@ -405,16 +463,42 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
     md += ["", "## Matchups (straight-up + ATS)", ""] + lines_md
 
     text = "\n".join(md)
-    os.makedirs(os.path.dirname(CARD_MD), exist_ok=True)
-    with open(CARD_MD, "w") as f:
-        f.write(text + "\n")
+    manifest = {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "decision_date": str(state_meta["decision_date"]),
+        "model": model,
+        "model_state": state_meta,
+        "blend_weights": load_blend_weights(),
+        "market_policy": market_policy,
+        "identity_version": IDENTITY.registry_version(target_season),
+        "validation_data": DATASET_FP.compact_snapshot(),
+        "odds_sha256": _sha256_file(ODDS_CSV),
+        "configuration": {
+            "days": days,
+            "minimum_edge": min_edge,
+            "bankroll": bk,
+        },
+        "result": {
+            "games": int(len(slate)),
+            "ats_picks": int(ats_picks),
+            "value_bets": int(sum(1 for v in value if v["betting_eligible"])),
+            "diagnostic_edges": int(sum(
+                1 for v in value if not v["betting_eligible"])),
+            "betting_eligible": bool(betting_enabled),
+            "total_stake": round(sum(float(v["stake"]) for v in value), 2),
+        },
+    }
+    card_path, manifest_path = _publish_card(text, manifest)
     print(text)
-    print(f"\ncard -> {CARD_MD}")
+    print(f"\ncard -> {card_path}")
+    print(f"manifest -> {manifest_path}")
     return {"games": len(slate), "ats_picks": ats_picks,
             "value_bets": sum(1 for v in value if v["betting_eligible"]),
             "diagnostic_edges": sum(1 for v in value if not v["betting_eligible"]),
             "betting_eligible": betting_enabled,
-            "model_state": state_meta, "card": CARD_MD}
+            "model_state": state_meta, "card": str(card_path),
+            "manifest": str(manifest_path)}
 
 
 def main() -> None:

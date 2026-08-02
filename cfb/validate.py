@@ -99,6 +99,8 @@ def walk_forward(games: pd.DataFrame, since: int, quiet: bool = False,
                 "home_team": r.home_team, "away_team": r.away_team,
                 "p_elo": E.win_prob(d), "p_pow": pp["p1"],
                 "m_elo": slope * d, "m_pow": pp["margin"], "t_pow": pp["total"],
+                "sigma_margin": float(pparams["sigma"]),
+                "sigma_total": float(pparams["sigma_total"]),
                 "margin": r.home_points - r.away_points,
                 "total": r.home_points + r.away_points,
             }

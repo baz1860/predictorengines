@@ -4,9 +4,9 @@ Sibling of the World Cup engine, adapted for CFB: no draws, point-based scoring,
 
 ## How it works
 
-Two models, blended 50/50 by default (the blend beats either alone out-of-sample):
+Two models, blended **55% Elo / 45% power** by a frozen nested-season selection:
 
-1. **Elo** (`elo.py`) — margin-of-victory-scaled K over ~19,800 FBS games (2001–present), home-field advantage (~62 Elo ≈ 2.5 pts). Two ledgers: the **champion FBS ledger** pools all non-FBS opponents into one self-calibrating 'FCS' pseudo-team (so FBS-vs-FBS predictions are unaffected by FCS data), and a parallel **FCS ledger** rates each FCS team individually from full FCS schedules — one-sided against frozen FBS ratings, two-sided against each other, sub-FCS opponents pooled — anchored at 850 Elo. FBS-vs-FCS games are priced against the actual opponent with a separately fitted cross-division spread map (blowout compression makes the champion slope overshoot; held-out 2019–25 the individual ratings + cross slope cut FBS-vs-FCS margin MAE 14.8 → 13.4 and Brier 0.0477 → 0.0461 vs the pooled pseudo-team). Spread mapping (Elo points per point of margin) and margin sigma fitted from data. Between seasons, ratings regress 35% to the mean and get a **preseason prior** from the 247 talent composite and returning production (`priors.py`, data via CFBD API into `data/cfbd/`; coefficients tuned on weeks 1–4 of 2016–2024 with `priors.py --tune`). This cut the model's early-season deficit to the closing line from 1.8 to 1.1 points; if `data/cfbd/` is absent everything falls back to plain regression.
+1. **Elo** (`elo.py`) — margin-of-victory-scaled K over completed games, home-field advantage (~62 Elo), and separate FBS/FCS ledgers. Between seasons FBS ratings regress 30% toward 1500 and FCS ratings toward 850. Target-season talent and returning-production priors are applied only when coverage is adequate; otherwise the snapshot is explicitly `regression_only` and betting is disabled.
 2. **Offense/defense power ratings** (`power.py`) — the Dixon-Coles analogue. Per-team offense and defense ratings in points, fitted by weighted ridge regression (exponential time decay, 1.5-season half-life, 4-season window), with fitted home-field advantage and L2 shrinkage. Predicts expected points per side, hence margin *and* total. Separates how teams are strong — e.g. 2025 Ohio State: +8 offense but +14 defense, invisible to a single Elo number.
 
 Win probabilities for spreads/totals come from a normal margin distribution with fitted sigma (~16 pts for margin, similar for totals).
@@ -30,6 +30,10 @@ plumbing it drives. It prices the upcoming week's FBS slate with the blend,
 writes `cfb/data/card.md` with the model's straight-up pick, spread, and total
 for every game, the **ATS pick** against each market spread with cover
 probability, a total lean, and a value-bets table (edge ≥ 3%, quarter-Kelly).
+Each publish also writes `cfb/data/card_manifest.json`, binding the exact card
+hash to its model state, configuration, policy, identity registry, odds snapshot,
+and frozen validation fingerprints. Operators should follow
+[`RUNBOOK.md`](RUNBOOK.md), not edit generated card artifacts.
 
 ```bash
 bash cfb/update.sh                    # weekly refresh: data + CFBD roster inputs + power refit + gate
@@ -38,10 +42,11 @@ python3 -m cfb.season --odds-api      # pull NCAAF ml/spread/total lines, price 
 python3 -m cfb.season                 # reprice with whatever is in cfb/odds.csv
 python3 -m cfb.season --days 3        # narrower slate window
 python3 -m cfb.season --min-edge 0.05 --model elo|power|blend
+python3 -m cfb.rehearsal                  # offline Week 0 safety rehearsal
 ```
 
 Lines come from The Odds API (key `the-odds-api` in `data/api_keys.json`, US
-regions, consensus line = modal point, median price) or manually via
+regions) as bookmaker-level, timestamped quotes or manually via
 `python3 -m cfb.edge --template` + filling `cfb/odds.csv`. Without lines the
 card still shows model picks for every matchup — just no ATS pick or edges.
 The card covers every game with an FBS side, including FBS-vs-FCS (FCS teams
@@ -83,11 +88,11 @@ python3 edge.py              # edge report, EV, quarter-Kelly stakes -> edge_rep
 python3 edge.py --no-bet     # report only, don't log to ledger
 ```
 
-Enter **both sides of each market** where possible — the vig is then removed exactly; with one side only, a 4.5% overround is assumed. Spread/total cover probabilities use the fitted normal margin model. `odds_sample.csv` shows the format with illustrative odds. Caveats: integer lines can push (the normal approximation slightly misprices these); edges under ~3% are model noise; closing lines at sharp books are hard to beat.
+Enter **both sides from the same bookmaker**; incomplete pairs are rejected. Spread/total probabilities use the fitted normal champion. A discrete push-aware challenger was evaluated and not promoted. Edges under ~3% are model noise, and no market is recordable unless its policy is `eligible`.
 
 ### Bankroll tracking
 
-Same conventions as the soccer engine: live bankroll in `data/bankroll.json` (starts £100), `edge.py` auto-logs recommendations with edge ≥ 3% (best per market per game) to `data/ledger.csv`.
+The application uses the suite-level pooled bankroll and ledger. Displayed CFB stakes and recorded stakes pass through the same event, engine, daily, drawdown, and available-funds caps.
 
 ```bash
 python3 bankroll.py --settle   # settle open bets against games.csv results
@@ -97,40 +102,28 @@ python3 bankroll.py --reset 100
 
 Settlement handles moneyline, spread (with pushes), and totals from final scores.
 
-## Performance (walk-forward, 2,398 FBS-vs-FBS games, 2023–2025)
+<!-- CFB_METRICS_START -->
+## Frozen validation evidence
 
-Power ratings refit before each week; Elo updated game by game; spread map fitted on pre-2023 data only.
+Runtime blend: **55% Elo / 45% power**, selected on 2023-2024 (1,587 games) before the untouched 2025 holdout (807 games).
 
-| Model | Accuracy | Brier (binary) | Margin MAE | Total MAE |
-|---|---|---|---|---|
-| Elo | 70.1% | 0.1895 | 13.10 | — |
-| Power | 69.0% | 0.1977 | 13.38 | 13.10 |
-| **50/50 blend** | **70.8%** | **0.1885** | **12.79** | 13.10 |
+| Window | Games | ML Brier | Accuracy | Margin MAE | Total MAE |
+|---|---:|---:|---:|---:|---:|
+| Selection 2023-2024 | 1,587 | 0.18891 | 70.6% | 12.875 | 13.128 |
+| Holdout 2025 | 807 | 0.18663 | 70.9% | 12.601 | 12.817 |
+| Combined | 2,394 | 0.18814 | 70.7% | 12.783 | 13.023 |
 
-With preseason priors (weeks 1–4 of 2023–24 overlap the prior-tuning window; 2025 is fully out-of-sample). 2025 alone: blend 71.3% accuracy, Brier 0.1868, margin MAE 12.61 — versus 70.7%/0.1903/12.81 before priors. ATS performance did *not* improve (51.2% cover in 2025, was 52.1%): better predictions converged the model toward information the market already priced.
+The frozen 2025 closing-line benchmark at a three-point disagreement:
 
-Coin-flip Brier = 0.25; picking the home side every time = 58.6%. For reference, Vegas closing spreads run ~12.0–12.5 MAE, so the model is competitive but the market is still sharper — treat the edge finder accordingly.
+| Market | W-L-P | Bets | ROI | Week-block 95% CI | Policy |
+|---|---:|---:|---:|---:|---|
+| Spread | 217-239-7 | 463 | -9.0% | [-17.6%, -0.4%] | diagnostic |
+| Total | 231-186-1 | 418 | +5.7% | [-0.0%, +11.9%] | paper |
 
-### Against the spread (real closing lines)
+The push-aware calibrated-discrete challenger remains unpromoted. Spread holdout Brier/ECE are 0.51933/0.02642; totals are 0.50506/0.00184. Neither market cleared the held-out betting gate.
 
-`ats_backtest.py` bets the blend against consensus closing spreads (median across ~8 books, from the data mirror, 2006–2019 only) whenever model and market disagree by ≥ N points, walk-forward:
-
-```bash
-python3 ats_backtest.py                  # 2015-2019
-python3 ats_backtest.py --since 2010 --until 2019
-```
-
-Result on 2,886 lined games 2015–2019: **47–48% cover, ROI −7% to −12% at closing juice** (break-even = 52.4% at −110). Performance *worsens* as the model/market gap grows — large disagreements are model error, not market inefficiency. Closing spread MAE 12.4 vs model 13.6 on the same games.
-
-2025 season (807 lined games, consensus spreads via CFBD API, −110 juice assumed — CFBD carries no spread odds; import with `import_cfbd_lines.py`): **412-379-16 ATS, 52.1% cover, −0.6% ROI** — essentially break-even, and no betting threshold is statistically distinguishable from a coin flip. Model margin MAE 12.8 vs closing 11.8.
-
-Conclusion: do not bet this model blind against closing spreads; its edge-finder output is only plausibly useful against soft openers, stale lines, or as one input among several.
-
-### Totals (real closing O/U)
-
-`totals_backtest.py` does the same for over/unders (`data/closing_totals.csv`: mirror 2006–2019 with juice, CFBD 2025 at assumed −110). The power model carries a recent-season intercept recalibration (`total_bias`, fitted on the trailing 365 days, walk-forward safe) because scoring drifts faster than the 4-year window adapts.
-
-This is the engine's most competitive market: model totals MAE 12.82 vs market 12.52 in 2025 (a 0.3-pt gap, vs 0.8 on spreads). Results: 2015–2019 **negative** (~49.6% win, −5% ROI); 2025 **positive at every threshold** (54.8% win, +4.6% ROI at ≥3 pts, 408 bets) and robust to bias-correction method. Caveat: one good season on ~800 games is not statistically distinguishable from break-even (≈1 SD), and the older era says otherwise. Status: paper-trade totals through 2026 with CLV tracking before staking real money.
+Validation line fingerprint: `f11daa33b1b9488a`. Regenerate with `python3 -m cfb.generate_docs --write`; CI-style drift check: `python3 -m cfb.generate_docs --check`.
+<!-- CFB_METRICS_END -->
 
 ## Data
 
@@ -146,9 +139,7 @@ Seasons 2001–present, FBS games only (FBS vs FCS included, FCS side pooled). N
 
 - Season simulator: conference championships + CFP bracket Monte Carlo → `cfp_odds.csv` (analogue of `simulate.py`)
 - Backtest the edge finder against historical closing lines (`betting/` in the same data repo, 2006–present)
-- Discrete scoring model for totals/teasers (points come in 3s and 7s — normal approximation misprices key numbers)
 - Extra features: returning production, talent composites, QB changes, rest/travel
-- Calibration check and shrinkage toward market lines
 
 ## V3 tooling
 

@@ -14,11 +14,14 @@ from cfb import elo as E
 from cfb import edge as CE
 from cfb import engine as CENGINE
 from cfb import fetch_data as FETCH_DATA
+from cfb import generate_docs as GENERATE_DOCS
 from cfb import identity as IDENTITY
 from cfb import dataset_fingerprint as DATASET_FP
+from cfb import market_validation as MARKET_VALIDATION
 from cfb import power as POWER
 from cfb import policy as POLICY
 from cfb import run_status as RUN_STATUS
+from cfb import rehearsal as REHEARSAL
 from cfb import season as S
 from cfb import validate as VALIDATE
 from app.engines import cfb as APP_CFB
@@ -188,6 +191,34 @@ def test_freeze_nested_holdout_writes_audited_runtime_config(tmp_path, monkeypat
     assert config["data_line_sha256"] == "reviewed"
 
 
+def test_discrete_market_distribution_assigns_explicit_push_mass():
+    pmf = {0: 1.0}
+    integer_line = MARKET_VALIDATION.discrete_three_way(
+        pd.Series([3.0]), pd.Series([-3.0]), pmf)
+    half_line = MARKET_VALIDATION.discrete_three_way(
+        pd.Series([3.0]), pd.Series([-3.5]), pmf)
+    assert integer_line[0].tolist() == [0.0, 1.0, 0.0]
+    assert half_line[0].tolist() == [0.0, 0.0, 1.0]
+
+
+def test_market_calibration_preserves_push_probability():
+    raw = MARKET_VALIDATION.discrete_three_way(
+        pd.Series([3.0, 4.0]), pd.Series([-3.0, -3.0]),
+        {-1: 0.2, 0: 0.5, 1: 0.3})
+    calibrated = MARKET_VALIDATION.calibrate_three_way(
+        raw, {"intercept": -0.2, "slope": 0.8})
+    assert calibrated[:, 1].tolist() == pytest.approx(raw[:, 1].tolist())
+    assert calibrated.sum(axis=1).tolist() == pytest.approx([1.0, 1.0])
+
+
+def test_platt_calibration_is_fit_without_holdout_inputs():
+    probability = pd.Series([0.1, 0.2, 0.8, 0.9]).to_numpy()
+    outcome = pd.Series([0, 0, 1, 1]).to_numpy()
+    params = MARKET_VALIDATION.fit_platt(probability, outcome)
+    assert params["n"] == 4
+    assert params["slope"] > 0
+
+
 def test_adapter_never_recommends_when_state_is_ineligible():
     rows = [
         {"home": "Alpha", "away": "Beta", "market": "ml", "edge": 0.20},
@@ -289,6 +320,27 @@ def test_update_status_is_machine_readable(tmp_path):
     assert payload["updated_at"].endswith("+00:00")
 
 
+def test_generated_cfb_readme_metrics_are_current():
+    current = GENERATE_DOCS.README.read_text()
+    assert current == GENERATE_DOCS.replace(current, GENERATE_DOCS.render())
+
+
+def test_card_manifest_binds_exact_published_card(tmp_path, monkeypatch):
+    card = tmp_path / "card.md"
+    monkeypatch.setattr(S, "CARD_MD", str(card))
+    _, manifest_path = S._publish_card("# test card", {
+        "schema_version": 1,
+        "result": {"betting_eligible": False, "value_bets": 0,
+                   "total_stake": 0.0},
+    })
+    verified = REHEARSAL.verify_card(card, manifest_path)
+    assert verified["manifest_hash_matches"] is True
+    assert verified["safe_diagnostic_card"] is True
+
+    card.write_text("tampered\n")
+    assert REHEARSAL.verify_card(card, manifest_path)["manifest_hash_matches"] is False
+
+
 def test_preflight_semantically_builds_current_cfb_snapshot():
     cfb = preflight.build_report()["engines"]["cfb"]
     assert cfb["diagnostic_ready"] is True
@@ -367,6 +419,32 @@ def test_odds_api_snapshot_is_atomic_and_keeps_book_provenance(tmp_path, monkeyp
         lambda *a, **k: io.BytesIO(b"[]"),
     )
     with pytest.raises(RuntimeError):
+        S.fetch_odds_api(slate, "secret")
+    assert dest.read_bytes() == before
+
+
+def test_odds_api_blocks_unreviewed_in_window_identity(tmp_path, monkeypatch):
+    dest = tmp_path / "odds.csv"
+    dest.write_text("last,good\n1,2\n")
+    monkeypatch.setattr(S, "ODDS_CSV", str(dest))
+    monkeypatch.setattr(S, "HERE", str(tmp_path))
+    slate = pd.DataFrame([{
+        "game_id": 123, "season": 2026, "week": 1,
+        "date": pd.Timestamp("2026-08-29"), "neutral": True,
+        "home_team": "TCU", "home_div": "fbs",
+        "away_team": "North Carolina", "away_div": "fbs",
+    }])
+    payload = [{
+        "id": "unknown", "commence_time": "2026-08-29T16:00:00Z",
+        "home_team": "TCU Mystery", "away_team": "North Carolina Tar Heels",
+        "bookmakers": [],
+    }]
+    monkeypatch.setattr(
+        S.urllib.request, "urlopen",
+        lambda *a, **k: io.BytesIO(json.dumps(payload).encode()),
+    )
+    before = dest.read_bytes()
+    with pytest.raises(RuntimeError, match="in-window Odds API event"):
         S.fetch_odds_api(slate, "secret")
     assert dest.read_bytes() == before
 

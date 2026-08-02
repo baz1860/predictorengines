@@ -17,36 +17,34 @@ adding more model features.
 
 ## Current evidence
 
-- The historical walk-forward accuracy gate passes on 2,394 FBS-vs-FBS games:
-  Brier 0.1879, margin MAE 12.79, total MAE 13.02.
-- The current runtime blend is 60% Elo / 40% power, despite README language that
-  still describes a 50/50 default.
-- The normal weekly path calls `E.build()` after the final completed 2025 game and
-  does not roll ratings into 2026. The documented offseason regression and 2026
-  priors therefore do not affect Week 0 prices.
+- The frozen nested validation gate passes on 2,394 FBS-vs-FBS games: Brier
+  0.18814, margin MAE 12.783, and total MAE 13.023.
+- The current runtime blend is a documented and frozen 55% Elo / 45% power,
+  selected on 2023–24 before evaluation on the untouched 2025 holdout.
+- Every production entry point now builds an explicit 2026 snapshot. The current
+  Week 0 state is `regression_only`, and that state disables recommendation and
+  staking.
 - `talent_2026.json` and `returning_2026.json` are empty. Live CFBD checks on
   2026-08-01 also returned zero rows for both endpoints.
 - `power_params.json` is fitted as of 2026-01-21 and has no roster adjustment.
 - The local 2026 FBS schedule is substantially usable: all 888 FBS-involved event
   IDs still exist in the current CFBD response. Five kickoff times have changed.
-- `odds.csv` is 23 days old. Seven of its eight fixtures match the current first
-  slate by exact date; the eighth is accepted only because production ignores the
-  quote date.
+- The legacy `odds.csv` snapshot has 242 schema/provenance issues and no quote is
+  eligible. Production now requires fresh, exact-event, same-book paired quotes.
 - Current ATS replay does not support real-money recommendations:
   - 2025 all lined games: 392-393-16, 49.9% cover, -4.6% ROI.
   - 2025 at a 3-point disagreement: 225-233-7, -6.1% ROI.
   - 2023-2025 overall: -5.8% ROI; at 3 points: -6.5% ROI.
-- The checked-in card proposes 19 bets totalling £88.26 from a £100 bankroll,
-  including £28.49 on one event. Those displayed stakes bypass the suite's 15%
-  single-event, 25% engine, and 40% daily caps.
-- Selected CFB/shared tests pass 32/32, but there are no production-path tests for
-  preseason rollover, prior coverage, schedule fallback, quote freshness/date
-  matching, odds API completeness, atomic refreshes, or update failure propagation.
+- The Week 0 rehearsal card contains eight games, zero eligible bets, and £0 total
+  stake. Its manifest binds the exact card to its inputs and risk policy.
+- Production-path tests now cover rollover, prior coverage, identity, schedule
+  fallback, quote integrity, atomic publication, update failure propagation,
+  settlement, generated documentation, and card-manifest verification.
 
 The bullets above are the review baseline. The implementation tracker below is
 the current source of truth for remediation progress.
 
-## Implementation tracker — 2026-08-01
+## Implementation tracker — 2026-08-02
 
 | ID | State | Implementation evidence / remaining work |
 |---|---|---|
@@ -60,17 +58,18 @@ the current source of truth for remediation progress.
 | CFB-08 | **Implemented for source/model publishers** | Games, schedule, priors, odds, and power parameters are staged, validated, and atomically replaced. Empty/malformed-response retention tests pass. |
 | CFB-09 | **Implemented** | Policy is ML=`diagnostic`, spread=`diagnostic`, total=`paper`; none is currently recordable. |
 | CFB-10 | **Implemented** | Card and app recommendation displays call the same suite cap preview used by recording; failure disables the affected stakes. |
-| CFB-11–12 | **Pending** | Discrete residual and held-out calibration challengers are the next model-evidence tranche. |
+| CFB-11 | **Implemented as rejected challenger** | Integer empirical residual PMFs fitted on 2023–24 now produce explicit win/push/loss probabilities. On 2025, discrete probabilities improve Brier/ECE slightly, but their betting ROI intervals cross zero; production remains on the champion. |
+| CFB-12 | **Implemented as rejected challenger** | Platt intercept/slope and reliability buckets are fitted strictly pre-holdout. Calibration sharply reduces ECE, but spread’s calibrated-discrete combination fails the incremental ECE gate and neither market clears the held-out betting gate. |
 | CFB-13 | **Implemented** | Validation inputs now have source/decision-time metadata, row and season counts, SHA-256 fingerprints, and an atomic manifest. The gate rejected the pre-fingerprint baseline until an explicit reviewed rebaseline. |
 | CFB-14 | **Implemented** | Blend selection uses 1,587 games from 2023–24 and locks `w_elo=0.55` before scoring the untouched 807-game 2025 holdout. Week-block confidence intervals and season metrics are frozen in the nested-validation artifact. |
-| CFB-15 | **Implemented for Week 0; Week 1 review pending** | CFBD team IDs are canonical; prefix matching was removed. All current Week 0 Odds API spellings resolve through reviewed aliases, unknown names fail review, and snapshots record the identity-registry hash. |
+| CFB-15 | **Implemented for Week 0 and Week 1** | CFBD team IDs are canonical; prefix matching was removed. The live through-2026-09-06 audit resolves all 183 current Odds API spellings through reviewed aliases, in-window unknowns block odds publication, and snapshots record the identity-registry hash. |
 | CFB-16 | **Implemented** | Settlement requires one team-verified CFBD event ID result, supports postponements, and fails closed for duplicates, reversed sites, or missing scores. The legacy fallback is date-bounded and unambiguous. |
-| CFB-17 | **Pending** | README metric generation and drift detection remain outstanding. |
+| CFB-17 | **Implemented** | The README evidence section is generated from frozen nested/market artifacts, writes atomically, and has a test/CLI drift check. |
 
 Verification at this checkpoint:
 
-- Repository-wide offline suite: **679 passed**.
-- Focused CFB/shared regression suite after the current P1 checkpoint: **59 passed**.
+- Repository-wide offline suite: **685 passed**.
+- Focused CFB production-safety module: **32 passed**.
 - Production smoke card: 2026 `regression_only`, 0/138 complete priors,
   0 recommended bets, 0 staked, stale/legacy quotes diagnostic-only.
 - Historical CFB gate remains green for forecast accuracy; the negative ATS
@@ -78,6 +77,14 @@ Verification at this checkpoint:
 - Nested 2025 holdout at the locked 55/45 blend: ATS ≥3 points was 217-239-7,
   **-9.0% ROI** with 95% CI [-17.6%, -0.4%]. Totals were 231-186-1,
   **+5.7% ROI** with 95% CI [-0.0%, +11.9%], so totals remain paper-only.
+- Push-aware/calibration challenger: spread calibrated-discrete Brier 0.51933
+  versus normal champion 0.55554, but ECE 0.02642 is worse than calibrated
+  normal 0.02522 and its betting ROI interval is [-8.4%, +34.1%]. Totals
+  calibrated-discrete Brier is 0.50506, but calibration leaves zero bets at the
+  3% EV threshold. Neither challenger is promoted.
+- First clean operational rehearsal day: all six controls passed; the 2026
+  regression-only golden card contains eight games and £0 stake. Two additional
+  clean rehearsal days remain required.
 
 ## Principles and scope
 
@@ -212,14 +219,14 @@ Verification at this checkpoint:
 |---|---|---|
 | Season state | All Week 0 predictions use a declared 2026 snapshot; rollover applied once | **Control complete** |
 | Preseason priors | Adequate 2026 coverage, or explicit regression-only downgrade with betting disabled | Control complete; data remains **no-go** at 0/138 |
-| Schedule | Current event IDs, kickoff drift reviewed, no unknown Week 0 teams | Week 0 complete; Week 1 alias review pending |
+| Schedule | Current event IDs, kickoff drift reviewed, no unknown Week 0/1 teams | **Control complete through 2026-09-06 (183/183 live provider names)** |
 | Odds | Named book, timestamp, exact event, same-book pairing, within freshness limit | **No-go** |
 | Refresh | Required failures return non-zero; atomic last-good preservation | Control complete; rehearsals pending |
 | ATS/ML evidence | Untouched decision-time holdout supports policy threshold | **No-go** |
 | Totals evidence | Frozen backtest plus live paper CLV tracking | Partial; paper only |
 | Staking | Display and recording share event/engine/day caps | **Control complete** |
 | Settlement | Event-ID based and tested for reschedules/repeats | **Control complete** |
-| Operations | Three clean rehearsals and actionable alerts | Not started |
+| Operations | Three clean rehearsal days and actionable machine-readable failures | **1/3 clean days; runbook and status controls complete** |
 
 ## Resourcing and sequencing
 
