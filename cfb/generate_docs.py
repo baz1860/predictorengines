@@ -20,6 +20,7 @@ def _load(name: str) -> dict:
 def render() -> str:
     nested = _load("nested_validation_2025.json")
     market = _load("market_validation_2025.json")
+    prior = _load("prior_challenger_2025.json")
     policy = _load("market_policy.json")
     weights = _load("blend_weight.json")
     selection, holdout = nested["selection"], nested["holdout"]
@@ -32,6 +33,9 @@ def render() -> str:
     ats, total = nested["markets"]["ats"], nested["markets"]["total"]
     spread_ch = market["markets"]["spread"]["scores"]["calibrated_discrete"]
     total_ch = market["markets"]["total"]["scores"]["calibrated_discrete"]
+    proxy_holdout = prior["proxy"]["holdout"]
+    proxy_base = prior["baseline"]["holdout"]
+    transition = prior["transition"]
     line_hash = nested["data_fingerprint"]["line_sha256"][:16]
     lines = [
         START,
@@ -69,6 +73,15 @@ def render() -> str:
         f"Spread holdout Brier/ECE are {spread_ch['multiclass_brier']:.5f}/"
         f"{spread_ch['ece']:.5f}; totals are {total_ch['multiclass_brier']:.5f}/"
         f"{total_ch['ece']:.5f}. Neither market cleared the held-out betting gate.",
+        "",
+        "The reconstructed recruiting/transfer preseason-prior challenger also "
+        "remains unpromoted. On 2025 Weeks 1–4 it improved Brier from "
+        f"{proxy_base['brier']:.5f} to {proxy_holdout['brier']:.5f} "
+        f"({proxy_holdout['n_games']} games), but its historical inputs are not "
+        "archived point-in-time snapshots. The transition-team challenger selected "
+        f"{transition['selected_starting_elo']} Elo but has only "
+        f"{transition['holdout']['n_games']} holdout games versus a "
+        f"{transition['minimum_holdout_games']}-game gate. Both remain blocked.",
         "",
         f"Validation line fingerprint: `{line_hash}`. Regenerate with "
         "`python3 -m cfb.generate_docs --write`; CI-style drift check: "

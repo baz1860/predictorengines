@@ -19,8 +19,10 @@ from cfb import generate_docs as GENERATE_DOCS
 from cfb import identity as IDENTITY
 from cfb import dataset_fingerprint as DATASET_FP
 from cfb import market_validation as MARKET_VALIDATION
+from cfb import live_evidence as LIVE_EVIDENCE
 from cfb import power as POWER
 from cfb import policy as POLICY
+from cfb import prior_challenger as PRIOR_CHALLENGER
 from cfb import run_status as RUN_STATUS
 from cfb import rehearsal as REHEARSAL
 from cfb import season as S
@@ -74,6 +76,38 @@ def test_fcs_to_fbs_transition_has_explicit_floor():
     assert audit["transitioned_fbs"] == ["Charlie"]
     assert ratings["New School"] == E.NEW_TEAM_ELO
     assert audit["new_fbs"] == ["New School"]
+
+
+def test_one_completed_game_cannot_unlock_the_entire_league():
+    teams = {f"Team {i}" for i in range(10)}
+    games = pd.DataFrame([{
+        "season": 2026, "home": "Team 0", "away": "Team 1",
+        "home_div": "fbs", "away_div": "fbs",
+    }])
+    readiness = E._prior_readiness(
+        2026, games, teams, {}, {"transitioned_fbs": [], "new_fbs": []})
+    assert readiness["prior_mode"] == "partial_in_season"
+    assert readiness["betting_eligible"] is False
+
+
+def test_team_gate_restricts_transition_until_four_fbs_games():
+    teams = {"Alpha", "Beta"}
+    games = pd.DataFrame([
+        {"season": 2026, "home": "Alpha", "away": "Beta",
+         "home_div": "fbs", "away_div": "fbs"}
+        for _ in range(E.MIN_IN_SEASON_GAMES)
+    ])
+    features = {
+        (team, 2026): {"talent_z": 0.0, "ret_c": 0.0} for team in teams
+    }
+    before = E._prior_readiness(
+        2026, games.iloc[:1], teams, features,
+        {"transitioned_fbs": ["Alpha"], "new_fbs": []})
+    assert E.event_betting_eligible(before, "Alpha", "Beta") is False
+    after = E._prior_readiness(
+        2026, games, teams, features,
+        {"transitioned_fbs": ["Alpha"], "new_fbs": []})
+    assert E.event_betting_eligible(after, "Alpha", "Beta") is True
 
 
 def test_january_maps_to_previous_cfb_season():
@@ -485,6 +519,131 @@ def test_cfbd_schedule_publisher_rejects_scope_drift_and_bad_identity():
 
     with pytest.raises(ValueError, match="duplicate event ID"):
         FETCH_CFBD.prepare_schedule(payload[:100] + [payload[0]], 2026)
+
+
+def test_prior_challenger_cutoff_excludes_late_portal_rows(monkeypatch):
+    teams = {f"Team {i}" for i in range(20)}
+    monkeypatch.setattr(PRIOR_CHALLENGER, "_target_fbs", lambda games, year: teams)
+    recruiting = [
+        {"team": team, "points": 100 + i}
+        for i, team in enumerate(sorted(teams))
+    ]
+    portal = [
+        {"destination": "Team 0", "transferDate": "2026-08-01T12:00:00Z"},
+        {"destination": "Team 0", "transferDate": "2026-08-03T12:00:00Z"},
+    ]
+    out = PRIOR_CHALLENGER.aggregate_year(
+        2026, recruiting, portal, pd.DataFrame(), {})
+    assert out["teams"]["Team 0"]["incoming_transfers"] == 1
+    assert out["source"]["portal_rows_through_cutoff"] == 1
+
+
+def test_transition_challenger_cannot_pass_on_tiny_holdout(monkeypatch):
+    metrics = iter([
+        {"n_games": 12, "brier": 0.20, "accuracy": 0.6},
+        {"n_games": 8, "brier": 0.30, "accuracy": 0.5},
+    ] * 10)
+    monkeypatch.setattr(PRIOR_CHALLENGER, "score", lambda *a, **k: next(metrics))
+    out = PRIOR_CHALLENGER.transition_validation(pd.DataFrame())
+    assert out["sample_gate"] is False
+    assert out["runtime_approved"] is False
+
+
+def test_live_quote_history_is_append_only_and_deduplicated(tmp_path):
+    path = tmp_path / "quotes.csv"
+    rows = pd.DataFrame([{
+        "captured_at": "2026-08-02T12:00:00Z", "event_id": "book-1",
+        "bookmaker": "pinnacle", "quote_time": "2026-08-02T11:59:00Z",
+        "market": "ml", "side": "home", "line": None, "odds": 2.0,
+    }])
+    assert LIVE_EVIDENCE.append_unique(
+        path, rows, LIVE_EVIDENCE.QUOTE_COLS, LIVE_EVIDENCE.QUOTE_KEY) == (1, 1)
+    later_capture = rows.copy()
+    later_capture["captured_at"] = "2026-08-02T13:00:00Z"
+    assert LIVE_EVIDENCE.append_unique(
+        path, later_capture, LIVE_EVIDENCE.QUOTE_COLS,
+        LIVE_EVIDENCE.QUOTE_KEY) == (0, 1)
+
+
+@pytest.mark.parametrize(("market", "side", "entry", "latest", "expected"), [
+    ("spread", "home", -7.0, -9.0, 2.0),
+    ("spread", "away", 7.0, 9.0, -2.0),
+    ("total", "over", 48.5, 50.5, 2.0),
+    ("total", "under", 52.5, 50.5, 2.0),
+])
+def test_live_evidence_line_clv_orientation(
+        market, side, entry, latest, expected):
+    assert LIVE_EVIDENCE.line_clv(market, side, entry, latest) == expected
+
+
+def test_paper_signal_locks_first_event_market_only(tmp_path, monkeypatch):
+    odds = tmp_path / "odds.csv"
+    pd.DataFrame([{
+        "event_id": "provider-1", "bookmaker": "pinnacle", "market": "ml",
+        "side": "home", "line": None, "commence_time": "2026-08-29T16:00:00Z",
+    }]).to_csv(odds, index=False)
+    result = {
+        "model_state": {"snapshot_hash": "state-1", "prior_mode": "regression_only",
+                        "restricted_teams": ["Alpha"]},
+        "rows": [
+            {"event_id": "cfbd:1", "provider_event_id": "provider-1",
+             "cfbd_game_id": "1", "date": "2026-08-29", "home": "Alpha",
+             "away": "Beta", "market": "ml", "side": "home", "line": "",
+             "bookmaker": "pinnacle", "quote_time": "2026-08-02T12:00:00Z",
+             "odds": 2.0, "p_model": .6, "p_book": .5, "edge": .1,
+             "ev_per_unit": .2, "market_status": "diagnostic"},
+            {"event_id": "cfbd:1", "provider_event_id": "provider-1",
+             "cfbd_game_id": "1", "date": "2026-08-29", "home": "Alpha",
+             "away": "Beta", "market": "ml", "side": "away", "line": "",
+             "bookmaker": "pinnacle", "quote_time": "2026-08-02T12:00:00Z",
+             "odds": 3.0, "p_model": .4, "p_book": .3, "edge": .08,
+             "ev_per_unit": .2, "market_status": "diagnostic"},
+        ],
+    }
+    history = tmp_path / "signals.csv"
+    first = LIVE_EVIDENCE.capture_signals(
+        now="2026-08-02T12:01:00Z", odds_path=odds,
+        history_path=history, result=result)
+    second = LIVE_EVIDENCE.capture_signals(
+        now="2026-08-02T13:01:00Z", odds_path=odds,
+        history_path=history, result=result)
+    assert first["new_paper_signals"] == 1
+    assert second["new_paper_signals"] == 0
+    locked = pd.read_csv(history)
+    assert locked.iloc[0]["side"] == "home"
+    assert bool(locked.iloc[0]["team_restricted"]) is True
+    assert float(locked.iloc[0]["stake"]) == 0.0
+
+
+def test_live_evidence_failure_writes_actionable_status(tmp_path, monkeypatch):
+    status = tmp_path / "status.json"
+    monkeypatch.setattr(LIVE_EVIDENCE, "STATUS_JSON", status)
+    monkeypatch.setattr(
+        LIVE_EVIDENCE, "capture_quotes",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("bad odds schema")),
+    )
+    with pytest.raises(ValueError, match="bad odds schema"):
+        LIVE_EVIDENCE.capture(now="2026-08-02T12:00:00Z")
+    payload = json.loads(status.read_text())
+    assert payload["status"] == "failure"
+    assert payload["error"] == "bad odds schema"
+
+
+def test_live_evidence_health_rejects_nonzero_paper_stake(tmp_path):
+    quotes = pd.DataFrame([{column: "" for column in LIVE_EVIDENCE.QUOTE_COLS}])
+    quotes.loc[0, ["event_id", "bookmaker", "quote_time", "market", "side", "odds"]] = [
+        "provider-1", "pinnacle", "2026-08-02T12:00:00Z", "ml", "home", "2.0"]
+    signals = pd.DataFrame([{column: "" for column in LIVE_EVIDENCE.SIGNAL_COLS}])
+    signals.loc[0, ["event_id", "market", "stake", "runtime_eligible"]] = [
+        "cfbd:1", "ml", "1.0", "False"]
+    quote_path, signal_path, status_path = (
+        tmp_path / "quotes.csv", tmp_path / "signals.csv", tmp_path / "status.json")
+    quotes.to_csv(quote_path, index=False)
+    signals.to_csv(signal_path, index=False)
+    status_path.write_text('{"status":"success"}')
+    result = LIVE_EVIDENCE.health(quote_path, signal_path, status_path)
+    assert result["passed"] is False
+    assert "non-zero stake" in "; ".join(result["issues"])
 
 
 def test_settlement_prefers_cfbd_event_id_over_first_name_match(tmp_path, monkeypatch):

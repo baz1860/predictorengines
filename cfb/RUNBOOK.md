@@ -106,14 +106,33 @@ python3 -c 'from cfb.rehearsal import verify_card; print(verify_card("cfb/data/c
 ```
 
 Expected: the fetch retains bookmaker, event ID, kickoff, and quote timestamps;
-all in-window teams resolve; the manifest hash matches the exact card. If
-readiness is still no-go, `safe_diagnostic_card` must be `True` and stake £0.
+all in-window teams resolve; the manifest hash matches the exact card. The
+command also captures append-only quotes and first-seen paper signals and prints
+the number of new rows. If readiness is still no-go, `safe_diagnostic_card` must
+be `True` and stake £0.
 
 If it fails: retain the last-good odds file and card. Unknown teams, incomplete
 same-book pairs, stale quotes, event mismatches, or a manifest mismatch are
 blocking.
 
-### 7. Record the go/no-go decision by market
+### 7. Verify the live evidence ledger
+
+```bash
+python3 -m cfb.live_evidence --report
+python3 -c 'import json; print(json.load(open("cfb/data/live_evidence_status.json")))'
+```
+
+Expected: status is `success`; every locked signal has a matching latest quote;
+duplicate captures add zero unchanged rows. Before kickoff the report must say
+`latest observed movement; not closing evidence`. Only after kickoff may rows be
+labelled closing evidence. Every paper signal has zero stake and is never runtime
+eligible.
+
+If it fails: stop the evidence run, preserve both history files, and inspect
+`live_evidence_status.json`. Do not delete or rewrite earlier rows. Refresh exact
+bookmaker quotes, correct the current input, and rerun capture.
+
+### 8. Record the go/no-go decision by market
 
 Review `cfb/data/market_policy.json`, `cfb/data/rehearsal_status.json`, and the
 frozen evidence in `cfb/README.md`. ML, spread, and total must each have an
@@ -136,6 +155,9 @@ criterion; do not promote policy to meet a deadline.
   posture.
 - `card_manifest.json.card_sha256` matches `card.md`.
 - Every priced quote is fresh, event-matched, and paired within one bookmaker.
+- `live_evidence_status.json` is successful; quote and paper-signal histories
+  contain no duplicate keys and paper stakes are zero.
+- Pre-kickoff movement is not labelled closing evidence.
 - A regression-only snapshot has zero eligible bets and £0 total stake.
 - The pooled bankroll preview enforces event, engine, and daily caps.
 
@@ -148,6 +170,9 @@ criterion; do not promote policy to meet a deadline.
 | Identity review lists a name | New provider spelling or team-name change | Verify CFBD ID and add a bounded reviewed alias; rerun focused tests and review |
 | In-window Odds API event blocks refresh | Alias, fixture, or kickoff cannot be matched exactly | Review identity and CFBD schedule; never force a guessed match |
 | Odds provenance issues | Legacy/stale schema, missing book/time/event, or incomplete pair | Fetch a fresh bookmaker snapshot; keep last-good file if response is malformed |
+| Evidence capture adds no quotes | Provider quote timestamps and values are unchanged | Expected deduplication; confirm total row count is non-zero |
+| Evidence status is `failure` | Invalid current odds, ambiguous season, or history schema problem | Preserve history, fix the current input, and rerun; never truncate the ledger |
+| Signal lacks latest quote | Book/event/market/side identity drifted after entry | Review provider event identity and book availability; leave CLV unscored |
 | Schedule hash differs | CFBD event or kickoff data changed since review | Diff schedules, review affected games, then update reviewed hash and date |
 | Validation fingerprint differs | Historical games/line data changed | Investigate provenance and explicitly rebaseline only after review |
 | Card hash mismatch | Card or manifest was edited or only one artifact published | Rebuild both from unchanged validated inputs; do not use the card |
@@ -165,6 +190,8 @@ criterion; do not promote policy to meet a deadline.
 5. Rerun Steps 1–5. Rebuild the card only after all required controls pass.
 6. Record the incident and reset the consecutive-clean-rehearsal count through a
    real failed rehearsal entry; do not edit history to hide a failure.
+7. Never roll back append-only quote or signal history. Correct bad current data
+   with a later capture and retain the original row for audit.
 
 ## Escalation
 
@@ -182,3 +209,4 @@ criterion; do not promote policy to meet a deadline.
 | Date | Change | Author |
 |---|---|---|
 | 2026-08-02 | Initial Week 0 runbook; added identity, rehearsal, manifest, rollback, and go/no-go controls | Codex |
+| 2026-08-02 | Added automatic quote/paper-signal capture, movement reporting, evidence verification, and recovery steps | Codex |

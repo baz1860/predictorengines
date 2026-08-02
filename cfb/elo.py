@@ -39,6 +39,8 @@ K = 35.0
 HFA_ELO = 62.0          # home-field advantage in Elo points
 START_ELO = 1500.0
 NEW_TEAM_ELO = 1300.0   # FBS newcomers / transitioning programs
+MIN_IN_SEASON_GAMES = 4
+READINESS_COVERAGE = 0.80
 SEASON_REGRESS = 0.30   # fraction regressed to 1500 between seasons
 FCS = "FCS"             # champion-ledger pseudo-team for all non-FBS opponents
 FCS_ANCHOR = 850.0      # FCS-ledger start + season anchor (the pooled
@@ -330,6 +332,59 @@ def advance_state(state, target_season, carry, prior_offsets,
     return merged, advanced, audit
 
 
+def _prior_readiness(target_season: int, games: pd.DataFrame,
+                     target_fbs: set[str], features: dict,
+                     audit: dict) -> dict:
+    """League and team readiness without allowing a one-game global unlock."""
+    target = games[games["season"] == int(target_season)]
+    counts = pd.concat([
+        target.loc[target["home_div"] == "fbs", "home"],
+        target.loc[target["away_div"] == "fbs", "away"],
+    ]).value_counts()
+    complete_prior = {
+        team for team in target_fbs
+        if "talent_z" in features.get((team, target_season), {})
+        and "ret_c" in features.get((team, target_season), {})
+    }
+    mature = {team for team in target_fbs
+              if int(counts.get(team, 0)) >= MIN_IN_SEASON_GAMES}
+    prior_coverage = len(complete_prior) / len(target_fbs) if target_fbs else 0.0
+    mature_coverage = len(mature) / len(target_fbs) if target_fbs else 0.0
+    if prior_coverage >= READINESS_COVERAGE:
+        mode = "full_prior"
+    elif mature_coverage >= READINESS_COVERAGE:
+        mode = "in_season"
+    elif not target.empty:
+        mode = "partial_in_season"
+    elif prior_coverage > 0:
+        mode = "partial_prior"
+    else:
+        mode = "regression_only"
+    transition = set(audit.get("transitioned_fbs", ())) | set(audit.get("new_fbs", ()))
+    restricted = {
+        team for team in target_fbs
+        if (team not in complete_prior or team in transition) and team not in mature
+    }
+    return {
+        "prior_mode": mode,
+        "prior_complete_teams": len(complete_prior),
+        "prior_target_teams": len(target_fbs),
+        "prior_coverage": round(prior_coverage, 4),
+        "in_season_mature_teams": len(mature),
+        "in_season_mature_coverage": round(mature_coverage, 4),
+        "minimum_team_games": MIN_IN_SEASON_GAMES,
+        "restricted_teams": sorted(restricted),
+        "betting_eligible": mode in ("full_prior", "in_season"),
+    }
+
+
+def event_betting_eligible(metadata: dict, home: str, away: str) -> bool:
+    """Require both league-level readiness and team-level evidence."""
+    restricted = set(metadata.get("restricted_teams") or ())
+    return bool(metadata.get("betting_eligible")
+                and home not in restricted and away not in restricted)
+
+
 def build_as_of(target_season, as_of=None, team_divisions=None):
     """Build a production Elo snapshot for a declared season and decision date.
 
@@ -366,30 +421,15 @@ def build_as_of(target_season, as_of=None, team_divisions=None):
     except Exception:
         features = {}
     target_fbs = {t for t, div in divisions.items() if str(div).lower() == "fbs"}
-    complete_prior = {t for t in target_fbs
-                      if "talent_z" in features.get((t, target_season), {})
-                      and "ret_c" in features.get((t, target_season), {})}
-    coverage = len(complete_prior) / len(target_fbs) if target_fbs else 0.0
-    if completed_target:
-        prior_mode = "in_season"
-    elif coverage >= 0.80:
-        prior_mode = "full_prior"
-    elif coverage > 0:
-        prior_mode = "partial_prior"
-    else:
-        prior_mode = "regression_only"
-    betting_eligible = prior_mode in ("full_prior", "in_season")
+    readiness = _prior_readiness(
+        target_season, games, target_fbs, features, audit)
     meta = {
         "model_season": target_season,
         "decision_date": str(as_of.date()),
         "games_through": str(games["date"].max().date()),
         "source_max_season": source_max_season,
         "completed_target_games": completed_target,
-        "prior_mode": prior_mode,
-        "prior_complete_teams": len(complete_prior),
-        "prior_target_teams": len(target_fbs),
-        "prior_coverage": round(coverage, 4),
-        "betting_eligible": betting_eligible,
+        **readiness,
         "snapshot_hash": _snapshot_hash(target_season),
         **audit,
     }

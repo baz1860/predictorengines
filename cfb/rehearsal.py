@@ -17,6 +17,7 @@ import preflight
 
 from . import generate_docs
 from . import identity
+from . import live_evidence
 from . import season
 
 HERE = Path(__file__).resolve().parent
@@ -107,6 +108,13 @@ def run() -> dict:
         "generated_documentation", docs_current,
         "README frozen metrics are current" if docs_current else
         "run python3 -m cfb.generate_docs --write",
+    ))
+
+    evidence = live_evidence.health()
+    checks.append(_check(
+        "live_evidence", evidence["passed"],
+        (f"{evidence['quote_rows']} quote rows; {evidence['signal_rows']} paper signals"
+         if evidence["passed"] else "; ".join(evidence["issues"])),
     ))
 
     resolved = identity.review_names(

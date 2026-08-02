@@ -332,7 +332,6 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         1 for game in market.values() for market_name, sides in game.items()
         for quote in sides.values()
         if quote[4] and POLICY.recordable(market_name, market_policy))
-    betting_enabled = bool(state_meta["betting_eligible"] and recordable_quotes)
     # Elo rates FBS and FCS teams; blend_predict substitutes the pooled FCS
     # power entity for FCS sides, so Elo membership is the requirement.
     known = set(eparams[1])
@@ -341,11 +340,18 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         print(f"note: skipped {int(off_model.sum())} game(s) with teams unknown to "
               f"the model (new FBS members / reclassified)")
         slate = slate[~off_model]
+    slate_eligible = any(
+        E.event_betting_eligible(state_meta, row.home_team, row.away_team)
+        for row in slate.itertuples())
+    betting_enabled = bool(
+        state_meta["betting_eligible"] and recordable_quotes and slate_eligible)
     bk = bankroll if bankroll is not None else get_bankroll()
 
     lines_md, value = [], []
     ats_picks = 0
     for g in slate.itertuples():
+        event_eligible = E.event_betting_eligible(
+            state_meta, g.home_team, g.away_team)
         pred = blend_predict(eparams, pparams, g.home_team, g.away_team,
                              neutral=bool(g.neutral), model=model)
         fav = g.home_team if pred["margin"] >= 0 else g.away_team
@@ -406,10 +412,10 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
                         "p_model": p_model, "edge": edge,
                         "market_status": POLICY.status(mkey, market_policy),
                         "stake": (round(KELLY_FRACTION * kelly * bk, 2)
-                                  if betting_enabled and quote_eligible
+                                  if betting_enabled and event_eligible and quote_eligible
                                   and POLICY.recordable(mkey, market_policy) else 0.0),
                         "betting_eligible": bool(
-                            betting_enabled and quote_eligible
+                            betting_enabled and event_eligible and quote_eligible
                             and POLICY.recordable(mkey, market_policy))})
         lines_md.append("")
 
@@ -444,6 +450,8 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
                       "and returning-production coverage")
         elif not executable_quotes:
             reason = "there are no fresh, matched, complete bookmaker quotes"
+        elif not slate_eligible:
+            reason = "every slate event contains a team still behind its evidence gate"
         else:
             reason = "no CFB market is currently approved for real-money recording"
         md += [f"> **Staking disabled:** {reason}. Edges below are diagnostic only.", ""]
@@ -531,6 +539,11 @@ def main() -> None:
 
     build_card(days=args.days, min_edge=args.min_edge,
                bankroll=args.bankroll, model=args.model)
+    if args.odds_api:
+        from . import live_evidence
+        evidence = live_evidence.capture()
+        print(f"live evidence: {evidence['quote_capture']['new_quote_rows']} new quotes, "
+              f"{evidence['signal_capture']['new_paper_signals']} new paper signals")
 
 
 if __name__ == "__main__":

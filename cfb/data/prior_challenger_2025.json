@@ -1,0 +1,100 @@
+{
+  "baseline": {
+    "holdout": {
+      "accuracy": 0.6887966804979253,
+      "brier": 0.1988028627052447,
+      "n_games": 241
+    },
+    "selection": {
+      "accuracy": 0.6765536723163842,
+      "brier": 0.19735285942050462,
+      "n_games": 708
+    }
+  },
+  "current_2026": {
+    "coverage": {
+      "portal_destination_or_zero": 138,
+      "previous_talent": 134,
+      "recruiting": 138
+    },
+    "input_fingerprint": "43e9db7abb38ce4c1d0d69bb4bfe13ad0ec68051fc80cc9a0f10fe54e0048c88",
+    "target_fbs_teams": 138
+  },
+  "gates": {
+    "archived_point_in_time_provenance": false,
+    "current_coverage": true,
+    "forecast_lift": true,
+    "transition_sample": false
+  },
+  "generated_at": "2026-08-02T20:22:40+00:00",
+  "holdout_brier_improvement": 0.00895940646290777,
+  "holdout_season": 2025,
+  "input_artifact_sha256": "05d2ec9a7f8c26f3aa0334be531122d26162209906d78bbe38d5d6bfbb198a39",
+  "proxy": {
+    "holdout": {
+      "accuracy": 0.7053941908713693,
+      "brier": 0.18984345624233692,
+      "n_games": 241
+    },
+    "selection": {
+      "accuracy": 0.713276836158192,
+      "brier": 0.18659458133877077,
+      "n_games": 708
+    }
+  },
+  "rejection_reasons": [
+    "historical recruiting inputs are retrospectively reconstructed, not archived decision-time snapshots",
+    "transition sample is too small for promotion"
+  ],
+  "runtime_approved": false,
+  "schema_version": 1,
+  "selected_coefficients": {
+    "incoming_transfers": 30.0,
+    "previous_talent": 30.0,
+    "recruiting": 60.0
+  },
+  "selection_seasons": [
+    2022,
+    2023,
+    2024
+  ],
+  "status": "rejected_for_runtime",
+  "transition": {
+    "champion_1300_holdout": {
+      "accuracy": 0.5,
+      "brier": 0.3098985938909062,
+      "n_games": 8
+    },
+    "current_2026_transition_teams": [
+      "North Dakota State",
+      "Sacramento State"
+    ],
+    "holdout": {
+      "accuracy": 0.5,
+      "brier": 0.2681948327944287,
+      "n_games": 8
+    },
+    "holdout_season": 2025,
+    "holdout_teams": [
+      "Delaware",
+      "Missouri State"
+    ],
+    "minimum_holdout_games": 30,
+    "reason": "transition sample is too small for promotion",
+    "runtime_approved": false,
+    "sample_gate": false,
+    "selected_starting_elo": 1450,
+    "selection": {
+      "accuracy": 0.8333333333333334,
+      "brier": 0.1687712972098296,
+      "n_games": 12
+    },
+    "selection_seasons": "2022-2024",
+    "selection_teams": [
+      "James Madison",
+      "Jacksonville State",
+      "Sam Houston",
+      "Kennesaw State"
+    ]
+  }
+}

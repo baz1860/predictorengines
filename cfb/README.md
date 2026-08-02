@@ -43,7 +43,13 @@ python3 -m cfb.season                 # reprice with whatever is in cfb/odds.csv
 python3 -m cfb.season --days 3        # narrower slate window
 python3 -m cfb.season --min-edge 0.05 --model elo|power|blend
 python3 -m cfb.rehearsal                  # offline Week 0 safety rehearsal
+python3 -m cfb.live_evidence --report     # latest paper-signal movement / closing evidence
 ```
+
+An Odds API card run automatically appends exact bookmaker quotes to
+`data/live_quote_history.csv` and locks the first qualifying zero-stake paper
+signal per event/market in `data/paper_signal_history.csv`. Repeated unchanged
+captures deduplicate. Movement is not labelled closing evidence until kickoff.
 
 Lines come from The Odds API (key `the-odds-api` in `data/api_keys.json`, US
 regions) as bookmaker-level, timestamped quotes or manually via
@@ -122,6 +128,8 @@ The frozen 2025 closing-line benchmark at a three-point disagreement:
 
 The push-aware calibrated-discrete challenger remains unpromoted. Spread holdout Brier/ECE are 0.51933/0.02642; totals are 0.50506/0.00184. Neither market cleared the held-out betting gate.
 
+The reconstructed recruiting/transfer preseason-prior challenger also remains unpromoted. On 2025 Weeks 1–4 it improved Brier from 0.19880 to 0.18984 (241 games), but its historical inputs are not archived point-in-time snapshots. The transition-team challenger selected 1450 Elo but has only 8 holdout games versus a 30-game gate. Both remain blocked.
+
 Validation line fingerprint: `f11daa33b1b9488a`. Regenerate with `python3 -m cfb.generate_docs --write`; CI-style drift check: `python3 -m cfb.generate_docs --check`.
 <!-- CFB_METRICS_END -->
 
@@ -143,12 +151,14 @@ Seasons 2001–present, FBS games only (FBS vs FCS included, FCS side pooled). N
 
 ## V3 tooling
 
-- **Walk-forward gate** — `python3 validate.py --gate` (leak-free; metrics in
+- **Walk-forward gate** — `python3 -m cfb.validate --gate` (leak-free; metrics in
   `data/validation_baseline.json`).
-- **Tunable elo/power blend weight** — `python3 validate.py --tune-blend` prints
-  a before/after table (ml_brier / margin_mae per weight). The default is the V2
-  50/50 blend; opt into the validated weight with `--tune-blend --write` (writes
-  `data/blend_weight.json`), then `--gate --update-baseline`. See `V3_NOTES.md`.
+- **Frozen elo/power blend** — the 55/45 runtime weight was selected on 2023–24
+  and evaluated on the untouched 2025 holdout; see
+  `data/nested_validation_2025.json`.
+- **Preseason-prior challenger** — `python3 -m cfb.prior_challenger --fetch --write`
+  refreshes the compact recruiting/portal inputs and freezes a nested holdout
+  report. It is evidence-only and cannot alter runtime configuration.
 - **Experimental market blend** in the app Edge tab (default OFF) anchors the
   model toward the de-vigged book; not used for recommendations until validated.
 - **Provenance** — `python3 -m app.provenance --check-odds cfb` validates a

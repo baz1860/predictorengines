@@ -50,7 +50,7 @@ the current source of truth for remediation progress.
 |---|---|---|
 | CFB-01 | **Implemented** | All production entry points use `build_as_of`; the Week 0 smoke run reports season 2026, decision date, prior mode, and snapshot hash. |
 | CFB-02 | **Implemented** | FBS and FCS ledgers retain separate anchors; transition and exactly-once rollover tests pass. |
-| CFB-03 | **Safety fallback implemented; source blocked** | Coverage is measured explicitly. Current coverage is 0/138, so the model is `regression_only` and all staking/recording is disabled. A usable external 2026 talent/returning source is still required for `full_prior`. |
+| CFB-03 | **Safety fallback implemented; source blocked** | Coverage is measured explicitly. Current official coverage is 0/138, so the model is `regression_only` and all staking/recording is disabled. A recruiting/transfer proxy covers 138/138 and improved 2025 early-season Brier by 0.0090, but is rejected because historical inputs are retrospective. One completed game no longer unlocks the league; teams without priors and transition teams remain restricted until four FBS games. |
 | CFB-04 | **Implemented** | Required fit/preflight/gate failures propagate non-zero; an atomic JSON run status records running, failure, or success. Fault-injection coverage passes. |
 | CFB-05 | **Implemented** | CFB preflight semantically validates schedule season/IDs/kickoffs, power alignment with completed games, the built target-season snapshot, prior coverage, provider keys, odds provenance/freshness, and run status, with separate diagnostic and betting readiness exits. |
 | CFB-06 | **Implemented** | Quote use requires CFBD event identity or an exact legacy date/home/away match. The known UNLV/Memphis date mismatch is rejected. |
@@ -65,11 +65,12 @@ the current source of truth for remediation progress.
 | CFB-15 | **Implemented for Week 0 and Week 1** | CFBD team IDs are canonical; prefix matching was removed. The live through-2026-09-06 audit resolves all 183 current Odds API spellings through reviewed aliases, in-window unknowns block odds publication, and snapshots record the identity-registry hash. |
 | CFB-16 | **Implemented** | Settlement requires one team-verified CFBD event ID result, supports postponements, and fails closed for duplicates, reversed sites, or missing scores. The legacy fallback is date-bounded and unambiguous. |
 | CFB-17 | **Implemented** | The README evidence section is generated from frozen nested/market artifacts, writes atomically, and has a test/CLI drift check. |
+| CFB-18 | **Implemented; evidence accumulating** | Odds API card runs append exact deduplicated bookmaker quotes and lock the first zero-stake paper signal per event/market. Health checks block duplicates, non-zero paper stakes, runtime eligibility, and premature closing labels. The first capture contains 352 quotes and 22 paper signals. |
 
 Verification at this checkpoint:
 
-- Repository-wide offline suite: **685 passed**.
-- Focused CFB production-safety module: **32 passed**.
+- Repository-wide offline suite: **698 passed**.
+- Focused CFB production-safety module: **45 passed**.
 - Production smoke card: 2026 `regression_only`, 0/138 complete priors,
   0 recommended bets, 0 staked, stale/legacy quotes diagnostic-only.
 - Historical CFB gate remains green for forecast accuracy; the negative ATS
@@ -82,6 +83,15 @@ Verification at this checkpoint:
   normal 0.02522 and its betting ROI interval is [-8.4%, +34.1%]. Totals
   calibrated-discrete Brier is 0.50506, but calibration leaves zero bets at the
   3% EV threshold. Neither challenger is promoted.
+- Recruiting/transfer prior challenger: selected on 708 early-season games from
+  2022–24 and improved the 241-game 2025 holdout from 0.19880 to 0.18984 Brier.
+  It remains rejected because historical source snapshots are retrospective.
+- Transition challenger: 1450 starting Elo beat the 1300 champion directionally,
+  but the untouched 2025 sample contains only eight games versus a 30-game gate.
+  North Dakota State and Sacramento State remain team-level restricted.
+- Live decision-time evidence: 352 exact bookmaker quote rows and 22 uniquely
+  locked paper signals; repeated unchanged capture added zero rows. All stakes
+  are £0 and the current report is explicitly latest movement, not closing data.
 - First clean operational rehearsal day: all six controls passed; the 2026
   regression-only golden card contains eight games and £0 stake. Two additional
   clean rehearsal days remain required.
@@ -226,7 +236,7 @@ Verification at this checkpoint:
 | Totals evidence | Frozen backtest plus live paper CLV tracking | Partial; paper only |
 | Staking | Display and recording share event/engine/day caps | **Control complete** |
 | Settlement | Event-ID based and tested for reschedules/repeats | **Control complete** |
-| Operations | Three clean rehearsal days and actionable machine-readable failures | **1/3 clean days; runbook and status controls complete** |
+| Operations | Three clean rehearsal days and actionable machine-readable failures | **1/3 clean days; seven-control rehearsal, evidence ledger, runbook, and status controls complete** |
 
 ## Resourcing and sequencing
 

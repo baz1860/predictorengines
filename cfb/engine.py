@@ -106,7 +106,8 @@ def cmd_edge(p: dict) -> dict:
         ev = p_model * r.odds - 1.0
         kelly = max(0.0, (p_model * r.odds - 1.0) / (r.odds - 1.0))
         market_status = POLICY.status(r.market, market_policy)
-        row_eligible = bool(state_meta["betting_eligible"] and r.quote_eligible
+        row_eligible = bool(E.event_betting_eligible(state_meta, r.home, r.away)
+                            and r.quote_eligible
                             and market_status == "eligible")
         stake = (round(CE.KELLY_FRACTION * kelly * bankroll, 2)
                  if row_eligible else 0.0)
