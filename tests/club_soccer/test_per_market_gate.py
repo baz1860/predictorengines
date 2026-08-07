@@ -37,7 +37,7 @@ def _artifact(one_x_two, totals):
         "backtest_version": "decision_time_v2",
         "selection_method": "latest_quote_at_or_before_decision_time",
         "execution_method": "same_decision_time_quote",
-        "clv_reference": "pinnacle_closing_devigged",
+        "clv_reference": "captured_closing_devigged",
         "decision_lead_minutes": 90,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "simulated_betting": {

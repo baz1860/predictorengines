@@ -79,6 +79,24 @@ SETTLEMENT_FIELDS = [
     "market", "side", "won", "pinnacle_close_devig", "clv",
 ]
 
+# ── closing snapshot (self-sourced CLV reference) ──────────────────────────
+# fd.co.uk only carries closing odds for the top European leagues, so every
+# rest-of-world fixture we capture (K League, MLS, Brazil, …) settled with NO
+# CLV and could never open the gate. We already pull multi-book odds from BSD at
+# decision time, and BSD's odds_comparison is best-populated close to kickoff —
+# so a second snapshot in the final minutes before kickoff gives a de-vigged
+# consensus CLOSE for EVERY league BSD prices, at zero extra dependency.
+CLOSING = RUNTIME / "closing_ledger.csv"
+# As near kickoff as a 15-min capture cadence allows: the first sighting inside
+# this window is kept (idempotent), i.e. a quote from the fixture's final ~1–20
+# minutes. Wide enough (19 min) to survive a skipped run.
+CLOSE_MIN_LEAD = 1
+CLOSE_MAX_LEAD = 20
+CLOSING_FIELDS = [
+    "provider_fixture_id", "close_ts", "market", "side",
+    "p_close_devig", "close_lead_min",
+]
+
 
 # ── frozen provenance ─────────────────────────────────────────────────────
 
@@ -420,6 +438,101 @@ def load_settlements() -> list[dict]:
     return _load(SETTLEMENTS)
 
 
+def load_closing() -> list[dict]:
+    return _load(CLOSING)
+
+
+def _existing_closing_keys() -> set[tuple[str, str, str]]:
+    return {(r["provider_fixture_id"], r["market"], r["side"])
+            for r in load_closing()}
+
+
+def capture_closing(api_key: str | None = None, verbose: bool = True) -> int:
+    """Snapshot the near-kickoff consensus close for fixtures we've decided on.
+
+    Runs in the same frequent capture pass as record()/settle(). For every
+    fixture that (a) has a recorded decision and (b) is now inside the
+    [CLOSE_MIN_LEAD, CLOSE_MAX_LEAD] pre-kickoff window, it de-vigs the
+    complete-market book CONSENSUS (selection-independent, like the edge
+    benchmark) and stores it as the closing reference. Idempotent per
+    (fixture, market, side): the first sighting in the window is kept.
+
+    This is the self-sourced CLV reference that lets EVERY BSD-priced league —
+    not just the European ones fd.co.uk covers — earn closing-line evidence.
+    """
+    from api_keys import get_key
+    from bsd_client import get_all_events
+
+    from .snapshot_odds import odds_comparison
+
+    key = api_key or get_key("bsd", env="BSD_API_KEY")
+    if not key:
+        if verbose:
+            print("  decision_ledger: no BSD key — no closing snapshot")
+        return 0
+    want_fids = {str(d["provider_fixture_id"]) for d in load_decisions()}
+    if not want_fids:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    try:
+        events = get_all_events(key, status="notstarted",
+                                date_from=str(now.date()), date_to=str(now.date()))
+    except Exception as exc:
+        if verbose:
+            print(f"  decision_ledger: BSD fetch failed ({exc})")
+        return 0
+
+    seen = _existing_closing_keys()
+    bsd_markets = {"1x2": {"home": "HOME", "draw": "DRAW", "away": "AWAY"},
+                   "total25": {"over": "over@2.5", "under": "under@2.5"}}
+    out: list[dict] = []
+    for ev in events:
+        fid = ev.get("id")
+        if fid is None or str(fid) not in want_fids:
+            continue
+        ko = ev.get("event_date") or ev.get("date")
+        try:
+            kickoff = datetime.fromisoformat(str(ko).replace("Z", "+00:00"))
+            lead = (kickoff - now).total_seconds() / 60.0
+        except (ValueError, TypeError):
+            continue
+        if not (CLOSE_MIN_LEAD <= lead <= CLOSE_MAX_LEAD):
+            continue
+        try:
+            cmp = odds_comparison(key, fid)
+        except Exception:
+            continue
+        markets = (cmp.get("markets") or {}) if isinstance(cmp, dict) else {}
+        for market, sides in bsd_markets.items():
+            entry = markets.get("1x2") if market == "1x2" else markets.get("over_under_25")
+            entry = entry or {}
+            side_odds: dict[str, dict[str, float]] = {}
+            for our_side, bsd_key in sides.items():
+                books = (entry.get(bsd_key) or {}).get("bookmakers") or {}
+                side_odds[our_side] = {
+                    b: float(v["decimal_odds"]) for b, v in books.items()
+                    if v.get("decimal_odds") and float(v["decimal_odds"]) > 1.0}
+            consensus = market_consensus_devig(side_odds, list(sides))
+            if not consensus:
+                continue
+            for our_side in sides:
+                keyc = (str(fid), market, our_side)
+                if keyc in seen:
+                    continue
+                out.append({
+                    "provider_fixture_id": str(fid), "close_ts": now.isoformat(),
+                    "market": market, "side": our_side,
+                    "p_close_devig": round(float(consensus[our_side]), 5),
+                    "close_lead_min": round(lead, 1),
+                })
+                seen.add(keyc)
+    _append(CLOSING, CLOSING_FIELDS, out)
+    if verbose:
+        print(f"  decision_ledger: captured {len(out)} closing quote(s)")
+    return len(out)
+
+
 def _match_result(d: dict,
                   results: dict[tuple[str, str], list],
                   tol_days: int = 1):
@@ -496,6 +609,13 @@ def settle(verbose: bool = True) -> int:
             results[(canonical_name(str(r.home)), canonical_name(str(r.away)))].append(
                 (fd, hg, ag, match_key(r.date, r.home, r.away)))
     close_1x2, close_tot = closing_probs()
+    # BSD self-captured close takes precedence — it covers every league we bet.
+    # fd.co.uk's closing map is the fallback for the European leagues where a
+    # BSD close was not captured (e.g. odds not populated near kickoff).
+    bsd_close = {(c["provider_fixture_id"], c["market"], c["side"]):
+                 float(c["p_close_devig"])
+                 for c in load_closing()
+                 if c.get("p_close_devig") not in ("", None)}
 
     out = []
     now = datetime.now(timezone.utc).isoformat()
@@ -509,8 +629,10 @@ def settle(verbose: bool = True) -> int:
             continue
         hg, ag, mkey = match
         won = side_won(d["market"], d["side"], hg, ag)
-        cmap = close_1x2 if d["market"] == "1x2" else close_tot
-        pc = (cmap.get(mkey) or {}).get(d["side"])
+        pc = bsd_close.get((fid, d["market"], d["side"]))
+        if not (pc and pc > 0):
+            cmap = close_1x2 if d["market"] == "1x2" else close_tot
+            pc = (cmap.get(mkey) or {}).get(d["side"])
         clv = None
         odds = float(d["odds_executed"])
         if pc and pc > 0 and odds > 1:
@@ -554,19 +676,26 @@ def settled_bets() -> list[dict]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--record", action="store_true")
+    ap.add_argument("--close", action="store_true",
+                    help="snapshot the near-kickoff BSD consensus close")
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args()
     if args.record:
         record()
+    if args.close:
+        capture_closing()
     if args.settle:
         settle()
-    if args.status or not (args.record or args.settle):
+    if args.status or not (args.record or args.close or args.settle):
         d, s = load_decisions(), load_settlements()
         joined = settled_bets()
+        clv_scored = sum(1 for b in joined if b.get("clv") is not None)
         print(f"decisions recorded : {len(d)}")
+        print(f"closing snapshots  : {len(load_closing())}")
         print(f"settlements        : {len(s)}")
         print(f"settled bets       : {len(joined)}  (toward the 1000-bet gate)")
+        print(f"  of which CLV-scored: {clv_scored}")
         if d:
             leads = [float(x["decision_lead_min"]) for x in d]
             print(f"decision leads     : {min(leads):.0f}-{max(leads):.0f} min "

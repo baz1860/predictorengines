@@ -181,6 +181,33 @@ def build(refresh_current_only: bool = True, verbose: bool = True) -> pd.DataFra
     return out[MARKET_COLUMNS]
 
 
+def refresh(refresh_current_only: bool = True, verbose: bool = True) -> pd.DataFrame:
+    """Build the closing-odds history AND persist it to market_history.csv.
+
+    `build()` only returns the frame; the daily pipeline needs it written to
+    disk — and its mtime bumped, which `_fdcouk_is_stale()` keys on. Wiring the
+    pipeline to `build` (which never wrote) meant the closing feed silently
+    never updated, so freshly-captured fixtures got no CLV and the staking gate
+    could never activate a market. This is the function the pipeline and the CLI
+    both call to actually update the file.
+
+    Refuses to overwrite an existing file with an EMPTY frame (a transient
+    network failure must not wipe the accumulated closing history).
+    """
+    df = build(refresh_current_only=refresh_current_only, verbose=verbose)
+    if df.empty:
+        if verbose:
+            print("  fetch_fdcouk: build returned no rows — keeping the existing "
+                  "market_history.csv rather than clobbering it")
+        return df
+    DATA.mkdir(exist_ok=True)
+    df.to_csv(MARKET_HISTORY, index=False)
+    if verbose:
+        print(f"  fetch_fdcouk: wrote {len(df)} rows -> {MARKET_HISTORY.name} "
+              f"({df['match_date'].min()} … {df['match_date'].max()})")
+    return df
+
+
 def unmatched_names(df: pd.DataFrame) -> dict[str, set[str]]:
     """Team names per competition that had no FDCOUK_ALIASES entry AND don't
     already match a name in fixtures.csv — used to grow the alias dict."""
@@ -202,10 +229,7 @@ def main() -> None:
     ap.add_argument("--show-unmatched", action="store_true",
                     help="print team names with no fixtures.csv match, per competition")
     args = ap.parse_args()
-    df = build(refresh_current_only=not args.no_refresh)
-    DATA.mkdir(exist_ok=True)
-    df.to_csv(MARKET_HISTORY, index=False)
-    print(f"Wrote {len(df)} rows -> {MARKET_HISTORY}")
+    df = refresh(refresh_current_only=not args.no_refresh)
     if args.show_unmatched:
         for comp, names in sorted(unmatched_names(df).items()):
             print(f"  {comp}: {sorted(names)}")

@@ -85,6 +85,7 @@ def test_resolver_version_changes_with_the_alias_map(tmp_path, monkeypatch):
 def ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(DL, "DECISIONS", tmp_path / "dec.csv")
     monkeypatch.setattr(DL, "SETTLEMENTS", tmp_path / "set.csv")
+    monkeypatch.setattr(DL, "CLOSING", tmp_path / "close.csv")
     monkeypatch.setattr(DL, "DATA", tmp_path)
     return tmp_path
 
@@ -114,6 +115,74 @@ def test_settled_bets_joins_decision_and_settlement(ledger):
 def test_a_decision_without_settlement_is_not_a_bet(ledger):
     DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [_decision()])
     assert DL.settled_bets() == []
+
+
+def test_capture_closing_snapshots_the_bsd_consensus(ledger, monkeypatch):
+    """The near-kickoff pass stores a de-vigged CONSENSUS close for a fixture we
+    have a decision on, so a league fd.co.uk never covers still earns a CLV
+    reference."""
+    from datetime import timedelta
+
+    import api_keys
+    import bsd_client
+
+    from club_soccer import snapshot_odds as SO
+
+    DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [_decision(
+        provider_fixture_id="500", market="1x2", side="home")])
+
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    ko = (now + timedelta(minutes=10)).isoformat()          # inside [1, 20] window
+    monkeypatch.setattr(api_keys, "get_key", lambda *a, **k: "KEY")
+    monkeypatch.setattr(bsd_client, "get_all_events",
+                        lambda *a, **k: [{"id": "500", "event_date": ko}])
+    monkeypatch.setattr(SO, "odds_comparison", lambda *a, **k: {"markets": {"1x2": {
+        "HOME": {"bookmakers": {"A": {"decimal_odds": 2.00}, "B": {"decimal_odds": 2.10}}},
+        "DRAW": {"bookmakers": {"A": {"decimal_odds": 3.40}, "B": {"decimal_odds": 3.30}}},
+        "AWAY": {"bookmakers": {"A": {"decimal_odds": 3.80}, "B": {"decimal_odds": 3.70}}},
+    }}})
+
+    assert DL.capture_closing(api_key="KEY", verbose=False) == 3   # home/draw/away
+    rows = {r["side"]: r for r in DL.load_closing()}
+    assert set(rows) == {"home", "draw", "away"}
+    assert rows["home"]["provider_fixture_id"] == "500"
+    # consensus of the two complete books, de-vigged (~0.487 for home here)
+    assert 0.45 < float(rows["home"]["p_close_devig"]) < 0.52
+    # idempotent: a second pass adds nothing
+    assert DL.capture_closing(api_key="KEY", verbose=False) == 0
+
+
+def test_settle_prefers_the_bsd_captured_close_over_fdcouk(ledger, monkeypatch):
+    """When both exist, CLV is scored against the BSD close we captured for the
+    exact fixture, not the fd.co.uk fallback map."""
+    import pandas as pd
+
+    from club_soccer import market_settlement as MS
+    from club_soccer import model as M
+
+    DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [_decision(
+        provider_fixture_id="777", club_home="Alpha FC", club_away="Beta FC",
+        market="1x2", side="home", odds_executed="2.5",
+        kickoff_utc="2026-08-01T18:00:00+00:00")])
+    DL._append(DL.CLOSING, DL.CLOSING_FIELDS, [{
+        "provider_fixture_id": "777", "close_ts": "2026-08-01T17:50:00+00:00",
+        "market": "1x2", "side": "home", "p_close_devig": "0.50",
+        "close_lead_min": "10"}])
+
+    fixtures = pd.DataFrame([{
+        "fixture_id": "x", "date": "2026-08-01", "home": "Alpha FC",
+        "away": "Beta FC", "home_goals": 2.0, "away_goals": 0.0}])
+    monkeypatch.setattr(M, "load_fixtures", lambda: fixtures)
+    # fd.co.uk fallback offers a DIFFERENT close; the BSD one must win.
+    monkeypatch.setattr(MS, "closing_probs", lambda: (
+        {MS.match_key("2026-08-01", "Alpha FC", "Beta FC"): {"home": 0.90}}, {}))
+
+    assert DL.settle(verbose=False) == 1
+    s = DL.load_settlements()[0]
+    assert float(s["pinnacle_close_devig"]) == 0.50          # BSD close, not 0.90
+    # CLV = log(2.5 * 0.50) = log(1.25) > 0
+    import math
+    assert float(s["clv"]) == round(math.log(2.5 * 0.50), 5)
 
 
 def test_settle_matches_by_identity_not_the_discarded_fixture_id(ledger, monkeypatch):

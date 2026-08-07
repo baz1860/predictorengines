@@ -66,7 +66,10 @@ REQUIRED_VERSION = "decision_time_v2"
 REQUIRED_METHODOLOGY = {
     "selection_method": "latest_quote_at_or_before_decision_time",
     "execution_method": "same_decision_time_quote",
-    "clv_reference": "pinnacle_closing_devigged",
+    # The CLV reference is now the captured near-kickoff de-vigged CLOSE: the
+    # BSD multi-book consensus snapshot where available (every league we bet),
+    # with the fd.co.uk Pinnacle close as fallback for the European leagues.
+    "clv_reference": "captured_closing_devigged",
 }
 MIN_DECISION_LEAD_MINUTES = 60
 MAX_DECISION_LEAD_MINUTES = 7 * 24 * 60      # a week; Infinity must not pass

@@ -193,7 +193,7 @@ def run_network_steps(api_key: str) -> tuple[list[dict], dict[str, dict]]:
     )
 
     if _fdcouk_is_stale():
-        _step("Refresh fd.co.uk market history (weekly)", FD.build)
+        _step("Refresh fd.co.uk market history (weekly)", FD.refresh)
     else:
         print("\n== fd.co.uk market history: fresh (< 6 days old), skipped ==")
     return upcoming_events, odds_cache
@@ -853,6 +853,11 @@ def _run_steps(fast: bool, no_network: bool,
                 odds_cache=odds_cache,
             )
         _step("Record staking decisions (ledger)", _record)
+
+        def _close():
+            from . import decision_ledger as DL
+            return DL.capture_closing(api_key, verbose=True)
+        _step("Capture near-kickoff closing quotes (ledger)", _close)
     def _settle():
         from . import decision_ledger as DL
         return DL.settle(verbose=True)

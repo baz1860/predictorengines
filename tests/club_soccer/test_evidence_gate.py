@@ -85,7 +85,7 @@ def test_malformed_simulated_betting_never_raises(gate_file, sim):
         "backtest_version": "decision_time_v2",
         "selection_method": "latest_quote_at_or_before_decision_time",
         "execution_method": "same_decision_time_quote",
-        "clv_reference": "pinnacle_closing_devigged",
+        "clv_reference": "captured_closing_devigged",
         "decision_lead_minutes": 90,
         "generated_at_utc": "2999-01-01T00:00:00+00:00",
         "simulated_betting": sim,
