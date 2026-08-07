@@ -16,8 +16,16 @@ INVOKING_USER="${CS_USER:-$(whoami)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${CS_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"   # deploy/mac-mini -> repo root
 
+# Preflight the SAME interpreter the daemons actually run. The plists hardcode
+# their python path, and pyenv's current default may differ (e.g. a newer
+# 3.13.x without the deps installed), so deriving PYBIN from the plist keeps the
+# dep-check honest instead of testing an interpreter the daemon never uses.
+PLIST_PY="$(grep -ohE '/Users/[^<]*bin/python3?' \
+             "$SCRIPT_DIR"/com.*.clubsoccer.capture.plist 2>/dev/null | head -1)"
 if [[ -n "${CS_PYBIN:-}" ]]; then
   PYBIN="$CS_PYBIN"
+elif [[ -n "$PLIST_PY" ]]; then
+  PYBIN="$PLIST_PY"
 elif command -v pyenv >/dev/null 2>&1 && pyenv which python3 >/dev/null 2>&1; then
   PYBIN="$(pyenv which python3)"
 else
