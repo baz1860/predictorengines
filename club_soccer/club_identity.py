@@ -67,6 +67,7 @@ _CROSS_BORDER_CLUB_LEAGUE = {
 
 _resolver_cache: tuple[dict[str, str], dict[str, str]] | None = None
 _country_resolver_cache: dict[str, tuple[dict[str, str], dict[str, str]]] | None = None
+_competition_resolver_cache: dict[str, tuple[dict[str, str], dict[str, str]]] | None = None
 _country_index_cache: dict[str, str] | None = None
 
 
@@ -160,35 +161,101 @@ def _load_resolver() -> tuple[dict[str, str], dict[str, str]]:
     return _resolver_cache
 
 
-def _load_country_resolver() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
-    """Reviewed aliases whose spelling is ambiguous without a country."""
-    global _country_resolver_cache
-    if _country_resolver_cache is not None:
-        return _country_resolver_cache
+def _load_scoped_resolver(
+    section: str,
+    cache_attr: str,
+) -> dict[str, tuple[dict[str, str], dict[str, str]]]:
+    """Reviewed aliases whose spelling is ambiguous without a scope."""
     out: dict[str, tuple[dict[str, str], dict[str, str]]] = {}
     if ALIAS_MAP.exists():
-        raw = json.loads(ALIAS_MAP.read_text()).get("country_alias", {})
+        raw = json.loads(ALIAS_MAP.read_text()).get(section, {})
         if not isinstance(raw, dict):
-            raise ValueError("club_alias_map.json country_alias must be an object")
-        for country, aliases in raw.items():
+            raise ValueError(f"club_alias_map.json {section} must be an object")
+        for scope, aliases in raw.items():
             if not isinstance(aliases, dict):
                 raise ValueError(
-                    f"club_alias_map.json country_alias[{country!r}] "
-                    "must be an object"
+                    f"club_alias_map.json {section}[{scope!r}] must be an object"
                 )
             literal = {str(source): str(target)
                        for source, target in aliases.items()}
             normalised = {_norm(source): target
                           for source, target in literal.items()}
-            out[str(country)] = (literal, normalised)
-    _country_resolver_cache = out
+            out[str(scope)] = (literal, normalised)
     return out
+
+
+def _load_country_resolver() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
+    """Reviewed aliases whose spelling is ambiguous without a country."""
+    global _country_resolver_cache
+    if _country_resolver_cache is not None:
+        return _country_resolver_cache
+    _country_resolver_cache = _load_scoped_resolver(
+        "country_alias", "_country_resolver_cache"
+    )
+    return _country_resolver_cache
+
+
+def _load_competition_resolver() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
+    """Reviewed aliases that hold only inside one competition.
+
+    Country scope is not always narrow enough. Premier League 2023/24 and
+    2024/25 carried 56 rows naming "Bolton" that are exact score-for-score
+    duplicates of Wolverhampton fixtures on the same dates — a provider
+    misattribution. Bolton is a real English club playing in the Championship,
+    League One, the FA Cup and the EFL Cup, so both a global alias and an
+    England-scoped one would corrupt those. The misattribution is a property of
+    (competition, spelling), so that is the scope the fix needs.
+
+    Renaming rather than deleting is deliberate: the correct rows already
+    exist, so dedupe_fixtures reconciles the pair at the same write boundary
+    and the repair survives every refetch, which a one-off row deletion would
+    not.
+    """
+    global _competition_resolver_cache
+    if _competition_resolver_cache is not None:
+        return _competition_resolver_cache
+    _competition_resolver_cache = _load_scoped_resolver(
+        "competition_alias", "_competition_resolver_cache"
+    )
+    return _competition_resolver_cache
+
+
+def alias_map_fingerprint() -> dict:
+    """Identity of the reviewed alias artifact this process is using.
+
+    fixtures.csv is a generated file that more than one host may regenerate
+    and sync. A host whose club_alias_map.json is behind will rewrite the
+    shared file with identities the newer map merges, and every local check
+    passes because that host's own map agrees with what it wrote. The merge
+    silently reverts; the only trace is a Syncthing conflict file.
+
+    `updated_at` is the ordering signal — it comes from the map's own
+    `human_verdicts_merged_at`, which every edit to the artifact bumps. The
+    digest alone can only prove two maps differ, not which is newer.
+    """
+    try:
+        raw = ALIAS_MAP.read_bytes()
+        doc = json.loads(raw)
+    except (OSError, ValueError):
+        return {"sha256": None, "updated_at": None, "entries": None}
+    entries = (
+        len(doc.get("alias", {}))
+        + sum(len(v) for v in doc.get("country_alias", {}).values())
+        + sum(len(v) for v in doc.get("competition_alias", {}).values())
+    )
+    return {
+        "sha256": hashlib.sha256(raw).hexdigest()[:16],
+        "updated_at": doc.get("human_verdicts_merged_at"),
+        "entries": entries,
+    }
 
 
 def reload_resolver() -> None:
     global _resolver_cache, _country_resolver_cache
+    global _competition_resolver_cache
     _resolver_cache = None
     _country_resolver_cache = None
+    _competition_resolver_cache = None
 
 
 def team_countries(refresh: bool = False) -> dict[str, str]:
@@ -244,17 +311,29 @@ def _country_allows(target: str, country: str | None,
     return _CROSS_BORDER_CLUB_LEAGUE.get(target) == country
 
 
-def canonical_name(name, country: str | None = None):
+def canonical_name(name, country: str | None = None,
+                   competition: str | None = None):
     """Map a provider spelling onto the reviewed project display identity.
 
     Unknown or ambiguous names pass through. The registry is used to recognise
     aliases only when its canonical record already maps to a reviewed project
     identity; adopting all registry display names would rename hundreds of
     established teams without improving identity.
+
+    Scopes are applied most-specific first: competition, then country, then the
+    global alias map. A competition-scoped entry is the only way to correct a
+    spelling that is wrong in one league and correct everywhere else.
     """
     if not name:
         return name
     text = str(name)
+    if competition:
+        scoped = _load_competition_resolver().get(str(competition))
+        if scoped:
+            literal, normalised = scoped
+            target = literal.get(text) or normalised.get(_norm(text))
+            if target is not None:
+                return target
     if country:
         scoped = _load_country_resolver().get(str(country))
         if scoped:
@@ -274,14 +353,18 @@ def canonical_name(name, country: str | None = None):
     return target if _country_allows(target, country, registry_country) else text
 
 
-def canonicalise(raw_name, country_hint: str | None = None):
+def canonicalise(raw_name, country_hint: str | None = None,
+                 competition_hint: str | None = None):
     """The only ingest-facing display-name canonicaliser."""
-    return canonical_name(raw_name, country=country_hint)
+    return canonical_name(raw_name, country=country_hint,
+                          competition=competition_hint)
 
 
-def canonical_id(raw_name, country_hint: str | None = None) -> str:
+def canonical_id(raw_name, country_hint: str | None = None,
+                 competition_hint: str | None = None) -> str:
     """Portable club key backed by registry identity where unambiguous."""
-    canonical = canonical_name(raw_name, country=country_hint)
+    canonical = canonical_name(raw_name, country=country_hint,
+                               competition=competition_hint)
     record = _registry_record(str(raw_name)) or _registry_record(str(canonical))
     identity_name = canonical
     country = None

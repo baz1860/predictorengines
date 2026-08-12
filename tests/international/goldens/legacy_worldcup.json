@@ -1,0 +1,79 @@
+{
+  "adapter": {
+    "capabilities": [
+      "edge",
+      "predict",
+      "simulate"
+    ],
+    "id": "worldcup",
+    "sport": "soccer"
+  },
+  "base_rating": 1500.0,
+  "canonical_edge_fields": [
+    "event_id",
+    "match_date",
+    "home",
+    "away",
+    "market",
+    "side",
+    "line",
+    "bet",
+    "odds",
+    "p_model",
+    "p_market",
+    "p_book",
+    "edge",
+    "ev_per_unit",
+    "kelly_frac",
+    "stake_gbp",
+    "source",
+    "model",
+    "recommended"
+  ],
+  "elo_home_adv": 65.0,
+  "legacy_default_k": 30,
+  "legacy_k_table": {
+    "AFC Asian Cup": 50,
+    "African Cup of Nations": 50,
+    "CONCACAF Championship": 50,
+    "CONCACAF Nations League": 40,
+    "Confederations Cup": 50,
+    "Copa Am\u00e9rica": 50,
+    "FIFA World Cup": 60,
+    "FIFA World Cup qualification": 40,
+    "Friendly": 20,
+    "Gold Cup": 50,
+    "UEFA Euro": 50,
+    "UEFA Nations League": 40
+  },
+  "max_goals": 10,
+  "probabilities": {
+    "Alpha|Bravo|H": [
+      0.9590097106,
+      0.0338813807,
+      0.0071089087,
+      4.3851916897,
+      0.3987834055
+    ],
+    "Alpha|Charlie|N": [
+      0.8762231059,
+      0.0935121543,
+      0.0302647398,
+      3.2207423898,
+      0.5429622938
+    ],
+    "Bravo|Charlie|H": [
+      0.5755400134,
+      0.2461655368,
+      0.1782944498,
+      1.8500123261,
+      0.9452594727
+    ]
+  },
+  "ratings": {
+    "Alpha": 1618.8143349311,
+    "Bravo": 1441.9608212447,
+    "Charlie": 1439.2248438243
+  },
+  "taxonomy_legacy_agrees": true
+}

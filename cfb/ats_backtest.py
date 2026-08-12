@@ -52,9 +52,7 @@ def model_margins(games, since, until):
     carry, offs = E.season_priors()
     _, history = E.run_elo(games, record_pregame=True, carry=carry, prior_offsets=offs)
     diffs = np.array([h[2] for h in history])
-    pre = (games["season"] < since).values
-    m_all = (games["home_points"] - games["away_points"]).values
-    slope = float((diffs[pre] * m_all[pre]).sum() / (diffs[pre] ** 2).sum())
+    slope = E.fit_slope(games, history, (games["season"] < since).values)
 
     ev = games[(games["season"] >= since) & (games["season"] <= until)
                & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]

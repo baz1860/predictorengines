@@ -62,8 +62,26 @@ def _id_text(value):
     return text[:-2] if text.endswith(".0") and text[:-2].isdigit() else text
 
 
+_REGISTRY_CACHE: dict = {}
+
+
 def fixture_registry(seasons):
-    """CFBD fixture identity keyed by game ID and exact legacy date/name tuple."""
+    """CFBD fixture identity keyed by game ID and exact legacy date/name tuple.
+
+    Cached on schedule-file mtimes: one season --odds-api run builds this
+    several times (card, live evidence, edge) from identical inputs."""
+    season_key = tuple(sorted({int(s) for s in seasons}))
+    mtimes = []
+    for season in season_key:
+        path = os.path.join(HERE, "data", f"schedule_{season}.json")
+        try:
+            mtimes.append(os.stat(path).st_mtime)
+        except OSError:
+            mtimes.append(-1.0)
+    cache_key = (season_key, tuple(mtimes))
+    cached = _REGISTRY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     by_id, legacy = {}, {}
     for season in sorted({int(s) for s in seasons}):
         paths = glob.glob(os.path.join(HERE, "data", f"schedule_{season}.json"))
@@ -84,7 +102,10 @@ def fixture_registry(seasons):
                 if rec["cfbd_game_id"]:
                     by_id[rec["cfbd_game_id"]] = rec
                 legacy[(day, rec["home"], rec["away"])] = rec
-    return {"by_id": by_id, "legacy": legacy}
+    registry = {"by_id": by_id, "legacy": legacy}
+    _REGISTRY_CACHE.clear()
+    _REGISTRY_CACHE[cache_key] = registry
+    return registry
 
 
 def prepare_odds(odds, seasons, *, now=None, max_age_hours=MAX_QUOTE_AGE_HOURS):
@@ -168,11 +189,14 @@ def write_template():
         up = pd.read_csv(UPCOMING_CSV, parse_dates=["date"])
         up = up[(up["home_div"] == "fbs") & (up["away_div"] == "fbs")]
         up = up[up["date"] <= up["date"].min() + pd.Timedelta(days=7)]
+        versions: dict[int, str] = {}  # hashing the registry once per season, not per row
         for r in up.itertuples():
             base = [str(r.date.date()), r.home_team, r.away_team, int(bool(r.neutral))]
             season = int(getattr(r, "season", E.season_for_date(r.date)))
+            if season not in versions:
+                versions[season] = IDENTITY.registry_version(season)
             meta = ["", getattr(r, "game_id", ""), "", "", "", "manual",
-                    IDENTITY.registry_version(season)]
+                    versions[season]]
             rows += [base + ["ml", "home", "", ""] + meta,
                      base + ["ml", "away", "", ""] + meta,
                      base + ["spread", "home", "", ""] + meta,
@@ -228,7 +252,7 @@ def main():
     if not os.path.exists(ODDS_CSV):
         raise SystemExit("no odds.csv — run `python3 edge.py --template` first")
     odds = pd.read_csv(ODDS_CSV)
-    odds = odds[odds["odds"].notna() & (odds["odds"] != "")]
+    odds = odds[pd.to_numeric(odds["odds"], errors="coerce").notna()]
     if odds.empty:
         raise SystemExit("odds.csv has no filled-in odds")
     quote_dates = pd.to_datetime(odds["date"], errors="coerce").dropna()
@@ -308,14 +332,24 @@ def main():
             return
         os.makedirs(os.path.dirname(LEDGER_CSV), exist_ok=True)
         new = not os.path.exists(LEDGER_CSV)
+        if not new:  # migrate a pre-game-id ledger in place
+            existing = pd.read_csv(LEDGER_CSV)
+            for col in ("cfbd_game_id", "bookmaker"):
+                if col not in existing.columns:
+                    existing[col] = ""
+            existing.to_csv(LEDGER_CSV, index=False)
         with open(LEDGER_CSV, "a", newline="") as f:
             w = csv.writer(f)
             if new:
                 w.writerow(["placed", "date", "home", "away", "market", "side", "line",
-                            "odds", "stake", "p_model", "edge", "status", "pnl"])
+                            "odds", "stake", "p_model", "edge", "status", "pnl",
+                            "cfbd_game_id", "bookmaker"])
             for b in bets.itertuples():
+                # The CFBD game ID travels into the ledger so settlement can
+                # identify the exact game instead of guessing by name/date.
                 w.writerow([str(date.today()), b.date, b.home, b.away, b.market, b.side,
-                            b.line, b.odds, b.stake, b.p_model, b.edge, "open", ""])
+                            b.line, b.odds, b.stake, b.p_model, b.edge, "open", "",
+                            b.cfbd_game_id, b.bookmaker])
         print(f"logged {len(bets)} bet(s) to ledger (use --no-bet to skip)")
 
 

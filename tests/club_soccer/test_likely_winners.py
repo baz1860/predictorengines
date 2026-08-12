@@ -80,9 +80,21 @@ def test_past_dated_fixtures_are_dropped():
     assert "OldMatch" not in out
 
 
-def test_empty_board_gives_a_clear_message():
-    out = "\n".join(S._likely_winners_section([], "2026-07-23"))
+def test_priced_board_with_no_qualifying_pick_says_so():
+    """Odds arrived, nothing cleared the bar — that IS a quiet board."""
+    rows = [_row(0.40, 0.01, bet="TooCloseToCall")]
+    out = "\n".join(S._likely_winners_section(rows, "2026-07-23"))
     assert "No gate-approved, full-evidence pick" in out
+    assert "pricing failure" not in out
+
+
+def test_unpriced_board_is_not_reported_as_a_quiet_week():
+    """No edge rows at all means the odds fetch failed, not that the board was
+    dull. Both states empty this section, and conflating them hid a real
+    +5.7% EV position behind 'typically an off-season week' on 2026-08-10."""
+    out = "\n".join(S._likely_winners_section([], "2026-07-23"))
+    assert "pricing failure, not a quiet board" in out
+    assert "off-season week" not in out
 
 
 def test_card_writer_puts_likely_winners_before_backed_bets():

@@ -1,10 +1,10 @@
 {
   "selection_window": "2023-2024",
   "holdout_season": 2025,
-  "locked_w_elo": 0.55,
+  "locked_w_elo": 0.6,
   "data_fingerprint": {
-    "combined_sha256": "f78b306312505d563ebf5f0b7368f3b39a15591fac1c78e46e4bfec924610230",
-    "line_sha256": "f11daa33b1b9488a8720029654abfceda743ed9452f8ece73d6ab1f335e89d37",
+    "combined_sha256": "9f1266cfafee990aa90f58ff1c417f511f335a455c7545a76e2a5d157cb58a37",
+    "line_sha256": "f8ae47c25a53a006cc7183143774afa2357f9835b0550f18096558a1ba895112",
     "artifacts": {
       "games": {
         "sha256": "974e615b7d6b3ed8531ed9bb680c72a5179a6d0683603c8c749f5731893776bf",
@@ -38,8 +38,8 @@
         }
       },
       "closing_spreads": {
-        "sha256": "a97d034ce38ccbc15d7e45dde59b548e8038b941de8b8e587a7b7b1b3a954746",
-        "rows": 15078,
+        "sha256": "8b4188f6469c48d7e31e8fccabee8abd98c8ce94f0be4f0ab6fe06a481bce262",
+        "rows": 15263,
         "season_counts": {
           "2006": 288,
           "2007": 465,
@@ -55,17 +55,17 @@
           "2017": 670,
           "2018": 667,
           "2019": 664,
-          "2020": 534,
-          "2021": 843,
-          "2022": 1403,
-          "2023": 1383,
-          "2024": 1546,
-          "2025": 1586
+          "2020": 567,
+          "2021": 887,
+          "2022": 1459,
+          "2023": 1413,
+          "2024": 1557,
+          "2025": 1597
         }
       },
       "closing_totals": {
-        "sha256": "4ebad340bef049228006e90b7114154fd584296e593d965e175360c877c1a1d6",
-        "rows": 9227,
+        "sha256": "7c2e51d42c9889b8848ffc901cfa91f92ae064427a52389ede3a82e8771e3678",
+        "rows": 15104,
         "season_counts": {
           "2006": 288,
           "2007": 465,
@@ -81,6 +81,11 @@
           "2017": 675,
           "2018": 669,
           "2019": 670,
+          "2020": 567,
+          "2021": 887,
+          "2022": 1459,
+          "2023": 1411,
+          "2024": 1553,
           "2025": 1594
         }
       }
@@ -94,96 +99,95 @@
         2023,
         2024
       ],
-      "calibration_selection_rows": 1578,
-      "holdout_rows": 801,
+      "calibration_selection_rows": 1587,
+      "holdout_rows": 807,
       "residual_pmf": {
         "-56": 0.00063012,
         "-53": 0.00063012,
         "-50": 0.00063012,
-        "-49": 0.00063012,
-        "-48": 0.00063012,
+        "-48": 0.00126024,
         "-44": 0.00063012,
         "-43": 0.00189036,
         "-42": 0.00063012,
         "-41": 0.00063012,
         "-40": 0.00126024,
         "-39": 0.00189036,
-        "-38": 0.0031506,
-        "-37": 0.00189036,
-        "-36": 0.00189036,
-        "-35": 0.0031506,
+        "-38": 0.00378072,
+        "-37": 0.00063012,
+        "-36": 0.0031506,
+        "-35": 0.00252048,
         "-34": 0.00126024,
         "-33": 0.00378072,
-        "-32": 0.00252048,
-        "-31": 0.00126024,
-        "-30": 0.00189036,
-        "-29": 0.00504096,
-        "-28": 0.0063012,
-        "-27": 0.01008192,
-        "-26": 0.00441084,
-        "-25": 0.01197227,
-        "-24": 0.01008192,
-        "-23": 0.00756144,
+        "-32": 0.00189036,
+        "-31": 0.00189036,
+        "-30": 0.00126024,
+        "-29": 0.00567108,
+        "-28": 0.00378072,
+        "-27": 0.01071204,
+        "-26": 0.00819156,
+        "-25": 0.00882168,
+        "-24": 0.00819156,
+        "-23": 0.01008192,
         "-22": 0.00693132,
-        "-21": 0.01260239,
-        "-20": 0.00882168,
-        "-19": 0.01260239,
+        "-21": 0.01008192,
+        "-20": 0.01008192,
+        "-19": 0.01323251,
         "-18": 0.01575299,
-        "-17": 0.01386263,
-        "-16": 0.02079395,
+        "-17": 0.01512287,
+        "-16": 0.02016383,
         "-15": 0.01134216,
-        "-14": 0.02016383,
-        "-13": 0.01512287,
-        "-12": 0.01953371,
-        "-11": 0.02142407,
-        "-10": 0.01260239,
-        "-9": 0.01638311,
-        "-8": 0.02898551,
-        "-7": 0.02772527,
+        "-14": 0.01890359,
+        "-13": 0.01701323,
+        "-12": 0.02016383,
+        "-11": 0.01953371,
+        "-10": 0.01008192,
+        "-9": 0.02079395,
+        "-8": 0.02205419,
+        "-7": 0.02646503,
         "-6": 0.02331443,
-        "-5": 0.02205419,
-        "-4": 0.02457467,
+        "-5": 0.03024575,
+        "-4": 0.02205419,
         "-3": 0.02646503,
-        "-2": 0.03150599,
-        "-1": 0.02142407,
-        "0": 0.02079395,
-        "1": 0.02394455,
+        "-2": 0.03087587,
+        "-1": 0.02394455,
+        "0": 0.01953371,
+        "1": 0.02520479,
         "2": 0.02331443,
-        "3": 0.02583491,
-        "4": 0.02205419,
-        "5": 0.03150599,
-        "6": 0.02016383,
-        "7": 0.02331443,
-        "8": 0.01701323,
-        "9": 0.01953371,
-        "10": 0.01890359,
-        "11": 0.01764335,
+        "3": 0.02646503,
+        "4": 0.01890359,
+        "5": 0.03213611,
+        "6": 0.02142407,
+        "7": 0.02079395,
+        "8": 0.02205419,
+        "9": 0.01638311,
+        "10": 0.01827347,
+        "11": 0.01701323,
         "12": 0.02079395,
-        "13": 0.01953371,
-        "14": 0.01638311,
-        "15": 0.01638311,
-        "16": 0.01134216,
-        "17": 0.01575299,
-        "18": 0.01512287,
-        "19": 0.01323251,
+        "13": 0.02079395,
+        "14": 0.01701323,
+        "15": 0.01449275,
+        "16": 0.01449275,
+        "17": 0.01512287,
+        "18": 0.01260239,
+        "19": 0.01512287,
         "20": 0.01008192,
-        "21": 0.00504096,
-        "22": 0.01449275,
+        "21": 0.00567108,
+        "22": 0.01197227,
         "23": 0.00693132,
-        "24": 0.00693132,
-        "25": 0.01071204,
-        "26": 0.00441084,
-        "27": 0.00441084,
-        "28": 0.00819156,
+        "24": 0.00819156,
+        "25": 0.00882168,
+        "26": 0.00693132,
+        "27": 0.0063012,
+        "28": 0.00504096,
         "29": 0.0031506,
-        "30": 0.00378072,
-        "31": 0.0031506,
-        "32": 0.0031506,
+        "30": 0.00567108,
+        "31": 0.00252048,
+        "32": 0.00441084,
         "33": 0.00189036,
-        "34": 0.00252048,
-        "35": 0.00441084,
-        "36": 0.00189036,
-        "37": 0.00252048,
+        "34": 0.00126024,
+        "35": 0.00378072,
+        "36": 0.00378072,
+        "37": 0.00189036,
         "38": 0.00126024,
         "40": 0.00063012,
         "41": 0.00126024,
@@ -198,212 +202,88 @@
           -56,
           47
         ],
-        "mean": -0.3163,
-        "sd": 16.1883
+        "mean": -0.2294,
+        "sd": 16.1876
       },
       "selection_calibration": {
         "normal": {
-          "intercept": 0.006715,
-          "slope": -0.168463,
-          "n": 1547
+          "intercept": 0.007709,
+          "slope": -0.162869,
+          "n": 1555
         },
         "discrete": {
-          "intercept": 0.000729,
-          "slope": -0.16558,
-          "n": 1547
+          "intercept": 0.002903,
+          "slope": -0.155973,
+          "n": 1555
         }
       },
       "scores": {
         "champion_normal": {
           "model": "champion_normal",
-          "n": 801,
+          "n": 807,
           "pushes": 16,
-          "multiclass_brier": 0.55554,
-          "ece": 0.09691,
+          "multiclass_brier": 0.554,
+          "ece": 0.09773,
           "holdout_calibration": {
-            "intercept": 0.05158,
-            "slope": -0.05158,
-            "n": 785
+            "intercept": 0.06004,
+            "slope": -0.03679,
+            "n": 791
           },
           "reliability": [
             {
               "lower": 0.1,
               "upper": 0.2,
               "n": 4,
-              "predicted": 0.1802,
+              "predicted": 0.1806,
               "observed": 0.5
             },
             {
               "lower": 0.2,
               "upper": 0.3,
               "n": 34,
-              "predicted": 0.27,
+              "predicted": 0.2679,
               "observed": 0.6471
             },
             {
               "lower": 0.3,
               "upper": 0.4,
-              "n": 120,
-              "predicted": 0.3582,
-              "observed": 0.525
+              "n": 123,
+              "predicted": 0.3574,
+              "observed": 0.5285
             },
             {
               "lower": 0.4,
               "upper": 0.5,
               "n": 202,
-              "predicted": 0.4549,
-              "observed": 0.4703
+              "predicted": 0.4528,
+              "observed": 0.4752
             },
             {
               "lower": 0.5,
               "upper": 0.6,
-              "n": 225,
-              "predicted": 0.55,
-              "observed": 0.5333
+              "n": 232,
+              "predicted": 0.5487,
+              "observed": 0.5302
             },
             {
               "lower": 0.6,
               "upper": 0.7,
-              "n": 140,
-              "predicted": 0.6452,
-              "observed": 0.5214
+              "n": 136,
+              "predicted": 0.6437,
+              "observed": 0.5221
             },
             {
               "lower": 0.7,
               "upper": 0.8,
-              "n": 53,
-              "predicted": 0.7363,
-              "observed": 0.4151
-            },
-            {
-              "lower": 0.8,
-              "upper": 0.9,
-              "n": 7,
-              "predicted": 0.823,
-              "observed": 0.7143
-            }
-          ],
-          "strategy": {
-            "odds_assumption": "-110 both sides",
-            "min_ev": 0.03,
-            "n": 607,
-            "won": 301,
-            "lost": 297,
-            "push": 9,
-            "roi": -0.0385,
-            "roi_ci_95": [
-              -0.1173,
-              0.0466
-            ]
-          }
-        },
-        "calibrated_normal": {
-          "model": "calibrated_normal",
-          "n": 801,
-          "pushes": 16,
-          "multiclass_brier": 0.52044,
-          "ece": 0.02522,
-          "holdout_calibration": {
-            "intercept": 0.04952,
-            "slope": 0.30616,
-            "n": 785
-          },
-          "reliability": [
-            {
-              "lower": 0.4,
-              "upper": 0.5,
-              "n": 405,
-              "predicted": 0.4815,
-              "observed": 0.5185
-            },
-            {
-              "lower": 0.5,
-              "upper": 0.6,
-              "n": 380,
-              "predicted": 0.5179,
-              "observed": 0.5053
-            }
-          ],
-          "strategy": {
-            "odds_assumption": "-110 both sides",
-            "min_ev": 0.03,
-            "n": 68,
-            "won": 37,
-            "lost": 29,
-            "push": 2,
-            "roi": 0.0682,
-            "roi_ci_95": [
-              -0.1115,
-              0.2886
-            ]
-          }
-        },
-        "discrete": {
-          "model": "discrete",
-          "n": 801,
-          "pushes": 16,
-          "multiclass_brier": 0.55542,
-          "ece": 0.09623,
-          "holdout_calibration": {
-            "intercept": 0.04977,
-            "slope": -0.05093,
-            "n": 785
-          },
-          "reliability": [
-            {
-              "lower": 0.1,
-              "upper": 0.2,
-              "n": 4,
-              "predicted": 0.172,
-              "observed": 0.5
-            },
-            {
-              "lower": 0.2,
-              "upper": 0.3,
-              "n": 42,
-              "predicted": 0.2692,
-              "observed": 0.5952
-            },
-            {
-              "lower": 0.3,
-              "upper": 0.4,
-              "n": 118,
-              "predicted": 0.3528,
-              "observed": 0.5508
-            },
-            {
-              "lower": 0.4,
-              "upper": 0.5,
-              "n": 243,
-              "predicted": 0.4575,
-              "observed": 0.465
-            },
-            {
-              "lower": 0.5,
-              "upper": 0.6,
-              "n": 183,
-              "predicted": 0.5502,
-              "observed": 0.5464
-            },
-            {
-              "lower": 0.6,
-              "upper": 0.7,
-              "n": 125,
-              "predicted": 0.6388,
-              "observed": 0.496
-            },
-            {
-              "lower": 0.7,
-              "upper": 0.8,
-              "n": 65,
-              "predicted": 0.7333,
-              "observed": 0.4769
+              "n": 55,
+              "predicted": 0.7376,
+              "observed": 0.4364
             },
             {
               "lower": 0.8,
               "upper": 0.9,
               "n": 5,
-              "predicted": 0.8267,
+              "predicted": 0.8275,
               "observed": 0.8
             }
           ],
@@ -411,60 +291,184 @@
             "odds_assumption": "-110 both sides",
             "min_ev": 0.03,
             "n": 610,
-            "won": 300,
-            "lost": 301,
+            "won": 303,
+            "lost": 298,
             "push": 9,
-            "roi": -0.0463,
+            "roi": -0.037,
             "roi_ci_95": [
-              -0.1261,
-              0.0329
+              -0.1166,
+              0.0505
             ]
           }
         },
-        "calibrated_discrete": {
-          "model": "calibrated_discrete",
-          "n": 801,
+        "calibrated_normal": {
+          "model": "calibrated_normal",
+          "n": 807,
           "pushes": 16,
-          "multiclass_brier": 0.51933,
-          "ece": 0.02642,
+          "multiclass_brier": 0.52038,
+          "ece": 0.03333,
           "holdout_calibration": {
-            "intercept": 0.04954,
-            "slope": 0.30758,
-            "n": 785
+            "intercept": 0.0583,
+            "slope": 0.22587,
+            "n": 791
           },
           "reliability": [
             {
               "lower": 0.4,
               "upper": 0.5,
-              "n": 378,
-              "predicted": 0.4802,
-              "observed": 0.5212
+              "n": 396,
+              "predicted": 0.4824,
+              "observed": 0.5303
             },
             {
               "lower": 0.5,
               "upper": 0.6,
-              "n": 407,
-              "predicted": 0.5166,
-              "observed": 0.5037
+              "n": 395,
+              "predicted": 0.5174,
+              "observed": 0.4987
             }
           ],
           "strategy": {
             "odds_assumption": "-110 both sides",
             "min_ev": 0.03,
-            "n": 66,
-            "won": 37,
-            "lost": 27,
+            "n": 60,
+            "won": 33,
+            "lost": 25,
             "push": 2,
-            "roi": 0.1006,
+            "roi": 0.0833,
             "roi_ci_95": [
-              -0.0843,
-              0.3409
+              -0.1039,
+              0.3152
+            ]
+          }
+        },
+        "discrete": {
+          "model": "discrete",
+          "n": 807,
+          "pushes": 16,
+          "multiclass_brier": 0.55318,
+          "ece": 0.098,
+          "holdout_calibration": {
+            "intercept": 0.05863,
+            "slope": -0.01946,
+            "n": 791
+          },
+          "reliability": [
+            {
+              "lower": 0.1,
+              "upper": 0.2,
+              "n": 5,
+              "predicted": 0.1772,
+              "observed": 0.4
+            },
+            {
+              "lower": 0.2,
+              "upper": 0.3,
+              "n": 40,
+              "predicted": 0.2683,
+              "observed": 0.625
+            },
+            {
+              "lower": 0.3,
+              "upper": 0.4,
+              "n": 122,
+              "predicted": 0.3526,
+              "observed": 0.541
+            },
+            {
+              "lower": 0.4,
+              "upper": 0.5,
+              "n": 251,
+              "predicted": 0.4574,
+              "observed": 0.4582
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 181,
+              "predicted": 0.5532,
+              "observed": 0.5746
+            },
+            {
+              "lower": 0.6,
+              "upper": 0.7,
+              "n": 123,
+              "predicted": 0.6424,
+              "observed": 0.4959
+            },
+            {
+              "lower": 0.7,
+              "upper": 0.8,
+              "n": 65,
+              "predicted": 0.7349,
+              "observed": 0.4769
+            },
+            {
+              "lower": 0.8,
+              "upper": 0.9,
+              "n": 4,
+              "predicted": 0.8282,
+              "observed": 0.75
+            }
+          ],
+          "strategy": {
+            "odds_assumption": "-110 both sides",
+            "min_ev": 0.03,
+            "n": 622,
+            "won": 308,
+            "lost": 305,
+            "push": 9,
+            "roi": -0.0402,
+            "roi_ci_95": [
+              -0.1162,
+              0.0399
+            ]
+          }
+        },
+        "calibrated_discrete": {
+          "model": "calibrated_discrete",
+          "n": 807,
+          "pushes": 16,
+          "multiclass_brier": 0.51941,
+          "ece": 0.03432,
+          "holdout_calibration": {
+            "intercept": 0.05827,
+            "slope": 0.12478,
+            "n": 791
+          },
+          "reliability": [
+            {
+              "lower": 0.4,
+              "upper": 0.5,
+              "n": 373,
+              "predicted": 0.4815,
+              "observed": 0.5335
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 418,
+              "predicted": 0.5161,
+              "observed": 0.4976
+            }
+          ],
+          "strategy": {
+            "odds_assumption": "-110 both sides",
+            "min_ev": 0.03,
+            "n": 43,
+            "won": 23,
+            "lost": 18,
+            "push": 2,
+            "roi": 0.0677,
+            "roi_ci_95": [
+              -0.1736,
+              0.3697
             ]
           }
         }
       },
       "calibration_gate": true,
-      "discrete_gate": true,
+      "discrete_gate": false,
       "combined_incremental_gate": false,
       "promote_to_betting": false
     },
@@ -472,10 +476,10 @@
       "residual_selection_window": "2023-2024",
       "residual_selection_rows": 1587,
       "calibration_selection_seasons": [
-        2018,
-        2019
+        2023,
+        2024
       ],
-      "calibration_selection_rows": 1173,
+      "calibration_selection_rows": 1587,
       "holdout_rows": 807,
       "residual_pmf": {
         "-46": 0.00063012,
@@ -584,14 +588,14 @@
       },
       "selection_calibration": {
         "normal": {
-          "intercept": -0.061547,
-          "slope": 0.035943,
-          "n": 1160
+          "intercept": 0.03032,
+          "slope": 0.250583,
+          "n": 1563
         },
         "discrete": {
-          "intercept": -0.058701,
-          "slope": 0.029648,
-          "n": 1160
+          "intercept": 0.05095,
+          "slope": 0.261239,
+          "n": 1563
         }
       },
       "scores": {
@@ -682,25 +686,48 @@
           "model": "calibrated_normal",
           "n": 807,
           "pushes": 5,
-          "multiclass_brier": 0.50521,
-          "ece": 0.00201,
+          "multiclass_brier": 0.50573,
+          "ece": 0.03202,
           "holdout_calibration": {
-            "intercept": 0.39203,
-            "slope": 8.04966,
+            "intercept": -0.13842,
+            "slope": 1.15463,
             "n": 802
           },
           "reliability": [
             {
               "lower": 0.4,
               "upper": 0.5,
-              "n": 802,
-              "predicted": 0.4858,
-              "observed": 0.4838
+              "n": 222,
+              "predicted": 0.4816,
+              "observed": 0.4369
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 578,
+              "predicted": 0.5286,
+              "observed": 0.5017
+            },
+            {
+              "lower": 0.6,
+              "upper": 0.7,
+              "n": 2,
+              "predicted": 0.6029,
+              "observed": 0.5
             }
           ],
           "strategy": {
+            "odds_assumption": "-110 both sides",
             "min_ev": 0.03,
-            "n": 0
+            "n": 180,
+            "won": 92,
+            "lost": 88,
+            "push": 0,
+            "roi": -0.0242,
+            "roi_ci_95": [
+              -0.1488,
+              0.1159
+            ]
           }
         },
         "discrete": {
@@ -790,31 +817,54 @@
           "model": "calibrated_discrete",
           "n": 807,
           "pushes": 5,
-          "multiclass_brier": 0.50506,
-          "ece": 0.00184,
+          "multiclass_brier": 0.50548,
+          "ece": 0.03256,
           "holdout_calibration": {
-            "intercept": 0.53339,
-            "slope": 10.41122,
+            "intercept": -0.13797,
+            "slope": 1.18157,
             "n": 802
           },
           "reliability": [
             {
               "lower": 0.4,
               "upper": 0.5,
-              "n": 802,
-              "predicted": 0.4856,
-              "observed": 0.4838
+              "n": 227,
+              "predicted": 0.4836,
+              "observed": 0.4361
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 574,
+              "predicted": 0.5278,
+              "observed": 0.5017
+            },
+            {
+              "lower": 0.6,
+              "upper": 0.7,
+              "n": 1,
+              "predicted": 0.6044,
+              "observed": 1.0
             }
           ],
           "strategy": {
+            "odds_assumption": "-110 both sides",
             "min_ev": 0.03,
-            "n": 0
+            "n": 176,
+            "won": 90,
+            "lost": 86,
+            "push": 0,
+            "roi": -0.0238,
+            "roi_ci_95": [
+              -0.1442,
+              0.1136
+            ]
           }
         }
       },
       "calibration_gate": true,
       "discrete_gate": true,
-      "combined_incremental_gate": true,
+      "combined_incremental_gate": false,
       "promote_to_betting": false
     }
   },

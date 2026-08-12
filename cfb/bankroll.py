@@ -34,12 +34,32 @@ def save_bankroll(v):
 
 
 def settle_bet(bet, games):
-    """Return pnl or None if game not found yet."""
-    g = games[(games["home_team"] == bet["home"]) & (games["away_team"] == bet["away"])
-              & (games["date"].astype(str) >= str(bet["date"]))]
-    if g.empty:
+    """Return pnl or None if the game is not identifiable/finished yet.
+
+    Prefers the ledger's cfbd_game_id (exact). The legacy name/date fallback
+    requires a UNIQUE match within ±2 days of the fixture date — a rematch
+    (conference championship, bowl) must never settle silently against the
+    wrong game.
+    """
+    game_id = str(bet.get("cfbd_game_id", "") or "").strip()
+    if game_id.endswith(".0"):
+        game_id = game_id[:-2]
+    if game_id:
+        ids = games["game_id"].astype(str).str.replace(r"\.0$", "", regex=True)
+        g = games[ids == game_id]
+    else:
+        dates = pd.to_datetime(games["date"], errors="coerce")
+        fixture = pd.to_datetime(bet["date"], errors="coerce")
+        if pd.isna(fixture):
+            return None
+        g = games[(games["home_team"] == bet["home"])
+                  & (games["away_team"] == bet["away"])
+                  & ((dates - fixture).abs() <= pd.Timedelta(days=2))]
+    if len(g) != 1:
         return None
     g = g.iloc[0]
+    if pd.isna(g["home_points"]) or pd.isna(g["away_points"]):
+        return None
     margin = g["home_points"] - g["away_points"]
     total = g["home_points"] + g["away_points"]
     line = float(bet["line"]) if pd.notna(bet["line"]) else None

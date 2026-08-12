@@ -39,9 +39,28 @@ def _id_text(value: object) -> str:
     return text[:-2] if text.endswith(".0") and text[:-2].isdigit() else text
 
 
+# (season, schedule mtime) -> catalog; (aliases mtime, season, provider) -> index.
+# resolve() is called per provider name at odds ingest; without this it parsed
+# the full schedule JSON twice per call.
+_CATALOG_CACHE: dict = {}
+_ALIAS_CACHE: dict = {}
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return -1.0
+
+
 def schedule_catalog(season: int) -> dict:
     """Return canonical CFBD identities indexed by ID and normalised name."""
     path = DATA / f"schedule_{int(season)}.json"
+    # NB: distinct name — `key` is reused as a loop variable below.
+    catalog_key = (int(season), _mtime(path))
+    cached = _CATALOG_CACHE.get(catalog_key)
+    if cached is not None:
+        return cached
     try:
         games = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
@@ -77,7 +96,10 @@ def schedule_catalog(season: int) -> dict:
         by_name.pop(key, None)
     if len(by_id) < 100:
         raise ValueError(f"CFB schedule identity coverage too small: {len(by_id)} teams")
-    return {"by_id": by_id, "by_name": by_name, "ambiguous_names": sorted(ambiguous)}
+    catalog = {"by_id": by_id, "by_name": by_name, "ambiguous_names": sorted(ambiguous)}
+    _CATALOG_CACHE.clear()   # one season's catalog is in play at a time
+    _CATALOG_CACHE[catalog_key] = catalog
+    return catalog
 
 
 def _load_aliases() -> dict:
@@ -93,6 +115,11 @@ def _load_aliases() -> dict:
 
 def alias_index(season: int, provider: str | None = None) -> dict[str, dict]:
     """Validated reviewed aliases for a provider and season."""
+    cache_key = (int(season), provider,
+                 _mtime(ALIASES_JSON), _mtime(DATA / f"schedule_{int(season)}.json"))
+    cached = _ALIAS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     catalog = schedule_catalog(season)
     out: dict[str, dict] = {}
     for row in _load_aliases()["aliases"]:
@@ -121,6 +148,8 @@ def alias_index(season: int, provider: str | None = None) -> dict[str, dict]:
             raise ValueError(f"ambiguous reviewed CFB alias: {alias!r}")
         out[key] = {**target, "provider": row_provider,
                     "reviewed_at": str(row.get("reviewed_at") or "")}
+    _ALIAS_CACHE.clear()
+    _ALIAS_CACHE[cache_key] = out
     return out
 
 
@@ -154,6 +183,45 @@ def review_names(names: list[str], season: int,
             "match_mode": "" if match is None else match["match_mode"],
         })
     return rows
+
+
+# Fields the model actually acts on. A change to any of these can move a
+# prediction, a stake, or a fixture match, and must force human re-review.
+# Everything else CFBD ships (its own pregame Elo, excitement index, venue
+# metadata, …) is informational and deliberately excluded: a control that
+# fires on changes nobody needs to read is a control that stops being read.
+SCHEDULE_DECISION_FIELDS = (
+    "id", "season", "week", "seasonType", "startDate",
+    "homeId", "homeTeam", "homeClassification",
+    "awayId", "awayTeam", "awayClassification",
+    "neutralSite", "completed",
+)
+
+
+def schedule_identity(season: int, path: Path | None = None) -> dict:
+    """Canonical, order-independent view of the decision-relevant schedule."""
+    source = path or (DATA / f"schedule_{int(season)}.json")
+    games = json.loads(Path(source).read_text())
+    if not isinstance(games, list) or not games:
+        raise ValueError(f"empty CFB schedule identity source: {source}")
+    rows = sorted(
+        ({field: game.get(field) for field in SCHEDULE_DECISION_FIELDS}
+         for game in games),
+        key=lambda row: str(row.get("id")),
+    )
+    return {"season": int(season), "events": len(rows), "rows": rows}
+
+
+def schedule_identity_sha256(season: int, path: Path | None = None) -> str:
+    """Hash of the decision-relevant schedule content only.
+
+    Replaces hashing the raw provider file: CFBD backfilling its own
+    `homePregameElo`/`awayPregameElo` used to trip the reviewed-schedule gate
+    even though the model never reads those fields.
+    """
+    payload = json.dumps(schedule_identity(season, path),
+                         sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def registry_version(season: int) -> str:

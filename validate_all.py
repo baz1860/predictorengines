@@ -36,6 +36,11 @@ SUMMARY = ROOT / "data" / "validation_suite.json"
 
 def _engines(sims: int, cfb_since: int) -> list[dict]:
     return [
+        # Data integrity runs FIRST. A model gate that passes on a table containing
+        # duplicate fixtures or unclassified teams is measuring the wrong thing, so
+        # there is no point scoring the models until this is clean.
+        {"id": "international_data", "cwd": ROOT,
+         "cmd": ["-m", "international.gate", "--quiet"], "timeout": 300},
         {"id": "worldcup", "cwd": ROOT,
          "cmd": ["-m", "engines.worldcup.validate", "--quiet", "--gate"], "timeout": 600},
         {"id": "club_soccer", "cwd": ROOT,

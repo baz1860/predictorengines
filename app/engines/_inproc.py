@@ -46,6 +46,11 @@ def run_inprocess(commands: dict[str, Callable[[dict], dict]], command: str,
         # User-facing validation error (e.g. "Pick two clubs.") — redact in case a
         # value carries a secret, then re-raise as the same type the UI expects.
         raise ValueError(redact(str(e), collect_secrets()))
+    except SystemExit as e:
+        # Engine CLI helpers historically raised SystemExit for domain errors
+        # (e.g. unknown team). SystemExit is a BaseException, so a plain
+        # `except Exception` would let it terminate the host process.
+        raise ValueError(redact(f"engine aborted: {e}", collect_secrets()))
     except Exception as e:  # noqa: BLE001 — mirror the runner's catch-all
         raise ValueError(redact(f"{type(e).__name__}: {e}", collect_secrets()))
     try:

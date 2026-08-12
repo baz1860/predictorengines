@@ -345,6 +345,50 @@ def strength(name: str | None) -> float:
     return c.strength if c else 0.75
 
 
+# Leagues change size. `Competition.teams_n` carries one number, which silently
+# asserts that a division has always had its current shape — so every season
+# before a resize reads as corrupt. Ligue 1 ran 20 clubs until 2023/24, Ligue 2
+# until 2024/25, and the Süper Lig moved between 19, 20 and 21 across the
+# Covid-era no-relegation seasons. Against a static teams_n those produced 16
+# permanently "oversized" league-seasons, which is enough false positives to
+# make the oversized check useless as a signal.
+#
+# Only entries the fixture data corroborates on its own terms are listed: the
+# member clubs (those playing a full schedule) must number N AND the median
+# match count must equal 2*(N-1), an exact double round-robin. Seasons whose
+# arithmetic does not close — Greek Super League 2025, Romanian Superliga 2026,
+# USL Championship 2026, Botola Pro 2026 — are deliberately absent. They are
+# still reported as oversized, which is the correct outcome: something there
+# needs a human, and inventing a number would only hide it.
+TEAMS_N_BY_SEASON: dict[tuple[str, int], int] = {
+    ("Belgian Pro League", 2021): 18,
+    ("Belgian Pro League", 2022): 18,
+    ("Belgian Pro League", 2026): 18,
+    ("Ligue 1", 2022): 20,
+    ("Ligue 2", 2021): 20,
+    ("Ligue 2", 2022): 20,
+    ("Ligue 2", 2023): 20,
+    ("Super Lig", 2021): 20,
+    ("Super Lig", 2022): 19,
+}
+
+
+def teams_n_for(name: str | None, season) -> int:
+    """League size for a competition in a given season.
+
+    Falls back to the competition's current `teams_n`, so callers need no
+    special-casing and unlisted seasons behave exactly as before.
+    """
+    comp = get(name)
+    if comp is None:
+        return 0
+    try:
+        key = (comp.name, int(season))
+    except (TypeError, ValueError):
+        return comp.teams_n
+    return TEAMS_N_BY_SEASON.get(key, comp.teams_n)
+
+
 def comp_from_bsd_league(bsd_name: str) -> Competition | None:
     """Resolve a BSD league name to a Competition.
 

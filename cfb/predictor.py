@@ -129,11 +129,7 @@ def backtest(since=2023):
     diffs = np.array([h[2] for h in history])
     # spread map fitted only on pre-`since` data (no leakage); champion rows
     # only — FCS-vs-FCS rows carry FCS-ledger diffs, not champion diffs
-    pre = ((games["season"] < since)
-           & ((games["home_div"] == "fbs") | (games["away_div"] == "fbs")))
-    m_all = (games["home_points"] - games["away_points"]).values
-    x, y = diffs[pre.values], m_all[pre.values]
-    slope = float((x * y).sum() / (x * x).sum())
+    slope = E.fit_slope(games, history, (games["season"] < since).values)
 
     ev = games[(games["season"] >= since) & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     print(f"Backtest: {len(ev)} FBS-vs-FBS games, seasons {since}-{int(games['season'].max())}")

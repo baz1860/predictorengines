@@ -128,13 +128,18 @@ def run() -> dict:
     ))
 
     review = json.loads(SCHEDULE_REVIEW_JSON.read_text())
-    schedule_path = DATA / "schedule_2026.json"
-    schedule_hash = _sha256(schedule_path)
-    schedule_ok = schedule_hash == review.get("schedule_sha256")
+    # Compare decision-relevant schedule content, not raw provider bytes:
+    # informational fields (CFBD's own pregame Elo, etc.) must not force a
+    # re-review, but any identity/kickoff/scope change still must.
+    schedule_hash = identity.schedule_identity_sha256(2026)
+    reviewed = review.get("schedule_identity_sha256")
+    if reviewed is None:  # pre-migration record: fall back to the raw hash
+        reviewed = review.get("schedule_sha256")
+        schedule_hash = _sha256(DATA / "schedule_2026.json")
+    schedule_ok = schedule_hash == reviewed
     checks.append(_check(
         "reviewed_schedule", schedule_ok,
-        f"current {schedule_hash[:16]}; reviewed "
-        f"{str(review.get('schedule_sha256', 'missing'))[:16]}",
+        f"current {schedule_hash[:16]}; reviewed {str(reviewed or 'missing')[:16]}",
     ))
 
     card_result: dict = {}

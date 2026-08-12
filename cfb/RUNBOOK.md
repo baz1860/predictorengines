@@ -146,6 +146,83 @@ go still requires separate data and market-policy approval.
 If it fails: leave the affected market non-recordable and escalate the unmet
 criterion; do not promote policy to meet a deadline.
 
+### 9. Re-freeze validation artifacts (only after a reviewed input change)
+
+The frozen gate compares against a fingerprint of `games.csv`,
+`closing_spreads.csv` and `closing_totals.csv`. If those legitimately change —
+a line backfill, a corrected import, new completed results — the gate fails by
+design until the artifacts are re-frozen.
+
+First establish **why** the inputs changed:
+
+```bash
+python3 -m cfb.dataset_fingerprint
+git diff --stat cfb/data/closing_spreads.csv cfb/data/closing_totals.csv cfb/data/games.csv
+```
+
+Confirm the change is intended and the row counts moved in the direction you
+expect. A dataset that *shrank* is a data-loss signal, not a reason to
+rebaseline. Then:
+
+```bash
+bash cfb/refreeze.sh --confirm                     # add --with-challenger to refit the prior challenger
+python3 -m cfb.rehearsal
+```
+
+Expected: the script backs up the previous artifacts to
+`cfb/data/backups/refreeze_<stamp>/`, reruns the nested holdout, baseline,
+market challengers and generated docs in order, then verifies the gate. It
+prints the runtime `w_elo` and baseline metrics before and after — inspect that
+diff. A changed `w_elo` means the runtime model moved and deserves scrutiny.
+
+This is deliberately **not** part of `update.sh`: a pipeline that rebaselined
+itself automatically would defeat the fingerprint gate entirely. Without
+`--confirm` the script explains itself and exits non-zero.
+
+If it fails: the backup directory holds the previous artifacts. Restore them,
+leave every market non-recordable, and investigate before retrying.
+
+### 10. Preseason talent priors (timing-critical)
+
+Team talent is the dominant preseason prior — sd ~90 Elo versus ~33 for
+returning production. When it is absent, `priors.offsets` substitutes `0.0`,
+i.e. **every team is treated as exactly league-average talent**, and the model
+falls to `prior_mode=regression_only` with betting disabled.
+
+The timing is structurally tight and repeats every season:
+
+| Date | Event |
+|---|---|
+| ~27 August | 247Sports finalises the Team Talent Composite (08/27 in both 2024 and 2025) |
+| after that | CFBD ingests it into `/talent` |
+| 29 August 2026 | first 2026 kickoff |
+
+So CFBD has roughly a two-day window. Check with:
+
+```bash
+python3 -c "import sys;sys.path.insert(0,'.');from cfb import fetch_cfbd as F;print(len(F.pull('/talent?year=2026', F._key())))"
+```
+
+Non-zero means the normal path works — just run `python3 -m cfb.fetch_cfbd`.
+If it is still `0` within a couple of days of kickoff, use the standby ingest,
+which reads 247 directly and writes the same schema:
+
+```bash
+python3 -m cfb.fetch_247_talent --year 2026 --dry-run   # inspect first
+python3 -m cfb.fetch_247_talent --year 2026             # publish
+python3 preflight.py --engine cfb --require-ready
+```
+
+The standby refuses to publish fewer than 100 teams, rejects implausible
+values, resolves every name through the reviewed identity registry, and tags
+each row `"source": "247sports"` with a sidecar manifest — a snapshot built
+from it stays distinguishable from a CFBD-sourced one. Validated against 2025:
+133 teams, **zero** value mismatches versus CFBD's stored figures (Army is
+absent from 247's composite).
+
+Prefer the CFBD pull whenever it has data; overwrite the standby output with it
+once available.
+
 ## Verification
 
 - `python3 -m cfb.generate_docs --check` exits zero.
@@ -173,8 +250,9 @@ criterion; do not promote policy to meet a deadline.
 | Evidence capture adds no quotes | Provider quote timestamps and values are unchanged | Expected deduplication; confirm total row count is non-zero |
 | Evidence status is `failure` | Invalid current odds, ambiguous season, or history schema problem | Preserve history, fix the current input, and rerun; never truncate the ledger |
 | Signal lacks latest quote | Book/event/market/side identity drifted after entry | Review provider event identity and book availability; leave CLV unscored |
-| Schedule hash differs | CFBD event or kickoff data changed since review | Diff schedules, review affected games, then update reviewed hash and date |
-| Validation fingerprint differs | Historical games/line data changed | Investigate provenance and explicitly rebaseline only after review |
+| Schedule hash differs | A decision-relevant field changed (event ID, kickoff, team, week, classification, neutral site, completed) since review | Diff schedules, review affected games, then update `schedule_identity_sha256` and add a `review_log` entry. Informational provider fields no longer trip this |
+| Validation fingerprint differs | Historical games/line data changed | Investigate provenance (Step 9); rebaseline only after review, via `bash cfb/refreeze.sh --confirm` |
+| Line data shrinks after `update.sh` | Mirror rebuild dropped imported games | Should not recur — retention is per game (`fetch_data.merge_with_imported`). Restore with `python3 -m cfb.import_cfbd_lines <years>`, then Step 9 |
 | Card hash mismatch | Card or manifest was edited or only one artifact published | Rebuild both from unchanged validated inputs; do not use the card |
 | Update/rehearsal status is `failure` | A required control stopped the pipeline | Use the recorded failing step/check; fix and rerun from Step 1 |
 

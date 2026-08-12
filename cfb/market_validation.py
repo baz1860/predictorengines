@@ -28,6 +28,9 @@ from .totals_backtest import TOTALS_CSV
 HERE = Path(__file__).resolve().parent
 ARTIFACT = HERE / "data" / "market_validation_2025.json"
 DECIMAL_MINUS_110 = 1.0 + 100.0 / 110.0
+# Minimum lined rows required inside the selection window before that window is
+# trusted as its own calibration source.
+MIN_CALIBRATION_ROWS = 200
 
 
 def _phi(value):
@@ -215,11 +218,20 @@ def _market_frame(frame: pd.DataFrame, market: str, weight: float) -> pd.DataFra
 def evaluate(selection_since: int = 2023, selection_until: int = 2024,
              holdout_season: int = 2025) -> dict:
     weight = load_blend_weight()
-    # Totals line history has a 2020-24 gap. Start in 2018 so its calibration
-    # can use the latest two genuinely pre-holdout line seasons (2018-19), while
-    # residual distributions for both markets still use 2023-24 forecasts.
-    frame = V.walk_forward(E.load_games(), min(selection_since, 2018),
-                           quiet=True, w_elo=weight)
+    # The totals line history used to have a 2020-24 hole, which forced the walk
+    # to start in 2018 so calibration could reach two genuinely pre-holdout line
+    # seasons. Decide that from the data rather than a hardcoded year: if the
+    # selection window itself carries enough totals lines, start there.
+    start = selection_since
+    try:
+        totals_lines = pd.read_csv(TOTALS_CSV)
+        in_window = int(totals_lines["season"].between(
+            selection_since, selection_until).sum())
+        if in_window < MIN_CALIBRATION_ROWS:
+            start = min(selection_since, 2018)
+    except (OSError, KeyError):
+        start = min(selection_since, 2018)
+    frame = V.walk_forward(E.load_games(), start, quiet=True, w_elo=weight)
     report = {
         "selection_window": f"{selection_since}-{selection_until}",
         "holdout_season": holdout_season,
@@ -242,11 +254,13 @@ def evaluate(selection_since: int = 2023, selection_until: int = 2024,
 
         calibration_pool = data[data["season"] <= selection_until].copy()
         available = sorted(int(value) for value in calibration_pool["season"].unique())
-        if market == "spread":
-            calibration_seasons = [value for value in available
-                                   if value >= selection_since]
-        else:
-            calibration_seasons = available[-2:]
+        # Prefer the declared selection window for both markets; only fall back
+        # to the latest two available seasons if that window is too thin.
+        in_window = [value for value in available if value >= selection_since]
+        rows_in_window = int(
+            calibration_pool["season"].isin(in_window).sum()) if in_window else 0
+        calibration_seasons = (in_window if rows_in_window >= MIN_CALIBRATION_ROWS
+                               else available[-2:])
         selection = calibration_pool[
             calibration_pool["season"].isin(calibration_seasons)].copy()
         holdout = data[data["season"] == holdout_season].copy()

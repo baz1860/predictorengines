@@ -72,11 +72,17 @@ def _fit_month(played, cutoff, verbose=False):
     return dc
 
 
-def walk_forward(since=START, verbose=True):
+def walk_forward(since=START, verbose=True, with_meta=False):
     """Return per-match predictions for every model plus the actual outcome.
 
     Output: dict model -> (probs ndarray [n,3]), actuals ndarray [n] in {0,1,2},
-    and a parallel `dates` ndarray for sub-window slicing."""
+    and a parallel `dates` ndarray for sub-window slicing.
+
+    `with_meta=True` appends a parallel `tournaments` array, enabling the
+    per-competition gate. It is opt-in so the existing three-value unpacking in
+    every current caller keeps working: measured skill ranges from 0.09 to 0.35
+    across competitions, so a single pooled number can hide a real regression in
+    one competition behind an improvement in another."""
     np.random.default_rng(SEED)  # seed all randomness (harness is deterministic)
     played, _ = load_matches()
     ratings, played = compute_elo(played)          # adds pre-match elo_h / elo_a
@@ -86,7 +92,7 @@ def walk_forward(since=START, verbose=True):
     months = sorted(test["ym"].unique())
 
     probs = {m: [] for m in MODELS}
-    actuals, dates = [], []
+    actuals, dates, tournaments = [], [], []
     skipped = 0
     for k, ym in enumerate(months, 1):
         cutoff = ym.to_timestamp()                 # first day of the test month
@@ -112,10 +118,34 @@ def walk_forward(since=START, verbose=True):
             probs["blend"].append((pe + pdc) / 2)
             actuals.append(a)
             dates.append(r.date)
+            tournaments.append(r.tournament)
     if verbose and skipped:
         print(f"  ({skipped} matches skipped — team unseen in its training window)")
     out = {m: np.array(probs[m]) for m in MODELS}
-    return out, np.array(actuals), pd.to_datetime(pd.Series(dates))
+    dates_s = pd.to_datetime(pd.Series(dates))
+    if with_meta:
+        return out, np.array(actuals), dates_s, np.array(tournaments, dtype=object)
+    return out, np.array(actuals), dates_s
+
+
+def by_competition(probs, actuals, tournaments, model="blend", min_n=40):
+    """Brier score per competition for one model.
+
+    Competitions below `min_n` are pooled into "(small samples)" rather than
+    reported individually: a Brier mean over 12 matches is noise, and reporting it
+    per competition invites exactly the cherry-picking the plan warns about.
+    """
+    P, A = probs[model], actuals
+    onehot = np.eye(3)[A]
+    per_match = ((P - onehot) ** 2).sum(axis=1)
+    df = pd.DataFrame({"tournament": tournaments, "brier": per_match})
+    counts = df.tournament.value_counts()
+    big = set(counts[counts >= min_n].index)
+    df["group"] = df.tournament.where(df.tournament.isin(big), "(small samples)")
+    out = (df.groupby("group")
+             .agg(n=("brier", "size"), brier=("brier", "mean"))
+             .sort_values("brier"))
+    return out
 
 
 def metrics(P, A):
@@ -285,6 +315,63 @@ def print_reliability(out, A):
             print(f"  [{lo:.1f},{hi:.1f}){n:>7d}{pred:>9.3f}{obs:>9.3f}{pred - obs:>+9.3f}")
 
 
+COMP_BASELINE = HERE / "data" / "validation_baseline_by_competition.json"
+COMP_GATE_TOL = 0.010     # looser than the pooled tolerance: per-competition
+                          # samples are smaller and therefore noisier
+COMP_MIN_N = 40           # below this a Brier mean is not worth gating on
+
+
+def load_comp_baseline():
+    return json.loads(COMP_BASELINE.read_text()) if COMP_BASELINE.exists() else None
+
+
+def write_comp_baseline(table, since, model="blend"):
+    payload = {
+        "since": since, "model": model, "gate_tol": COMP_GATE_TOL,
+        "min_n": COMP_MIN_N,
+        "competitions": {str(k): {"n": int(v["n"]), "brier": float(v["brier"])}
+                         for k, v in table.to_dict("index").items()},
+    }
+    COMP_BASELINE.write_text(json.dumps(payload, indent=2))
+    return payload
+
+
+def gate_by_competition(table, quiet=False):
+    """Compare per-competition Brier against the stored baseline.
+
+    Returns (ok, messages). A regression in ANY competition fails, which is the
+    whole point: the pooled gate passes when one competition improves by as much as
+    another degrades, and those are not equivalent outcomes for a betting product
+    that selects by competition.
+    """
+    base = load_comp_baseline()
+    if base is None:
+        write_comp_baseline(table, str(START))
+        return True, ["[gate] no per-competition baseline — stored this run. PASS"]
+
+    tol = float(base.get("gate_tol", COMP_GATE_TOL))
+    prior = base.get("competitions", {})
+    msgs, ok = [], True
+    for name, row in table.to_dict("index").items():
+        name = str(name)
+        if int(row["n"]) < COMP_MIN_N or name not in prior:
+            continue
+        delta = float(row["brier"]) - float(prior[name]["brier"])
+        if delta > tol:
+            ok = False
+            msgs.append(f"  REGRESSED  {name:<38} {prior[name]['brier']:.4f} -> "
+                        f"{row['brier']:.4f}  ({delta:+.4f}, n={int(row['n'])})")
+        elif not quiet:
+            msgs.append(f"  ok         {name:<38} {row['brier']:.4f} ({delta:+.4f})")
+
+    new = [n for n in table.index.astype(str) if n not in prior
+           and int(table.loc[n, "n"]) >= COMP_MIN_N]
+    for n in new:
+        msgs.append(f"  new        {n:<38} {table.loc[n, 'brier']:.4f} "
+                    f"(no baseline, not gated)")
+    return ok, msgs
+
+
 def load_baseline():
     return json.loads(BASELINE.read_text()) if BASELINE.exists() else None
 
@@ -315,6 +402,11 @@ def main():
     ap.add_argument("--update-baseline", action="store_true",
                     help="overwrite the stored baseline with this run")
     ap.add_argument("--quiet", action="store_true", help="suppress progress lines")
+    ap.add_argument("--by-competition", action="store_true",
+                    help="also gate per competition (a pooled score can hide a "
+                         "regression in one competition behind a gain in another)")
+    ap.add_argument("--update-competition-baseline", action="store_true",
+                    help="overwrite the stored per-competition baseline")
     ap.add_argument("--calibrate", action="store_true",
                     help="fit isotonic calibration on walk-forward blend predictions, "
                          "report held-out improvement, and write data/calibration.json")
@@ -324,11 +416,31 @@ def main():
         cmd_calibrate(args.since, args.quiet)
         return
 
-    out, A, dates = walk_forward(since=args.since, verbose=not args.quiet)
+    need_meta = args.by_competition or args.update_competition_baseline
+    if need_meta:
+        out, A, dates, tours = walk_forward(since=args.since,
+                                            verbose=not args.quiet, with_meta=True)
+    else:
+        out, A, dates = walk_forward(since=args.since, verbose=not args.quiet)
+        tours = None
     if len(A) == 0:
         sys.exit("No test matches in the requested window.")
 
     res = print_metrics_table(out, A, f"Walk-forward, matches since {args.since}")
+
+    comp_ok, comp_table = True, None
+    if need_meta:
+        comp_table = by_competition(out, A, tours, min_n=COMP_MIN_N)
+        print(f"\nPer-competition Brier (blend), n >= {COMP_MIN_N}:")
+        print(comp_table.to_string())
+        if args.update_competition_baseline:
+            write_comp_baseline(comp_table, args.since)
+            print(f"\nwrote {COMP_BASELINE.name}")
+        else:
+            comp_ok, msgs = gate_by_competition(comp_table, quiet=args.quiet)
+            print("\nPer-competition gate:")
+            for m in msgs:
+                print(m)
 
     # Reference subset: matches since 2024-01-01 line up with the v1 backtest number.
     if pd.Timestamp(args.since) < pd.Timestamp("2024-01-01"):
@@ -355,6 +467,10 @@ def main():
                   f"(limit {limit:.4f}) -> {status}")
             if status == "FAIL":
                 sys.exit(1)
+        if args.by_competition and not comp_ok:
+            print("[gate] per-competition FAIL — at least one competition regressed "
+                  "beyond tolerance while the pooled score passed.")
+            sys.exit(1)
     elif args.update_baseline or base is None:
         p = write_baseline(res, len(A), args.since)
         action = "updated" if base is not None else "wrote"

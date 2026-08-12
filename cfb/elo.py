@@ -172,6 +172,26 @@ def run_elo(games, record_pregame=False, carry=None, prior_offsets=None,
     return merged, history
 
 
+def fit_slope(games, history, mask):
+    """Elo→points slope via OLS through the origin on champion-ledger rows.
+
+    ``mask`` selects the fit window (boolean array aligned with ``games``); the
+    FBS filter is applied here so every consumer — production spread map,
+    validation walk-forwards, backtests — fits on exactly the same population.
+    FCS-vs-FCS rows carry FCS-ledger diffs in ``history`` and must never enter
+    this fit (they contaminated it by ~2.4% before this helper existed)."""
+    import numpy as np
+
+    diffs = pd.Series([h[2] for h in history], index=games.index)
+    margins = games["home_points"] - games["away_points"]
+    fbs = (games["home_div"] == "fbs") | (games["away_div"] == "fbs")
+    m = pd.Series(np.asarray(mask, dtype=bool), index=games.index) & fbs
+    x, y = diffs[m].values, margins[m].values
+    if not len(x):
+        raise ValueError("no champion-ledger games in the slope fit window")
+    return float((x * y).sum() / (x * x).sum())
+
+
 def fit_spread_map(games, history, since=2010):
     """Fit margin = slope * elo_diff via OLS; return (slope, sigma).
 
@@ -180,12 +200,12 @@ def fit_spread_map(games, history, since=2010):
     their margin distribution can't distort the Elo→points mapping."""
     import numpy as np
 
+    slope = fit_slope(games, history, (games["season"] >= since).values)
     diffs = pd.Series([h[2] for h in history], index=games.index)
     m = games["home_points"] - games["away_points"]
     mask = ((games["season"] >= since)
             & ((games["home_div"] == "fbs") | (games["away_div"] == "fbs")))
     x, y = diffs[mask].values, m[mask].values
-    slope = float((x * y).sum() / (x * x).sum())
     sigma = float((y - slope * x).std())
     return slope, sigma
 
@@ -385,6 +405,13 @@ def event_betting_eligible(metadata: dict, home: str, away: str) -> bool:
                 and home not in restricted and away not in restricted)
 
 
+# Memo for build_as_of: one GUI predict used to replay the full Elo history
+# per click. Keyed on the exact inputs that define the snapshot — target
+# season, decision date, the content hash of every input file, and the caller's
+# division overrides — so a data refresh invalidates it automatically.
+_SNAPSHOT_CACHE: dict = {}
+
+
 def build_as_of(target_season, as_of=None, team_divisions=None):
     """Build a production Elo snapshot for a declared season and decision date.
 
@@ -392,9 +419,17 @@ def build_as_of(target_season, as_of=None, team_divisions=None):
     target season and reports whether the preseason prior coverage is sufficient
     for betting. The return value is ``(eparams, metadata)`` where ``eparams`` is
     the existing ``(games, ratings, slope, sigma)`` tuple accepted by predictors.
+    Results are memoised on input-file content; treat the returned ``games``
+    frame as read-only.
     """
     target_season = int(target_season)
     as_of = pd.Timestamp(as_of if as_of is not None else date.today()).tz_localize(None)
+    cache_key = (target_season, str(as_of), _snapshot_hash(target_season),
+                 tuple(sorted((team_divisions or {}).items())),
+                 id(load_games))  # invalidate under a monkeypatched loader
+    cached = _SNAPSHOT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     games = load_games()
     games = games[games["date"] < as_of].copy()
     if games.empty:
@@ -433,7 +468,10 @@ def build_as_of(target_season, as_of=None, team_divisions=None):
         "snapshot_hash": _snapshot_hash(target_season),
         **audit,
     }
-    return (games, ratings, slope, sigma), meta
+    result = ((games, ratings, slope, sigma), meta)
+    _SNAPSHOT_CACHE.clear()  # a single live snapshot is enough
+    _SNAPSHOT_CACHE[cache_key] = result
+    return result
 
 
 def build():
@@ -448,7 +486,7 @@ def build():
 def predict(ratings, slope, sigma, team1, team2, neutral=False):
     for t in (team1, team2):
         if t not in ratings:
-            raise SystemExit(f"Unknown team: {t!r} (FBS names as in data/games.csv, e.g. 'Ohio State')")
+            raise ValueError(f"Unknown team: {t!r} (FBS names as in data/games.csv, e.g. 'Ohio State')")
     diff = ratings[team1] - ratings[team2] + (0.0 if neutral else HFA_ELO)
     return {"p1": win_prob(diff), "margin": slope * diff, "sigma": sigma}
 
@@ -469,7 +507,10 @@ def main():
     if len(args.teams) != 2:
         raise SystemExit(__doc__)
     t1, t2 = args.teams
-    p = predict(ratings, slope, sigma, t1, t2, args.neutral)
+    try:
+        p = predict(ratings, slope, sigma, t1, t2, args.neutral)
+    except ValueError as e:
+        raise SystemExit(str(e))
     venue = "neutral site" if args.neutral else f"{t1} at home"
     print(f"{t1} vs {t2} ({venue})")
     print(f"  P({t1} win) = {p['p1']:.1%}   P({t2} win) = {1 - p['p1']:.1%}")

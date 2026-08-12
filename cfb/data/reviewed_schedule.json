@@ -1,14 +1,63 @@
 {
-  "schema_version": 1,
-  "season": 2026,
-  "schedule_sha256": "b976cfb75b88f4aad5e5e4a7d386d3225704cbc4838fbdeb9be45b948cb28395",
-  "reviewed_at": "2026-08-02",
-  "scope": "All 888 FBS-involved event IDs and team identities; five kickoff changes reviewed",
+  "identity_fields": [
+    "id",
+    "season",
+    "week",
+    "seasonType",
+    "startDate",
+    "homeId",
+    "homeTeam",
+    "homeClassification",
+    "awayId",
+    "awayTeam",
+    "awayClassification",
+    "neutralSite",
+    "completed"
+  ],
+  "review_log": [
+    {
+      "decision": "No fixture change to approve. Gate migrated to hash decision-relevant fields only; the decision-content hash is byte-identical to the 2026-08-02 reviewed schedule.",
+      "finding": "888 events unchanged; zero added or removed; no change to any event ID, kickoff, team, week, classification, neutral-site or completed flag. Sole diff: CFBD backfilled its own homePregameElo/awayPregameElo on 156/112 events. Those fields are read nowhere in the codebase.",
+      "reviewed_at": "2026-08-07",
+      "trigger": "raw schedule hash changed after cfb.fetch_cfbd refresh"
+    }
+  ],
+  "reviewed_at": "2026-08-07",
   "reviewed_changes": [
-    {"event_id": "401856774", "fixture": "Morgan State at Arizona State", "old": "2026-09-06T02:00:00.000Z", "new": "2026-09-06T01:00:00.000Z"},
-    {"event_id": "401858262", "fixture": "Elon at Stanford", "old": "2026-10-17T04:00:00.000Z", "new": "2026-10-17T23:30:00.000Z"},
-    {"event_id": "401858290", "fixture": "Merrimack at Wake Forest", "old": "2026-11-07T05:00:00.000Z", "new": "2026-11-07T17:00:00.000Z"},
-    {"event_id": "401861962", "fixture": "Lafayette at UConn", "old": "2026-09-05T04:00:00.000Z", "new": "2026-09-05T16:00:00.000Z"},
-    {"event_id": "401864496", "fixture": "Duquesne at Air Force", "old": "2026-09-05T16:00:00.000Z", "new": "2026-09-05T17:00:00.000Z"}
-  ]
+    {
+      "event_id": "401856774",
+      "fixture": "Morgan State at Arizona State",
+      "new": "2026-09-06T01:00:00.000Z",
+      "old": "2026-09-06T02:00:00.000Z"
+    },
+    {
+      "event_id": "401858262",
+      "fixture": "Elon at Stanford",
+      "new": "2026-10-17T23:30:00.000Z",
+      "old": "2026-10-17T04:00:00.000Z"
+    },
+    {
+      "event_id": "401858290",
+      "fixture": "Merrimack at Wake Forest",
+      "new": "2026-11-07T17:00:00.000Z",
+      "old": "2026-11-07T05:00:00.000Z"
+    },
+    {
+      "event_id": "401861962",
+      "fixture": "Lafayette at UConn",
+      "new": "2026-09-05T16:00:00.000Z",
+      "old": "2026-09-05T04:00:00.000Z"
+    },
+    {
+      "event_id": "401864496",
+      "fixture": "Duquesne at Air Force",
+      "new": "2026-09-05T17:00:00.000Z",
+      "old": "2026-09-05T16:00:00.000Z"
+    }
+  ],
+  "schedule_identity_sha256": "20596b4481ac35797e40de8ab0f53d10730dc2f919959635453190f6c7fb7867",
+  "schedule_sha256": "32bd708eb86f996a357d0eb5d74a062b7b2fbd00e452ced048b8b9af1fc71174",
+  "schema_version": 1,
+  "scope": "All 888 FBS-involved event IDs and team identities; five kickoff changes reviewed",
+  "season": 2026
 }

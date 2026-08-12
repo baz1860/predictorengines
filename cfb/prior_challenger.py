@@ -153,14 +153,25 @@ def aggregate_year(year: int, recruiting: list[dict], portal: list[dict],
 
 
 def fetch_inputs(start: int = 2022, end: int = CURRENT_SEASON,
-                 path: str | Path = INPUTS_JSON) -> dict:
+                 path: str | Path = INPUTS_JSON, refresh_all: bool = False) -> dict:
     key = fetch_cfbd._key()
     if not key:
         raise ValueError("CFBD key is not configured")
     games = E.load_games()
     official = priors.load_features()
+    previous = {}
+    if not refresh_all:
+        try:
+            previous = load_inputs(path).get("seasons", {})
+        except (OSError, json.JSONDecodeError):
+            previous = {}
     seasons = {}
     for year in range(start, end + 1):
+        # Completed historical seasons are frozen inputs (their SHA-256s are
+        # recorded in this artifact) — don't re-download them on every run.
+        if year < CURRENT_SEASON and str(year) in previous and not refresh_all:
+            seasons[str(year)] = previous[str(year)]
+            continue
         recruiting = fetch_cfbd.pull(f"/recruiting/teams?year={year}", key)
         portal = fetch_cfbd.pull(f"/player/portal?year={year}", key)
         if not isinstance(recruiting, list) or not isinstance(portal, list):
@@ -331,11 +342,15 @@ def validate(payload: dict | None = None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--fetch", action="store_true",
-                        help="refresh compact CFBD challenger inputs")
+                        help="refresh compact CFBD challenger inputs "
+                             "(current season only; frozen years are reused)")
+    parser.add_argument("--refetch-all", action="store_true",
+                        help="with --fetch, re-download frozen historical years too")
     parser.add_argument("--write", action="store_true",
                         help="write the frozen validation report")
     args = parser.parse_args()
-    payload = fetch_inputs() if args.fetch else load_inputs()
+    payload = (fetch_inputs(refresh_all=args.refetch_all)
+               if args.fetch else load_inputs())
     report = validate(payload)
     if args.write:
         _atomic_json(REPORT_JSON, report)

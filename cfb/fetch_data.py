@@ -85,14 +85,62 @@ def main():
     return 0
 
 
+LINE_KEY = ["season", "week", "home_team", "away_team"]
+
+
+def merge_with_imported(mirror, existing):
+    """Mirror rows win; previously imported games the mirror lacks are kept.
+
+    The old rule retained only ``season > mirror.season.max()``. That silently
+    became a no-op once the sportsdataverse mirror's coverage caught up to the
+    present: from then on every refresh discarded all CFBD-imported lines —
+    including 2020-25 games the mirror simply does not carry. Retention is now
+    per GAME, not per season.
+
+    Output is sorted so an unchanged dataset hashes identically; otherwise pure
+    row churn trips the validation fingerprint gate.
+    """
+    mirror = mirror.copy()
+    existing = existing.copy()
+    for frame in (mirror, existing):
+        for col in ("season", "week"):
+            frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    marked = existing.merge(
+        mirror[LINE_KEY].assign(_in_mirror=True), on=LINE_KEY, how="left")
+    extra = marked[marked["_in_mirror"].isna()]
+    out = (pd.concat([mirror, extra[mirror.columns]], ignore_index=True)
+           if not extra.empty else mirror)
+    return out.sort_values(LINE_KEY).reset_index(drop=True)
+
+
 def build_closing_spreads(sched):
     """Consensus closing spreads (2006-2019 in the mirror) -> data/closing_spreads.csv.
 
     One row per game: median home line and median juice per side across books.
+    The mirror's betting file covers seasons that no longer change, so the
+    expensive consensus rebuild is skipped whenever the source is byte-identical
+    to the one that produced the current output.
     """
+    import hashlib
+    import json
+
     src = os.path.join(TMP, "betting/csv/cfb_line_odds.csv.gz")
     if not os.path.exists(src):
         subprocess.run(["git", "-C", TMP, "sparse-checkout", "add", "betting/csv"], check=True)
+    if not os.path.exists(src):
+        print("  WARNING: betting mirror lacks cfb_line_odds.csv.gz; "
+              "keeping existing closing_spreads.csv")
+        return
+    dest = os.path.join(HERE, "data", "closing_spreads.csv")
+    marker = dest + ".src.json"
+    src_sha = hashlib.sha256(open(src, "rb").read()).hexdigest()
+    try:
+        if (os.path.exists(dest)
+                and json.load(open(marker))["source_sha256"] == src_sha):
+            print("  closing spreads: mirror source unchanged; consensus rebuild skipped")
+            return
+    except (OSError, json.JSONDecodeError, KeyError):
+        pass
     df = pd.read_csv(src, low_memory=False)
     sp = df[df["market_type"] == "spread"].dropna(subset=["lines"]).copy()
     sp[["away_name", "home_name"]] = sp["game_desc"].str.split("@", n=1, expand=True)
@@ -120,14 +168,19 @@ def build_closing_spreads(sched):
         left_on=["season", "week", "home_name", "away_name"],
         right_on=["season", "week", "home_team", "away_team"], how="inner",
     )[["season", "week", "home_team", "away_team", "home_line", "home_odds", "away_odds", "n_books"]]
-    dest = os.path.join(HERE, "data", "closing_spreads.csv")
-    if os.path.exists(dest):  # keep imported seasons the mirror doesn't cover (e.g. CFBD 2020+)
-        old = pd.read_csv(dest)
-        keep = old[old["season"] > m["season"].max()]
-        m = pd.concat([m, keep[m.columns]], ignore_index=True)
+    if os.path.exists(dest):
+        before = len(m)
+        m = merge_with_imported(m, pd.read_csv(dest))
+        if len(m) > before:
+            print(f"  retained {len(m) - before} imported game(s) "
+                  f"absent from the mirror")
+    else:
+        m = m.sort_values(LINE_KEY).reset_index(drop=True)
     atomic_to_csv(m, dest,
                   ["season", "week", "home_team", "away_team", "home_line",
                    "home_odds", "away_odds", "n_books"], allow_empty=False)
+    with open(marker, "w") as f:
+        json.dump({"source_sha256": src_sha}, f)
     print(f"{len(m)} games with consensus closing spreads "
           f"({int(m['season'].min())}-{int(m['season'].max())}) -> {dest}")
 

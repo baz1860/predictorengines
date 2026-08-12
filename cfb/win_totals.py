@@ -86,7 +86,7 @@ def main():
         try:
             p_pow = P.predict(pparams, h, a, neutral=bool(r.neutral))["p1"]
             p_home = w_elo * p_elo + (1.0 - w_elo) * p_pow
-        except SystemExit:
+        except ValueError:  # side without a power rating: Elo carries it alone
             p_home = p_elo
         if r.home_fbs:
             team_probs.setdefault(r.home_team, []).append(p_home)

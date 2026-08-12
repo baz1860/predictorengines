@@ -38,7 +38,10 @@ def cmd_predict(p: dict) -> dict:
     eparams, state_meta = E.build_as_of(target_season, as_of=date.today())
     pparams = P.load_params()
     for t in (t1, t2):
-        if t not in pparams["teams"]:
+        # Validate against BOTH models: blend_predict consults Elo ratings
+        # directly, and an Elo-unknown name must surface as a clean error,
+        # not an exception from inside the predictor.
+        if t not in pparams["teams"] or t not in eparams[1]:
             raise ValueError(f"Unknown team: {t!r}")
     out = blend_predict(eparams, pparams, t1, t2, neutral, model)
     p1 = float(out["p1"]); margin = float(out["margin"]); total = float(out["total"])
@@ -61,7 +64,7 @@ def cmd_edge(p: dict) -> dict:
     if not os.path.exists(CE.ODDS_CSV):
         raise ValueError("No cfb/odds.csv. Use 'Write template' first, then fill in lines & odds.")
     odds = pd.read_csv(CE.ODDS_CSV)
-    odds = odds[odds["odds"].notna() & (odds["odds"] != "")]
+    odds = odds[pd.to_numeric(odds["odds"], errors="coerce").notna()]
     if odds.empty:
         raise ValueError("cfb/odds.csv has no filled-in odds.")
     bankroll = float(p.get("bankroll", 100.0))

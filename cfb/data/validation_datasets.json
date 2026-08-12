@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "combined_sha256": "f78b306312505d563ebf5f0b7368f3b39a15591fac1c78e46e4bfec924610230",
-  "line_sha256": "f11daa33b1b9488a8720029654abfceda743ed9452f8ece73d6ab1f335e89d37",
+  "combined_sha256": "9f1266cfafee990aa90f58ff1c417f511f335a455c7545a76e2a5d157cb58a37",
+  "line_sha256": "f8ae47c25a53a006cc7183143774afa2357f9835b0550f18096558a1ba895112",
   "artifacts": {
     "games": {
       "path": "cfb/data/games.csv",
@@ -54,9 +54,9 @@
     },
     "closing_spreads": {
       "path": "cfb/data/closing_spreads.csv",
-      "sha256": "a97d034ce38ccbc15d7e45dde59b548e8038b941de8b8e587a7b7b1b3a954746",
-      "bytes": 770215,
-      "rows": 15078,
+      "sha256": "8b4188f6469c48d7e31e8fccabee8abd98c8ce94f0be4f0ab6fe06a481bce262",
+      "bytes": 777847,
+      "rows": 15263,
       "columns": [
         "season",
         "week",
@@ -82,21 +82,21 @@
         "2017": 670,
         "2018": 667,
         "2019": 664,
-        "2020": 534,
-        "2021": 843,
-        "2022": 1403,
-        "2023": 1383,
-        "2024": 1546,
-        "2025": 1586
+        "2020": 567,
+        "2021": 887,
+        "2022": 1459,
+        "2023": 1413,
+        "2024": 1557,
+        "2025": 1597
       },
       "source": "legacy mixed file: sportsdataverse betting mirror plus CFBD /lines imports; per-row source was not retained",
       "decision_time": "consensus closing benchmark; CFBD imports have no quote timestamp and assume -110 when juice is absent"
     },
     "closing_totals": {
       "path": "cfb/data/closing_totals.csv",
-      "sha256": "4ebad340bef049228006e90b7114154fd584296e593d965e175360c877c1a1d6",
-      "bytes": 484804,
-      "rows": 9227,
+      "sha256": "7c2e51d42c9889b8848ffc901cfa91f92ae064427a52389ede3a82e8771e3678",
+      "bytes": 735526,
+      "rows": 15104,
       "columns": [
         "season",
         "week",
@@ -122,6 +122,11 @@
         "2017": 675,
         "2018": 669,
         "2019": 670,
+        "2020": 567,
+        "2021": 887,
+        "2022": 1459,
+        "2023": 1411,
+        "2024": 1553,
         "2025": 1594
       },
       "source": "legacy mixed file: sportsdataverse betting mirror plus CFBD /lines imports; per-row source was not retained",

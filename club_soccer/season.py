@@ -57,6 +57,7 @@ from . import market_model as MM
 from . import fetch_fdcouk as FD
 from . import cache_retention as CR
 from . import forecast_ledger as FL
+from . import club_identity as CI
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -257,6 +258,102 @@ class _TableCache:
         return f"{_ordinal(ph)} v {_ordinal(pa)}"
 
 
+class _MarketCache:
+    """Last-known 1x2 market medians for the fixture rows — DISPLAY ONLY.
+
+    The card's `fair` figure is 1/p_model and carries no margin, so it is not
+    comparable to a book price without de-vigging. Printing the model's number
+    alone gave the operator nothing to sanity-check it against, and when the
+    odds fetch failed the card silently dropped the comparison entirely rather
+    than falling back to the snapshot already on disk.
+
+    This reads data/odds_history_club.csv (the snapshot store, not the live
+    pricing path) and is deliberately kept out of edge/EV computation: a stale
+    median must never become a staked bet. The age is rendered alongside the
+    price so a 24h-old line reads as 24h old.
+    """
+
+    _MAX_AGE_DAYS = 7.0
+
+    def __init__(self) -> None:
+        self._index: dict[tuple, list] | None = None
+
+    @staticmethod
+    def _core(name) -> str:
+        return CI._core(CI.canonical_name(str(name)))
+
+    def _load(self) -> dict[tuple, list]:
+        if self._index is not None:
+            return self._index
+        self._index = {}
+        path = SO.ODDS_HISTORY_CSV
+        if not path.exists():
+            return self._index
+        try:
+            df = pd.read_csv(path)
+        except (OSError, ValueError, pd.errors.ParserError):
+            return self._index
+        df = df[df["market"] == "1x2"]
+        if df.empty:
+            return self._index
+        # Keep only the newest snapshot per fixture/side.
+        df = df.sort_values("snapshot_time").drop_duplicates(
+            ["match_date", "competition", "home", "away", "side"], keep="last"
+        )
+        for key, group in df.groupby(["match_date", "competition", "home", "away"]):
+            match_date, competition, home, away = key
+            prices = dict(zip(group["side"], group["odds_median"]))
+            if not {"home", "draw", "away"} <= set(prices):
+                continue
+            self._index.setdefault((str(match_date)[:10], str(competition)), []).append({
+                "core_home": self._core(home),
+                "core_away": self._core(away),
+                "prices": prices,
+                "n_books": int(group["n_books"].min()),
+                "snapshot": str(group["snapshot_time"].max()),
+            })
+        return self._index
+
+    @staticmethod
+    def _same_club(core_a: str, core_b: str) -> bool:
+        """Odds feeds carry fuller names ("Odense Boldklub") than fixtures."""
+        if not core_a or not core_b:
+            return False
+        if core_a == core_b:
+            return True
+        tokens_a, tokens_b = set(core_a.split()), set(core_b.split())
+        return bool(tokens_a) and bool(tokens_b) and (
+            tokens_a <= tokens_b or tokens_b <= tokens_a
+        )
+
+    def note(self, competition: str, match_date: str, home: str, away: str,
+             now: datetime | None = None) -> str:
+        candidates = self._load().get((str(match_date)[:10], str(competition)))
+        if not candidates:
+            return ""
+        core_home, core_away = self._core(home), self._core(away)
+        for entry in candidates:
+            if not (self._same_club(core_home, entry["core_home"])
+                    and self._same_club(core_away, entry["core_away"])):
+                continue
+            try:
+                taken = pd.Timestamp(entry["snapshot"]).to_pydatetime()
+            except (ValueError, TypeError):
+                return ""
+            reference = now or datetime.now(timezone.utc)
+            if taken.tzinfo is None:
+                taken = taken.replace(tzinfo=timezone.utc)
+            age_hours = (reference - taken).total_seconds() / 3600.0
+            if age_hours < 0 or age_hours > self._MAX_AGE_DAYS * 24:
+                return ""
+            prices = entry["prices"]
+            age = (f"{age_hours:.0f}h old" if age_hours >= 1
+                   else "under 1h old")
+            return (f"mkt {prices['home']:.2f}/{prices['draw']:.2f}/"
+                    f"{prices['away']:.2f} ({entry['n_books']} books, {age})")
+        return ""
+
+
 def _ordinal(n: int) -> str:
     n = int(n)
     if 10 <= n % 100 <= 20:
@@ -280,6 +377,7 @@ def _upcoming_section(forecasts: list[dict]) -> list[str]:
         ["match_date", "competition", "home"]
     )
     tables = _TableCache()
+    market = _MarketCache()
     lines = ["## Next 7 days", ""]
     for day, day_grp in up.groupby("match_date"):
         lines.append(f"### {day}")
@@ -292,6 +390,16 @@ def _upcoming_section(forecasts: list[dict]) -> list[str]:
                 bits = [f"{r.home} vs {r.away} — "
                        f"H {p['home']:.0%} D {p['draw']:.0%} A {p['away']:.0%} "
                        f"(fair {fair['home']}/{fair['draw']}/{fair['away']})"]
+
+                # `fair` is 1/p and sums to 100%; a book price carries margin
+                # and sums to ~107%. Showing them side by side is the whole
+                # point — the operator can see the shape of the disagreement
+                # without the card pretending the two are like-for-like.
+                market_note = market.note(
+                    str(r.competition), str(r.match_date), r.home, r.away
+                )
+                if market_note:
+                    bits.append(market_note)
 
                 n_out = int(r.n_missing_home) + int(r.n_missing_away)
                 if n_out:
@@ -434,9 +542,24 @@ def _likely_winners_section(edge_rows: list[dict], today_str: str) -> list[str]:
                  "tight, `fair` = square._")
     lines.append("")
     if not likely:
-        lines.append("_No gate-approved, full-evidence pick clears "
-                     f"{LIKELY_MIN_P:.0%} on the current board — typically an "
-                     "off-season week with only tight fixtures priced._")
+        # A pick needs a PRICE to exist at all: `live` filters on
+        # kelly_stake > 0, which is only ever set once odds are joined. So an
+        # odds-fetch failure empties this section by exactly the same route as
+        # a genuinely quiet board, and the old copy asserted the quiet-board
+        # reading ("typically an off-season week"). On 2026-08-10 the provider
+        # returned HTTP 429, every edge row vanished, and the card reported a
+        # slow week — while a +5.7% EV position sat unpriced on the board.
+        # Distinguish the two: no edge rows AT ALL means we never got to judge.
+        if not edge_rows:
+            lines.append("_No odds were available for this run, so nothing "
+                         "could be priced or ranked. This is a **pricing "
+                         "failure, not a quiet board** — see the pricing note "
+                         "under Backed bets, and `last_run.json` for the "
+                         "failing step._")
+        else:
+            lines.append("_No gate-approved, full-evidence pick clears "
+                         f"{LIKELY_MIN_P:.0%} on the current board — typically an "
+                         "off-season week with only tight fixtures priced._")
         lines.append("")
     else:
         lines.append("| Date | Match | Bet | Odds | Model | Value |")

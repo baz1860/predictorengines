@@ -56,6 +56,10 @@ draw_backtest_detail.csv
 # Ad-hoc scratch scripts.
 _bt_tmp.py
 
+# Pre-re-freeze snapshots of the CFB validation artifacts (cfb/refreeze.sh).
+# Local rollback copies; the artifacts themselves are versioned.
+cfb/data/backups/
+
 # Spreadsheet locks and ad-hoc backups.
 ~$*
 Betting Tracker.xlsx
@@ -105,6 +109,14 @@ club_soccer/data/player_stats_cache.json
 # {provider}_{kind}_{timestamp}.json here (bsd_event_*, bsd_events_*,
 # the-odds-api_markets_*, and any future provider). Local audit trail only.
 data/worldcup/raw/
+
+# International raw observation store (international/store.py RawStore). Grows by
+# roughly 20 MB per full events fetch and is append-only by design, so it must not
+# enter git. It IS the audit trail for the evidence phase, though — everything in
+# docs/international_provider_spike.md is reproducible from it via
+# `fetch_fixtures.py --replay`. Back it up outside the repo before the September
+# window; it cannot be reconstructed after the fact.
+data/international/raw/
 
 # Provider/API response caches, current and future engines alike.
 **/api_cache/

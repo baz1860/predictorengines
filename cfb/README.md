@@ -111,26 +111,26 @@ Settlement handles moneyline, spread (with pushes), and totals from final scores
 <!-- CFB_METRICS_START -->
 ## Frozen validation evidence
 
-Runtime blend: **55% Elo / 45% power**, selected on 2023-2024 (1,587 games) before the untouched 2025 holdout (807 games).
+Runtime blend: **60% Elo / 40% power**, selected on 2023-2024 (1,587 games) before the untouched 2025 holdout (807 games).
 
 | Window | Games | ML Brier | Accuracy | Margin MAE | Total MAE |
 |---|---:|---:|---:|---:|---:|
-| Selection 2023-2024 | 1,587 | 0.18891 | 70.6% | 12.875 | 13.128 |
-| Holdout 2025 | 807 | 0.18663 | 70.9% | 12.601 | 12.817 |
-| Combined | 2,394 | 0.18814 | 70.7% | 12.783 | 13.023 |
+| Selection 2023-2024 | 1,587 | 0.18858 | 70.4% | 12.872 | 13.128 |
+| Holdout 2025 | 807 | 0.18650 | 70.5% | 12.610 | 12.817 |
+| Combined | 2,394 | 0.18788 | 70.4% | 12.784 | 13.023 |
 
 The frozen 2025 closing-line benchmark at a three-point disagreement:
 
 | Market | W-L-P | Bets | ROI | Week-block 95% CI | Policy |
 |---|---:|---:|---:|---:|---|
-| Spread | 217-239-7 | 463 | -9.0% | [-17.6%, -0.4%] | diagnostic |
+| Spread | 228-233-7 | 468 | -5.5% | [-15.0%, +3.5%] | diagnostic |
 | Total | 231-186-1 | 418 | +5.7% | [-0.0%, +11.9%] | paper |
 
-The push-aware calibrated-discrete challenger remains unpromoted. Spread holdout Brier/ECE are 0.51933/0.02642; totals are 0.50506/0.00184. Neither market cleared the held-out betting gate.
+The push-aware calibrated-discrete challenger remains unpromoted. Spread holdout Brier/ECE are 0.51941/0.03432; totals are 0.50548/0.03256. Neither market cleared the held-out betting gate.
 
 The reconstructed recruiting/transfer preseason-prior challenger also remains unpromoted. On 2025 Weeks 1–4 it improved Brier from 0.19880 to 0.18984 (241 games), but its historical inputs are not archived point-in-time snapshots. The transition-team challenger selected 1450 Elo but has only 8 holdout games versus a 30-game gate. Both remain blocked.
 
-Validation line fingerprint: `f11daa33b1b9488a`. Regenerate with `python3 -m cfb.generate_docs --write`; CI-style drift check: `python3 -m cfb.generate_docs --check`.
+Validation line fingerprint: `f8ae47c25a53a006`. Regenerate with `python3 -m cfb.generate_docs --write`; CI-style drift check: `python3 -m cfb.generate_docs --check`.
 <!-- CFB_METRICS_END -->
 
 ## Data

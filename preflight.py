@@ -225,7 +225,61 @@ def build_report() -> dict:
             **({"model_state": model_state, "run_status": run_status}
                if eid == "cfb" else {}),
         }
-    return {"engines": engines}
+    return {"engines": engines, "international_data": _international_health()}
+
+
+def _international_health() -> dict:
+    """Data-integrity summary for the international module.
+
+    Surfaced in preflight because these failures are invisible in a file-existence
+    check: results.csv can be present, recent and internally corrupt. Duplicate
+    fixtures and unclassified teams both produce confident, wrong predictions.
+    """
+    try:
+        from international import gate as G
+        from international.odds import OddsStore
+        from international.store import FixtureStore
+        from international import venues as V
+    except Exception as exc:                                   # pragma: no cover
+        return {"available": False, "error": str(exc)}
+
+    try:
+        failures = G.run(strict=False)
+        fixtures = FixtureStore().load()
+        no_tz = 0
+        if not fixtures.empty:
+            no_tz = int((fixtures.venue_tz.isna()
+                         | (fixtures.venue_tz.astype(str).str.strip() == "")).sum())
+        return {
+            "available": True,
+            "gate_pass": not failures,
+            "failures": failures,
+            "fixtures": len(fixtures),
+            "fixtures_without_timezone": no_tz,
+            "venues": V.coverage(),
+            "odds": OddsStore().coverage(),
+        }
+    except Exception as exc:                                   # pragma: no cover
+        return {"available": False, "error": str(exc)}
+
+
+def _print_international(report: dict) -> None:
+    intl = report.get("international_data") or {}
+    if not intl.get("available"):
+        if intl:
+            print(f"\ninternational_data  [unavailable: {intl.get('error', '?')}]")
+        return
+    flag = "healthy" if intl["gate_pass"] else "GATE FAILING"
+    print(f"\ninternational_data  [{flag}]")
+    print(f"  fixtures in store        {intl['fixtures']}"
+          f"  ({intl['fixtures_without_timezone']} without a venue timezone)")
+    v, o = intl["venues"], intl["odds"]
+    print(f"  venues                   {v['venues']} "
+          f"({v['with_timezone']} with a timezone)")
+    print(f"  odds snapshots           {o['snapshots']} across {o['fixtures']} "
+          f"fixture(s); {o['priced_fixtures']} ever priced")
+    for f in intl.get("failures", []):
+        print(f"  ! {f.splitlines()[0]}")
 
 
 def _print(report: dict) -> None:
@@ -246,6 +300,7 @@ def _print(report: dict) -> None:
                   f"{'' if k['set'] else ' (not set)'}")
         for issue in e.get("issues", []):
             print(f"  ⚠ {issue}")
+    _print_international(report)
 
 
 def main() -> int:
@@ -256,12 +311,17 @@ def main() -> int:
                     help="exit non-zero unless selected engines are betting-ready")
     ap.add_argument("--require-diagnostic", action="store_true",
                     help="exit non-zero unless selected engines have core diagnostic inputs")
+    ap.add_argument("--require-data-healthy", action="store_true",
+                    help="exit non-zero if the international data gate is failing")
     args = ap.parse_args()
     report = build_report()
     selected = report["engines"]
     if args.engine:
         selected = {args.engine: selected[args.engine]}
-    view = {"engines": selected}
+    # Carry international_data through: an earlier version rebuilt `view` with only
+    # the engines key, so the section was computed and then silently dropped.
+    view = {"engines": selected,
+            "international_data": report.get("international_data", {})}
     if args.json:
         print(json.dumps(view, indent=2))
     else:
@@ -271,6 +331,10 @@ def main() -> int:
     if args.require_diagnostic and any(not e.get("diagnostic_ready", e["ready"])
                                        for e in selected.values()):
         return 1
+    if args.require_data_healthy:
+        intl = view["international_data"]
+        if not intl.get("available") or not intl.get("gate_pass"):
+            return 1
     return 0
 
 

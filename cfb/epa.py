@@ -53,7 +53,6 @@ def load_ppa():
             continue
         for r in data:
             off = _get(r, "offense") or {}
-            dfn = _get(r, "defense") or {}
             if _get(off, "overall") is None:
                 continue
             row = {
@@ -61,11 +60,11 @@ def load_ppa():
                 "team": _get(r, "team"),
                 "opponent": _get(r, "opponent"),
             }
+            # Only offensive PPA feeds the fit: each game contributes two rows
+            # (one per offense), so defence is identified from the opposing
+            # row. The def_* columns this used to build were never read.
             for field in PPA_FIELDS:
                 row[f"off_{field}"] = float(_get(off, field) or 0.0)
-                row[f"def_{field}"] = float(_get(dfn, field) or 0.0)
-            row["off_ppa"] = row["off_overall"]
-            row["def_ppa"] = row["def_overall"]
             rows.append(row)
     ppa = pd.DataFrame(rows).drop_duplicates(subset=["game_id", "team"])
     games = load_games()
@@ -143,7 +142,7 @@ def fit(asof=None, data=None, field: str = "overall"):
 def predict(params, team1, team2, neutral=False):
     for t in (team1, team2):
         if t not in params["teams"]:
-            raise SystemExit(f"Unknown team: {t!r}")
+            raise ValueError(f"Unknown team: {t!r}")
     t1, t2 = params["teams"][team1], params["teams"][team2]
     hfa = 0.0 if neutral else params["hfa"]
     rate1 = params["mu"] + t1["off"] - t2["def"] + hfa
@@ -189,7 +188,10 @@ def main():
     if len(args.teams) != 2:
         raise SystemExit(__doc__)
     t1, t2 = args.teams
-    p = predict(params, t1, t2, args.neutral)
+    try:
+        p = predict(params, t1, t2, args.neutral)
+    except ValueError as e:
+        raise SystemExit(str(e))
     venue = "neutral site" if args.neutral else f"{t1} at home"
     print(f"{t1} vs {t2} ({venue}, EPA model)")
     print(f"  Expected score: {t1} {p['pts1']:.1f} - {p['pts2']:.1f} {t2}")

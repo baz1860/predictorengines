@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import socket
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -89,6 +91,71 @@ def _allow_shrink() -> bool:
     return os.environ.get("CLUB_SOCCER_ALLOW_FIXTURE_SHRINK") == "1"
 
 
+def _provenance_path(path: Path) -> Path:
+    """Sidecar recording which alias map produced a fixtures file."""
+    return path.with_name(path.stem + "_provenance.json")
+
+
+def _read_provenance(path: Path) -> dict:
+    try:
+        return json.loads(_provenance_path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _assert_alias_map_not_stale(path: Path) -> None:
+    """Refuse to overwrite fixtures built from a NEWER alias map than ours."""
+    if os.environ.get("CLUB_SOCCER_ALLOW_STALE_ALIAS_MAP") == "1":
+        return
+    if not path.exists():
+        return
+    from .club_identity import alias_map_fingerprint
+
+    previous = _read_provenance(path)
+    if not previous:
+        return                      # first stamped write; nothing to compare
+    local = alias_map_fingerprint()
+    if not local["sha256"] or not local["updated_at"]:
+        return                      # no map, or an unstamped one — cannot order
+    if previous.get("alias_map_sha256") == local["sha256"]:
+        return                      # same map, no divergence
+    theirs = str(previous.get("alias_map_updated_at") or "")
+    if not theirs or theirs <= str(local["updated_at"]):
+        return                      # ours is the same age or newer — proceed
+    raise ValueError(
+        f"refusing to overwrite {path.name}: it was written from a NEWER "
+        f"club_alias_map.json than this host has.\n"
+        f"  file built from map {previous.get('alias_map_sha256')} "
+        f"updated {theirs} ({previous.get('alias_map_entries')} entries) "
+        f"on host {previous.get('host')!r}\n"
+        f"  this host has map {local['sha256']} "
+        f"updated {local['updated_at']} ({local['entries']} entries)\n"
+        f"Writing now would revert a reviewed identity merge. Let the alias "
+        f"map finish syncing and re-run, or set "
+        f"CLUB_SOCCER_ALLOW_STALE_ALIAS_MAP=1 to override deliberately."
+    )
+
+
+def _record_fixture_provenance(path: Path, rows: int) -> None:
+    from .club_identity import alias_map_fingerprint
+
+    fingerprint = alias_map_fingerprint()
+    payload = {
+        "written_at_utc": datetime.now(timezone.utc).isoformat(),
+        "host": socket.gethostname(),
+        "rows": int(rows),
+        "alias_map_sha256": fingerprint["sha256"],
+        "alias_map_updated_at": fingerprint["updated_at"],
+        "alias_map_entries": fingerprint["entries"],
+    }
+    try:
+        tmp = _provenance_path(path).with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2) + "\n")
+        tmp.replace(_provenance_path(path))
+    except OSError:
+        pass                        # provenance is a guard, never a blocker
+
+
 def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
     """THE write boundary for fixtures.csv. Every writer — fetchers AND
     seeders — must come through here, never `to_csv(FIXTURES)` directly:
@@ -153,11 +220,18 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
         # to float NaN. NaN is truthy, so it can accidentally become the
         # literal scope "nan" in canonical_id() for continental fixtures.
         countries = countries.where(pd.notna(countries), None)
+        # Competition rides alongside country so a misattribution confined to
+        # one league (see club_identity._load_competition_resolver) can be
+        # corrected without touching the same club's rows elsewhere.
+        competitions = df.get(
+            "competition", pd.Series("", index=df.index)
+        ).astype(str).tolist()
         changed = 0
         for side in ("home", "away"):
-            keys = list(zip(df[side].tolist(), countries.tolist()))
+            keys = list(zip(df[side].tolist(), countries.tolist(), competitions))
             mapping = {
-                key: _canonicalise(key[0], country_hint=key[1])
+                key: _canonicalise(key[0], country_hint=key[1],
+                                   competition_hint=key[2])
                 for key in set(keys)
             }
             canonical = pd.Series(
@@ -165,14 +239,14 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
             )
             changed += int((canonical != df[side]).sum())
             df[side] = canonical
+            id_keys = list(zip(canonical.tolist(), countries.tolist(),
+                               competitions))
             id_mapping = {
-                key: _canonical_id(key[0], country_hint=key[1])
-                for key in set(zip(canonical.tolist(), countries.tolist()))
+                key: _canonical_id(key[0], country_hint=key[1],
+                                   competition_hint=key[2])
+                for key in set(id_keys)
             }
-            df[f"{side}_club_id"] = [
-                id_mapping[key]
-                for key in zip(canonical.tolist(), countries.tolist())
-            ]
+            df[f"{side}_club_id"] = [id_mapping[key] for key in id_keys]
         if changed:
             print(f"   write_fixtures: canonicalised {changed} team-name value(s)")
 
@@ -261,10 +335,27 @@ def write_fixtures(df: pd.DataFrame, path: Path = None) -> pd.DataFrame:
                 f"partial fetch — check `current=True`. Set "
                 f"CLUB_SOCCER_ALLOW_FIXTURE_SHRINK=1 to override deliberately.")
 
+    # Stale-config guard. The shrink guard above catches a writer that brings
+    # too FEW rows; this catches one that brings the wrong IDENTITIES.
+    #
+    # fixtures.csv is generated, and club_soccer/data/.stignore deliberately
+    # syncs it, so more than one host can regenerate the same shared file. A
+    # host whose club_alias_map.json has not yet synced writes pre-merge
+    # identities and wins on mtime — reverting a reviewed merge with no local
+    # check failing, because that host's map genuinely agrees with its output.
+    # Observed twice: the Danish Superliga merge reverted on 2026-08-11 and
+    # again on 2026-08-12, each time leaving only a Syncthing conflict file.
+    #
+    # `human_verdicts_merged_at` orders the two maps. Refusing to write is the
+    # right failure: a missing card is recoverable, a silently reverted
+    # identity merge trains the model on split club histories.
+    _assert_alias_map_not_stale(path)
+
     path.parent.mkdir(exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     df.to_csv(tmp, index=False)
     tmp.replace(path)
+    _record_fixture_provenance(path, len(df))
 
     # Invalidate identity caches derived from fixtures.csv at the single write
     # boundary. team_countries() is cached process-wide, so within one daily

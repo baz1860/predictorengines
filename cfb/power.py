@@ -121,7 +121,7 @@ def fit(games, asof=None):
 def predict(params, team1, team2, neutral=False):
     for t in (team1, team2):
         if t not in params["teams"]:
-            raise SystemExit(f"Unknown team: {t!r}")
+            raise ValueError(f"Unknown team: {t!r}")
     o1, d1 = params["teams"][team1]["off"], params["teams"][team1]["def"]
     o2, d2 = params["teams"][team2]["off"], params["teams"][team2]["def"]
     hfa = 0.0 if neutral else params["hfa"]
@@ -195,7 +195,10 @@ def main():
     if len(args.teams) != 2:
         raise SystemExit(__doc__)
     t1, t2 = args.teams
-    p = predict(params, t1, t2, args.neutral)
+    try:
+        p = predict(params, t1, t2, args.neutral)
+    except ValueError as e:
+        raise SystemExit(str(e))
     venue = "neutral site" if args.neutral else f"{t1} at home"
     print(f"{t1} vs {t2} ({venue})")
     print(f"  Expected score: {t1} {p['pts1']:.1f} - {p['pts2']:.1f} {t2}")

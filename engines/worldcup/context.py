@@ -67,9 +67,34 @@ ALT_M = {
 
 ALT_THRESHOLD_M = 1000   # below this, altitude has no meaningful playing effect
 
-def venue_alt_km(city):
-    m = ALT_M.get(str(city), 0)
-    return m / 1000.0 if m >= ALT_THRESHOLD_M else 0.0
+def venue_alt_km(city, country=None):
+    """Venue altitude in km, zero below the threshold.
+
+    Resolution order:
+      1. the geocoded venue table (743 cities with real elevations, built from a
+         decade of home matches — see international/home_venues.py);
+      2. ALT_M, the original hand-typed dictionary, kept as a fallback and as the
+         frozen reference the goldens pin.
+
+    ALT_M covers 48 cities. That was adequate for a World Cup played in 19 known
+    venues and silently wrong for a global fixture list, where every unlisted city
+    — Addis Ababa, Cusco, Sana'a — was treated as sea level. The lookup order
+    matters: the geocoded table wins, so coverage grows without anyone remembering
+    to edit a dictionary.
+    """
+    name = str(city)
+    metres = ALT_M.get(name)
+    if metres is None:
+        try:
+            from international.home_venues import venue_for_city
+            hit = venue_for_city(name, country)
+            if hit is not None and hit.elevation_m is not None:
+                metres = hit.elevation_m
+        except Exception:
+            metres = None
+    if metres is None:
+        return 0.0
+    return metres / 1000.0 if metres >= ALT_THRESHOLD_M else 0.0
 
 
 def _team_home_alt(played):

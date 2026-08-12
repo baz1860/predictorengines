@@ -69,9 +69,9 @@ def walk_forward(games: pd.DataFrame, since: int, quiet: bool = False,
     carry, offs = E.season_priors()
     _, history = E.run_elo(games, record_pregame=True, carry=carry, prior_offsets=offs)
     diffs = np.array([h[2] for h in history])
-    pre = (games["season"] < since).values
-    m_all = (games["home_points"] - games["away_points"]).values
-    slope = float((diffs[pre] * m_all[pre]).sum() / (diffs[pre] ** 2).sum())
+    # Same masked fit as production elo.fit_spread_map: champion-ledger rows
+    # only. FCS-vs-FCS rows carry FCS-ledger diffs and must not enter the fit.
+    slope = E.fit_slope(games, history, (games["season"] < since).values)
 
     epa_data = X.load_ppa() if include_epa else None
     ev = games[(games["season"] >= since)
@@ -268,10 +268,9 @@ def split_ppa_walk_forward(games: pd.DataFrame, since: int,
     carry, offs = E.season_priors()
     _, history = E.run_elo(games, record_pregame=True, carry=carry, prior_offsets=offs)
     diffs = np.array([h[2] for h in history])
-    pre = (games["season"] < since).values
-    m_all = (games["home_points"] - games["away_points"]).values
-    slope = float((diffs[pre] * m_all[pre]).sum() / (diffs[pre] ** 2).sum())
+    slope = E.fit_slope(games, history, (games["season"] < since).values)
     epa_data = X.load_ppa()
+    w_elo = load_blend_weight()
     ev = games[(games["season"] >= since)
                & (games["home_div"] == "fbs") & (games["away_div"] == "fbs")]
     rows, idx = [], []
@@ -294,7 +293,6 @@ def split_ppa_walk_forward(games: pd.DataFrame, since: int,
                 continue
             d = diffs[r.Index]
             pp = P.predict(pparams, r.home, r.away, neutral=bool(r.neutral))
-            w_elo = load_blend_weight()
             row = {
                 "season": int(r.season), "week": int(r.week),
                 "home_team": r.home_team, "away_team": r.away_team,

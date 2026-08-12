@@ -30,7 +30,49 @@ ALIASES = {
     "Cabo Verde": "Cape Verde",
     "Curacao": "Curaçao",
     "IR Iran": "Iran",
+    # Added August 2026 from the BSD international spike: these spellings caused
+    # 24 fixtures involving FIFA members to be silently dropped as "out of scope".
+    "Bosnia & Herzegovina": "Bosnia and Herzegovina",
+    "Ireland": "Republic of Ireland",
+    "Eire": "Republic of Ireland",
+    "US Virgin Islands": "United States Virgin Islands",
+    "U.S. Virgin Islands": "United States Virgin Islands",
+    "Chinese Taipei": "Taiwan",
+    "Cape Verde Is.": "Cape Verde",
+    "Korea DPR": "North Korea",
+    "Korea Republic": "South Korea",
+    "China PR": "China",
+    "St Kitts and Nevis": "Saint Kitts and Nevis",
+    "St. Kitts and Nevis": "Saint Kitts and Nevis",
+    "St Lucia": "Saint Lucia",
+    "St. Lucia": "Saint Lucia",
+    "St Vincent and the Grenadines": "Saint Vincent and the Grenadines",
+    "St. Vincent and the Grenadines": "Saint Vincent and the Grenadines",
+    "Antigua & Barbuda": "Antigua and Barbuda",
+    "Trinidad & Tobago": "Trinidad and Tobago",
+    "Bosnia": "Bosnia and Herzegovina",
 }
+
+# Markers that a "team" from a provider feed is not a senior national side.
+# BSD files club friendlies and youth internationals inside its
+# "International Friendly Games" league, so the fixture parser must reject them
+# rather than let a club into a national-team model.
+NON_NATIONAL_MARKERS = (
+    " U15", " U16", " U17", " U18", " U19", " U20", " U21", " U22", " U23",
+    " B", " XI", " Olympic", " Women", " (W)", " Amateur", " Select",
+)
+
+
+def looks_like_national_team(name: object) -> bool:
+    """Heuristic rejection of clubs and age-group sides.
+
+    Deliberately conservative: it only rejects on explicit markers, and anything
+    that survives still has to match the team registry, which is the real gate.
+    Two layers, because a club slipping into an international rating model is
+    both easy to miss and expensive.
+    """
+    raw = f" {str(name or '').strip()}"
+    return not any(raw.endswith(m) or f"{m} " in raw for m in NON_NATIONAL_MARKERS)
 
 
 def canonical_team(name: object) -> str:

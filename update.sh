@@ -128,10 +128,29 @@ echo "== CLV snapshot (closing-line value for open bets) =="
 # Needs The Odds API; degrades gracefully offline. Never blocks the update.
 python3 -m core.clv --snapshot || echo "   CLV snapshot skipped (no network / no open bets)"
 
+echo "== International data gate =="
+# BLOCKING. Duplicate fixtures, unclassified active teams and unmapped competition
+# labels all corrupt ratings silently, so the run stops here rather than producing
+# a card from a bad table. See international/gate.py.
+if ! python3 -m international.gate --quiet; then
+  echo "   ##### INTERNATIONAL DATA GATE FAILED — see errors above. Update aborted. #####" >&2
+  exit 1
+fi
+
 echo "== Validation gate =="
-# Warn loudly on regression but NEVER block the daily update (|| guard).
-python3 -m engines.worldcup.validate --quiet --gate \
-  || echo "   ##### VALIDATION GATE FAILED — blend Brier regressed vs baseline; review before betting #####"
+# BLOCKING as of August 2026. This used to carry a `|| echo` guard with the comment
+# "NEVER block the daily update", so a model regression printed a warning and the
+# pipeline carried on to write a betting card anyway. Set ALLOW_GATE_FAIL=1 to
+# restore the old warn-only behaviour for a deliberate one-off run.
+if ! python3 -m engines.worldcup.validate --quiet --gate; then
+  echo "   ##### VALIDATION GATE FAILED — blend Brier regressed vs baseline #####" >&2
+  if [[ "${ALLOW_GATE_FAIL:-0}" == "1" ]]; then
+    echo "   ALLOW_GATE_FAIL=1 set — continuing anyway. Do not bet off this run." >&2
+  else
+    echo "   Update aborted. Review before betting, or re-run with ALLOW_GATE_FAIL=1." >&2
+    exit 1
+  fi
+fi
 
 write_manifest
 run_dashboard_summary

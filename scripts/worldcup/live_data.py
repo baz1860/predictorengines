@@ -59,7 +59,18 @@ MARKET_SNAPSHOTS_CSV = DATA_DIR / "market_snapshots.csv"
 
 ODDS_BASE = "https://api.the-odds-api.com/v4"
 WORLD_CUP_SPORT_KEY = "soccer_fifa_world_cup"
-_TZ_PDT = timezone(timedelta(hours=-7))
+
+# _TZ_PDT used to be a hardcoded UTC-7 offset applied to EVERY kick-off, on the
+# assumption that every venue is Californian. That is roughly true for a North
+# American World Cup and wrong everywhere else: a 19:00 kick-off in Tokyo converted
+# to US Pacific lands on the previous calendar day, and a fixture with the wrong
+# local date duplicates against any source that dated it correctly. That is the
+# defect documented in international/identity.py.
+#
+# It is retained ONLY as the fallback for World Cup 2026 venues, which really were
+# all in North America, and is now named for what it is. New code must use
+# international.venues.local_date(), which derives the zone from venue coordinates.
+_TZ_WC2026_FALLBACK = timezone(timedelta(hours=-7))
 
 BSD_KEY = get_key("bsd", env="BSD_API_KEY")
 ODDS_API_KEY = get_key("the-odds-api", env="THE_ODDS_API_KEY")
@@ -75,10 +86,25 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _local_match_date(iso: str) -> str:
+def _local_match_date(iso: str, venue_id: object = None) -> str:
+    """Local calendar date of a kick-off.
+
+    Prefers the real venue timezone, resolved from coordinates via
+    `international.venues`. Falls back to the World Cup 2026 regional offset only
+    when the venue is unknown — correct for that tournament, and explicitly wrong
+    for a global fixture list, which is why the fallback is named and narrow.
+    """
+    if venue_id is not None:
+        try:
+            from international.venues import local_date as _vlocal
+            date, tz = _vlocal(iso, venue_id)
+            if tz:
+                return date
+        except Exception:
+            pass
     try:
         return (datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
-                .astimezone(_TZ_PDT).date().isoformat())
+                .astimezone(_TZ_WC2026_FALLBACK).date().isoformat())
     except ValueError:
         return str(iso)[:10]
 
@@ -779,7 +805,7 @@ def _load_fixture_rows_for_api() -> list[dict]:
     if not FIXTURES_CSV.exists():
         return []
     df = pd.read_csv(FIXTURES_CSV)
-    today = datetime.now(_TZ_PDT).date()
+    today = datetime.now(_TZ_WC2026_FALLBACK).date()
     df["match_date"] = df["match_date"].astype(str)
     active = df[df["match_date"] >= today.isoformat()].copy()
     if active.empty:

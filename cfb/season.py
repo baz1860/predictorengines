@@ -44,7 +44,7 @@ from . import policy as POLICY
 from . import power as P
 from .edge import (HEADER, KELLY_FRACTION, MIN_EDGE,
                    ODDS_CSV, get_bankroll, model_prob, prepare_odds)
-from .predictor import blend_predict, load_blend_weights
+from .predictor import blend_predict, load_blend_weight, load_blend_weights
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UPCOMING_CSV = os.path.join(HERE, "data", "upcoming.csv")
@@ -116,9 +116,10 @@ def _match_team(provider_name: str, teams: list[str], season: int) -> str | None
 
 # ── slate ─────────────────────────────────────────────────────────────────────
 
-def _slate_from_schedule_json(days: int) -> pd.DataFrame | None:
+def _slate_from_schedule_json() -> pd.DataFrame | None:
     """Offseason fallback: build the next week's slate from data/schedule_<yr>.json
-    (CFBD /games) when upcoming.csv is empty (fetch_data mirrors lag preseason)."""
+    (CFBD /games) when upcoming.csv is empty (fetch_data mirrors lag preseason).
+    The caller applies the days window."""
     import glob
     files = sorted(glob.glob(os.path.join(HERE, "data", "schedule_*.json")))
     if not files:
@@ -142,7 +143,7 @@ def load_slate(days: int = 7) -> pd.DataFrame:
     if os.path.exists(UPCOMING_CSV):
         up = pd.read_csv(UPCOMING_CSV, parse_dates=["date"])
     if up.empty:
-        up = _slate_from_schedule_json(days)
+        up = _slate_from_schedule_json()
         if up is None:
             raise SystemExit("no upcoming fixtures — run `python3 -m cfb.fetch_data` "
                              "(in season) or drop a CFBD schedule_<year>.json in cfb/data/")
@@ -302,7 +303,11 @@ def load_market(slate: pd.DataFrame) -> dict:
             if mode.empty:
                 continue
             at_line = group[group["line"] == mode.iloc[0]]
-        picks.append(at_line.sort_values("odds", ascending=False).iloc[0])
+        # Executable (fresh, provenance-complete) quotes take priority over a
+        # stale quote at better odds — otherwise a dead quote shadows a
+        # stakeable one and the stake gate zeroes a bet that actually existed.
+        picks.append(at_line.sort_values(
+            ["quote_eligible", "odds"], ascending=[False, False]).iloc[0])
     for r in picks:
         game = market.setdefault((r["date"], r["home"], r["away"]), {})
         game.setdefault(r["market"], {})[r["side"]] = (
@@ -312,8 +317,11 @@ def load_market(slate: pd.DataFrame) -> dict:
 
 
 def build_card(days: int = 7, min_edge: float = MIN_EDGE,
-               bankroll: float | None = None, model: str = "blend") -> dict:
-    slate = load_slate(days)
+               bankroll: float | None = None, model: str = "blend",
+               slate: pd.DataFrame | None = None) -> dict:
+    # `slate` lets a caller that already loaded the week (e.g. --odds-api)
+    # reuse it, so one run resolves the fixture list exactly once.
+    slate = load_slate(days) if slate is None else slate.copy()
     market = load_market(slate)
     seasons = sorted({int(s) for s in slate["season"].dropna().unique()})
     if len(seasons) != 1:
@@ -437,7 +445,11 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         except Exception as exc:
             print(f"note: portfolio preview failed closed ({exc})")
             for v in eligible:
+                # Failing closed means these are no longer recordable bets —
+                # reflect that in the flag so the manifest/card counts are
+                # truthful, not just the stakes.
                 v["stake"], v["stake_capped"] = 0.0, True
+                v["betting_eligible"] = False
     state_label = (f"season {state_meta['model_season']} · state {state_meta['prior_mode']} · "
                    f"as of {state_meta['decision_date']} · snapshot {state_meta['snapshot_hash']}")
     md = [f"# CFB weekly card — {date.today()}",
@@ -477,6 +489,9 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         "decision_date": str(state_meta["decision_date"]),
         "model": model,
         "model_state": state_meta,
+        # runtime_w_elo is what model="blend" actually priced with;
+        # blend_weights is the full stored stack for reference.
+        "runtime_w_elo": load_blend_weight(),
         "blend_weights": load_blend_weights(),
         "market_policy": market_policy,
         "identity_version": IDENTITY.registry_version(target_season),
@@ -530,15 +545,17 @@ def main() -> None:
         P.save_params(params)
         print(f"power refit: {len(params['teams'])} teams as of {params['asof']}")
 
+    slate = None
     if args.odds_api:
         key = _odds_api_key(args.api_key)
         if not key:
             raise SystemExit("No The Odds API key. Set THE_ODDS_API_KEY or add "
                              "data/api_keys.json with key 'the-odds-api'.")
-        fetch_odds_api(load_slate(args.days), key, args.regions)
+        slate = load_slate(args.days)
+        fetch_odds_api(slate, key, args.regions)
 
     build_card(days=args.days, min_edge=args.min_edge,
-               bankroll=args.bankroll, model=args.model)
+               bankroll=args.bankroll, model=args.model, slate=slate)
     if args.odds_api:
         from . import live_evidence
         evidence = live_evidence.capture()

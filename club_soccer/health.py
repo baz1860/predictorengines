@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -86,6 +87,7 @@ def run_checks(network: bool = True) -> dict:
     # Every writer canonicalises at fetch.write_fixtures(). Detect a bypass or
     # a stale hand-edited file before it can split a club's model history.
     from .club_identity import canonical_id, canonicalise
+    from .club_identity import ALIAS_MAP as CI_ALIAS_MAP
     from .competitions import get as get_comp
     country_cache: dict[str, str | None] = {}
 
@@ -100,22 +102,49 @@ def run_checks(network: bool = True) -> dict:
         return country_cache[name]
 
     countries = df["competition"].map(_country)
+    # The competition hint must match fetch.write_fixtures exactly. Without it
+    # a competition-scoped alias (club_identity._load_competition_resolver)
+    # passes health but is still rewritten at the write boundary, so the two
+    # disagree about what "canonical" means and the check stops being a guard.
     pairs = pd.concat([
-        pd.DataFrame({"raw": df["home"], "country": countries}),
-        pd.DataFrame({"raw": df["away"], "country": countries}),
+        pd.DataFrame({"raw": df["home"], "country": countries,
+                      "competition": df["competition"].astype(str)}),
+        pd.DataFrame({"raw": df["away"], "country": countries,
+                      "competition": df["competition"].astype(str)}),
     ], ignore_index=True)
-    counts = pairs.value_counts(["raw", "country"], dropna=False)
+    counts = pairs.value_counts(["raw", "country", "competition"], dropna=False)
     noncanonical = 0
     examples: list[str] = []
-    for (raw, country), count in counts.items():
+    for (raw, country, competition), count in counts.items():
         country_hint = None if pd.isna(country) else country
-        canon = canonicalise(raw, country_hint=country_hint)
+        canon = canonicalise(raw, country_hint=country_hint,
+                             competition_hint=competition)
         if canon != raw:
             noncanonical += int(count)
             if len(examples) < 10:
-                examples.append(f"{raw!r} -> {canon!r}")
+                examples.append(f"{raw!r} -> {canon!r} [{competition}]")
     report["noncanonical_team_names"] = noncanonical
     report["noncanonical_team_name_examples"] = examples
+
+    # Provenance for the reviewed alias artifact. fixtures.csv is a generated
+    # file; when more than one host regenerates and syncs it, a run on a host
+    # whose club_alias_map.json is behind will rewrite everyone's fixtures with
+    # identities the newer map would have merged, and the canonical check above
+    # passes because that host's own map agrees with what it wrote. Recording
+    # the map's digest and entry count makes that divergence visible in
+    # run_history.jsonl instead of silently reverting a merge.
+    try:
+        alias_bytes = CI_ALIAS_MAP.read_bytes()
+        alias_doc = json.loads(alias_bytes)
+        report["alias_map_sha256"] = hashlib.sha256(alias_bytes).hexdigest()[:16]
+        report["alias_map_entries"] = (
+            len(alias_doc.get("alias", {}))
+            + sum(len(v) for v in alias_doc.get("country_alias", {}).values())
+            + sum(len(v) for v in alias_doc.get("competition_alias", {}).values())
+        )
+    except (OSError, ValueError):
+        report["alias_map_sha256"] = None
+        report["alias_map_entries"] = None
 
     invalid_ids = 0
     for side in ("home", "away"):
@@ -123,10 +152,12 @@ def run_checks(network: bool = True) -> dict:
         if id_column not in df.columns:
             invalid_ids += len(df)
             continue
-        keys = list(zip(df[side].tolist(), countries.tolist()))
+        keys = list(zip(df[side].tolist(), countries.tolist(),
+                        df["competition"].astype(str).tolist()))
         expected_map = {
             key: canonical_id(
-                key[0], country_hint=None if pd.isna(key[1]) else key[1]
+                key[0], country_hint=None if pd.isna(key[1]) else key[1],
+                competition_hint=key[2],
             )
             for key in set(keys)
         }
