@@ -214,6 +214,10 @@ club_soccer/data/settlement_ledger.csv
 club_soccer/data/decision_time_ledger.csv
 club_soccer/data/backtest_market.json
 club_soccer/data/fixtures.csv
+# Generated alongside fixtures.csv on every write, and travels with it over
+# Syncthing (see club_soccer/data/.stignore), not git. Tracking it means every
+# host's own run dirties the working tree and blocks `git pull --ff-only`.
+club_soccer/data/fixtures_provenance.json
 club_soccer/data/market_history.csv
 club_soccer/data/squads_club.csv
 club_soccer/data/model_params.json
