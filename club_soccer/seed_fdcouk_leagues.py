@@ -87,6 +87,21 @@ WAVES: dict[int, list[str]] = {
 }
 
 
+# football-data.co.uk publishes a season's file part-way through August. Ask
+# for one before it exists and the answer is not always 404: Apache content
+# negotiation replies 300 Multiple Choices when the exact name is missing but
+# similar ones are present, which is what /mmz4281/2627/I2.csv returns today.
+#
+# fetch_fdcouk.py already treats every non-404 as "skipped", so the weekly
+# market-history refresh sailed past E1/E2/D1/I1/F1 while this module re-raised
+# on I2 and failed a REQUIRED step, taking the whole 2026-08-14 run to exit 3
+# over a file that simply is not out yet.
+#
+# Only the statuses that genuinely mean "not there" are absorbed. A 500 or a
+# 403 still raises, because those mean the source is broken rather than early.
+_NOT_PUBLISHED_STATUSES = frozenset({300, 404})
+
+
 def _fetch(url: str, cache_name: str, refresh: bool = False) -> str | None:
     CACHE.mkdir(parents=True, exist_ok=True)
     path = CACHE / cache_name
@@ -97,7 +112,7 @@ def _fetch(url: str, cache_name: str, refresh: bool = False) -> str | None:
         with urllib.request.urlopen(req, timeout=40) as resp:
             text = resp.read().decode("utf-8-sig", "replace")
     except urllib.error.HTTPError as exc:
-        if exc.code == 404:
+        if exc.code in _NOT_PUBLISHED_STATUSES:
             return None
         raise
     except (urllib.error.URLError, TimeoutError, OSError) as exc:

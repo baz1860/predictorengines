@@ -522,6 +522,28 @@ def gate_failures(rows: list[dict], measured: dict, baseline: dict) -> list[str]
     return failures
 
 
+_POPULATION_FAILURE_PREFIXES = (
+    "evaluation row count",
+    "evaluation population hash",
+)
+
+
+def partition_gate_failures(failures: list[str]) -> tuple[list[str], list[str]]:
+    """Split gate failures into population changes and metric regressions.
+
+    Re-baselining is only ever legitimate for the first kind. If the sample
+    itself changed — rows deduplicated, identities merged, a correction applied
+    — the old reference describes a population that no longer exists and the
+    gate cannot say anything until it is re-pinned. A metric regression is the
+    opposite: the sample is the same and the model got worse, which is the one
+    thing the gate exists to catch, and re-baselining would erase it.
+    """
+    population = [f for f in failures
+                  if f.startswith(_POPULATION_FAILURE_PREFIXES)]
+    metric = [f for f in failures if f not in population]
+    return population, metric
+
+
 def gate_input_fingerprint(baseline: dict) -> str:
     """Fingerprint exactly the fixed-window rows and behaviour used by --gate.
 

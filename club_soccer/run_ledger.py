@@ -242,15 +242,42 @@ def snapshot() -> dict:
     except Exception as exc:
         out["snapshot_error"] = str(exc)
 
+    # gate_pass must mean what `validate --gate` decided, not a private
+    # re-derivation of it.
+    #
+    # This used to be `float(latest["brier"]) <= limit` — Brier alone. The real
+    # gate (validate.gate_failures) additionally pins the evaluation window,
+    # the row count and an identity/outcome hash of the exact population, so a
+    # model can be scored on a DIFFERENT sample and still look green here. That
+    # is precisely what happened: from 2026-08-01 the population hash stopped
+    # matching the baseline and `update.sh` exited 1 every day, while this
+    # field recorded gate_pass=true because the Brier was unchanged. Two weeks
+    # of run_history asserting a gate had passed when it had not.
+    #
+    # validation_gate_state.json is written by validate --gate itself, so it is
+    # the authority. Brier is still reported for context, but it no longer gets
+    # to decide.
     try:
         latest = json.loads((DATA / "validation_latest.json").read_text())
         baseline = json.loads((DATA / "promotion_baseline.json").read_text())
         limit = float(baseline["brier"]) + float(baseline.get("gate_tol", 0.01))
         out["gate_brier"] = round(float(latest["brier"]), 5)
         out["gate_limit"] = round(limit, 5)
-        out["gate_pass"] = float(latest["brier"]) <= limit
     except Exception:
+        pass
+
+    try:
+        state = json.loads((DATA / "validation_gate_state.json").read_text())
+        out["gate_pass"] = bool(state.get("passed", False))
+        failures = state.get("failures") or []
+        if failures:
+            out["gate_failures"] = list(failures)[:5]
+        out["gate_checked_at_utc"] = state.get("checked_at_utc")
+    except Exception:
+        # No gate state means the gate has not run, which is not a pass.
         out.setdefault("gate_pass", False)
+        out.setdefault("gate_failures", ["validation_gate_state.json missing "
+                                         "or unreadable — gate never ran"])
 
     # Staking-evidence accumulation: how far the decision-time backtest is
     # toward the gate's 1,000-bet bar. Surfaced so the operator can watch the
