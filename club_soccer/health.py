@@ -34,6 +34,55 @@ EXPERIMENTS = HERE / "experiments.json"
 _OFF_SEASON_MONTHS = {6, 7}
 _FINISHED_STATUSES = {"FT", "FIN", "AET", "PEN"}
 
+# The checks that compose report["ok"]. Kept as data rather than an inline
+# boolean chain so callers can name what actually failed — season.py used to
+# abort with a fixed string listing three checks regardless of which one
+# tripped, which sent an operator at `fetch --repair` for a canonicalisation
+# failure that command cannot fix.
+HARD_CHECKS = (
+    "future_ft_rows",
+    "duplicate_fixture_ids",
+    "duplicate_match_identities",
+    "conflicting_score_identities",
+    "noncanonical_team_names",
+    "invalid_club_ids",
+    "fragmented_club_ids",
+    "colliding_club_names",
+    "expired_experiments",
+    "experiment_registry_errors",
+    "void_with_results",
+)
+
+# Failures that fetch.write_fixtures resolves deterministically, with no
+# judgement call: it canonicalises both team names, recomputes club IDs from
+# the canonical name, and unifies one display identity per club ID. Adding a
+# reviewed alias necessarily puts an existing fixtures.csv into exactly this
+# state, so treating it as fatal deadlocks the pipeline — the check that
+# guards identity aborts the run before the step that would satisfy it. That
+# stranded the Mac mini for two days after the 2026-08-12 alias merge.
+#
+# Everything else stays fatal. conflicting_score_identities and
+# colliding_club_names in particular mean two sources disagree about a fact,
+# which needs a human, not a rewrite.
+SELF_HEALING_CHECKS = frozenset({
+    "noncanonical_team_names",
+    "invalid_club_ids",
+    "fragmented_club_ids",
+})
+
+
+def failing_hard_checks(report: dict) -> list[str]:
+    """Names of the hard checks currently failing, in HARD_CHECKS order."""
+    failing = []
+    for name in HARD_CHECKS:
+        value = report.get(name)
+        if isinstance(value, (list, tuple, set, dict)):
+            if value:
+                failing.append(name)
+        elif value:                      # non-zero count; None means unknown
+            failing.append(name)
+    return failing
+
 
 def run_checks(network: bool = True) -> dict:
     """Compute and print the club soccer data health report.
@@ -302,17 +351,7 @@ def run_checks(network: bool = True) -> dict:
             player_report["error"] = str(exc)
     report["player_cache"] = player_report
 
-    report["ok"] = (report["future_ft_rows"] == 0
-                    and report["duplicate_fixture_ids"] == 0
-                    and report["duplicate_match_identities"] == 0
-                    and report["conflicting_score_identities"] == 0
-                    and report["noncanonical_team_names"] == 0
-                    and report["invalid_club_ids"] == 0
-                    and report["fragmented_club_ids"] == 0
-                    and report["colliding_club_names"] == 0
-                    and not report["expired_experiments"]
-                    and not report.get("experiment_registry_errors")
-                    and report.get("void_with_results", 0) == 0)
+    report["ok"] = not failing_hard_checks(report)
 
     print(f"Club Soccer health check ({today}):")
     status = "PASS" if report["future_ft_rows"] == 0 else "FAIL"

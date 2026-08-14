@@ -929,6 +929,52 @@ def run(fast: bool = False, no_network: bool = False,
         sys.exit(3)
 
 
+def _heal_canonicalisation(report: dict) -> dict:
+    """Re-run fixtures.csv through the write boundary when that is the fix.
+
+    Adding a reviewed alias to club_alias_map.json necessarily makes the
+    EXISTING fixtures.csv non-canonical: the names in the file are the ones the
+    new alias resolves. health flags that (noncanonical_team_names, and the
+    club IDs derived from those names), report["ok"] goes False, and the run
+    aborts at step 1 — before the step that would canonicalise them. The guard
+    that protects identity blocks the only thing that repairs identity.
+
+    That is not hypothetical: the 2026-08-12 alias merge stranded the Mac mini
+    for two days, failing at 06:30 with `noncanonical_team_names = 445` and
+    `invalid_club_ids = 1023` while never touching its data. The error message
+    pointed at `fetch --repair`, which only rewrites future-dated finished rows
+    and returns without writing when there are none.
+
+    So: if every failing check is one write_fixtures normalises deterministically
+    (H.SELF_HEALING_CHECKS), pass the file through it once and re-check. Nothing
+    here decides anything — write_fixtures is the same sanctioned boundary every
+    fetcher and seeder already goes through. If any other check is also failing,
+    heal nothing and let the caller abort: mixing an automatic rewrite with
+    genuinely corrupt data is how you launder a bad row into the model.
+    """
+    failing = set(H.failing_hard_checks(report))
+    if not failing or not failing <= H.SELF_HEALING_CHECKS:
+        return report
+
+    print(f"\n== Canonicalising fixtures ({', '.join(sorted(failing))}) ==")
+    print("   a reviewed alias has changed; rewriting through "
+          "fetch.write_fixtures and re-checking")
+    try:
+        existing = pd.read_csv(F.FIXTURES, low_memory=False)
+        before = len(existing)
+        healed = F.write_fixtures(existing)
+        print(f"   fixtures {before} -> {len(healed)} rows")
+    except Exception as exc:
+        print(f"   canonicalisation FAILED: {type(exc).__name__}: {exc}")
+        return report
+
+    rechecked = H.run_checks(network=False)
+    still = H.failing_hard_checks(rechecked)
+    print("   health re-check: "
+          + ("PASS" if not still else "STILL FAILING: " + ", ".join(still)))
+    return rechecked
+
+
 def _run_steps(fast: bool, no_network: bool,
                allow_manual_odds: bool, run_id: str) -> tuple[list[dict], str | None]:
     _step("Prune recoverable caches if due", CR.prune_all_if_due)
@@ -937,11 +983,16 @@ def _run_steps(fast: bool, no_network: bool,
     # following refresh is the single authoritative source fetch.
     report = H.run_checks(network=False)
     if not report.get("ok", True):
-        _FAILED_REQUIRED.append("Health hard checks failed "
-                                "(see health output above)")
-        sys.exit("Health check hard-failed (future-dated finished rows, "
-                 "duplicate fixture_ids, or void rows with results) — run "
-                 "`python3 -m club_soccer.fetch --repair` before continuing.")
+        report = _heal_canonicalisation(report)
+    if not report.get("ok", True):
+        failing = H.failing_hard_checks(report)
+        _FAILED_REQUIRED.append(
+            "Health hard checks failed: " + ", ".join(failing))
+        sys.exit(
+            "Health check hard-failed: " + ", ".join(failing) + ".\n"
+            "These are not self-healing — two sources disagree about a fact, "
+            "or a row is corrupt. Inspect with `python3 -m club_soccer.health` "
+            "and resolve before continuing.")
 
     api_key = get_key("bsd", env="BSD_API_KEY")
     upcoming_events: list[dict] | None = None
