@@ -13,33 +13,50 @@ import pytest
 
 from club_soccer import edge as E
 from club_soccer import evidence_gate as G
+from club_soccer.strategy_contract import STRATEGY_VERSION, manifest_hash
 
 
 def _pass(n=5000):
-    return {"n_bets": n, "n_clv": n, "flat_roi": 0.05, "kelly_roi": 0.04,
-            "flat_roi_lb95": 0.02, "kelly_roi_lb95": 0.02,
-            "clv_mean": 0.03, "clv_frac_positive": 0.60}
+    return {"n_bets": n, "n_clv": n, "n_raw_price_clv": n,
+            "n_independent_blocks": 12,
+            "flat_roi": 0.05, "kelly_roi": 0.04,
+            "flat_roi_lb95_simultaneous": 0.02,
+            "kelly_roi_lb95_simultaneous": 0.02,
+            "clv_mean": 0.03, "clv_lb95_simultaneous": 0.01,
+            "clv_frac_positive": 0.60, "raw_price_clv_mean": 0.02}
 
 
 def _fail(n=5000):
-    return {"n_bets": n, "n_clv": n, "flat_roi": -0.05, "kelly_roi": -0.04,
-            "flat_roi_lb95": -0.1, "kelly_roi_lb95": -0.1,
-            "clv_mean": -0.01, "clv_frac_positive": 0.45}
+    row = _pass(n)
+    row.update({"flat_roi": -0.05, "kelly_roi": -0.04,
+                "flat_roi_lb95_simultaneous": -0.1,
+                "kelly_roi_lb95_simultaneous": -0.1,
+                "clv_mean": -0.01, "clv_lb95_simultaneous": -0.02,
+                "clv_frac_positive": 0.45, "raw_price_clv_mean": -0.01})
+    return row
 
 
 def _empty():
-    return {"n_bets": 0, "n_clv": 0, "flat_roi": None, "kelly_roi": None,
-            "clv_mean": None, "clv_frac_positive": None}
+    return {"n_bets": 0, "n_clv": 0, "n_raw_price_clv": 0,
+            "n_independent_blocks": 0, "flat_roi": None, "kelly_roi": None,
+            "clv_mean": None, "clv_frac_positive": None,
+            "clv_lb95_simultaneous": None, "raw_price_clv_mean": None}
 
 
 def _artifact(one_x_two, totals):
     return {
-        "backtest_version": "decision_time_v2",
-        "selection_method": "latest_quote_at_or_before_decision_time",
-        "execution_method": "same_decision_time_quote",
-        "clv_reference": "captured_closing_devigged",
+        "backtest_version": "decision_time_v3",
+        "selection_method": "first_complete_market_quote_within_decision_window",
+        "execution_method": "best_executable_complete_market_quote_at_decision_time",
+        "clv_reference": "raw_complete_closing_market",
+        "clv_method": "power_consensus_v1",
+        "clv_schema_version": "raw_complete_market_v2",
         "decision_lead_minutes": 90,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "provenance": {"version_cohort": {
+            "strategy_version": STRATEGY_VERSION,
+            "strategy_manifest_hash": manifest_hash(),
+        }},
         "simulated_betting": {
             "1x2": {t: dict(one_x_two) for t in ("2%", "4%", "6%")},
             "total_over_under_2_5": {t: dict(totals) for t in ("2%", "4%", "6%")},
@@ -57,7 +74,13 @@ def _artifact(one_x_two, totals):
             },
         },
         "model_log_loss_1x2": 0.98,
-        "market_log_loss_1x2_devigged_pinnacle_closing": 1.00,
+        "market_log_loss_1x2_devigged_closing": 1.00,
+        "market_comparison_1x2": {
+            "n_fixtures": 5000, "n_independent_blocks": 12,
+            "model_log_loss": 0.98, "market_log_loss": 1.00,
+            "paired_delta_model_minus_market": -0.02,
+            "paired_delta_ub95": -0.01,
+        },
     }
 
 
@@ -79,8 +102,10 @@ def gate_path(tmp_path, monkeypatch):
 
 def _clvless(n=400):
     """A league/market with bets but NO closing feed — the non-UEFA totals case."""
-    return {"n_bets": n, "n_clv": 0, "flat_roi": 0.05, "kelly_roi": 0.04,
-            "flat_roi_lb95": 0.02, "kelly_roi_lb95": 0.02,
+    return {"n_bets": n, "n_clv": 0, "n_raw_price_clv": 0,
+            "n_independent_blocks": 12, "flat_roi": 0.05, "kelly_roi": 0.04,
+            "flat_roi_lb95_simultaneous": 0.02,
+            "kelly_roi_lb95_simultaneous": 0.02,
             "clv_mean": None, "clv_frac_positive": None}
 
 
@@ -149,9 +174,8 @@ def test_btts_is_never_stakeable(gate):
 def test_wilson_runs_on_the_clv_count_not_the_bet_count(gate):
     """1000 bets but only 10 CLV-scored is 10 samples of closing evidence. The
     gate must not treat clv_frac_positive as if it had 1000 samples behind it."""
-    thin = {"n_bets": 1000, "n_clv": 10, "flat_roi": 0.05, "kelly_roi": 0.04,
-            "flat_roi_lb95": 0.02, "kelly_roi_lb95": 0.02,
-            "clv_mean": 0.03, "clv_frac_positive": 0.60}
+    thin = _pass(1000)
+    thin["n_clv"] = 10
     gate(thin, _empty())
     assert G.market_staking_allowed()["1x2"] is False
 
@@ -159,10 +183,32 @@ def test_wilson_runs_on_the_clv_count_not_the_bet_count(gate):
 def test_poor_clv_coverage_cannot_open_a_market(gate):
     """Even with enough CLV samples, a market where most bets have no closing
     price is not backed by closing evidence and must stay closed."""
-    poor = {"n_bets": 1000, "n_clv": 300, "flat_roi": 0.05, "kelly_roi": 0.04,
-            "flat_roi_lb95": 0.02, "kelly_roi_lb95": 0.02,
-            "clv_mean": 0.03, "clv_frac_positive": 0.60}
+    poor = _pass(1000)
+    poor["n_clv"] = 300
     gate(poor, _empty())     # 300/1000 = 30% coverage, below MIN_CLV_COVERAGE
+    assert G.market_staking_allowed()["1x2"] is False
+
+
+def test_wrong_strategy_version_cannot_open_staking(gate_path):
+    art = _artifact(_pass(), _empty())
+    art["provenance"]["version_cohort"]["strategy_version"] = "retired-v0"
+    gate_path.write_text(json.dumps(art))
+    verdict = G.evaluate()
+    assert verdict["allowed"] is False
+    assert any("strategy_version" in reason for reason in verdict["reasons"])
+
+
+def test_missing_simultaneous_clv_bound_cannot_open_staking(gate):
+    row = _pass()
+    row["clv_lb95_simultaneous"] = None
+    gate(row, _empty())
+    assert G.market_staking_allowed()["1x2"] is False
+
+
+def test_model_market_paired_upper_bound_must_clear_zero(gate_path):
+    art = _artifact(_pass(), _empty())
+    art["market_comparison_1x2"]["paired_delta_ub95"] = 0.001
+    gate_path.write_text(json.dumps(art))
     assert G.market_staking_allowed()["1x2"] is False
 
 
@@ -202,7 +248,7 @@ def test_stake_zeroing_honours_the_per_league_gate(gate_path):
 
 
 def test_no_by_league_section_fails_closed(gate_path):
-    """decision_time_v2 promises per-league evidence; omission cannot authorize
+    """decision_time_v3 promises per-league evidence; omission cannot authorize
     every competition through a pooled market pass."""
     art = _artifact(_pass(), _empty())
     art.pop("simulated_betting_by_league")

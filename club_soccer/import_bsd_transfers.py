@@ -552,6 +552,8 @@ def main() -> None:
     if args.status:
         _print_result(status(args.db))
         return
+    from .runtime_safety import assert_writer_host
+    assert_writer_host()
     api_key = args.api_key or get_key("bsd", env="BSD_API_KEY")
     if not api_key:
         parser.error(

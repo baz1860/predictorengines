@@ -96,6 +96,18 @@ def test_threshold_metrics_emit_the_clv_scored_count():
     assert out["1x2"]["2%"]["n_clv"] == 1     # only one bet had a real CLV
 
 
+def test_week_block_bound_refuses_a_single_week():
+    profit = np.array([1.0, -1.0, 1.0])
+    dates = pd.Series(["2026-07-06", "2026-07-07", "2026-07-08"])
+    assert B._block_bootstrap_lb(profit, dates, n_boot=100) is None
+
+
+def test_week_block_bound_exists_after_eight_independent_weeks():
+    profit = np.array([0.2] * 8)
+    dates = pd.Series(pd.date_range("2026-01-05", periods=8, freq="7D"))
+    assert B._block_bootstrap_lb(profit, dates, n_boot=100) == pytest.approx(0.2)
+
+
 def test_log_losses_use_the_frozen_closing_prob_not_a_match_key():
     """Blocker 2: market log-loss must come from the settled p_close, on exactly
     the fixtures where the model also has a prob. The old code looked the close
@@ -143,7 +155,7 @@ def test_empty_input_produces_a_structurally_valid_artifact(tmp_path, monkeypatc
     monkeypatch.setattr(B, "ARTIFACT", tmp_path / "bt.json")
     monkeypatch.setattr(B, "LEDGER", tmp_path / "ledger.csv")
     art = B.run(verbose=False)
-    assert art["backtest_version"] == "decision_time_v2"
+    assert art["backtest_version"] == "decision_time_v3"
     assert set(art["simulated_betting"]) == {"1x2", "total_over_under_2_5"}
     for m in art["simulated_betting"].values():
         assert set(m) == {"2%", "4%", "6%"}

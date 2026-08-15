@@ -63,6 +63,19 @@ Fill these in once and reuse them below:
    bash club_soccer/update.sh                   # first cache migration may be slow
    ```
 
+   The installed plists set `CLUB_SOCCER_WRITER_HOST=bingo.local`. Confirm
+   `hostname` returns that value, or change the plist value to the mini's exact
+   hostname before installing it. This guard prevents a synced MacBook copy
+   from becoming a second ledger writer. Also run:
+
+   ```bash
+   python3 -m club_soccer.runtime_safety --json
+   ```
+
+   Any reported conflict copy must be reviewed; it is preserved and ignored as
+   a canonical input. Reconcile append-only ledgers by immutable keys and
+   regenerate derived JSON/Markdown artifacts on the mini.
+
 ---
 
 ## Part B — Install the two LaunchDaemons
@@ -227,8 +240,13 @@ else:
 ```
 !/decision_ledger.csv
 !/settlement_ledger.csv
+!/decision_strategy_ledger.csv
+!/identity_exclusions.csv
+!/closing_market_ledger_v2.csv
+!/settlement_clv_v2.csv
 !/decision_time_ledger.csv
 !/backtest_market.json
+!/market_diagnostics.json
 !/forecast_ledger.csv
 !/forecast_settlements.csv
 !/forecast_performance.json

@@ -86,6 +86,10 @@ def ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(DL, "DECISIONS", tmp_path / "dec.csv")
     monkeypatch.setattr(DL, "SETTLEMENTS", tmp_path / "set.csv")
     monkeypatch.setattr(DL, "CLOSING", tmp_path / "close.csv")
+    monkeypatch.setattr(DL, "RAW_CLOSING", tmp_path / "raw_close.csv")
+    monkeypatch.setattr(DL, "SETTLEMENT_CLV_V2", tmp_path / "clv_v2.csv")
+    monkeypatch.setattr(DL, "DECISION_STRATEGIES", tmp_path / "strategies.csv")
+    monkeypatch.setattr(DL, "IDENTITY_EXCLUSIONS", tmp_path / "identity_exclusions.csv")
     monkeypatch.setattr(DL, "DATA", tmp_path)
     return tmp_path
 
@@ -106,6 +110,12 @@ def test_settled_bets_joins_decision_and_settlement(ledger):
     DL._append(DL.SETTLEMENTS, DL.SETTLEMENT_FIELDS, [{
         "provider_fixture_id": "100", "market": "1x2", "side": "home",
         "won": 1, "clv": 0.03}])
+    DL._append(DL.SETTLEMENT_CLV_V2, DL.SETTLEMENT_CLV_V2_FIELDS, [{
+        "provider_fixture_id": "100", "market": "1x2", "side": "home",
+        "fair_clv": 0.03, "fair_close_probability": 0.50,
+        "devig_method": DL.CLV_DEVIG_METHOD,
+        "schema_version": DL.CLV_SCHEMA_VERSION,
+    }])
     bets = DL.settled_bets()
     assert len(bets) == 1
     assert bets[0]["won"] == 1 and bets[0]["clv"] == 0.03
@@ -148,6 +158,9 @@ def test_capture_closing_snapshots_the_bsd_consensus(ledger, monkeypatch):
     assert rows["home"]["provider_fixture_id"] == "500"
     # consensus of the two complete books, de-vigged (~0.487 for home here)
     assert 0.45 < float(rows["home"]["p_close_devig"]) < 0.52
+    raw = DL.load_raw_closing()
+    assert len(raw) == 2
+    assert all(r["schema_version"] == DL.CLV_SCHEMA_VERSION for r in raw)
     # idempotent: a second pass adds nothing
     assert DL.capture_closing(api_key="KEY", verbose=False) == 0
 
@@ -291,7 +304,7 @@ def test_backtest_metrics_do_not_depend_on_the_alias_map(ledger, monkeypatch):
     # The frozen path must not CALL the resolver or read the alias-map file.
     import inspect
     # Strip the docstring, then check for actual usage.
-    src = inspect.getsource(B.build_bets)
+    src = inspect.getsource(B._settled_frame)
     body = src.split('"""')[2] if src.count('"""') >= 2 else src
     assert "canonical_name(" not in body
     assert "club_alias_map" not in body
@@ -325,6 +338,94 @@ def test_routine_model_refits_do_not_reset_the_evidence_cohort(ledger):
     bets = B.build_bets()
     assert len(bets) == 2
     assert set(bets["model_hash"]) == {"fit-one", "fit-two"}
+
+
+def test_code_and_resolver_changes_do_not_reset_explicit_strategy(ledger):
+    """Compatibility is a deliberate strategy contract, not byte equality."""
+    from club_soccer import decision_time_backtest as B
+    from club_soccer.strategy_contract import STRATEGY_VERSION, manifest_hash
+
+    decisions = [
+        _decision(decision_id="d1", provider_fixture_id="1",
+                  decision_ts="2026-07-01T12:00:00+00:00",
+                  resolver_version="aliases-a", code_hash="bytes-a"),
+        _decision(decision_id="d2", provider_fixture_id="2",
+                  decision_ts="2026-07-02T12:00:00+00:00",
+                  resolver_version="aliases-b", code_hash="bytes-b"),
+    ]
+    DL._append(DL.DECISIONS, DL.DECISION_FIELDS, decisions)
+    DL._append(DL.DECISION_STRATEGIES, DL.DECISION_STRATEGY_FIELDS, [
+        {"decision_id": d["decision_id"], "strategy_version": STRATEGY_VERSION,
+         "strategy_manifest_hash": manifest_hash(),
+         "identity_version": d["resolver_version"],
+         "pricing_code_hash": d["code_hash"],
+         "recorded_at_utc": d["decision_ts"]}
+        for d in decisions
+    ])
+    DL._append(DL.SETTLEMENTS, DL.SETTLEMENT_FIELDS, [
+        {"provider_fixture_id": "1", "market": "1x2", "side": "home",
+         "won": 1, "clv": 0.01},
+        {"provider_fixture_id": "2", "market": "1x2", "side": "home",
+         "won": 0, "clv": -0.01},
+    ])
+
+    bets = B.build_bets(strategy_version=STRATEGY_VERSION)
+    assert set(bets["key"]) == {"1", "2"}
+    assert set(bets["resolver_version"]) == {"aliases-a", "aliases-b"}
+    assert set(bets["code_hash"]) == {"bytes-a", "bytes-b"}
+
+
+def test_incompatible_strategy_is_diagnostic_only(ledger):
+    from club_soccer import decision_time_backtest as B
+    from club_soccer.strategy_contract import STRATEGY_VERSION, manifest_hash
+
+    decisions = [
+        _decision(decision_id="old", provider_fixture_id="1",
+                  decision_ts="2026-07-01T12:00:00+00:00"),
+        _decision(decision_id="new", provider_fixture_id="2",
+                  decision_ts="2026-07-02T12:00:00+00:00"),
+    ]
+    DL._append(DL.DECISIONS, DL.DECISION_FIELDS, decisions)
+    DL._append(DL.DECISION_STRATEGIES, DL.DECISION_STRATEGY_FIELDS, [
+        {"decision_id": "old", "strategy_version": "retired-v0",
+         "strategy_manifest_hash": "old", "identity_version": "r",
+         "pricing_code_hash": "c", "recorded_at_utc": decisions[0]["decision_ts"]},
+        {"decision_id": "new", "strategy_version": STRATEGY_VERSION,
+         "strategy_manifest_hash": manifest_hash(), "identity_version": "r",
+         "pricing_code_hash": "c", "recorded_at_utc": decisions[1]["decision_ts"]},
+    ])
+    DL._append(DL.SETTLEMENTS, DL.SETTLEMENT_FIELDS, [
+        {"provider_fixture_id": fid, "market": "1x2", "side": "home",
+         "won": 1, "clv": 0.01} for fid in ("1", "2")
+    ])
+
+    current = B.build_bets(strategy_version=STRATEGY_VERSION)
+    views = B._diagnostic_views(current)
+    assert list(current["key"]) == ["2"]
+    assert views["all_history"]["n_rows"] == 2
+    assert views["exclusions"]["incompatible_strategy"] == 1
+
+
+def test_identity_review_excludes_only_affected_fixture_and_can_reinstate(
+        ledger, monkeypatch):
+    from club_soccer import decision_time_backtest as B
+
+    monkeypatch.setattr(DL, "resolver_version", lambda: "review-v1")
+    DL._append(DL.DECISIONS, DL.DECISION_FIELDS, [
+        _decision(decision_id="d1", provider_fixture_id="1"),
+        _decision(decision_id="d2", provider_fixture_id="2"),
+    ])
+    DL._append(DL.SETTLEMENTS, DL.SETTLEMENT_FIELDS, [
+        {"provider_fixture_id": fid, "market": "1x2", "side": "home",
+         "won": 1, "clv": 0.01} for fid in ("1", "2")
+    ])
+
+    DL.review_identity(provider_fixture_id="1", action="exclude",
+                       reason="manual identity mismatch review")
+    assert list(B.build_bets()["key"]) == ["2"]
+    DL.review_identity(provider_fixture_id="1", action="reinstate",
+                       reason="provider identity confirmed")
+    assert set(B.build_bets()["key"]) == {"1", "2"}
 
 
 def test_ledger_backtest_produces_a_valid_gated_artifact(ledger):
@@ -384,5 +485,5 @@ def test_backtest_no_longer_reconstructs_by_default():
     """Only the frozen ledger path may exist; hindsight reconstruction is gone."""
     import inspect
     from club_soccer import decision_time_backtest as B
-    assert "settled_bets" in inspect.getsource(B.build_bets)
+    assert "settled_bets" in inspect.getsource(B._settled_frame)
     assert not hasattr(B, "build_bets_reconstructed")

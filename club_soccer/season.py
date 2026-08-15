@@ -897,6 +897,8 @@ def run(fast: bool = False, no_network: bool = False,
     An exclusive lock is held for the whole run so overlapping launchd/manual
     invocations cannot interleave their status writes; the second caller exits
     immediately via SystemExit."""
+    from .runtime_safety import assert_writer_host
+    assert_writer_host()
     with _SeasonLock():
         _FAILED_REQUIRED.clear()   # per-run state: never inherit an old failure
         run_id = uuid.uuid4().hex

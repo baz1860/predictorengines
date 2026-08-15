@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from .club_identity import canonical_name
@@ -18,10 +19,47 @@ MARKET_HISTORY = HERE / "data" / "market_history.csv"
 
 
 def devig(odds: dict[str, float]) -> dict[str, float]:
-    """Remove proportional overround from a complete decimal-odds market."""
+    """Remove overround proportionally (legacy/diagnostic method)."""
     inv = {k: 1.0 / v for k, v in odds.items() if v and v > 1.0}
     total = sum(inv.values())
     return {k: v / total for k, v in inv.items()} if total > 0 else {}
+
+
+def power_devig(odds: dict[str, float]) -> tuple[dict[str, float], float | None]:
+    """Power-method de-vig for a complete decimal-odds market.
+
+    Solves ``sum((1 / odds_i) ** k) == 1``.  Unlike proportional de-vigging,
+    the method removes more of the quoted margin from longshots.  The fitted
+    ``k`` is returned so every derived probability is auditable.
+    """
+    clean = {k: float(v) for k, v in odds.items() if v and float(v) > 1.0}
+    if len(clean) != len(odds) or not clean:
+        return {}, None
+    implied = np.asarray([1.0 / clean[k] for k in clean], dtype=float)
+    if not np.isfinite(implied).all() or implied.sum() <= 0:
+        return {}, None
+    if abs(float(implied.sum()) - 1.0) < 1e-12:
+        exponent = 1.0
+    else:
+        lo, hi = 0.01, 10.0
+        # Deterministic bisection avoids a scipy runtime dependency.
+        for _ in range(100):
+            mid = (lo + hi) / 2.0
+            if float(np.power(implied, mid).sum()) > 1.0:
+                lo = mid
+            else:
+                hi = mid
+        exponent = (lo + hi) / 2.0
+    probs = np.power(implied, exponent)
+    probs /= probs.sum()
+    return ({side: float(p) for side, p in zip(clean, probs)}, float(exponent))
+
+
+def raw_price_clv(odds_executed: float, odds_close: float | None) -> float | None:
+    """Conventional log price CLV against the same-book raw closing quote."""
+    if not odds_close or float(odds_close) <= 1 or float(odds_executed) <= 1:
+        return None
+    return float(math.log(float(odds_executed) / float(odds_close)))
 
 
 def match_key(match_date, home, away) -> str:

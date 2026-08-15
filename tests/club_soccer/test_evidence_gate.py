@@ -53,7 +53,7 @@ def test_non_object_or_broken_top_level_never_raises(gate_file, raw):
 # ── duplicate keys must be rejected, not last-value-wins ─────────────────
 def test_duplicate_top_level_key_rejected(gate_file):
     gate_file.write_text('{"backtest_version": "legacy", '
-                         '"backtest_version": "decision_time_v2"}')
+                         '"backtest_version": "decision_time_v3"}')
     res = EG.evaluate()
     assert res["allowed"] is False
     assert any("duplicate key" in r.lower() for r in res["reasons"])
@@ -63,7 +63,7 @@ def test_duplicate_nested_key_rejected(gate_file):
     # A duplicate nested n_bets is exactly the "silently valid" attack: the
     # first value is a legitimate 1500, the second a poisoned 0.
     artifact = (
-        '{"backtest_version": "decision_time_v2",'
+        '{"backtest_version": "decision_time_v3",'
         ' "simulated_betting": {"1x2": {"2%": '
         '{"n_bets": 1500, "n_bets": 0}}}}'
     )
@@ -82,7 +82,7 @@ def test_duplicate_nested_key_rejected(gate_file):
 ])
 def test_malformed_simulated_betting_never_raises(gate_file, sim):
     gate_file.write_text(json.dumps({
-        "backtest_version": "decision_time_v2",
+        "backtest_version": "decision_time_v3",
         "selection_method": "latest_quote_at_or_before_decision_time",
         "execution_method": "same_decision_time_quote",
         "clv_reference": "captured_closing_devigged",

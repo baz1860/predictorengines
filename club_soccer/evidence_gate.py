@@ -10,8 +10,8 @@ visible for diagnostics; nothing is presented as backable or recordable).
 Preregistered criteria — ALL must pass, per market, before staking enables:
 
   0. The artifact declares the decision-time methodology (backtest_version
-     "decision_time_v2", selection/execution at a pre-kickoff quote, CLV vs
-     de-vigged Pinnacle close, >= 60 min decision lead). Evidence from the
+     "decision_time_v3", selection/execution at a pre-kickoff quote, CLV from
+     a captured complete raw closing market, >= 60 min decision lead). Evidence from the
      legacy closing-odds simulator can NEVER open the gate.
   1. backtest_market.json carries a generated_at_utc <= MAX_ARTIFACT_AGE_DAYS
      old (signed provenance, not file mtime — evidence must be recent).
@@ -37,6 +37,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .strategy_contract import STRATEGY_VERSION, manifest_hash
+
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
@@ -50,6 +52,8 @@ MIN_CLV_FRAC_POSITIVE = 0.5
 # Wilson bound must run on that 10, and the market must carry real coverage.
 MIN_CLV_BETS = 200
 MIN_CLV_COVERAGE = 0.8
+MIN_RAW_PRICE_CLV_COVERAGE = 0.8
+MIN_INDEPENDENT_BLOCKS = 8
 # Per-league activation: a league needs its own settled evidence before a
 # market-level pass may stake it, so a pooled (mostly-European) pass can never
 # unlock a league that has no closing feed of its own.
@@ -62,35 +66,21 @@ _MARKETS = {"1x2": "1X2", "total_over_under_2_5": "OU2.5"}
 # The gate must be impossible to open with closing-odds simulation. Only an
 # artifact that explicitly declares the frozen decision-time methodology
 # counts.
-REQUIRED_VERSION = "decision_time_v2"
+REQUIRED_VERSION = "decision_time_v3"
 REQUIRED_METHODOLOGY = {
-    "selection_method": "latest_quote_at_or_before_decision_time",
-    "execution_method": "same_decision_time_quote",
-    # The CLV reference is now the captured near-kickoff de-vigged CLOSE: the
-    # BSD multi-book consensus snapshot where available (every league we bet),
-    # with the fd.co.uk Pinnacle close as fallback for the European leagues.
-    "clv_reference": "captured_closing_devigged",
+    "selection_method": "first_complete_market_quote_within_decision_window",
+    "execution_method": "best_executable_complete_market_quote_at_decision_time",
+    "clv_reference": "raw_complete_closing_market",
+    "clv_method": "power_consensus_v1",
+    "clv_schema_version": "raw_complete_market_v2",
 }
 MIN_DECISION_LEAD_MINUTES = 60
 MAX_DECISION_LEAD_MINUTES = 7 * 24 * 60      # a week; Infinity must not pass
 REQUIRED_THRESHOLDS = {"2%", "4%", "6%"}
 
-# GATE-TIGHTENING TODOs (preregistered before any decision_time_v2 artifact
-# exists, so the bar cannot be lowered to fit a result):
-#  - flat/kelly ROI: one-sided 95% lower bound > 0 from a 10k calendar-week
-#    block bootstrap of sum(profit)/sum(stake), simultaneous across every
-#    activated market/threshold — not the point estimate used today.
-#  - CLV = log(odds_executed * p_pinnacle_close_devigged): block-bootstrap
-#    95% lower bound > 0.
-#  - positive-CLV fraction: Wilson one-sided 95% lower bound > 0.5
-#    (z = 1.644854), not the raw fraction.
-#  - model-vs-market log-loss: paired-bootstrap one-sided 95% upper bound of
-#    (model - market) < 0.
-#  - per-league activation: >= 200 bets in a league before that league can
-#    stake; a pooled pass must never unlock an under-sampled league.
-#  - provenance: data_sha256 / model_sha256 / code_commit /
-#    snapshot_manifest_sha256 + row counts, schema-validated with
-#    additionalProperties: false.
+# v3 enforces simultaneous week-block ROI/CLV bounds, raw-price CLV coverage,
+# a paired model-vs-market upper bound, and a minimum of eight independent
+# blocks.  Remaining hardening is tracked in the artifact schema/provenance.
 
 
 def _reject_duplicate_keys(pairs):
@@ -143,6 +133,19 @@ def _methodology_failures(bt: dict, now: datetime) -> list[str]:
     for field, want in REQUIRED_METHODOLOGY.items():
         if bt.get(field) != want:
             fails.append(f"{field} is {bt.get(field)!r}, need {want!r}")
+    cohort = (bt.get("provenance") or {}).get("version_cohort")
+    strategy_version = (cohort or {}).get("strategy_version") if isinstance(cohort, dict) else None
+    if strategy_version != STRATEGY_VERSION:
+        fails.append(
+            f"strategy_version is {strategy_version!r}, need {STRATEGY_VERSION!r}; "
+            "mixed or incompatible strategy evidence cannot open staking"
+        )
+    strategy_manifest = (cohort or {}).get("strategy_manifest_hash") if isinstance(cohort, dict) else None
+    if strategy_manifest != manifest_hash():
+        fails.append(
+            f"strategy_manifest_hash is {strategy_manifest!r}, need "
+            f"{manifest_hash()!r}; strategy semantics are not auditable"
+        )
     lead = bt.get("decision_lead_minutes")
     if not _finite(lead, MIN_DECISION_LEAD_MINUTES, MAX_DECISION_LEAD_MINUTES):
         fails.append(f"decision_lead_minutes is {lead!r}, need finite value in "
@@ -262,17 +265,24 @@ def evaluate(now: datetime | None = None) -> dict:
             # the floor is noise; the gate must require the block-bootstrap
             # lower bound (written by the backtest) to clear zero, or epsilon
             # opens real staking. Absent bound => fail closed.
-            flat_lb = row.get("flat_roi_lb95")
+            n_blocks = row.get("n_independent_blocks")
+            if not (_finite(n_blocks, MIN_INDEPENDENT_BLOCKS, 1e9)
+                    and float(n_blocks) == int(n_blocks)):
+                m_reasons.append(
+                    f"{label} @{thr}: independent block count {n_blocks!r} "
+                    f"invalid or < {MIN_INDEPENDENT_BLOCKS}"
+                )
+            flat_lb = row.get("flat_roi_lb95_simultaneous")
             if not _finite(flat_lb, 1e-9, 10.0):
-                m_reasons.append(f"{label} @{thr}: flat_roi 95% lower bound "
+                m_reasons.append(f"{label} @{thr}: simultaneous flat_roi lower bound "
                                  f"{flat_lb!r} not finite-positive (point ROI "
                                  "alone is insufficient — need the bootstrap LB)")
             # Kelly ROI needs its OWN lower bound, not just a positive point
             # estimate: a Kelly-staked strategy can show kelly_roi ~ 1e-8 on pure
             # noise that the flat lower bound would reject. Absent bound => fail.
-            kelly_lb = row.get("kelly_roi_lb95")
+            kelly_lb = row.get("kelly_roi_lb95_simultaneous")
             if not _finite(kelly_lb, 1e-9, 10.0):
-                m_reasons.append(f"{label} @{thr}: kelly_roi 95% lower bound "
+                m_reasons.append(f"{label} @{thr}: simultaneous Kelly ROI lower bound "
                                  f"{kelly_lb!r} not finite-positive (point Kelly "
                                  "ROI alone lets epsilon noise open staking)")
             clv, frac = row.get("clv_mean"), row.get("clv_frac_positive")
@@ -300,13 +310,51 @@ def evaluate(now: datetime | None = None) -> dict:
                 m_reasons.append(f"{label} @{thr}: positive-CLV fraction "
                                  f"{frac!r} (n_clv={n_clv}) fails the Wilson 95% "
                                  f"lower bound > {MIN_CLV_FRAC_POSITIVE}")
+            clv_lb = row.get("clv_lb95_simultaneous")
+            if not _finite(clv_lb, 1e-9, 1.0):
+                m_reasons.append(
+                    f"{label} @{thr}: simultaneous fair-CLV lower bound "
+                    f"{clv_lb!r} not finite-positive"
+                )
+            n_raw = row.get("n_raw_price_clv")
+            raw_mean = row.get("raw_price_clv_mean")
+            if not (_finite(n_raw, MIN_CLV_BETS, 1e9)
+                    and float(n_raw) == int(n_raw)
+                    and _finite(raw_mean, 1e-9, 1.0)):
+                m_reasons.append(
+                    f"{label} @{thr}: raw same-book price CLV evidence invalid "
+                    f"(n {n_raw!r}, mean {raw_mean!r})"
+                )
+            elif (_finite(n, 1.0, 1e9)
+                  and float(n_raw) / float(n) < MIN_RAW_PRICE_CLV_COVERAGE):
+                m_reasons.append(
+                    f"{label} @{thr}: raw price CLV coverage {n_raw}/{n} below "
+                    f"{MIN_RAW_PRICE_CLV_COVERAGE:.0%}"
+                )
         if mkey == "1x2":
             ml = bt.get("model_log_loss_1x2")
-            mk = bt.get("market_log_loss_1x2_devigged_pinnacle_closing")
+            mk = bt.get("market_log_loss_1x2_devigged_closing")
             if (not _finite(ml, 0.0, 10.0) or not _finite(mk, 0.0, 10.0)
                     or ml > mk):
                 m_reasons.append(f"{label}: model log-loss {ml!r} not finite "
                                  f"and <= market {mk!r}")
+            comparison = bt.get("market_comparison_1x2")
+            if not isinstance(comparison, dict):
+                m_reasons.append(f"{label}: paired market comparison missing")
+            else:
+                cmp_blocks = comparison.get("n_independent_blocks")
+                upper = comparison.get("paired_delta_ub95")
+                if not (_finite(cmp_blocks, MIN_INDEPENDENT_BLOCKS, 1e9)
+                        and float(cmp_blocks) == int(cmp_blocks)):
+                    m_reasons.append(
+                        f"{label}: paired comparison has only {cmp_blocks!r} "
+                        "independent blocks"
+                    )
+                if not _finite(upper, -10.0, -1e-9):
+                    m_reasons.append(
+                        f"{label}: paired model-minus-market upper bound "
+                        f"{upper!r} is not below zero"
+                    )
         market_pass[mkey] = not m_reasons
         # Only an ACTIVE market's failures are gate reasons. An inactive
         # market's threshold complaints (n_bets == 0 everywhere) are noise, not
@@ -323,7 +371,7 @@ def evaluate(now: datetime | None = None) -> dict:
                "open": market_active.get(mkey, False) and market_pass.get(mkey, False)}
         for mkey in _MARKETS
     }
-    # decision_time_v2 promises per-league activation. Missing or malformed
+    # decision_time_v3 promises per-league activation. Missing or malformed
     # league evidence cannot fall back to a pooled market pass: that would let
     # a well-sampled European market authorize an unmeasured league.
     by_league = bt.get("simulated_betting_by_league")
@@ -365,7 +413,11 @@ def market_staking_allowed() -> dict[str, bool]:
     unreadable gate reports every market closed (fail-closed)."""
     try:
         v = evaluate()
-        return {mkey: bool(m.get("open")) for mkey, m in v.get("markets", {}).items()}
+        states = v.get("markets", {})
+        return {
+            mkey: bool(states.get(mkey, {}).get("open"))
+            for mkey in _MARKETS
+        }
     except Exception:
         return {mkey: False for mkey in _MARKETS}
 
@@ -383,9 +435,13 @@ def _league_row_ok(row) -> bool:
     flat, kelly = row.get("flat_roi"), row.get("kelly_roi")
     if not (_finite(flat, 1e-9, 10.0) and _finite(kelly, 1e-9, 10.0)):
         return False
-    if not _finite(row.get("flat_roi_lb95"), 1e-9, 10.0):
+    n_blocks = row.get("n_independent_blocks")
+    if not (_finite(n_blocks, MIN_INDEPENDENT_BLOCKS, 1e9)
+            and float(n_blocks) == int(n_blocks)):
         return False
-    if not _finite(row.get("kelly_roi_lb95"), 1e-9, 10.0):
+    if not _finite(row.get("flat_roi_lb95_simultaneous"), 1e-9, 10.0):
+        return False
+    if not _finite(row.get("kelly_roi_lb95_simultaneous"), 1e-9, 10.0):
         return False
     clv, frac, n_clv = (row.get("clv_mean"), row.get("clv_frac_positive"),
                         row.get("n_clv"))
@@ -394,6 +450,15 @@ def _league_row_ok(row) -> bool:
     if not (_finite(n_clv, MIN_CLV_BETS, 1e9) and float(n_clv) == int(n_clv)):
         return False
     if _finite(n, 1.0, 1e9) and float(n_clv) / float(n) < MIN_CLV_COVERAGE:
+        return False
+    if not _finite(row.get("clv_lb95_simultaneous"), 1e-9, 1.0):
+        return False
+    n_raw, raw_mean = row.get("n_raw_price_clv"), row.get("raw_price_clv_mean")
+    if not (_finite(n_raw, MIN_CLV_BETS, 1e9)
+            and float(n_raw) == int(n_raw)
+            and _finite(raw_mean, 1e-9, 1.0)):
+        return False
+    if _finite(n, 1.0, 1e9) and float(n_raw) / float(n) < MIN_RAW_PRICE_CLV_COVERAGE:
         return False
     return _wilson_lower_bound(frac, n_clv) > MIN_CLV_FRAC_POSITIVE
 

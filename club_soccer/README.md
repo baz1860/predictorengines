@@ -192,7 +192,17 @@ do not attempt competition-specific head-to-head rules.
 python3 -m club_soccer.fetch_fdcouk                # historical closing odds (backtest teacher)
 python3 -m club_soccer.snapshot_odds                # live multi-bookmaker snapshots
 python3 -m club_soccer.decision_time_backtest       # settled decision-time evidence used by the staking gate
+python3 -m club_soccer.market_diagnostics           # read-only model-vs-market audit
+python3 -m club_soccer.runtime_safety --json        # list Syncthing conflicts; never merges them
 ```
+
+The staking artifact is `decision_time_v3`. Complete raw closing markets are
+captured per book, fair CLV uses a power de-vig, and raw price CLV compares the
+executed quote with the same bookmaker at close. The legacy proportional CLV is
+diagnostic only. Evidence cohorts use the explicit strategy contract in
+`strategy_contract.py`; code comments, model refits and unrelated alias changes
+do not reset compatible history. Identity exclusions apply only to reviewed
+fixtures.
 
 `edge.py` applies the do-not-bet filter (suppress steam-chasing or
 unanimous-books-thin-edge bets) automatically once 30 days of snapshot

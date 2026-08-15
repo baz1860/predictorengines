@@ -14,8 +14,11 @@ that matters — which club, which league, which executable price, which model
 probability — is FROZEN at the moment it is made, in an append-only ledger, and
 never rewritten:
 
-    decision_ledger.csv     one immutable row per (fixture, market, side)
-    settlement_ledger.csv   appended later, keyed on provider_fixture_id
+    decision_ledger.csv          one immutable row per (fixture, market, side)
+    decision_strategy_ledger.csv explicit compatibility metadata
+    closing_market_ledger_v2.csv raw complete closing markets per bookmaker
+    settlement_ledger.csv        appended result + legacy diagnostic CLV
+    settlement_clv_v2.csv        power fair CLV + same-book raw price CLV
 
 The backtest then reads only these frozen records. Deleting the alias map, or
 refitting the model, cannot change a single historical number — which is the
@@ -38,7 +41,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
 import hashlib
+import json
 import math
 import os
 from collections import defaultdict
@@ -50,6 +55,8 @@ DATA = HERE / "data"
 RUNTIME = Path(os.environ.get("CLUB_SOCCER_RUNTIME_DIR", str(DATA)))
 DECISIONS = RUNTIME / "decision_ledger.csv"
 SETTLEMENTS = RUNTIME / "settlement_ledger.csv"
+DECISION_STRATEGIES = RUNTIME / "decision_strategy_ledger.csv"
+IDENTITY_EXCLUSIONS = RUNTIME / "identity_exclusions.csv"
 
 # Decision window: a snapshot must sit at least this far before kick-off (the
 # gate's floor) and no earlier than the far edge, so the recorded lead is a
@@ -78,6 +85,14 @@ SETTLEMENT_FIELDS = [
     "provider_fixture_id", "settled_ts", "home_goals", "away_goals",
     "market", "side", "won", "pinnacle_close_devig", "clv",
 ]
+DECISION_STRATEGY_FIELDS = [
+    "decision_id", "strategy_version", "strategy_manifest_hash",
+    "identity_version", "pricing_code_hash", "recorded_at_utc",
+]
+IDENTITY_EXCLUSION_FIELDS = [
+    "decision_id", "provider_fixture_id", "reviewed_at_utc", "action", "reason",
+    "reviewed_identity_version",
+]
 
 # ── closing snapshot (self-sourced CLV reference) ──────────────────────────
 # fd.co.uk only carries closing odds for the top European leagues, so every
@@ -87,6 +102,8 @@ SETTLEMENT_FIELDS = [
 # so a second snapshot in the final minutes before kickoff gives a de-vigged
 # consensus CLOSE for EVERY league BSD prices, at zero extra dependency.
 CLOSING = RUNTIME / "closing_ledger.csv"
+RAW_CLOSING = RUNTIME / "closing_market_ledger_v2.csv"
+SETTLEMENT_CLV_V2 = RUNTIME / "settlement_clv_v2.csv"
 # As near kickoff as a 15-min capture cadence allows: the first sighting inside
 # this window is kept (idempotent), i.e. a quote from the fixture's final ~1–20
 # minutes. Wide enough (19 min) to survive a skipped run.
@@ -96,6 +113,19 @@ CLOSING_FIELDS = [
     "provider_fixture_id", "close_ts", "market", "side",
     "p_close_devig", "close_lead_min",
 ]
+RAW_CLOSING_FIELDS = [
+    "close_id", "provider_fixture_id", "close_ts", "market", "source",
+    "book", "odds_json", "overround", "proportional_probs_json",
+    "power_probs_json", "power_k", "close_lead_min", "schema_version",
+]
+SETTLEMENT_CLV_V2_FIELDS = [
+    "provider_fixture_id", "market", "side", "settled_ts", "close_source",
+    "close_book", "close_odds", "raw_price_clv", "fair_close_probability",
+    "fair_clv", "devig_method", "power_k_mean", "n_complete_books",
+    "schema_version",
+]
+CLV_SCHEMA_VERSION = "raw_complete_market_v2"
+CLV_DEVIG_METHOD = "power_consensus_v1"
 
 
 # ── frozen provenance ─────────────────────────────────────────────────────
@@ -114,11 +144,13 @@ def resolver_version() -> str:
 
 
 def _code_hash() -> str:
-    """Stable pricing-strategy version.
+    """Byte-level pricing-code provenance (not a compatibility boundary).
 
     Learned parameters deliberately do not belong here: a normal refit changes
     model_params.json and must not erase all accumulated forward evidence.
-    Every code path that can change a priced or selected row does belong here.
+    Every code path that can change a priced or selected row belongs here for
+    auditability. Compatibility is the explicit strategy contract; harmless
+    byte changes therefore do not reset accumulated evidence.
     """
     h = hashlib.sha256()
     for name in (
@@ -208,13 +240,57 @@ def _append(path: Path, fields: list[str], rows: list[dict]) -> None:
     if not rows:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    new = not path.exists()
-    with path.open("a", newline="", encoding="utf-8") as fh:
+    with path.open("a+", newline="", encoding="utf-8") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        first = fh.readline().strip()
+        if first and next(csv.reader([first])) != fields:
+            raise ValueError(
+                f"refusing to append {path.name}: header does not match the "
+                "declared append-only schema"
+            )
+        fh.seek(0, os.SEEK_END)
         w = csv.DictWriter(fh, fieldnames=fields)
-        if new:
+        if fh.tell() == 0:
             w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k, "") for k in fields})
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
+def _append_unique(path: Path, fields: list[str], rows: list[dict],
+                   key_fields: tuple[str, ...]) -> int:
+    """Append rows atomically, de-duplicating immutable composite keys."""
+    if not rows:
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", newline="", encoding="utf-8") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        reader = csv.DictReader(fh)
+        if reader.fieldnames and reader.fieldnames != fields:
+            raise ValueError(
+                f"refusing to append {path.name}: header does not match the "
+                "declared append-only schema"
+            )
+        seen = {tuple(str(r.get(k, "")) for k in key_fields) for r in reader}
+        fresh = []
+        for row in rows:
+            key = tuple(str(row.get(k, "")) for k in key_fields)
+            if key in seen:
+                continue
+            fresh.append(row)
+            seen.add(key)
+        fh.seek(0, os.SEEK_END)
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        if fh.tell() == 0:
+            writer.writeheader()
+        for row in fresh:
+            writer.writerow({k: row.get(k, "") for k in fields})
+        fh.flush()
+        os.fsync(fh.fileno())
+        return len(fresh)
 
 
 def _existing_decision_ids() -> set[str]:
@@ -237,6 +313,8 @@ def record(api_key: str | None = None, verbose: bool = True,
     first time the fixture enters the window. Re-runs never rewrite it — that is
     what makes the record trustworthy.
     """
+    from .runtime_safety import assert_writer_host
+    assert_writer_host()
     from api_keys import get_key
     from bsd_client import get_all_events
     from . import model as M
@@ -244,6 +322,7 @@ def record(api_key: str | None = None, verbose: bool = True,
     from .competitions import comp_from_bsd_league
     from .fetch import bsd_league_name
     from .snapshot_odds import odds_comparison
+    from .strategy_contract import STRATEGY_VERSION, manifest_hash
 
     key = api_key or get_key("bsd", env="BSD_API_KEY")
     if not key:
@@ -416,6 +495,18 @@ def record(api_key: str | None = None, verbose: bool = True,
                 seen.add(did)
 
     _append(DECISIONS, DECISION_FIELDS, out)
+    _append_unique(
+        DECISION_STRATEGIES, DECISION_STRATEGY_FIELDS,
+        [{
+            "decision_id": row["decision_id"],
+            "strategy_version": STRATEGY_VERSION,
+            "strategy_manifest_hash": manifest_hash(),
+            "identity_version": row["resolver_version"],
+            "pricing_code_hash": row["code_hash"],
+            "recorded_at_utc": row["decision_ts"],
+        } for row in out],
+        ("decision_id",),
+    )
     if verbose:
         print(f"  decision_ledger: recorded {len(out)} new decision(s)")
     return len(out)
@@ -442,24 +533,89 @@ def load_closing() -> list[dict]:
     return _load(CLOSING)
 
 
+def load_raw_closing() -> list[dict]:
+    return _load(RAW_CLOSING)
+
+
+def load_decision_strategies() -> list[dict]:
+    return _load(DECISION_STRATEGIES)
+
+
+def load_identity_exclusions() -> list[dict]:
+    return _load(IDENTITY_EXCLUSIONS)
+
+
+def review_identity(*, decision_id: str = "", provider_fixture_id: str = "",
+                    action: str, reason: str) -> None:
+    """Append an affected-row exclusion or a later explicit reinstatement."""
+    from .runtime_safety import assert_writer_host
+    assert_writer_host()
+    if not decision_id and not provider_fixture_id:
+        raise ValueError("decision_id or provider_fixture_id is required")
+    if action not in {"exclude", "reinstate"}:
+        raise ValueError("action must be 'exclude' or 'reinstate'")
+    if not str(reason).strip():
+        raise ValueError("an auditable reason is required")
+    _append(IDENTITY_EXCLUSIONS, IDENTITY_EXCLUSION_FIELDS, [{
+        "decision_id": decision_id,
+        "provider_fixture_id": provider_fixture_id,
+        "reviewed_at_utc": datetime.now(timezone.utc).isoformat(),
+        "action": action,
+        "reason": str(reason).strip(),
+        "reviewed_identity_version": resolver_version(),
+    }])
+
+
+def load_settlement_clv_v2() -> list[dict]:
+    return _load(SETTLEMENT_CLV_V2)
+
+
 def _existing_closing_keys() -> set[tuple[str, str, str]]:
     return {(r["provider_fixture_id"], r["market"], r["side"])
             for r in load_closing()}
 
 
+def _complete_book_markets(side_odds: dict[str, dict[str, float]]) -> list[dict]:
+    """Auditable raw complete markets plus proportional and power diagnostics."""
+    from .market_settlement import devig, power_devig
+
+    sides = list(side_odds)
+    books = set().union(*(set(v) for v in side_odds.values())) if side_odds else set()
+    out = []
+    for book in sorted(books):
+        prices = {side: float(side_odds[side].get(book) or 0) for side in sides}
+        if any(value <= 1 for value in prices.values()):
+            continue
+        prop = devig(prices)
+        power, exponent = power_devig(prices)
+        if not power or exponent is None:
+            continue
+        out.append({
+            "book": book,
+            "odds": prices,
+            "overround": sum(1.0 / value for value in prices.values()) - 1.0,
+            "proportional": prop,
+            "power": power,
+            "power_k": exponent,
+        })
+    return out
+
+
 def capture_closing(api_key: str | None = None, verbose: bool = True) -> int:
-    """Snapshot the near-kickoff consensus close for fixtures we've decided on.
+    """Snapshot complete raw near-kickoff markets for decided fixtures.
 
     Runs in the same frequent capture pass as record()/settle(). For every
     fixture that (a) has a recorded decision and (b) is now inside the
     [CLOSE_MIN_LEAD, CLOSE_MAX_LEAD] pre-kickoff window, it de-vigs the
-    complete-market book CONSENSUS (selection-independent, like the edge
-    benchmark) and stores it as the closing reference. Idempotent per
-    (fixture, market, side): the first sighting in the window is kept.
+    complete markets are retained per book and the power and proportional
+    de-vigs are recorded beside the raw odds. The legacy consensus ledger is
+    still written for backward-compatible diagnostics; it cannot feed v3 CLV.
 
     This is the self-sourced CLV reference that lets EVERY BSD-priced league —
     not just the European ones fd.co.uk covers — earn closing-line evidence.
     """
+    from .runtime_safety import assert_writer_host
+    assert_writer_host()
     from api_keys import get_key
     from bsd_client import get_all_events
 
@@ -487,6 +643,7 @@ def capture_closing(api_key: str | None = None, verbose: bool = True) -> int:
     bsd_markets = {"1x2": {"home": "HOME", "draw": "DRAW", "away": "AWAY"},
                    "total25": {"over": "over@2.5", "under": "under@2.5"}}
     out: list[dict] = []
+    raw_out: list[dict] = []
     for ev in events:
         fid = ev.get("id")
         if fid is None or str(fid) not in want_fids:
@@ -513,6 +670,31 @@ def capture_closing(api_key: str | None = None, verbose: bool = True) -> int:
                 side_odds[our_side] = {
                     b: float(v["decimal_odds"]) for b, v in books.items()
                     if v.get("decimal_odds") and float(v["decimal_odds"]) > 1.0}
+            complete = _complete_book_markets(side_odds)
+            for item in complete:
+                close_id = hashlib.sha256(
+                    f"{fid}|{market}|{item['book']}".encode()
+                ).hexdigest()[:24]
+                raw_out.append({
+                    "close_id": close_id,
+                    "provider_fixture_id": str(fid),
+                    "close_ts": now.isoformat(),
+                    "market": market,
+                    "source": "bsd_odds_comparison",
+                    "book": item["book"],
+                    "odds_json": json.dumps(item["odds"], sort_keys=True,
+                                             separators=(",", ":")),
+                    "overround": round(float(item["overround"]), 8),
+                    "proportional_probs_json": json.dumps(
+                        item["proportional"], sort_keys=True, separators=(",", ":")
+                    ),
+                    "power_probs_json": json.dumps(
+                        item["power"], sort_keys=True, separators=(",", ":")
+                    ),
+                    "power_k": round(float(item["power_k"]), 8),
+                    "close_lead_min": round(lead, 1),
+                    "schema_version": CLV_SCHEMA_VERSION,
+                })
             consensus = market_consensus_devig(side_odds, list(sides))
             if not consensus:
                 continue
@@ -528,8 +710,12 @@ def capture_closing(api_key: str | None = None, verbose: bool = True) -> int:
                 })
                 seen.add(keyc)
     _append(CLOSING, CLOSING_FIELDS, out)
+    raw_n = _append_unique(
+        RAW_CLOSING, RAW_CLOSING_FIELDS, raw_out, ("close_id",)
+    )
     if verbose:
-        print(f"  decision_ledger: captured {len(out)} closing quote(s)")
+        print(f"  decision_ledger: captured {len(out)} closing probability row(s), "
+              f"{raw_n} raw complete market(s)")
     return len(out)
 
 
@@ -565,6 +751,44 @@ def _match_result(d: dict,
     return best[1:] if best else None
 
 
+def _raw_close_summary(fid: str, market: str, side: str, decision_book: str,
+                       rows: list[dict]) -> dict | None:
+    """Derive auditable same-book price CLV inputs and power-consensus fair p."""
+    matches = [r for r in rows
+               if str(r.get("provider_fixture_id")) == str(fid)
+               and r.get("market") == market]
+    probabilities, exponents = [], []
+    same_book_odds = None
+    for row in matches:
+        try:
+            probs = json.loads(row["power_probs_json"])
+            odds = json.loads(row["odds_json"])
+            probability = float(probs[side])
+            exponent = float(row["power_k"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not (0 < probability < 1 and math.isfinite(exponent)):
+            continue
+        probabilities.append(probability)
+        exponents.append(exponent)
+        if str(row.get("book")) == str(decision_book):
+            try:
+                value = float(odds[side])
+                same_book_odds = value if value > 1 else None
+            except (KeyError, TypeError, ValueError):
+                pass
+    if not probabilities:
+        return None
+    return {
+        "fair_probability": sum(probabilities) / len(probabilities),
+        "power_k_mean": sum(exponents) / len(exponents),
+        "n_complete_books": len(probabilities),
+        "same_book_odds": same_book_odds,
+        "close_book": decision_book if same_book_odds else "",
+        "source": "bsd_complete_market",
+    }
+
+
 def settle(verbose: bool = True) -> int:
     """Append settlement rows for decisions whose fixtures have finished.
 
@@ -572,14 +796,17 @@ def settle(verbose: bool = True) -> int:
     decision↔settlement join never changes), but the RESULT is looked up by
     canonical match identity, not by fixtures.csv's fixture_id — that id is a
     post-dedup provider id that disagrees with the recorded BSD event id for
-    most matches. CLV is scored against the de-vigged Pinnacle close (1X2 and
-    OU2.5 where a closing feed exists).
+    most matches. v3 CLV is scored from the frozen raw complete-market capture:
+    a power-de-vigged consensus plus same-executing-book raw price movement.
+    Legacy proportional/Pinnacle-derived CLV remains diagnostic only.
     """
+    from .runtime_safety import assert_writer_host
+    assert_writer_host()
     import pandas as pd
 
     from . import model as M
     from .club_identity import canonical_name
-    from .market_settlement import closing_probs, match_key, side_won
+    from .market_settlement import closing_probs, match_key, raw_price_clv, side_won
     from .schema import OFFICIAL_RESULT_STATUSES, normalize_status
 
     decisions = load_decisions()
@@ -616,8 +843,10 @@ def settle(verbose: bool = True) -> int:
                  float(c["p_close_devig"])
                  for c in load_closing()
                  if c.get("p_close_devig") not in ("", None)}
+    raw_closing = load_raw_closing()
 
     out = []
+    clv_v2_out = []
     now = datetime.now(timezone.utc).isoformat()
     for d in decisions:
         fid = str(d["provider_fixture_id"])
@@ -629,7 +858,12 @@ def settle(verbose: bool = True) -> int:
             continue
         hg, ag, mkey = match
         won = side_won(d["market"], d["side"], hg, ag)
-        pc = bsd_close.get((fid, d["market"], d["side"]))
+        raw_summary = _raw_close_summary(
+            fid, d["market"], d["side"], str(d.get("book") or ""), raw_closing
+        )
+        pc = raw_summary["fair_probability"] if raw_summary else None
+        if not (pc and pc > 0):
+            pc = bsd_close.get((fid, d["market"], d["side"]))
         if not (pc and pc > 0):
             cmap = close_1x2 if d["market"] == "1x2" else close_tot
             pc = (cmap.get(mkey) or {}).get(d["side"])
@@ -637,6 +871,27 @@ def settle(verbose: bool = True) -> int:
         odds = float(d["odds_executed"])
         if pc and pc > 0 and odds > 1:
             clv = round(math.log(odds * pc), 5)
+        if raw_summary:
+            close_odds = raw_summary["same_book_odds"]
+            clv_v2_out.append({
+                "provider_fixture_id": fid,
+                "market": d["market"],
+                "side": d["side"],
+                "settled_ts": now,
+                "close_source": raw_summary["source"],
+                "close_book": raw_summary["close_book"],
+                "close_odds": round(close_odds, 5) if close_odds else "",
+                "raw_price_clv": (
+                    round(raw_price_clv(odds, close_odds), 5)
+                    if close_odds else ""
+                ),
+                "fair_close_probability": round(float(pc), 8),
+                "fair_clv": clv if clv is not None else "",
+                "devig_method": CLV_DEVIG_METHOD,
+                "power_k_mean": round(raw_summary["power_k_mean"], 8),
+                "n_complete_books": raw_summary["n_complete_books"],
+                "schema_version": CLV_SCHEMA_VERSION,
+            })
         out.append({
             "provider_fixture_id": fid, "settled_ts": now,
             "home_goals": hg, "away_goals": ag, "market": d["market"],
@@ -644,6 +899,10 @@ def settle(verbose: bool = True) -> int:
             "pinnacle_close_devig": round(pc, 5) if pc else "",
             "clv": clv if clv is not None else "",
         })
+    _append_unique(
+        SETTLEMENT_CLV_V2, SETTLEMENT_CLV_V2_FIELDS, clv_v2_out,
+        ("provider_fixture_id", "market", "side"),
+    )
     _append(SETTLEMENTS, SETTLEMENT_FIELDS, out)
     if verbose:
         print(f"  decision_ledger: settled {len(out)} decision(s)")
@@ -654,6 +913,19 @@ def settled_bets() -> list[dict]:
     """Decisions joined to their settlements — the frozen basis for metrics."""
     settle_map = {(s["provider_fixture_id"], s["market"], s["side"]): s
                   for s in load_settlements()}
+    clv_v2_map = {(s["provider_fixture_id"], s["market"], s["side"]): s
+                  for s in load_settlement_clv_v2()}
+    strategy_map = {s["decision_id"]: s for s in load_decision_strategies()}
+    exclusions_by_decision, exclusions_by_fixture = {}, {}
+    for exclusion_row in load_identity_exclusions():
+        if exclusion_row.get("decision_id"):
+            exclusions_by_decision[str(exclusion_row["decision_id"])] = exclusion_row
+        if exclusion_row.get("provider_fixture_id"):
+            exclusions_by_fixture[str(exclusion_row["provider_fixture_id"])] = exclusion_row
+    from .strategy_contract import (
+        STRATEGY_VERSION, manifest_hash, version_for_legacy_code_hash,
+    )
+
     out = []
     for d in load_decisions():
         s = settle_map.get((d["provider_fixture_id"], d["market"], d["side"]))
@@ -661,11 +933,49 @@ def settled_bets() -> list[dict]:
             continue
         row = dict(d)
         row["won"] = int(s["won"])
-        row["clv"] = float(s["clv"]) if s.get("clv") not in ("", None) else None
+        legacy_clv = float(s["clv"]) if s.get("clv") not in ("", None) else None
+        v2 = clv_v2_map.get((d["provider_fixture_id"], d["market"], d["side"]))
+        row["legacy_clv"] = legacy_clv
+        row["clv"] = (float(v2["fair_clv"])
+                      if v2 and v2.get("fair_clv") not in ("", None) else None)
+        row["raw_price_clv"] = (
+            float(v2["raw_price_clv"])
+            if v2 and v2.get("raw_price_clv") not in ("", None) else None
+        )
+        row["clv_method"] = v2.get("devig_method", "") if v2 else ""
+        row["clv_schema_version"] = v2.get("schema_version", "") if v2 else ""
+        row["close_source"] = v2.get("close_source", "") if v2 else ""
+        row["close_odds"] = (
+            float(v2["close_odds"])
+            if v2 and v2.get("close_odds") not in ("", None) else None
+        )
         # Closing prob of the settled side, frozen at settlement — the log-loss
         # benchmark, joined here so the backtest never re-derives a match key.
-        row["p_close"] = (float(s["pinnacle_close_devig"])
-                          if s.get("pinnacle_close_devig") not in ("", None) else None)
+        row["legacy_p_close"] = (float(s["pinnacle_close_devig"])
+                                 if s.get("pinnacle_close_devig") not in ("", None)
+                                 else None)
+        row["p_close"] = (
+            float(v2["fair_close_probability"])
+            if v2 and v2.get("fair_close_probability") not in ("", None) else None
+        )
+        meta = strategy_map.get(str(d.get("decision_id") or ""))
+        row["strategy_version"] = (
+            str(meta.get("strategy_version")) if meta
+            else version_for_legacy_code_hash(d.get("code_hash"))
+        )
+        row["strategy_manifest_hash"] = (
+            str(meta.get("strategy_manifest_hash") or "") if meta
+            else (manifest_hash()
+                  if row["strategy_version"] == STRATEGY_VERSION else "")
+        )
+        exclusion = (exclusions_by_decision.get(str(d.get("decision_id") or ""))
+                     or exclusions_by_fixture.get(str(d.get("provider_fixture_id") or "")))
+        row["identity_excluded"] = bool(
+            exclusion and exclusion.get("action", "exclude") == "exclude"
+        )
+        row["identity_exclusion_reason"] = (
+            str(exclusion.get("reason") or "") if row["identity_excluded"] else ""
+        )
         for f in ("odds_executed", "p_model", "p_book_devig", "edge",
                   "decision_lead_min"):
             row[f] = float(d[f])
@@ -677,9 +987,15 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--record", action="store_true")
     ap.add_argument("--close", action="store_true",
-                    help="snapshot the near-kickoff BSD consensus close")
+                    help="snapshot raw complete near-kickoff BSD markets")
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--status", action="store_true")
+    review = ap.add_mutually_exclusive_group()
+    review.add_argument("--exclude-decision", metavar="DECISION_ID")
+    review.add_argument("--exclude-fixture", metavar="PROVIDER_FIXTURE_ID")
+    review.add_argument("--reinstate-decision", metavar="DECISION_ID")
+    review.add_argument("--reinstate-fixture", metavar="PROVIDER_FIXTURE_ID")
+    ap.add_argument("--reason", help="required audit reason for identity review")
     args = ap.parse_args()
     if args.record:
         record()
@@ -687,15 +1003,32 @@ def main() -> None:
         capture_closing()
     if args.settle:
         settle()
-    if args.status or not (args.record or args.close or args.settle):
+    review_value = (args.exclude_decision or args.exclude_fixture
+                    or args.reinstate_decision or args.reinstate_fixture)
+    if review_value:
+        if not args.reason:
+            ap.error("--reason is required for identity exclusion/reinstatement")
+        review_identity(
+            decision_id=(args.exclude_decision or args.reinstate_decision or ""),
+            provider_fixture_id=(args.exclude_fixture or args.reinstate_fixture or ""),
+            action=("exclude" if args.exclude_decision or args.exclude_fixture
+                    else "reinstate"),
+            reason=args.reason,
+        )
+    if args.status or not (args.record or args.close or args.settle or review_value):
         d, s = load_decisions(), load_settlements()
         joined = settled_bets()
         clv_scored = sum(1 for b in joined if b.get("clv") is not None)
+        raw_scored = sum(1 for b in joined if b.get("raw_price_clv") is not None)
+        legacy_scored = sum(1 for b in joined if b.get("legacy_clv") is not None)
         print(f"decisions recorded : {len(d)}")
-        print(f"closing snapshots  : {len(load_closing())}")
+        print(f"legacy close rows  : {len(load_closing())}")
+        print(f"raw close markets  : {len(load_raw_closing())}")
         print(f"settlements        : {len(s)}")
         print(f"settled bets       : {len(joined)}  (toward the 1000-bet gate)")
-        print(f"  of which CLV-scored: {clv_scored}")
+        print(f"  v3 fair CLV      : {clv_scored}")
+        print(f"  v3 raw price CLV : {raw_scored}")
+        print(f"  legacy CLV only  : {legacy_scored}")
         if d:
             leads = [float(x["decision_lead_min"]) for x in d]
             print(f"decision leads     : {min(leads):.0f}-{max(leads):.0f} min "

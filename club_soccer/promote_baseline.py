@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """Re-pin the promotion gate reference. PROMOTER ACTION — deliberate, audited.
 
+    ./club_soccer/update.sh                        # let the data settle FIRST
     python3 -m club_soccer.promote_baseline [--force]
+    python3 -m club_soccer.validate --gate         # confirm it took
+
+Order matters. The pipeline's fd.co.uk refresh replaces historical rows inside
+the pinned evaluation window, so a baseline pinned BEFORE a run is stale by the
+end of it. Pin after a completed run, then verify.
 
 Why this is its own module
 --------------------------
@@ -101,15 +107,51 @@ def build_payload(rows: list[dict], measured: dict, previous: dict | None,
     return payload
 
 
+def _window_fingerprint(previous: dict) -> str:
+    """Cheap digest of the evaluation window's rows, for drift detection."""
+    frame = M.played(M.load_fixtures()).sort_values("date").reset_index(drop=True)
+    window = frame[(frame["date"] >= str(previous.get("test_from")))
+                   & (frame["date"] < str(previous.get("test_to")))]
+    return hashlib.sha256(WFC.row_hashes(window).tobytes()).hexdigest()[:20]
+
+
 def promote(force: bool = False, verbose: bool = True) -> dict:
+    """Pin a new baseline, and refuse if the data moved while measuring.
+
+    The walk-forward takes minutes. fixtures.csv is written by the pipeline and
+    by Syncthing, and the fd.co.uk refresh in particular replaces historical
+    rows INSIDE the pinned window — the 2026-08-14 run reported "reconciled 33
+    cross-provider duplicate row(s)" and "fixtures.csv 64886 -> 64886 (+0)",
+    which is a changed population at an unchanged row count.
+
+    A baseline pinned to a population that has already moved is worse than no
+    baseline: the gate fails on the very next run and the operator reasonably
+    concludes the re-pin did not work. So fingerprint the window before and
+    after, and refuse rather than write something already stale.
+    """
     previous = V.load_promotion_baseline()
     if previous is None:
-        raise ValueError(f"--needs an existing {V.PROMOTION_BASELINE.name}")
+        raise ValueError(f"needs an existing {V.PROMOTION_BASELINE.name}")
+
+    before = _window_fingerprint(previous)
     rows, measured = V.walk_forward(
         verbose=verbose, test_from=previous.get("test_from"),
         test_to=previous.get("test_to"),
     )
     payload = build_payload(rows, measured, previous, force=force)
+
+    M.load_fixtures.cache_clear() if hasattr(
+        M.load_fixtures, "cache_clear") else None
+    after = _window_fingerprint(previous)
+    if after != before:
+        raise ValueError(
+            "refusing to pin: fixtures.csv changed inside the evaluation "
+            f"window while measuring ({before} -> {after}).\n"
+            "A pipeline run almost certainly overlapped this one. Let "
+            "./club_soccer/update.sh finish, then re-run this command so the "
+            "baseline pins to settled data."
+        )
+
     V.PROMOTION_BASELINE.write_text(json.dumps(payload, indent=2) + "\n")
     return payload
 
@@ -135,6 +177,7 @@ def main() -> None:
     print(f"  superseded because: "
           f"{'; '.join(payload['superseded']['reason'])}")
     print("\n  Commit this file — it is the promotion gate reference.")
+    print("  Confirm it took:  python3 -m club_soccer.validate --gate")
 
 
 if __name__ == "__main__":

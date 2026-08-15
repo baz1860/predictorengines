@@ -180,3 +180,36 @@ def test_real_errors_still_raise(code, tmp_path, monkeypatch):
     monkeypatch.setattr(SFL.urllib.request, "urlopen", raiser)
     with pytest.raises(urllib.error.HTTPError):
         SFL._fetch("http://x/I2.csv", "I2.csv")
+
+
+# --- drift detection while measuring --------------------------------------
+
+def test_promote_refuses_when_the_window_moves_mid_measurement(monkeypatch):
+    """The walk-forward takes minutes; a concurrent pipeline run can replace
+    historical rows inside the pinned window. Pinning to a population that has
+    already moved is worse than not pinning — the gate fails on the very next
+    run and the re-pin looks broken."""
+    monkeypatch.setattr(V, "load_promotion_baseline", lambda: dict(BASE))
+    monkeypatch.setattr(V, "walk_forward",
+                        lambda **k: ([{"x": 1}], _measured()))
+    monkeypatch.setattr(PB, "build_payload",
+                        lambda *a, **k: {"n": 26969, "brier": 0.6117778})
+    seen = iter(["before", "after"])
+    monkeypatch.setattr(PB, "_window_fingerprint", lambda prev: next(seen))
+    with pytest.raises(ValueError, match="changed inside the evaluation"):
+        PB.promote(verbose=False)
+
+
+def test_promote_writes_when_the_window_is_stable(tmp_path, monkeypatch):
+    path = tmp_path / "promotion_baseline.json"
+    path.write_text(json.dumps(BASE))
+    monkeypatch.setattr(V, "PROMOTION_BASELINE", path)
+    monkeypatch.setattr(V, "load_promotion_baseline", lambda: dict(BASE))
+    monkeypatch.setattr(V, "walk_forward",
+                        lambda **k: ([{"x": 1}], _measured()))
+    monkeypatch.setattr(PB, "build_payload",
+                        lambda *a, **k: {"n": 26969, "brier": 0.6117778})
+    monkeypatch.setattr(PB, "_window_fingerprint", lambda prev: "steady")
+    payload = PB.promote(verbose=False)
+    assert payload["n"] == 26969
+    assert json.loads(path.read_text())["n"] == 26969
