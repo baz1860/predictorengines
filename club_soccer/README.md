@@ -204,17 +204,32 @@ diagnostic only. Evidence cohorts use the explicit strategy contract in
 do not reset compatible history. Identity exclusions apply only to reviewed
 fixtures.
 
+### Surfaced prediction scope
+
+Collection, training, odds capture, decision evidence and the append-only
+forecast ledger continue across every supported competition. User-facing cards,
+app predictions, app/CLI edge reports and manual odds templates surface only:
+
+- Premier League, La Liga, Bundesliga, Serie A and Ligue 1;
+- Scottish Premiership;
+- Champions League, Europa League, Conference League and UEFA Super Cup;
+- Copa Libertadores and Copa Sudamericana.
+
+This is a presentation boundary in `prediction_scope.py`, not a data-retention
+filter. Non-surfaced competitions continue accumulating shadow forecasts and
+settlements for research and possible later expansion.
+
 `edge.py` applies the do-not-bet filter (suppress steam-chasing or
 unanimous-books-thin-edge bets) automatically once 30 days of snapshot
 history exist; before that it prints "market-model warming up: N days".
 
 ### Forward forecast scoring
 
-Every fixture probability published in the card is frozen before rendering in
-an append-only forecast ledger. This is deliberately separate from betting
-evidence: it measures whether the displayed probabilities are accurate even
-when a fixture has no odds, while `decision_ledger.py` measures whether an
-executable quote-backed strategy makes money.
+Every supported fixture probability—surfaced or shadow—is frozen before
+rendering in an append-only forecast ledger. This is deliberately separate from
+betting evidence: it measures the complete forecast universe even when a
+fixture has no odds, while `decision_ledger.py` measures whether an executable
+quote-backed strategy makes money.
 
 ```bash
 python3 -m club_soccer.forecast_ledger --status
@@ -223,7 +238,7 @@ python3 -m club_soccer.forecast_ledger --settle --report
 
 The normal season run handles both automatically. Runtime artifacts are:
 
-- `data/forecast_ledger.csv` — every published snapshot, with model/data/code
+- `data/forecast_ledger.csv` — every surfaced and shadow snapshot, with model/data/code
   provenance, final H/D/A, OU2.5 and BTTS probabilities, evidence tier,
   availability adjustments and lead time;
 - `data/forecast_settlements.csv` — one immutable official result per frozen

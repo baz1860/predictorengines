@@ -20,9 +20,9 @@ Steps (in order):
   7. Price the card: BSD odds only (manual odds.csv needs --allow-manual-odds,
      is age-limited, and only prices future fixtures), with availability
      adjustments and the do-not-bet filter.
-  8. Build one structured forecast set; freeze it and render the card from the
-     exact same rows.
-  9. Settle prior card forecasts and refresh forward performance metrics.
+  8. Build and freeze the complete forecast universe; render only the
+     competitions allowed by the presentation policy.
+  9. Settle prior surfaced + shadow forecasts and refresh performance metrics.
  10. Mondays only: append the latest validate --gate summary to the card.
 """
 from __future__ import annotations
@@ -57,6 +57,7 @@ from . import market_model as MM
 from . import fetch_fdcouk as FD
 from . import cache_retention as CR
 from . import forecast_ledger as FL
+from . import prediction_scope as PS
 from . import club_identity as CI
 
 HERE = Path(__file__).resolve().parent
@@ -366,13 +367,14 @@ def _ordinal(n: int) -> str:
 def _upcoming_section(forecasts: list[dict]) -> list[str]:
     """Render the exact structured rows frozen by ``forecast_ledger``.
 
-    Prediction used to happen inside this Markdown loop, which made it
-    impossible to prove that a separately tracked probability was the one a
-    user actually saw. Forecast construction now happens once; rendering is a
-    pure consumer of those immutable rows.
+    Forecast construction happens once for the full data universe. Rendering
+    is a pure, presentation-only consumer and applies the surfaced-competition
+    policy without reducing the append-only shadow forecast ledger.
     """
+    forecasts = PS.filter_rows(forecasts)
     if not forecasts:
-        return ["## Next 7 days", "", "No upcoming fixtures found.", ""]
+        return ["## Next 7 days", "",
+                "No upcoming fixtures in the surfaced competitions.", ""]
     up = pd.DataFrame(forecasts).sort_values(
         ["match_date", "competition", "home"]
     )
@@ -465,7 +467,7 @@ def _low_evidence_section(edge_rows: list[dict]) -> list[str]:
     point the suggestion is made.
     """
     seen: dict[str, dict] = {}
-    for r in edge_rows:
+    for r in PS.filter_rows(edge_rows):
         if str(r.get("evidence_tier", "full")) == "full":
             continue
         key = f"{r.get('date','')}|{r.get('match','')}"
@@ -524,7 +526,8 @@ def _likely_winners_section(edge_rows: list[dict], today_str: str) -> list[str]:
     # gate as the backed-bets table. Showing odds-ranked picks above the gate
     # while calling them merely "informational" made the safety boundary
     # cosmetic: the most prominent content still looked backable.
-    live = [r for r in edge_rows
+    surfaced = PS.filter_rows(edge_rows)
+    live = [r for r in surfaced
             if str(r.get("date", ""))[:10] >= today_str
             and not r.get("suppressed_reason")
             and float(r.get("kelly_stake", 0) or 0) > 0
@@ -556,6 +559,9 @@ def _likely_winners_section(edge_rows: list[dict], today_str: str) -> list[str]:
                          "failure, not a quiet board** — see the pricing note "
                          "under Backed bets, and `last_run.json` for the "
                          "failing step._")
+        elif not surfaced:
+            lines.append("_No fixtures from the surfaced competitions were "
+                         "priced on the current board._")
         else:
             lines.append("_No gate-approved, full-evidence pick clears "
                          f"{LIKELY_MIN_P:.0%} on the current board — typically an "
@@ -585,6 +591,7 @@ def _likely_winners_section(edge_rows: list[dict], today_str: str) -> list[str]:
 
 def _backed_bets_section(edge_rows: list[dict], today_str: str,
                          pricing_note: str | None = None) -> list[str]:
+    edge_rows = PS.filter_rows(edge_rows)
     # Defense in depth: even if a stale quote survives upstream filtering,
     # a fixture dated before today is never presented as a backable bet.
     backed = [r for r in edge_rows if r.get("ev_per_unit", 0) > 0
@@ -1106,7 +1113,7 @@ def _run_steps(fast: bool, no_network: bool,
 
     run_mode = "production_network" if not no_network and api_key else "offline"
     forecasts = _step(
-        "Build card forecasts", FL.build_forecasts,
+        "Build full forecast universe", FL.build_forecasts,
         pd.Timestamp(datetime.now(timezone.utc).date()), player_adj_map, calib_maps,
         run_id=run_id, run_mode=run_mode,
         primary_eligible=(run_mode == "production_network" and not _FAILED_REQUIRED),
@@ -1116,12 +1123,12 @@ def _run_steps(fast: bool, no_network: bool,
                forecasts=forecasts)
     if forecasts:
         # If forecast construction succeeded before a later required failure,
-        # preserve what the card showed but keep degraded rows out of the
-        # primary T-24 performance cohort.
+        # preserve the complete shadow + surfaced universe but keep degraded
+        # rows out of the primary T-24 performance cohort.
         if _FAILED_REQUIRED:
             for forecast in forecasts:
                 forecast["primary_eligible"] = 0
-        _step("Freeze published card forecasts", FL.append_forecasts,
+        _step("Freeze full shadow + surfaced forecast universe", FL.append_forecasts,
               forecasts, required=True)
     _step("Score published card forecasts", FL.write_performance_report)
     return edge_rows, pricing_note

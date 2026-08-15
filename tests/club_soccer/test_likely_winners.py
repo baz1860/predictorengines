@@ -8,6 +8,7 @@ from club_soccer import season as S
 def _row(p, edge, date="2026-07-25", tier="full", match="A v B",
          bet="A win", odds=2.0, suppressed=None):
     return {"date": date, "match": match, "bet": bet, "odds": odds,
+            "competition": "Premier League",
             "p_model": p, "edge": edge, "evidence_tier": tier,
             "suppressed_reason": suppressed,
             "kelly_stake": 0.0 if suppressed else 0.01}

@@ -7,20 +7,21 @@ dispatches through app.engines._inproc.run_inprocess (allowlist + redaction + fi
 """
 from __future__ import annotations
 
-from . import competitions as C
 from . import edge as E
 from . import model as M
+from . import prediction_scope as PS
 
 
 def cmd_schema(_p: dict | None = None) -> dict:
     df = M.load_fixtures()
-    return {"kind": "match", "names": M.team_names(df),
+    visible = df[df["competition"].astype(str).isin(PS.SURFACED_COMPETITION_SET)]
+    return {"kind": "match", "names": M.team_names(visible),
             "models": ["ensemble", "goals", "elo", "xg"],
             "supports_home": False, "neutral_toggle": True,
             "team_label": "Club",
             "filters": [
                 {"id": "competition", "label": "Competition",
-                 "options": [""] + C.names()},
+                 "options": list(PS.SURFACED_COMPETITIONS)},
                 {"id": "season", "label": "Season",
                  "options": [""] + sorted([str(x) for x in df["season"].dropna().unique()], reverse=True)},
                 {"id": "date_from", "label": "From", "type": "date"},
@@ -34,6 +35,11 @@ def cmd_predict(p: dict) -> dict:
     if not home or not away:
         raise ValueError("Pick two clubs.")
     comp = (p.get("competition") or "").strip()
+    if not PS.is_surfaced(comp):
+        raise ValueError(
+            "Choose one of the surfaced competitions: "
+            + ", ".join(PS.SURFACED_COMPETITIONS)
+        )
     neutral = bool(p.get("neutral", False))
     model_name = p.get("model") or "ensemble"
     match_date = (p.get("match_date") or p.get("date") or "").strip()
@@ -110,6 +116,7 @@ def cmd_edge(p: dict) -> dict:
     rows = E.rows_from_odds(
         odds, model_name, bankroll, market_blend=blend
     ) if not odds.empty else []
+    rows = PS.filter_rows(rows)
     comp = (p.get("competition") or "").strip()
     if comp:
         rows = [r for r in rows if r.get("competition") == comp]

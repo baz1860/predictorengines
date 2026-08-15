@@ -6,11 +6,13 @@ This ledger answers a different question from ``decision_ledger``:
 * forecast_ledger: are the probabilities printed on the card well calibrated?
 * decision_ledger: did a quote-backed betting strategy beat executable prices?
 
-Every card run freezes the exact structured rows used by the renderer. Results
-are appended separately once official, so forecasts are never rewritten with
-hindsight. Repeated daily forecasts for one fixture are all retained; reports
-select one independent row per fixture for the first-published, T-24 and latest
-pre-kickoff views.
+Every card run freezes the complete supported forecast universe before the
+renderer applies its narrower presentation policy. This preserves shadow data
+for competitions that are not currently surfaced. Results are appended
+separately once official, so forecasts are never rewritten with hindsight.
+Repeated daily forecasts for one fixture are all retained; reports select one
+independent row per fixture for first-published, T-24 and latest-pre-kickoff
+views.
 """
 from __future__ import annotations
 
@@ -141,7 +143,7 @@ def build_forecasts(
     forecast_ts: datetime | None = None,
     fixtures: pd.DataFrame | None = None,
 ) -> list[dict]:
-    """Build the exact structured fixture forecasts consumed by the card."""
+    """Build the full shadow + surfaced forecast universe for this horizon."""
     stamp = forecast_ts or datetime.now(timezone.utc)
     if stamp.tzinfo is None:
         raise ValueError("forecast_ts must be timezone-aware")

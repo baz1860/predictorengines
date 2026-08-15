@@ -67,6 +67,12 @@ class ClubSoccerAdapter(EngineAdapter):
             if issues:
                 result["odds_issues"] = [e["message"] for e in issues]
         rows = result.get("rows") or []
+        # Defense in depth: the engine command applies the same policy, but the
+        # adapter is the final user-facing boundary and must not trust a future
+        # internal refactor to preserve it implicitly.
+        from club_soccer.prediction_scope import filter_rows
+        rows = filter_rows(rows)
+        result["rows"] = rows
         self._mark_recommended(rows)
         if params.get("record"):
             today = pd.Timestamp.now(tz="UTC").date().isoformat()

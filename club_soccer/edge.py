@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from . import model as M
+from . import prediction_scope as PS
 from api_keys import get_key
 
 HERE = Path(__file__).resolve().parent
@@ -197,6 +198,9 @@ def load_odds(path: Path = ODDS_CSV) -> pd.DataFrame:
 
 def write_template(path: Path = ODDS_CSV) -> None:
     fixtures = M.upcoming(M.load_fixtures())
+    fixtures = fixtures[
+        fixtures["competition"].astype(str).isin(PS.SURFACED_COMPETITION_SET)
+    ]
     rows = []
     for r in fixtures.itertuples(index=False):
         for market, sides in MARKETS.items():
@@ -588,7 +592,7 @@ def fetch_bsd_odds(api_key: str | None = None,
     rows: list[dict] = []
     for ev in events:
         comp = comp_from_bsd_league(bsd_league_name(ev))
-        if comp is None:
+        if comp is None or not PS.is_surfaced(comp.name):
             continue
         home_raw = str(ev.get("home_team") or "")
         away_raw = str(ev.get("away_team") or "")
@@ -996,6 +1000,7 @@ def main() -> None:
             odds = load_odds()
         rows = rows_from_odds(odds, args.model, args.bankroll, calib_maps, player_adj_map,
                               apply_do_not_bet=apply_dnb)
+        rows = PS.filter_rows(rows)
     except Exception as e:
         sys.exit(str(e))
     DATA.mkdir(exist_ok=True)
