@@ -276,6 +276,7 @@ settlement and regulation markets are not conflated.
 ```bash
 python3 -m club_soccer.validate            # walk-forward report (1X2, OU2.5, BTTS Brier)
 python3 -m club_soccer.validate --gate     # fixed-window pass/fail vs promotion_baseline.json
+python3 -m club_soccer.promote_baseline    # deliberate re-pin after an audited population change
 python3 -m club_soccer.validate --opponent-xg-ab --test-from 2024-07-01 \
     --test-to 2026-07-01 --write-evidence  # reproducible promoted-feature A/B
 python3 -m club_soccer.validate --calibrate       # temperature calibration; activates only after multi-split gate
@@ -283,6 +284,13 @@ python3 -m club_soccer.fit_market_blend           # diagnostic; promotion remain
 python3 -m club_soccer.validate --benchmark-clubelo   # report-only sanity check, never a model input
 python3 -m pytest tests/club_soccer
 ```
+
+The promotion gate uses an order-independent identity/outcome hash. A promoted
+reference also includes `promotion_population.json`, so a later population
+failure reports counts and examples of added/removed fixtures in
+`validation_population_diff.json`. Commit the baseline and population snapshot
+together after reviewing that diff; validation itself never moves either
+reference.
 
 Calibration and market anchoring are explicit promotion gates. Temperature
 calibration is currently held inactive after the 2024–25 backfill because it

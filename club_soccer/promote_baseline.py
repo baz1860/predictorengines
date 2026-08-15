@@ -55,6 +55,7 @@ from . import validate as V
 from . import walkforward_cache as WFC
 
 METRICS = ("brier", "log_loss", "brier_ou25", "brier_btts")
+PROMOTION_POPULATION = V.DATA / "promotion_population.json"
 
 
 def build_payload(rows: list[dict], measured: dict, previous: dict | None,
@@ -92,6 +93,11 @@ def build_payload(rows: list[dict], measured: dict, previous: dict | None,
     payload.update({
         "n": int(measured["n"]),
         "evaluation_hash": V._evaluation_hash(rows),
+        "evaluation_hash_schema": V.EVALUATION_HASH_SCHEMA,
+        "population_snapshot": {
+            "path": PROMOTION_POPULATION.name,
+            "schema": V.EVALUATION_HASH_SCHEMA,
+        },
         "code_hash": WFC.code_fingerprint(),
         "fixture_data_hash": data_hash,
         "promoted_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -152,7 +158,22 @@ def promote(force: bool = False, verbose: bool = True) -> dict:
             "baseline pins to settled data."
         )
 
-    V.PROMOTION_BASELINE.write_text(json.dumps(payload, indent=2) + "\n")
+    snapshot = V.build_population_snapshot(rows)
+    if snapshot["evaluation_hash"] != payload.get("evaluation_hash"):
+        raise ValueError("refusing to pin: population snapshot hash disagrees "
+                         "with the proposed baseline")
+
+    # Write both promoter-owned artifacts through temporary files. The
+    # snapshot goes first: if the process stops between replacements, the old
+    # baseline rejects the unmatched snapshot rather than trusting it.
+    population_tmp = PROMOTION_POPULATION.with_suffix(".tmp")
+    baseline_tmp = V.PROMOTION_BASELINE.with_suffix(".tmp")
+    population_tmp.write_text(
+        json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n"
+    )
+    baseline_tmp.write_text(json.dumps(payload, indent=2) + "\n")
+    population_tmp.replace(PROMOTION_POPULATION)
+    baseline_tmp.replace(V.PROMOTION_BASELINE)
     return payload
 
 
@@ -176,7 +197,8 @@ def main() -> None:
     print(f"  brier        {previous.get('brier'):.6f} -> {payload['brier']:.6f}")
     print(f"  superseded because: "
           f"{'; '.join(payload['superseded']['reason'])}")
-    print("\n  Commit this file — it is the promotion gate reference.")
+    print(f"  population audit -> {PROMOTION_POPULATION.name}")
+    print("\n  Commit both promoter-owned files — they are one gate reference.")
     print("  Confirm it took:  python3 -m club_soccer.validate --gate")
 
 

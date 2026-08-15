@@ -242,6 +242,7 @@ else:
 !/settlement_ledger.csv
 !/decision_strategy_ledger.csv
 !/identity_exclusions.csv
+!/closing_ledger.csv
 !/closing_market_ledger_v2.csv
 !/settlement_clv_v2.csv
 !/decision_time_ledger.csv

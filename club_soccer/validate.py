@@ -31,6 +31,7 @@ BASELINE = DATA / "validation_baseline.json"          # legacy, read-only fallba
 PROMOTION_BASELINE = DATA / "promotion_baseline.json"  # promoter-owned gate
 LATEST = DATA / "validation_latest.json"               # validation-owned, descriptive
 GATE_STATE = DATA / "validation_gate_state.json"       # derived exact-input cache
+POPULATION_DIFF = DATA / "validation_population_diff.json"  # derived gate audit
 CALIB_FILE = DATA / "calibration.json"
 OPPONENT_XG_EVIDENCE = DATA / "opponent_adjusted_xg_evidence.json"
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
@@ -467,18 +468,126 @@ def load_promotion_baseline() -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _evaluation_hash(rows: list[dict]) -> str:
-    """Identity/outcome hash for the exact fixed evaluation population."""
+EVALUATION_IDENTITY_FIELDS = (
+    "date", "competition", "fixture_id", "home", "away", "actual",
+    "total_goals", "btts_actual",
+)
+EVALUATION_HASH_SCHEMA = "canonical-multiset-v2"
+
+
+def _identity_payload(row: dict) -> list:
+    """JSON-safe identity/outcome values used by the population gate."""
+    payload = []
+    for field in EVALUATION_IDENTITY_FIELDS:
+        value = row.get(field)
+        try:
+            if value is not None and bool(pd.isna(value)):
+                value = None
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, np.generic):
+            value = value.item()
+        payload.append(value)
+    return payload
+
+
+def _encoded_population(rows: list[dict]) -> list[str]:
+    """Canonical multiset representation; duplicate rows remain duplicates."""
+    encoded = [
+        json.dumps(_identity_payload(row), separators=(",", ":"),
+                   ensure_ascii=False, default=str)
+        for row in rows
+    ]
+    return sorted(encoded)
+
+
+def _legacy_evaluation_hash(rows: list[dict]) -> str:
+    """The pre-v2 order-sensitive digest, for existing baseline migration."""
     h = hashlib.sha256()
     for row in rows:
-        payload = [
-            row.get("date"), row.get("competition"), row.get("fixture_id"),
-            row.get("home"), row.get("away"), row.get("actual"),
-            row.get("total_goals"), row.get("btts_actual"),
-        ]
+        payload = _identity_payload(row)
         h.update(json.dumps(payload, separators=(",", ":"), default=str).encode())
         h.update(b"\n")
     return h.hexdigest()[:20]
+
+
+def _canonical_hash(encoded_rows: list[str]) -> str:
+    h = hashlib.sha256()
+    h.update((EVALUATION_HASH_SCHEMA + "\n").encode())
+    for encoded in sorted(encoded_rows):
+        h.update(encoded.encode())
+        h.update(b"\n")
+    return h.hexdigest()[:20]
+
+
+def _evaluation_hash(rows: list[dict]) -> str:
+    """Order-independent identity/outcome hash for the exact population.
+
+    This is deliberately a multiset hash rather than a prediction-order hash.
+    Same-day fixture ordering can change when provider files are reconciled;
+    that is relevant to the model/cache fingerprint, but it does not mean the
+    evaluation *population* changed.
+    """
+    return _canonical_hash(_encoded_population(rows))
+
+
+def build_population_snapshot(rows: list[dict]) -> dict:
+    """Promoter-owned audit payload used to explain later hash changes."""
+    return {
+        "schema": EVALUATION_HASH_SCHEMA,
+        "fields": list(EVALUATION_IDENTITY_FIELDS),
+        "evaluation_hash": _evaluation_hash(rows),
+        "n": len(rows),
+        "rows": [json.loads(item) for item in _encoded_population(rows)],
+    }
+
+
+def load_population_snapshot(baseline: dict) -> dict | None:
+    """Load only a snapshot that verifiably belongs to this baseline."""
+    ref = baseline.get("population_snapshot")
+    if not isinstance(ref, dict) or not ref.get("path"):
+        return None
+    path = DATA / Path(str(ref["path"])).name
+    try:
+        snapshot = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if (
+        not isinstance(snapshot, dict)
+        or snapshot.get("schema") != EVALUATION_HASH_SCHEMA
+        or snapshot.get("evaluation_hash") != baseline.get("evaluation_hash")
+        or not isinstance(snapshot.get("rows"), list)
+    ):
+        return None
+    encoded = [json.dumps(row, separators=(",", ":"), ensure_ascii=False,
+                          default=str)
+               for row in snapshot["rows"]]
+    if _canonical_hash(encoded) != snapshot.get("evaluation_hash"):
+        return None
+    return snapshot
+
+
+def population_diff(rows: list[dict], snapshot: dict) -> dict:
+    """Return an actionable multiset diff against a promoted population."""
+    from collections import Counter
+
+    before = Counter(json.dumps(row, separators=(",", ":"), ensure_ascii=False,
+                                default=str)
+                     for row in snapshot.get("rows", []))
+    after = Counter(_encoded_population(rows))
+    added = list((after - before).elements())
+    removed = list((before - after).elements())
+    return {
+        "schema": EVALUATION_HASH_SCHEMA,
+        "baseline_hash": snapshot.get("evaluation_hash"),
+        "current_hash": _evaluation_hash(rows),
+        "added": len(added),
+        "removed": len(removed),
+        "added_examples": [dict(zip(EVALUATION_IDENTITY_FIELDS, json.loads(x)))
+                           for x in added[:10]],
+        "removed_examples": [dict(zip(EVALUATION_IDENTITY_FIELDS, json.loads(x)))
+                             for x in removed[:10]],
+    }
 
 
 def gate_failures(rows: list[dict], measured: dict, baseline: dict) -> list[str]:
@@ -493,12 +602,21 @@ def gate_failures(rows: list[dict], measured: dict, baseline: dict) -> list[str]
         failures.append(
             f"evaluation row count {measured.get('n')} != baseline {baseline['n']}"
         )
-    current_hash = _evaluation_hash(rows)
+    schema = baseline.get("evaluation_hash_schema")
+    current_hash = (_evaluation_hash(rows) if schema == EVALUATION_HASH_SCHEMA
+                    else _legacy_evaluation_hash(rows))
     if current_hash != baseline["evaluation_hash"]:
-        failures.append(
+        failure = (
             f"evaluation population hash {current_hash} != "
             f"baseline {baseline['evaluation_hash']}"
         )
+        snapshot = load_population_snapshot(baseline)
+        if snapshot is not None:
+            diff = population_diff(rows, snapshot)
+            failure += (f"; population diff: +{diff['added']} "
+                        f"-{diff['removed']} rows "
+                        f"(details: {POPULATION_DIFF.name})")
+        failures.append(failure)
     tolerances = baseline.get("tolerances", GATE_TOLERANCES)
     if not isinstance(tolerances, dict):
         failures.append("promotion baseline tolerances must be an object")
@@ -758,6 +876,20 @@ def main() -> None:
               f"BTTS {m['brier_btts'] - base.get('brier_btts', 0):+.4f}")
     if args.gate:
         failures = gate_failures(rows, m, base)
+        snapshot = load_population_snapshot(base)
+        if snapshot is not None and _evaluation_hash(rows) != base.get(
+                "evaluation_hash"):
+            diff = population_diff(rows, snapshot)
+            diff.update({
+                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                "note": "Derived audit artifact; promotion_baseline.json and "
+                        "its population snapshot remain promoter-owned.",
+            })
+            tmp = POPULATION_DIFF.with_suffix(".tmp")
+            tmp.write_text(json.dumps(diff, indent=2, ensure_ascii=False) + "\n")
+            tmp.replace(POPULATION_DIFF)
+        elif POPULATION_DIFF.exists():
+            POPULATION_DIFF.unlink()
         _write_gate_state(
             gate_fingerprint, passed=not failures, measured=m, failures=failures
         )

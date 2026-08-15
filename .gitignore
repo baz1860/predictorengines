@@ -143,6 +143,7 @@ club_soccer/data/absences_club.csv
 club_soccer/data/transfers_detected.csv
 club_soccer/data/backtest_market.json
 club_soccer/data/market_blend_report.json
+club_soccer/data/validation_population_diff.json
 nfl/data/upcoming.csv
 golf/data/field.csv
 golf/data/pgatour_stats.csv
@@ -213,6 +214,7 @@ club_soccer/data/decision_ledger.csv
 club_soccer/data/settlement_ledger.csv
 club_soccer/data/decision_strategy_ledger.csv
 club_soccer/data/identity_exclusions.csv
+club_soccer/data/closing_ledger.csv
 club_soccer/data/closing_market_ledger_v2.csv
 club_soccer/data/settlement_clv_v2.csv
 club_soccer/data/decision_time_ledger.csv
@@ -238,6 +240,8 @@ club_soccer/data/forecast_performance.json
 club_soccer/data/validation_latest.json
 club_soccer/data/validation_gate_state.json
 club_soccer/data/cache_retention_state.json
+# Launchd writes operational logs here on the Mac mini.
+/logs/
 club_soccer/data/odds_poll_state.json
 club_soccer/data/transfers_bsd.sqlite3*
 # Resumable transfer-import staging lives outside the Syncthing data folder,

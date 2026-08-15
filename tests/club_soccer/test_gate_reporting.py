@@ -112,10 +112,12 @@ def test_force_overrides_a_regression(isolated):
 
 
 def test_passing_gate_has_nothing_to_repin(isolated, monkeypatch):
+    current = dict(BASE)
+    current["evaluation_hash_schema"] = V.EVALUATION_HASH_SCHEMA
     monkeypatch.setattr(V, "_evaluation_hash",
                         lambda rows: BASE["evaluation_hash"])
     with pytest.raises(ValueError, match="nothing to re-baseline"):
-        PB.build_payload([{"x": 1}], _measured(n=27181), dict(BASE))
+        PB.build_payload([{"x": 1}], _measured(n=27181), current)
 
 
 def test_missing_previous_baseline_is_refused(isolated):
@@ -202,14 +204,65 @@ def test_promote_refuses_when_the_window_moves_mid_measurement(monkeypatch):
 
 def test_promote_writes_when_the_window_is_stable(tmp_path, monkeypatch):
     path = tmp_path / "promotion_baseline.json"
+    population = tmp_path / "promotion_population.json"
     path.write_text(json.dumps(BASE))
     monkeypatch.setattr(V, "PROMOTION_BASELINE", path)
+    monkeypatch.setattr(PB, "PROMOTION_POPULATION", population)
     monkeypatch.setattr(V, "load_promotion_baseline", lambda: dict(BASE))
     monkeypatch.setattr(V, "walk_forward",
                         lambda **k: ([{"x": 1}], _measured()))
     monkeypatch.setattr(PB, "build_payload",
-                        lambda *a, **k: {"n": 26969, "brier": 0.6117778})
+                        lambda *a, **k: {
+                            "n": 26969, "brier": 0.6117778,
+                            "evaluation_hash": V._evaluation_hash([{"x": 1}]),
+                        })
     monkeypatch.setattr(PB, "_window_fingerprint", lambda prev: "steady")
     payload = PB.promote(verbose=False)
     assert payload["n"] == 26969
     assert json.loads(path.read_text())["n"] == 26969
+    snapshot = json.loads(population.read_text())
+    assert snapshot["evaluation_hash"] == payload["evaluation_hash"]
+
+
+# --- canonical population audit ------------------------------------------
+
+def _row(fixture_id, home="Home", away="Away"):
+    return {
+        "date": "2026-01-02", "competition": "Test League",
+        "fixture_id": fixture_id, "home": home, "away": away,
+        "actual": 0, "total_goals": 2.0, "btts_actual": 0.0,
+    }
+
+
+def test_population_hash_is_order_independent_but_preserves_duplicates():
+    a, b = _row(1), _row(2)
+    assert V._evaluation_hash([a, b]) == V._evaluation_hash([b, a])
+    assert V._evaluation_hash([a, b]) != V._evaluation_hash([a, b, b])
+
+
+def test_population_snapshot_explains_added_and_removed_rows():
+    a, b, c = _row(1), _row(2), _row(3)
+    snapshot = V.build_population_snapshot([a, b])
+    diff = V.population_diff([a, c], snapshot)
+    assert diff["added"] == 1
+    assert diff["removed"] == 1
+    assert diff["added_examples"][0]["fixture_id"] == 3
+    assert diff["removed_examples"][0]["fixture_id"] == 2
+
+
+def test_gate_reports_snapshot_diff(tmp_path, monkeypatch):
+    old, new = _row(1), _row(2)
+    snapshot = V.build_population_snapshot([old])
+    snapshot_path = tmp_path / "promotion_population.json"
+    snapshot_path.write_text(json.dumps(snapshot))
+    monkeypatch.setattr(V, "DATA", tmp_path)
+    baseline = dict(BASE)
+    baseline.update({
+        "n": 1,
+        "evaluation_hash": snapshot["evaluation_hash"],
+        "evaluation_hash_schema": V.EVALUATION_HASH_SCHEMA,
+        "population_snapshot": {"path": snapshot_path.name},
+    })
+    failures = V.gate_failures([new], _measured(n=1), baseline)
+    assert any("population diff: +1 -1 rows" in failure
+               for failure in failures)
