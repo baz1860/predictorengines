@@ -467,3 +467,86 @@ an endpoint is unavailable.
 - `club_soccer/data/bsd_enriched_matches.csv`
 - `club_soccer/data/bsd_enrichment_manifest.csv`
 - `club_soccer/validate.py`, `test_club_soccer.py`
+
+---
+
+## E1 — hierarchical pooled goals component (PROMOTED 2026-08-16)
+
+Replaces the `goals` component in the production ensemble. The incumbent
+shrank each club toward a league prior with a pseudo-count of exactly 4
+(`stats[t]["gf"] + gf_prior * 4`) — a constant nobody fitted — and it ignored
+the opponent entirely, so a club's attack rating was its raw scoring rate
+whether it played Bayern or Burnley. The replacement is a hierarchical Poisson
+attack/defence model whose pooling variance is fitted by EM (MAP solve, then
+update the variance from the realised spread of the ratings plus their Laplace
+posterior variance), and which estimates attack against the defences actually
+faced.
+
+Fitted league means also remove the need for the hardcoded
+`(strength(competition) - 0.75) * 0.12` competition bump: a league's level is
+estimated from its own matches, and a cross-league fixture takes each side's
+rating from its own league without a correction term.
+
+**Result** — fixed-window walk-forward, identical folds and evaluation
+population in both arms (n=26,969, `evaluation_hash` `2c9396c63ee078449c6f`,
+the same sample `promotion_baseline.json` pins):
+
+| metric | incumbent | promoted | delta |
+|---|---|---|---|
+| 1X2 Brier | 0.611777 | 0.611016 | **−0.000762** |
+| log-loss | 1.020406 | 1.019376 | **−0.001029** |
+| OU2.5 Brier | 0.245202 | 0.245479 | +0.000277 |
+| BTTS Brier | 0.246943 | 0.246875 | −0.000069 |
+
+Time-split robustness (§12.3): **3 of 3 splits won**; worst split delta
+−0.000603, i.e. the worst case is still an improvement.
+
+| split | n | incumbent | promoted | delta |
+|---|---|---|---|---|
+| 2025-01-01 | 21,186 | 0.612197 | 0.611595 | −0.000603 |
+| 2025-07-01 | 15,131 | 0.612516 | 0.611750 | −0.000766 |
+| 2025-12-01 | 9,190 | 0.612698 | 0.611849 | −0.000849 |
+
+Full-window validation after promotion: accuracy 49.0% → **49.3%**, Brier
+0.6118 → **0.6110**, log-loss 1.0204 → **1.0194**. `--gate` passes.
+
+**What the fit says.** `sigma_attack` 0.194 vs `sigma_defence` 0.150 — attack
+genuinely varies more between clubs than defence does, which a single shared
+pseudo-count could not express. Fitted `hfa` 0.108 in log space (~11% above a
+side's neutral rate at home).
+
+**Two honest caveats.**
+
+*OU2.5 moved the wrong way* (+0.000277). It sits well inside the gate's 0.0010
+tolerance and §12.1's primary metric is 1X2, but totals are priced off the same
+matrix, so this promotion trades a little totals accuracy for a little more 1X2
+accuracy. That was a deliberate choice, not an oversight.
+
+*The gain is small* — roughly a tenth of the gate's own tolerance band, and
+about a third of what opponent-adjusted xG delivered (−0.00123). What makes it
+credible is that all three time splits moved the same way, not its size.
+
+**Blend.** `{goals 0.0, elo 0.40, xg 0.40, pooled 0.20}` — exactly the blend the
+A/B measured, a clean substitution of one goals model for the other with `elo`
+and `xg` untouched. This is NOT the output of a weight search: `tune_ensemble`
+was deleted when `ensemble_weight_tuner` was retired, and searching a blend on
+the same window the gate scores would be fitting the gate. `goals` stays in the
+ensemble at weight 0.0 so the A/B can be re-run against it.
+
+**Baseline NOT re-pinned.** `promote_baseline.py` refuses here by design —
+"gate already passes against the current baseline; nothing to re-baseline". Its
+doctrine admits population changes and (with `--force`) metric regressions, but
+has no case for ratcheting after a validated improvement. The consequence is
+that the gate still references the pre-E1 metrics, so it now tolerates the
+model drifting back up by E1's gain plus the tolerance (~0.0018 Brier) before
+failing. Worth closing deliberately rather than by hand-editing the artifact
+the promoter owns.
+
+### Files
+- `club_soccer/model.py` — `_fit_pooled`, `_lambdas_pooled`,
+  `HIERARCHICAL_DEFAULT`, `DEFAULT_ENSEMBLE_W`
+- `club_soccer/validate.py` — `hierarchical_ab`, walk-forward `hierarchical`
+  and `ensemble_weights` options (both in the fold cache key)
+- `club_soccer/data/hierarchical_evidence.json`
+- `tests/club_soccer/test_hierarchical_pooling.py`
+- `plans/club_soccer_uncertainty_experiment.md` §6

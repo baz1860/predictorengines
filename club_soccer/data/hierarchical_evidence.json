@@ -1,0 +1,78 @@
+{
+  "status": "promoted",
+  "generated_at_utc": "2026-08-16T13:43:09.955667+00:00",
+  "method": "monthly walk-forward with identical fixed folds",
+  "test_from": "2024-07-01",
+  "test_to": "2026-07-01",
+  "n": 26969,
+  "evaluation_hash": "2c9396c63ee078449c6f",
+  "code_hash": "00aeebb6fd341372",
+  "fixture_data_hash": "de51f0474b498f2bcae8",
+  "incumbent_weights": {
+    "goals": 0.2,
+    "elo": 0.4,
+    "xg": 0.4,
+    "pooled": 0.0
+  },
+  "candidate_weights": {
+    "goals": 0.0,
+    "elo": 0.4,
+    "xg": 0.4,
+    "pooled": 0.2
+  },
+  "incumbent": {
+    "brier": 0.6117771663977168,
+    "log_loss": 1.0204056598419529,
+    "brier_ou25": 0.24520157586451408,
+    "brier_btts": 0.24694348364789698
+  },
+  "hierarchical": {
+    "brier": 0.6110155185761467,
+    "log_loss": 1.0193763461825358,
+    "brier_ou25": 0.24547855448107364,
+    "brier_btts": 0.24687497830324073
+  },
+  "deltas": {
+    "brier": -0.0007616478215701772,
+    "log_loss": -0.0010293136594170527,
+    "brier_ou25": 0.00027697861655956446,
+    "brier_btts": -6.850534465624447e-05
+  },
+  "gate_12_1_2_headline": true,
+  "gate_12_3_time_splits": {
+    "splits": [
+      {
+        "split": "2025-01-01",
+        "n": 21186,
+        "incumbent_brier": 0.6121971391088478,
+        "candidate_brier": 0.6115945776984784,
+        "delta_brier": -0.0006025614103694066,
+        "won": true
+      },
+      {
+        "split": "2025-07-01",
+        "n": 15131,
+        "incumbent_brier": 0.612516345827768,
+        "candidate_brier": 0.6117500143513315,
+        "delta_brier": -0.0007663314764365659,
+        "won": true
+      },
+      {
+        "split": "2025-12-01",
+        "n": 9190,
+        "incumbent_brier": 0.6126977971305766,
+        "candidate_brier": 0.6118491218683357,
+        "delta_brier": -0.0008486752622408611,
+        "won": true
+      }
+    ],
+    "wins": 3,
+    "required_wins": 2,
+    "worst_regression": -0.0006025614103694066,
+    "max_regression": 0.0015,
+    "pass": true
+  },
+  "decision": "promote",
+  "gate_note": "Covers \u00a712.1-2 (strictly-lower 1X2 Brier, no worse log-loss) and \u00a712.3 (time-split robustness). \u00a712.4 (`--gate` still passes) is a separate check against promotion_baseline.json and must also pass, then the baseline is re-pinned with --update-baseline.",
+  "command": "python3 -m club_soccer.validate --hierarchical-ab --test-from 2024-07-01 --test-to 2026-07-01 --write-evidence"
+}

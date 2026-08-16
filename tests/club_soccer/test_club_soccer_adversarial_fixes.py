@@ -87,11 +87,24 @@ def test_invalid_pricing_model_fails_before_loading_artifacts(monkeypatch):
 
 
 def test_shot_component_collapse_is_price_preserving():
+    """The `xg` component is exactly the 50/50 mixture of the pair it replaced.
+
+    Originally this compared the whole production blend against
+    `0.20*goals + 0.40*elo + 0.20*long_run + 0.20*recent`. E1 promoted on
+    2026-08-16 and moved the goals weight to the pooled component, so the
+    production blend is now deliberately different and that comparison can no
+    longer hold.
+
+    What the test was really protecting survives untouched: collapsing the old
+    xg/xgf pair into one component was supposed to remove a fake degree of
+    freedom WITHOUT changing a price, and that is an identity about the
+    component itself, independent of whatever weight the blend gives it. So
+    assert the identity directly — it stays meaningful across future blend
+    changes, which the old form did not.
+    """
     params = M.load_params()
     home, away, competition = "Arsenal", "Chelsea", "Premier League"
-    parts = M.component_matrices(
-        params, home, away, competition, False
-    )
+    parts = M.component_matrices(params, home, away, competition, False)
     rho = M._comp_rho(params, competition)
     long_run = M.score_matrix(*M._lambdas_xg(
         params, home, away, competition, False, form=False
@@ -99,15 +112,11 @@ def test_shot_component_collapse_is_price_preserving():
     recent = M.score_matrix(*M._lambdas_xg(
         params, home, away, competition, False, form=True
     ), rho)
-    former = (
-        0.20 * parts["goals"] + 0.40 * parts["elo"]
-        + 0.20 * long_run + 0.20 * recent
-    )
-    current = sum(
-        M.DEFAULT_ENSEMBLE_W[name] * matrix
-        for name, matrix in parts.items()
-    )
-    assert np.allclose(current, former, atol=1e-15, rtol=0)
+
+    assert np.allclose(parts["xg"], (long_run + recent) / 2.0,
+                       atol=1e-15, rtol=0)
+    # And the weight it carries is still the sum of the two it replaced.
+    assert M.DEFAULT_ENSEMBLE_W["xg"] == pytest.approx(0.40)
 
 
 def test_offline_health_never_calls_remote_freshness(monkeypatch):

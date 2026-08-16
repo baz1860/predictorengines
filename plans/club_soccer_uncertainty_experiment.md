@@ -236,6 +236,12 @@ python3 -m club_soccer.bootstrap_probe --n-boot 40 --months 6   # quick look
 
 ## 6. E1 — hierarchical pooled component
 
+**Status: PROMOTED 2026-08-16.** `HIERARCHICAL_DEFAULT = True`, blend
+`{goals 0.0, elo 0.40, xg 0.40, pooled 0.20}`. Post-promotion full-window
+validation: accuracy 49.0% → 49.3%, Brier 0.6118 → 0.6110, log-loss
+1.0204 → 1.0194, `--gate` PASS. Numbers and caveats in §6.1; the changelog
+entry is in `docs/model_improvements_changelog.md`.
+
 **Change surface.** One new ensemble component, `pooled`, alongside
 `goals` / `elo` / `xg`.
 
@@ -300,6 +306,83 @@ python3 -m club_soccer.validate --gate
 the comment above it, tune `DEFAULT_ENSEMBLE_W` off zero via the existing
 held-out search, refresh `promotion_baseline.json` with `--update-baseline`,
 append to `docs/model_improvements_changelog.md`.
+
+### 6.1 Result — gate passed, promoted
+
+Two steps of the promotion recipe above turned out to reference tooling that no
+longer exists, and were resolved as follows.
+
+*"Tune `DEFAULT_ENSEMBLE_W` off zero via the existing held-out search."*
+`tune_ensemble` was deleted when `ensemble_weight_tuner` was retired on
+2026-07-25 — its own nested holdout never promoted it. Rather than rebuild a
+retired tuner, the promoted blend is exactly the one the A/B measured. Searching
+a blend on the same window the gate scores would be fitting the gate, and
+shipping precisely what was validated is the honest option.
+
+*"Refresh `promotion_baseline.json` with `--update-baseline`."* No such flag
+exists; `validate.py` never writes that file by design, and the audited
+`promote_baseline.py` owns it. Run against the promoted model it **refuses** —
+`gate already passes against the current baseline; nothing to re-baseline`.
+Its doctrine admits two cases, a changed evaluation population and (with
+`--force`) a metric regression, and has no case for ratcheting after a
+validated improvement. The baseline was therefore left pinned to the pre-E1
+metrics rather than hand-edited around the module that owns it.
+
+**Consequence, worth closing deliberately:** the gate now references metrics the
+production model beats by 0.00076, so it tolerates roughly 0.0018 Brier of drift
+(E1's gain plus the 0.0010 tolerance) before failing. Options are to teach
+`promote_baseline.py` a third, audited case for post-improvement ratcheting, or
+to accept the slack. Not decided here.
+
+`data/hierarchical_evidence.json`. Window `2024-07-01` → `2026-07-01`,
+n = 26,969, `evaluation_hash` `2c9396c63ee078449c6f` — **identical to
+`promotion_baseline.json`**, so both arms priced exactly the pinned population.
+
+Candidate blend `{goals 0.0, elo 0.40, xg 0.40, pooled 0.20}`: a clean
+substitution of one goals model for the other, with `elo` and `xg` untouched so
+a metric move can only be attributed to the pooled component.
+
+| metric | incumbent | candidate | delta | |
+|---|---|---|---|---|
+| 1X2 Brier | 0.611777 | 0.611016 | **−0.000762** | §12.1 pass |
+| log-loss | 1.020406 | 1.019376 | **−0.001029** | §12.2 pass |
+| OU2.5 Brier | 0.245202 | 0.245479 | +0.000277 | within 0.0010 tolerance |
+| BTTS Brier | 0.246943 | 0.246875 | −0.000069 | — |
+
+§12.3 time splits — **3 of 3 won**, and the worst split delta is itself a win:
+
+| split | n | incumbent | candidate | delta |
+|---|---|---|---|---|
+| 2025-01-01 | 21,186 | 0.612197 | 0.611595 | −0.000603 |
+| 2025-07-01 | 15,131 | 0.612516 | 0.611750 | −0.000766 |
+| 2025-12-01 | 9,190 | 0.612698 | 0.611849 | −0.000849 |
+
+§12.4: `--gate` passes unchanged, because the component carries weight 0.0 —
+that check has to be re-run *after* the weight moves, not before.
+
+**What the fitted parameters say.** On the full training set the EM lands at
+`sigma_attack = 0.194` and `sigma_defence = 0.150`. Attack genuinely varies
+more between clubs than defence does, and the incumbent's single pseudo-count
+of 4 applied the same shrinkage to both — it had no way to express the
+difference. Fitted `hfa = 0.108` in log space, i.e. a home side scores ~11%
+above its neutral rate.
+
+**Honest reading of the size.** −0.00076 Brier is a real improvement measured on
+27k matches and repeated across all three time splits, which is what makes it
+credible rather than a lucky window. It is also small: roughly a tenth of the
+gate's own 0.0010 tolerance band, and about a third of what opponent-adjusted xG
+delivered (−0.00123). The direction is consistent everywhere it was measured;
+the magnitude is a fraction of a percent of Brier.
+
+**One cost to weigh.** OU2.5 Brier moves the wrong way (+0.000277). It stays
+well inside the gate tolerance, and §12.1's primary metric is 1X2, but the
+totals market is priced off the same matrix — so a promotion trades a little
+totals accuracy for a little more 1X2 accuracy. Worth a deliberate decision
+rather than an automatic one.
+
+**Also true:** fitting the component roughly doubles fit time (1.28s → 2.14s on
+the full training set), which matters for the 24-fold walk-forward and the A/B,
+not for a daily card.
 
 ---
 
