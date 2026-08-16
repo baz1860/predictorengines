@@ -1,0 +1,428 @@
+# Club Soccer — Model Uncertainty & Variance-Aware Staking
+
+Date: 2026-08-15
+Status: **scoped, not started**
+Relates to: `plans/club_soccer_engine_plan.md` (§12 promotion gate governs everything here)
+
+---
+
+## 0. Ground rules
+
+Inherited from the engine plan §0 unchanged. Two of them bind hard here and are
+called out because they shape the design:
+
+1. **§0.1 — "numpy + pandas + stdlib only. No new pip packages."**
+   PyMC and Stan both violate this. Nothing in this document requires them:
+   E0 is pure numpy resampling, and E1 is specified as MAP + Laplace, which is
+   numpy plus the `scipy.optimize` already vendored in `tennis/model.py` and
+   `golf/model.py`. **If E1 promotes and a full sampler later looks worth it,
+   that is a separate ground-rule exception the owner must grant explicitly.**
+   Do not quietly add a dependency mid-experiment.
+
+2. **§0.5 — point-in-time.** Any posterior used to price a match must be fitted
+   only on matches dated strictly before it. `validate.walk_forward` already
+   enforces this by refitting once per calendar month on prior data only, so a
+   new fitted component inherits the guarantee for free — provided it is fitted
+   *inside* `model.fit()` and not loaded from a whole-history artifact. The
+   `context_coefficients` experiment was retired for exactly this failure
+   ("full-history coefficients could not be evaluated without leakage"). Do not
+   repeat it.
+
+3. **§0.4 — gated OFF first.** Every flag below defaults `False` until its gate
+   passes. Follow the `OPPONENT_ADJUSTED_XG_DEFAULT` / `LEAGUE_SEED_DEFAULT`
+   pattern in `club_soccer/model.py`: the promoted default is a module constant
+   with the evidence numbers in a comment above it, read by both production and
+   `validate.walk_forward`, so validation always measures what production runs.
+
+---
+
+## 1. Hypothesis
+
+Stated so it can be killed:
+
+> **H1 (accuracy).** Team strengths fitted with partial pooling toward a league
+> mean produce better-calibrated 1X2 probabilities than the current independent
+> per-team estimates, most visibly for clubs with thin match history.
+
+> **H2 (staking).** The model's *own* uncertainty about `p_model` varies enough
+> match to match that sizing stakes against it beats the flat quarter-Kelly in
+> `club_soccer/edge.py:377`.
+
+H1 and H2 are separately falsifiable and are gated separately. Bundling them
+would mean a failure tells you nothing about which half failed.
+
+## 2. Why this is plausible in *this* codebase
+
+Not a generic argument for Bayesian methods — three specific things already in
+the engine are hand-rolled approximations of what a pooled model does properly:
+
+- `XG_EVIDENCE_K = 8.0` (`model.py:698`) smoothly down-weights the `xg`
+  component for clubs with little shot data. That is shrinkage-by-hand, applied
+  to one component, with a constant picked by eye.
+- `LEAGUE_SEED_DEFAULT` seeds each club's Elo from its league strength instead
+  of the pooled mean, promoted 2026-07-22 on a real improvement (Brier
+  0.61799 → 0.61600). That is a **prior**, and it worked. Partial pooling is
+  the same idea applied continuously rather than once at initialisation.
+- `XG_RATING_PRIOR = 8.0` with `XG_RATING_ITERATIONS = 12` is a fixed-point
+  ratings loop with a prior weight — a shrinkage estimator without a variance.
+
+So the engine has already found, empirically and three times over, that
+shrinking under-measured clubs toward a sensible prior helps. H1 is the
+generalisation of a result this repo has already banked.
+
+## 3. Prior negative result this must respect
+
+`experiments.json` records **`variance_inflation`** — *"rejected by A/B;
+implementation deleted 2026-07-25"*. Naively widening the predictive
+distribution did **not** work.
+
+This is not the same proposal (that one inflated variance uniformly; this one
+varies it per match by how much data stands behind each club), but it is close
+enough that the burden of proof is high. **E0 exists specifically to check
+whether the per-match variation is real before anything is built.** If posterior
+spread turns out to be near-constant across matches, this collapses into
+`variance_inflation` and should be abandoned on those grounds.
+
+---
+
+## 4. Sequencing
+
+Cheapest falsification first. Each stage can kill the ones after it.
+
+| | Experiment | Tests | Cost | Kills |
+|---|---|---|---|---|
+| **E0** | Bootstrap spread probe | H2 precondition | ~2 days | E2 |
+| **E1** | Hierarchical pooled component | H1 | ~1 week | — |
+| **E2** | Posterior-variance Kelly | H2 | ~4 days | — |
+
+E1 is worth running on its own merits even if E0 kills E2 — better point
+estimates are valuable independent of staking.
+
+---
+
+## 5. E0 — bootstrap spread probe
+
+**Purpose.** Establish, before building anything, whether `p_model` uncertainty
+actually varies match to match. No new model, no new dependency, nothing
+promoted.
+
+**Status: BUILT** — `club_soccer/bootstrap_probe.py`, tests in
+`tests/club_soccer/test_bootstrap_probe.py`, registered as a candidate.
+Three details settled differently during implementation than this section
+first specified; each is recorded below with its reason.
+
+**Method.** Random-weight (Bayesian) bootstrap, B=120, monthly refit,
+point-in-time folds. Each resample draws one Exponential(1) weight per training
+match, normalised to mean 1, and passes it to `model.fit(row_weights=)`. Per
+match, record the across-resample SD of `p_home`, `p_draw`, `p_away`.
+
+> **B reduced from 200 to 120.** An SD estimated from B resamples is itself
+> noisy, and that noise alone inflates read-out 1's ratio — so the probe now
+> computes the floor explicitly (`_dispersion_noise_floor`): the p90/p10 the
+> read-out would show if every match had identical true spread, from the
+> distribution of `sqrt(chi2_{B-1}/(B-1))`. That floor is 1.14 at B=200 and
+> 1.18 at B=120, both far below the 1.5 threshold, and a pass must now clear
+> the floor as well as the threshold. Read-out 2's power comes from the ~27k
+> matches in the window rather than from B. So 200 buys a marginally lower
+> floor for two-thirds more compute, and 120 is the better trade.
+
+> **Changed from "resample fixtures with replacement".** A multinomial resample
+> can drop every match a thin-history club played, which removes it from
+> `params["teams"]` and makes it unpredictable. Those clubs are the population
+> this probe exists to measure, so dropping them biases the result toward
+> well-measured clubs and *understates* dispersion — a false negative in the
+> one direction that would wrongly kill the proposal. Exponential weights are
+> proportional to a Dirichlet(1,…,1) draw, so this is still a bootstrap; every
+> club survives every resample with only its influence varying. Mean-1
+> normalisation preserves effective sample size, which matters because
+> `XG_RATING_PRIOR` is measured against accumulated weight.
+
+The `row_weights` hook lands in two places, because the components are fitted
+by different machinery: it multiplies the time-decay weights (goals, xG) and
+scales the Elo update size (`delta = k * (actual - exp) * bw`). Elo is a
+sequential loop that never sees the decay weights, so without the second hook
+the probe would leave 40% of the default ensemble identical across every
+resample and report a spread that understates the real one. `row_weights=None`
+is exactly the production fit — asserted as equality, not tolerance, since both
+sites multiply by 1.0.
+
+Window: the `2024-07-01` → `2026-07-01` already pinned in
+`promotion_baseline.json`, so the population matches every other club-soccer
+measurement.
+
+**Read-out.** Three numbers decide it:
+
+1. **Spread dispersion.** Ratio of 90th to 10th percentile of per-match
+   posterior SD, which must clear both 1.5 and the resample-count noise floor
+   above. If it does not, uncertainty is effectively constant, H2 is dead, and
+   `KELLY_FRACTION = 0.25` is already doing the right thing.
+2. **Signal.** Spearman correlation between posterior SD and **excess** Brier
+   error — realised Brier minus the Brier the prediction itself implies
+   (`sum_k p_k(1 - p_k)`). Requires rho > 0.05 at p < 0.01.
+
+   > **Changed from "realised squared calibration error".** The raw version is
+   > confounded: a near-uniform prediction carries a high expected Brier no
+   > matter how certain the model is of it, and posterior SD is also largest at
+   > mid-range probabilities, so the two correlate through predictive entropy
+   > alone with parameter uncertainty contributing nothing. Subtracting the
+   > implied Brier leaves only the error the point prediction did not already
+   > account for, which is the quantity H2 actually rests on. Both numbers are
+   > reported; only the excess one decides.
+
+3. **Thin-club check.** Posterior SD for matches involving low-history clubs vs
+   well-measured ones, split at the median training match count. Informational,
+   confirming the effect sits where theory says — not a kill criterion.
+
+   > **Changed from the `XG_EVIDENCE_K` split.** That constant measures *shot
+   > data* coverage specifically; total match count is the more direct measure
+   > of how much evidence stands behind a club's rating.
+
+**Kill criterion.** Fail (1) *or* (2) → stop. Flip the registry entry to
+`retired` with the numbers, per the honest-negative pattern. Do not build E2.
+
+### 5.1 Result — COMPLETE, full pinned window
+
+`data/bootstrap_spread_evidence.json`, window `2024-07-01` → `2026-07-01`,
+24 months, B = 120, 2,904 fits in 34 min.
+
+**n = 26,969 — identical to `promotion_baseline.json`'s pinned row count**, so
+the probe describes exactly the population the promotion gate is measured on,
+not an approximation of it.
+
+| read-out | measured | bar | |
+|---|---|---|---|
+| 1. dispersion (p90/p10 of posterior SD) | **1.68** | ≥ 1.50, and > 1.18 noise floor | pass |
+| 2. Spearman(SD, excess Brier) | **+0.0683**, p = 3.0e-29 | > 0.05 at p < 0.01 | pass |
+| 3. thin-club SD ratio | 1.11 | informational | — |
+
+Posterior SD quartiles: p10 0.02592, p50 0.03183, p90 0.04347. Raw (confounded)
+correlation +0.0752 against the +0.0683 excess figure — the entropy confound was
+inflating it by about 10%, and the signal survives its removal.
+
+**Verdict: proceed.** Per-match uncertainty is genuinely uneven, and it predicts
+error the point prediction does not already imply. That is the precondition E2
+needed, and it is what distinguishes this from the retired `variance_inflation`.
+
+**Robustness.** An 8-month interim run (n = 7,700) gave rho +0.0680, thin-club
+ratio 1.11, dispersion 1.76 — against +0.0683, 1.11, 1.68 on the full 24 months.
+Two of the three read-outs are stable to three decimal places across a 3.5x
+change in sample; dispersion drifted down slightly as expected, since the
+interim window's off-season months carry fewer matches. The result is not an
+artefact of which months were measured.
+
+**The signal is real but small.** rho = 0.068 at p = 3e-29 is statistically
+overwhelming and practically modest. A correlation that size means posterior
+variance carries genuine information about where the model errs — not that
+variance-aware staking will move ROI much. E0 was built to answer "is there
+anything here at all", and the answer is yes. It does not promise E2 will clear
+its own bar. Expect a small effect, and hold E2 to the log-growth gate in §7
+rather than relaxing it on the strength of this.
+
+**Artifacts.** `data/bootstrap_spread_evidence.json`. Report-only; a test
+asserts the module writes nothing else.
+
+```bash
+python3 -m club_soccer.bootstrap_probe --write-evidence
+python3 -m club_soccer.bootstrap_probe --n-boot 40 --months 6   # quick look
+```
+
+> **Changed from `validate --bootstrap-probe`.** `validate.py` owns the
+> promotion gate and is already ~850 lines; a report-only research diagnostic
+> that promotes nothing belongs beside `decision_time_backtest.py` and
+> `market_diagnostics.py` as its own module, which is the established
+> convention for this kind of tool.
+
+---
+
+## 6. E1 — hierarchical pooled component
+
+**Change surface.** One new ensemble component, `pooled`, alongside
+`goals` / `elo` / `xg`.
+
+- `model.py`: add `_lambdas_pooled()` and a `"pooled"` entry in
+  `component_matrices()`. Fitted inside `fit()` — never loaded from a
+  whole-history file (§0.2).
+- `DEFAULT_ENSEMBLE_W` gains `"pooled"` at weight `0.0`. **Weight 0.0 is the
+  OFF state** and is exactly price-preserving — verified against the two places
+  weights are touched: `_weights_for_match` (`model.py:701`) scales only
+  `_SHOT_COMPONENTS` and then renormalises, so a zero weight stays zero through
+  `v / total`; and the blend at `model.py:802`,
+  `sum(weights[k] * parts[k] for k in ENSEMBLE_COMPONENTS)`, gains a term that
+  is identically zero. The card must be byte-identical with the flag off; assert
+  it rather than assuming it.
+- `HIERARCHICAL_DEFAULT = False` module constant, read by both `predict()` and
+  `walk_forward()`.
+
+**Estimator.** Hierarchical Poisson on attack/defence with a per-competition
+mean and a shared variance, fitted by MAP with a Laplace approximation for the
+covariance. Uses `scipy.optimize.minimize(method="L-BFGS-B", jac=True)` — the
+same call already in `tennis/model.py:374`, so the pattern is in-house. No
+sampler, no new dependency.
+
+The pooling variance is the one genuinely new parameter and it must be fitted,
+not chosen — fit it on training folds only.
+
+**Walk-forward cache.** `walkforward_cache.py` carries the warning *"EVERY fit
+option must appear here. An option absent from the cache key means the cache
+serves results produced under different settings — a silent wrong answer, not a
+slow one."* Add `hierarchical` to `cache_opts` in `walk_forward()` **before**
+running any arm, and resolve it to a concrete bool (not `None`) exactly as
+`league_seed` is, or the two arms will collide on one cache entry.
+
+**Gate.** §12 items 1–4, unchanged, against `promotion_baseline.json`:
+
+| metric | baseline | tolerance |
+|---|---|---|
+| `brier` | 0.611777 | 0.0010 |
+| `log_loss` | 1.020405 | 0.0015 |
+| `brier_ou25` | 0.245201 | 0.0010 |
+| `brier_btts` | 0.246944 | 0.0010 |
+
+n = 26,969, window `2024-07-01` → `2026-07-01`, `evaluation_hash`
+`2c9396c63ee078449c6f`. Plus §12.3 time-split robustness on `2025-01-01`,
+`2025-07-01`, `2025-12-01` — win ≥ 2 of 3, worst regression ≤ 0.0015 Brier.
+
+**Harness.** Copy `validate.opponent_xg_ab()` verbatim as the template. It
+already does the thing that matters: it asserts both arms produced identical
+evaluation populations (`_evaluation_hash` equality) and raises otherwise. It
+also records `code_hash`, `fixture_data_hash` and the reproducing command in the
+evidence payload. Match all of it.
+
+**Artifacts.** `data/hierarchical_evidence.json`.
+
+```bash
+python3 -m club_soccer.validate --hierarchical-ab \
+  --test-from 2024-07-01 --test-to 2026-07-01 --write-evidence
+python3 -m club_soccer.validate --gate
+```
+
+**On promotion.** Set `HIERARCHICAL_DEFAULT = True` with the evidence numbers in
+the comment above it, tune `DEFAULT_ENSEMBLE_W` off zero via the existing
+held-out search, refresh `promotion_baseline.json` with `--update-baseline`,
+append to `docs/model_improvements_changelog.md`.
+
+---
+
+## 7. E2 — posterior-variance-aware Kelly
+
+**Precondition.** E0 passed. Gated behind E1 only if E1's posterior is the
+variance source; if E0's bootstrap spread is used directly, E2 can run standalone.
+
+**Change surface.** `club_soccer/edge.py:377`, currently:
+
+```python
+kfrac = KELLY_FRACTION * kelly(p_model, o) * lineup_confidence
+```
+
+The proposal replaces the flat `KELLY_FRACTION` with a per-match shrinkage
+derived from posterior variance — Kelly integrated over the posterior rather
+than evaluated at its mean. Keep `lineup_confidence` untouched; it haircuts a
+different, known unknown and is not in scope.
+
+`POSTERIOR_KELLY_DEFAULT = False`. With the flag off, the arithmetic must reduce
+**exactly** to `0.25 * kelly(...)`, so a stake-for-stake diff on the current
+card is empty. Assert this in a test.
+
+### 7.1 The measurement problem — read before designing the gate
+
+§12.5 asks for simulated ROI vs closing at the 4% threshold. **That measurement
+is underpowered for this change and must not be the promotion signal.**
+
+`settlement_ledger.csv` holds 2,100 settled rows. Bet-level ROI has a standard
+deviation on the order of 100%+ at typical odds, so the standard error on mean
+ROI is roughly 100%/√2100 ≈ **2.2 percentage points**. A staking refinement that
+genuinely adds ~1pp of ROI is invisible at that sample size. Promoting on it
+would be promoting on noise — and with only ~1,346 rows in `closing_ledger.csv`
+the picture is thinner still.
+
+**Primary metric instead: expected log growth**, Kelly's actual objective,
+evaluated against devigged closing prices on `closing_market_ledger_v2.csv`
+(7,937 market rows — the largest closing-price surface in the engine). For each
+forecast with a closing price, compute expected log bankroll growth under each
+staking rule using the model's probability, and compare totals. This measures
+the quantity Kelly is trying to maximise, on ~4x the sample, without waiting for
+settlement.
+
+**Secondary, confirmatory only:** realised ROI at the 2%/4%/6% thresholds from
+`decision_time_backtest.py` (`THRESHOLDS`, line 67). Reported in the evidence
+payload and required not to *visibly* regress, but explicitly **not** the
+promotion signal, and the payload must say so in a `note` field so a future
+reader doesn't mistake a noisy positive for evidence.
+
+**Gate for E2.**
+
+1. Expected log growth vs closing strictly improves.
+2. §12 items 1–4 unchanged — a staking change must not move model metrics at
+   all; if `brier` moves, something leaked into `predict()` and the experiment
+   is invalid, not passing.
+3. Realised ROI at 4% does not visibly regress (confirmatory).
+4. Per-league view from `_threshold_metrics_by_league` shows no league where
+   stakes grow while its own CLV is negative. The existing comment there warns
+   that a pooled pass can mask leagues with no closing feed — the same trap
+   applies here.
+
+**Artifacts.** `data/posterior_kelly_evidence.json`.
+
+```bash
+python3 -m club_soccer.decision_time_backtest --posterior-kelly-ab --write-evidence
+```
+
+---
+
+## 8. Registry entries
+
+Add to `club_soccer/experiments.json` at kickoff, `status: "candidate"`,
+`expires_on` = start + 60 days per `policy_days`. `health.py:258` fails the run
+on any candidate past expiry, so these are self-cleaning — three entries:
+`bootstrap_spread_probe`, `hierarchical_pooling`, `posterior_kelly`.
+
+Record the originating `git_sha` at kickoff, as every existing entry does.
+
+## 9. Tests to add
+
+Under `tests/club_soccer/`, offline-runnable, no network:
+
+- `test_hierarchical_pooling.py` — OFF state is exactly price-preserving
+  (component weight 0.0 leaves the blended matrix bit-identical); pooled
+  estimates shrink a synthetic thin-data club toward its league mean and leave a
+  data-rich club nearly unmoved; fit is deterministic under a fixed seed.
+- `test_posterior_kelly.py` — flag OFF reproduces `0.25 * kelly(p, o)` exactly;
+  higher posterior variance never increases a stake; stake stays in `[0, 1]` at
+  degenerate inputs (p→0, p→1, odds→1.0).
+- Extend `test_walkforward_cache.py` — the new fit option appears in the cache
+  key and two arms cannot collide.
+- Extend `test_gate_reporting.py` — E2's evidence payload carries its
+  "ROI is confirmatory, not primary" note.
+
+Full run before any promotion:
+
+```bash
+python3 run_checks.py
+```
+
+## 10. Decision tree
+
+```
+E0 spread probe
+├── dispersion < 1.5 or no error-correlation
+│     → H2 dead. Record negative. Consider E1 alone on H1 merits.
+└── pass
+      ├── E1 hierarchical → §12 gate
+      │     ├── pass → promote, re-pin baseline, changelog
+      │     └── fail → retire with numbers; E2 may still run off bootstrap variance
+      └── E2 posterior Kelly → log-growth gate
+            ├── pass → promote staking rule
+            └── fail → retire. Quarter-Kelly stands, now with evidence behind it.
+```
+
+## 11. Effort and honest expectations
+
+Roughly two and a half weeks of focused work for all three stages, with E0's two
+days being the ones that decide whether the rest is worth starting.
+
+Six of the nine experiments in `experiments.json` are retired. That is a healthy
+rate for genuine research and the realistic prior here: **most likely outcome is
+E1 promotes on H1 and E2 retires on H2.** Both results are worth having. A
+retired E2 converts `KELLY_FRACTION = 0.25` from an unexamined default into a
+measured choice, which is itself a real gain for a number that scales every
+stake the engine places.

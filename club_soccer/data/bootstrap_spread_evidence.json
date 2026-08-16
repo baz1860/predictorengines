@@ -1,0 +1,52 @@
+{
+  "readout_1_dispersion": {
+    "sd_p10": 0.0259156579138012,
+    "sd_p50": 0.03183441719889205,
+    "sd_p90": 0.04346631379306176,
+    "ratio_p90_p10": 1.6772220847194501,
+    "threshold": 1.5,
+    "noise_floor_ratio": 1.1813498364780066,
+    "noise_floor_note": "the ratio this read-out would show if every match had identical true spread, given the resample count \u2014 a pass must clear it",
+    "pass": true
+  },
+  "readout_2_signal": {
+    "spearman_rho_excess_error": 0.06828337962038644,
+    "p_value": 3.030864519418698e-29,
+    "spearman_rho_raw_error_confounded": 0.07515290488961016,
+    "threshold_rho": 0.05,
+    "threshold_p": 0.01,
+    "pass": true,
+    "note": "decided on excess error (realised Brier minus the Brier the prediction implies); the raw correlation is reported only to show the confounding it removes"
+  },
+  "readout_3_thin_clubs": {
+    "history_split_matches": 99.0,
+    "sd_mean_thin": 0.03506987109601347,
+    "sd_mean_thick": 0.031489772048267056,
+    "ratio_thin_thick": 1.113690853089025,
+    "note": "informational \u2014 confirms where the effect sits, not a kill criterion"
+  },
+  "verdict": "proceed",
+  "decision": "E0 passes: per-match uncertainty varies and predicts excess error. E2 (posterior-variance Kelly) is worth building.",
+  "experiment": "bootstrap_spread_probe",
+  "purpose": "E0 \u2014 does per-match model uncertainty vary enough to be worth staking against? Report-only; promotes nothing.",
+  "generated_at_utc": "2026-08-16T12:59:55.583002+00:00",
+  "method": "random-weight (Bayesian) bootstrap, mean-1 Exponential(1) row weights, monthly refit, point-in-time folds",
+  "test_from": "2024-07-01",
+  "test_to": "2026-07-01",
+  "window_note": "full pinned window (matches promotion_baseline.json)",
+  "months_tested": 24,
+  "months_dropped": [],
+  "n_boot": 120,
+  "seed": 20260815,
+  "n": 26969,
+  "total_fits": 2904,
+  "elapsed_s": 2027.3,
+  "code_hash": "0885e879a5360f9f",
+  "fixture_data_hash": "de51f0474b498f2bcae8",
+  "thresholds": {
+    "min_dispersion_ratio": 1.5,
+    "min_error_rho": 0.05,
+    "max_error_p": 0.01
+  },
+  "command": "python3 -m club_soccer.bootstrap_probe --test-from 2024-07-01 --test-to 2026-07-01 --n-boot 120 --seed 20260815 --write-evidence"
+}

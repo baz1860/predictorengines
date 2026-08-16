@@ -87,6 +87,10 @@ club_soccer/data/fdcouk_league_cache/
 # and a stale committed entry can never be served, since a changed fingerprint
 # simply misses.
 club_soccer/data/walkforward_cache/
+# E0 bootstrap probe resume cache: per-month refit results, rebuildable from
+# the fixture history and keyed on the code fingerprint. The evidence file it
+# produces IS tracked; this is only the scratch that survives an interrupt.
+club_soccer/data/.bootstrap_cache/
 # Run history ledger: per-machine operational record, not source.
 club_soccer/data/run_history.jsonl
 # Bzzoiro v2 shotmaps/lineups/player payloads and flattened joins are

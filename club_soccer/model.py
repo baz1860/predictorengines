@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+from itertools import repeat
 from pathlib import Path
 
 import numpy as np
@@ -268,13 +269,49 @@ def fit(df: pd.DataFrame | None = None,
         half_life_days: float = HALF_LIFE_DAYS,
         opponent_adjusted_xg: bool | None = None,
         league_seed: bool | None = None,
-        coef_as_of: str | None = None) -> dict:
-    """Fit the promoted goals, Elo and opponent-adjusted xG model."""
-    df = played(load_fixtures() if df is None else df).sort_values("date")
+        coef_as_of: str | None = None,
+        row_weights=None) -> dict:
+    """Fit the promoted goals, Elo and opponent-adjusted xG model.
+
+    row_weights: optional per-match multiplier used by the E0 bootstrap probe
+    (`club_soccer/bootstrap_probe.py`) to resample the training set without
+    dropping any club. Accepts an array aligned with `df` as passed, or a
+    Series carrying `df`'s index; either way it is realigned to the frame
+    AFTER `played()` filtering and date sorting, so a caller cannot silently
+    pair weights with the wrong matches.
+
+    `None` is exactly the production fit — no allocation, and the two places
+    the multiplier lands (the time-decay weights, and the Elo update size) are
+    both identity at 1.0. Do not use this to ship a model: a weighted fit is a
+    diagnostic, and nothing under `season.py` may pass it.
+    """
+    source = load_fixtures() if df is None else df
+    df = played(source).sort_values("date")
     if df.empty:
         raise ValueError("No played fixtures available to fit the model.")
     teams = sorted(set(df["home"]) | set(df["away"]))
     w = _weights(df["date"], half_life_days)
+    boot = None
+    if row_weights is not None:
+        # Length is checked before the Series is built: constructing one with
+        # a mismatched index raises pandas' own message, which says nothing
+        # about row_weights and sends the reader to the wrong place.
+        if len(row_weights) != len(source):
+            raise ValueError(
+                f"row_weights has {len(row_weights)} entries for "
+                f"{len(source)} input matches"
+            )
+        series = (row_weights if isinstance(row_weights, pd.Series)
+                  else pd.Series(np.asarray(row_weights, dtype=float),
+                                 index=source.index))
+        boot = series.reindex(df.index).to_numpy(dtype=float)
+        if not np.all(np.isfinite(boot)):
+            raise ValueError("row_weights must be finite")
+        if np.any(boot < 0.0):
+            raise ValueError("row_weights must be non-negative")
+        # Time-decay and resampling weight compose multiplicatively: a match
+        # drawn twice counts twice at whatever recency it already had.
+        w = w * boot
     avg_home = float(np.average(df["home_goals"], weights=w))
     avg_away = float(np.average(df["away_goals"], weights=w))
     global_avg = max(0.8, (avg_home + avg_away) / 2)
@@ -472,7 +509,16 @@ def fit(df: pd.DataFrame | None = None,
             offset = (_sp(comp.country, comp.tier or 1, as_of=coef_as_of)
                       - LEAGUE_SEED_ANCHOR) * ELO_PER_STRENGTH
             elo[t] = BASE_ELO + offset
-    for r in df.itertuples(index=False):
+    # Elo is a sequential learner, so the resampling multiplier cannot ride on
+    # the time-decay weights the way it does for goals and xG — those weights
+    # never reach this loop. It scales the UPDATE SIZE instead: a match drawn
+    # twice moves the ratings twice as far, drawn zero times moves them not at
+    # all, which is the sequential analogue of counting it twice or dropping
+    # it. Without this the probe would leave the Elo component (40% of the
+    # default ensemble) identical across every resample and report a posterior
+    # spread that understates the real one.
+    boot_elo = repeat(1.0) if boot is None else boot
+    for r, bw in zip(df.itertuples(index=False), boot_elo):
         h, a = r.home, r.away
         adv = 0.0 if int(r.neutral) else HOME_ADV_ELO
         exp_h = 1.0 / (1.0 + 10 ** ((elo[a] - (elo[h] + adv)) / 400.0))
@@ -480,7 +526,7 @@ def fit(df: pd.DataFrame | None = None,
         margin = abs(float(r.home_goals) - float(r.away_goals))
         comp_k = 18 + 20 * strength(r.competition)
         k = comp_k * (1.0 if margin <= 1 else min(1.75, 1 + margin / 4))
-        delta = k * (actual_h - exp_h)
+        delta = k * (actual_h - exp_h) * bw
         elo[h] += delta
         elo[a] -= delta
 
