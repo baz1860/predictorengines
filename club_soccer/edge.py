@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import urllib.request
 import urllib.parse
@@ -27,6 +28,41 @@ ODDS_CSV = DATA / "odds.csv"
 REPORT = DATA / "edge_report.csv"
 CACHE = DATA / "bsd_cache"
 KELLY_FRACTION = 0.25
+
+# ── E2: posterior-variance-aware staking ─────────────────────────────────────
+# GATED OFF. See plans/club_soccer_uncertainty_experiment.md §7.
+#
+# Quarter-Kelly is a flat hedge against estimation error, applied identically
+# to a match between two clubs with fourteen seasons of history and one
+# involving a newly-promoted side with forty matches on the book. E0 showed
+# per-match uncertainty varies (p90/p10 = 1.68) and predicts excess error
+# (rho = +0.068), so in principle the hedge should vary with it.
+#
+# Why the rule shrinks toward the market rather than just scaling the fraction:
+# for a single binary bet, expected log growth is LINEAR in p, so integrating
+# Kelly over the posterior returns Kelly at the posterior mean — parameter
+# uncertainty alone does not change the optimal fraction. What does is
+# SELECTION: a bet is placed when `edge > threshold`, which conditions on
+# p_model landing high relative to the book, so among noisy estimates the
+# selected ones are optimistically biased. That bias grows with variance, and
+# shrinking the model's edge toward the book is what counteracts it.
+POSTERIOR_KELLY_DEFAULT = False
+# Anchor for the precision weighting: a match at the model's reference SD
+# keeps its full edge, worse-measured matches keep less.
+#
+# The multiplier is clamped at 1.0, so this rule can only ever REDUCE a stake.
+# That is deliberate — by the linearity argument above, Kelly at the posterior
+# mean is already the log-optimum, so low variance does not entitle a bet to
+# more than its measured edge; only the selection bias, which grows with
+# variance, argues for less.
+#
+# It also means the rule lowers total staked, which any A/B has to correct
+# for: on a book whose ROI is currently negative, staking less improves log
+# growth for a reason that has nothing to do with uncertainty. The comparison
+# is therefore run at MATCHED TOTAL STAKE — see `posterior_kelly_ab` — so the
+# question stays "does varying the hedge by uncertainty beat a flat hedge?"
+# rather than "is betting less better?".
+POSTERIOR_KELLY_ANCHOR = 2.0
 ODDS_API_URL = "https://api.the-odds-api.com/v4/sports/{sport}/odds"
 ODDS_API_SPORTS = {
     "Premier League": "soccer_epl",
@@ -172,6 +208,54 @@ def devig(odds: list[float]) -> np.ndarray:
 def kelly(p: float, odds: float) -> float:
     b = odds - 1.0
     return max(0.0, (p * b - (1.0 - p)) / b)
+
+
+def posterior_shrink(sd: float | None, sd_reference: float | None) -> float:
+    """How much of the model's edge to keep, given this match's uncertainty.
+
+    Returns a multiplier on `p_model - p_book`, anchored so that a match at
+    `sd_reference` keeps exactly all of it. Better-measured matches keep more,
+    worse-measured keep less, and the median match is unchanged — so across a
+    card the rule moves stake between bets rather than scaling the whole book.
+
+    `POSTERIOR_KELLY_ANCHOR / (1 + (sd/sd_ref)^2)` is the precision-weighting
+    form: it is 1.0 at sd == sd_ref, tends to 2.0 as sd -> 0 and to 0 as
+    sd grows. Capped at 1.0 in practice by the caller's clamp, because a model
+    that is merely confident has still not earned MORE than its measured edge.
+
+    Returns 1.0 — a no-op — whenever the inputs are missing or degenerate, so
+    a match without a posterior is staked exactly as it is today.
+    """
+    if sd is None or sd_reference is None:
+        return 1.0
+    try:
+        sd = float(sd)
+        sd_reference = float(sd_reference)
+    except (TypeError, ValueError):
+        return 1.0
+    if not (math.isfinite(sd) and math.isfinite(sd_reference)) or sd_reference <= 0:
+        return 1.0
+    ratio = sd / sd_reference
+    shrink = POSTERIOR_KELLY_ANCHOR / (1.0 + ratio * ratio)
+    return float(max(0.0, min(1.0, shrink)))
+
+
+def posterior_kelly_stake(p_model: float, p_book: float, odds: float,
+                          sd: float | None, sd_reference: float | None,
+                          active: bool | None = None) -> float:
+    """Kelly fraction with the edge shrunk by this match's uncertainty.
+
+    With the flag off — the default — this is EXACTLY
+    `KELLY_FRACTION * kelly(p_model, odds)`, the same arithmetic as before E2
+    existed, not an approximation of it.
+    """
+    active = POSTERIOR_KELLY_DEFAULT if active is None else bool(active)
+    if not active:
+        return KELLY_FRACTION * kelly(p_model, odds)
+    keep = posterior_shrink(sd, sd_reference)
+    p_used = float(p_book) + keep * (float(p_model) - float(p_book))
+    p_used = max(0.0, min(1.0, p_used))
+    return KELLY_FRACTION * kelly(p_used, odds)
 
 
 def side_prob(pred: dict, market: str, side: str) -> float:
@@ -348,6 +432,14 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
                 pred["probs"]["home"], pred["probs"]["draw"], pred["probs"]["away"] = \
                     ph, pdr, pa
             prediction_cache[fixture_key] = pred
+        # E2 inputs. Computed only when the flag is on: `posterior_eta_sd` is
+        # a couple of dict lookups, but there is no reason to pay even that on
+        # every quote of every match while the experiment is gated off, and
+        # `posterior_kelly_stake` ignores both arguments in that state.
+        post_sd = post_sd_ref = None
+        if POSTERIOR_KELLY_DEFAULT:
+            post_sd = M.posterior_eta_sd(params, home, away)
+            post_sd_ref = (params.get("pooled") or {}).get("eta_sd_reference")
         # P0 evidence coverage. Report-only by design: pricing continues
         # unchanged so the build can be measured against live behaviour, but
         # every suggestion carries the tier of its least-evidenced side so a
@@ -372,9 +464,14 @@ def rows_from_odds(odds: pd.DataFrame, model_name: str = "ensemble",
             p_consensus = float(np.mean(book_probs[side]))
             p_model = side_prob(pred, str(r["market"]), side)
             ev = p_model * o - 1.0
-            # Haircut the stake (not the EV/edge display) by lineup-read
-            # confidence — a shaky lineup should bet smaller, not look less +EV.
-            kfrac = KELLY_FRACTION * kelly(p_model, o) * lineup_confidence
+            # E2, gated off: shrink the edge toward the book in proportion to
+            # how well-measured the two clubs are. With the flag off this is
+            # exactly KELLY_FRACTION * kelly(p_model, o), unchanged.
+            # `lineup_confidence` stays a separate multiplier — it haircuts a
+            # different, known unknown and is not part of this experiment.
+            kfrac = posterior_kelly_stake(
+                p_model, p_book, o, post_sd, post_sd_ref,
+            ) * lineup_confidence
             # line_key is the already-normalized group line ("" = no line).
             line = "" if line_key == "" else float(line_key)
             label = bet_label(home, away, str(r["market"]), side, line)

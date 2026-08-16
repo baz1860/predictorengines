@@ -388,6 +388,11 @@ not for a daily card.
 
 ## 7. E2 — posterior-variance-aware Kelly
 
+**Status: BUILT, GATED OFF, verdict UNDECIDABLE.** See §7.2. Not a pass and not
+a failure — the evidence base cannot currently distinguish this rule from the
+flat fraction, and the reason is a hard constraint of the domain rather than
+anything about the rule.
+
 **Precondition.** E0 passed. Gated behind E1 only if E1's posterior is the
 variance source; if E0's bootstrap spread is used directly, E2 can run standalone.
 
@@ -509,3 +514,87 @@ E1 promotes on H1 and E2 retires on H2.** Both results are worth having. A
 retired E2 converts `KELLY_FRACTION = 0.25` from an unexamined default into a
 measured choice, which is itself a real gain for a number that scales every
 stake the engine places.
+
+### 7.2 Result — undecidable, and why that is the finding
+
+`data/posterior_kelly_evidence.json`, via
+`python3 -m club_soccer.posterior_kelly_ab`.
+
+Replay of **1,244 eligible decisions** (288 fixtures, 10 days, posterior SD
+available for 100% of them), scored by expected log growth against the devigged
+closing price, with posterior SDs refit point-in-time at each decision's own
+`train_cutoff`.
+
+| | value |
+|---|---|
+| log-growth delta at matched stake (**primary**) | **+0.02217** |
+| 95% day-block CI | **[−0.01735, +0.07107]** |
+| independent blocks | 10 |
+| raw unmatched delta | +0.04771 *(confounded)* |
+| realised ROI | −0.1360 → −0.1290 *(confirmatory only)* |
+| candidate stake before matching | 97.3% of incumbent |
+
+**Verdict: undecidable.** The direction is favourable and the interval spans
+zero. On this sample the rule cannot be told apart from a flat quarter-Kelly.
+
+#### Why the plan's own power estimate was optimistic
+
+§7.1 proposed scoring against `closing_market_ledger_v2.csv` on the grounds
+that it is "the largest closing-price surface in the engine". That was the
+wrong population. Those are closing *snapshots*; a staking rule can only be
+scored on *decisions* — a placed bet with an executable price and a model
+probability — and `decision_time_backtest.py` is explicit about why that set
+cannot be extended backwards:
+
+> A decision-time quote cannot be reconstructed after the fact; it had to be
+> recorded before kick-off. So this backtest can only ever cover fixtures that
+> were snapshotted while upcoming, and it ACCUMULATES forward.
+
+So the ceiling is not 7,937 rows but the 1,244 decisions across **10 days** that
+have accrued since the ledger started on 2026-07-26. Switching the metric from
+ROI to log growth removed the binomial noise exactly as intended — that part of
+§7.1 held — but it cannot manufacture independent blocks, and blocks are what
+the interval is built from.
+
+#### The constraint sits upstream of E2
+
+The engine's own `evidence_gate` still reports the staking gate **CLOSED**:
+
+- 183 bets at 1X2 @2% against `MIN_BETS = 1000`, required at every threshold
+- **1** independent block against `MIN_INDEPENDENT_BLOCKS = 8`
+- flat ROI −0.087 at 1X2 @2%, not finite-positive
+
+E2 refines how a strategy sizes stakes that the strategy has not yet earned the
+right to place. Its evidence requirement cannot reasonably be lighter than the
+base strategy's, which is why `_verdict` reads `MIN_INDEPENDENT_BLOCKS`
+directly rather than inventing its own bar.
+
+One number in that report is worth watching: **CLV is positive (+0.038 at
+1X2 @4%) while flat ROI is negative (−0.091)** on n=140. Beating the close
+while losing money is exactly what a real edge looks like before it has enough
+samples to show up in results — or what noise looks like. More decision-time
+evidence separates those two, and it is the same evidence E2 needs.
+
+#### What was learned that survives regardless
+
+- Expected log growth vs the close is the right metric for a staking change and
+  is now implemented; it will be well-powered before ROI is.
+- Kelly at the posterior mean is *already* the log-growth optimum — expected log
+  growth is linear in `p`, so parameter uncertainty alone does not change the
+  optimal fraction. The case for a variance-aware stake rests entirely on
+  **selection bias**: a bet is placed when `edge > threshold`, so among noisy
+  estimates the selected ones are optimistically biased, and that bias grows
+  with variance. This is a sharper motivation than §7 originally carried, and it
+  is why the rule shrinks toward the executing book and is clamped to never
+  increase a stake.
+- The clamp makes the rule one-sided, which means any A/B on a negative-ROI book
+  must match total stake or it rewards betting less for the wrong reason.
+
+#### To resolve it
+
+Re-run as evidence accrues; the registry entry expires 2026-10-15, which forces
+the question back. Nothing needs rebuilding:
+
+```bash
+python3 -m club_soccer.posterior_kelly_ab --write-evidence
+```

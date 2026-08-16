@@ -422,9 +422,25 @@ def _fit_pooled(df: pd.DataFrame, w: np.ndarray, teams: list[str],
     mu_d = x[off_mud:off_mud + n_leagues]
     if not (np.all(np.isfinite(att)) and np.all(np.isfinite(dfn))):
         return None
+    # Laplace posterior variances at the converged solution. E1 uses these
+    # internally for the EM update and then throws them away; E2 needs them
+    # persisted, because they are the per-club uncertainty a variance-aware
+    # stake would size against. A club with few matches has a large variance
+    # here for the same reason its rating is shrunk.
+    h_att, h_dfn = _curvature(x)
+    var_att = 1.0 / (h_att + 1.0 / sigma_a ** 2)
+    var_dfn = 1.0 / (h_dfn + 1.0 / sigma_d ** 2)
+    # The reference scale a variance-aware stake measures a match against.
+    # Stored on the MODEL, not computed per card: derived from the day's
+    # fixtures it would make one bet's stake depend on which other matches
+    # happen to be playing, which is not a property of the bet.
+    eta_sd_reference = float(np.sqrt(np.median(var_att) + np.median(var_dfn)))
     return {
+        "eta_sd_reference": eta_sd_reference,
         "attack": {t: float(att[i]) for t, i in tidx.items()},
         "defence": {t: float(dfn[i]) for t, i in tidx.items()},
+        "var_attack": {t: float(var_att[i]) for t, i in tidx.items()},
+        "var_defence": {t: float(var_dfn[i]) for t, i in tidx.items()},
         "mu_attack": {name: float(mu_a[i]) for name, i in lidx.items()},
         "mu_defence": {name: float(mu_d[i]) for name, i in lidx.items()},
         "team_league": dict(team_league),
@@ -934,6 +950,85 @@ def _lambdas_pooled(params: dict, home: str, away: str,
     eta_a = _att(away) + _dfn(home) - hfa
     return (base * math.exp(max(-20.0, min(20.0, eta_h))),
             base * math.exp(max(-20.0, min(20.0, eta_a))))
+
+
+def posterior_eta_sd(params: dict, home: str, away: str) -> float | None:
+    """Posterior SD of the match's log-rate, and the scale it is judged against.
+
+    Returns the SD in eta (log-rate) space, which is where the parameter
+    uncertainty actually lives — one number per match, comparable to
+    `params["pooled"]["eta_sd_reference"]`. Staking uses this rather than the
+    probability-space `posterior_sd` because it needs a ratio against a stable
+    reference, and the reference is computable at fit time in eta space
+    without pricing anything.
+    """
+    pooled = params.get("pooled")
+    if not pooled:
+        return None
+    var_a = pooled.get("var_attack") or {}
+    var_d = pooled.get("var_defence") or {}
+    if not var_a or not var_d:
+        return None
+    fallback_a = max(var_a.values())
+    fallback_d = max(var_d.values())
+    v_h = float(var_a.get(home, fallback_a)) + float(var_d.get(away, fallback_d))
+    v_a = float(var_a.get(away, fallback_a)) + float(var_d.get(home, fallback_d))
+    value = math.sqrt(max(0.0, (v_h + v_a) / 2.0))
+    return value if math.isfinite(value) else None
+
+
+def posterior_sd(params: dict, home: str, away: str,
+                 competition: str | None = None, neutral: bool = False,
+                 match_date=None) -> dict[str, float] | None:
+    """Per-match posterior SD of the 1X2 probabilities, or None if unavailable.
+
+    Propagates the pooled component's Laplace variances from club ratings to
+    outcome probabilities by the delta method: Var(eta_h) = var_att[home] +
+    var_dfn[away] (treating the two as independent, which the diagonal Laplace
+    already assumes), then a finite-difference gradient of each probability
+    with respect to eta.
+
+    **Scope, stated plainly.** This measures only the `pooled` component's
+    parameter uncertainty. `elo` and `xg` carry 0.80 of the blend and have no
+    posterior at all, so the absolute numbers understate total model
+    uncertainty and must not be read as "the SD of p_model". What they are
+    good for is RANKING matches by how well-measured the clubs are, which is
+    what a variance-aware stake needs. E0 established that a bootstrap spread
+    covering every component predicts excess error; this is a cheap standing
+    proxy for the same quantity, available at prediction time without 120
+    refits.
+    """
+    pooled = params.get("pooled")
+    if not pooled:
+        return None
+    var_a = pooled.get("var_attack")
+    var_d = pooled.get("var_defence")
+    if not var_a or not var_d:
+        return None
+    # An unrated club has no variance entry. Its uncertainty is genuinely
+    # larger than any rated club's, so fall back to the widest one observed
+    # rather than to zero, which would read as perfect confidence.
+    fallback_a = max(var_a.values()) if var_a else 0.0
+    fallback_d = max(var_d.values()) if var_d else 0.0
+    v_h = float(var_a.get(home, fallback_a)) + float(var_d.get(away, fallback_d))
+    v_a = float(var_a.get(away, fallback_a)) + float(var_d.get(home, fallback_d))
+    if not (math.isfinite(v_h) and math.isfinite(v_a)):
+        return None
+
+    rho = _comp_rho(params, competition)
+    lam_h, lam_a = _lambdas_pooled(params, home, away, competition, neutral,
+                                   match_date)
+    base = probs_from_matrix(score_matrix(lam_h, lam_a, rho))
+    eps = 1e-4
+    up_h = probs_from_matrix(score_matrix(lam_h * math.exp(eps), lam_a, rho))
+    up_a = probs_from_matrix(score_matrix(lam_h, lam_a * math.exp(eps), rho))
+
+    out: dict[str, float] = {}
+    for key in ("home", "draw", "away", "over25", "btts_yes"):
+        g_h = (up_h[key] - base[key]) / eps
+        g_a = (up_a[key] - base[key]) / eps
+        out[key] = float(math.sqrt(max(0.0, g_h * g_h * v_h + g_a * g_a * v_a)))
+    return out
 
 
 def _lambdas_elo(params: dict, home: str, away: str, neutral: bool,
