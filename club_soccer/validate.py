@@ -34,6 +34,19 @@ GATE_STATE = DATA / "validation_gate_state.json"       # derived exact-input cac
 POPULATION_DIFF = DATA / "validation_population_diff.json"  # derived gate audit
 CALIB_FILE = DATA / "calibration.json"
 OPPONENT_XG_EVIDENCE = DATA / "opponent_adjusted_xg_evidence.json"
+HIERARCHICAL_EVIDENCE = DATA / "hierarchical_evidence.json"
+# E1 candidate blend: the pooled component takes the weight the incumbent
+# `goals` component holds, leaving elo and xg untouched. That makes the A/B a
+# clean substitution — is the pooled goals model better than the incumbent
+# goals model? — rather than a simultaneous change of blend and content.
+HIERARCHICAL_CANDIDATE_W = {"goals": 0.0, "elo": 0.40, "xg": 0.40, "pooled": 0.20}
+# §12.3 time-split robustness: train < split, test >= split. The candidate must
+# win at least two of the three, and its worst split regression must stay
+# within MAX_SPLIT_REGRESSION Brier — identical to the `tune_ensemble` rule, so
+# a component cannot promote on one lucky stretch of the window.
+GATE_TIME_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
+GATE_MIN_SPLIT_WINS = 2
+GATE_MAX_SPLIT_REGRESSION = 0.0015
 CALIB_SPLIT = "2025-12-01"   # held-out boundary for the calibration acceptance test
 CALIBRATION_SPLITS = ("2025-01-01", "2025-07-01", "2025-12-01")
 GATE_TOLERANCES = {
@@ -107,7 +120,9 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
                  test_from: str | None = None,
                  test_to: str | None = None,
                  use_cache: bool = True,
-                 league_seed: bool | None = None) -> tuple[list[dict], dict]:
+                 league_seed: bool | None = None,
+                 hierarchical: bool | None = None,
+                 ensemble_weights: dict | None = None) -> tuple[list[dict], dict]:
     """Monthly-refit walk-forward: refit once per calendar month on all prior
     matches, then predict that month. O(months) fits, not O(matches) — required
     once fixtures.csv holds real (thousands of rows) data rather than the seed.
@@ -136,9 +151,20 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
         M.OPPONENT_ADJUSTED_XG_DEFAULT
         if opponent_adjusted_xg is None else bool(opponent_adjusted_xg)
     )
+    hierarchical = (
+        M.HIERARCHICAL_DEFAULT if hierarchical is None else bool(hierarchical)
+    )
+    # Resolved to a concrete dict before it reaches the cache key for the same
+    # reason as the bool flags: two arms that blend differently must never
+    # collide on one entry, and `None` would let the production default move
+    # underneath a cached result.
+    weights = dict(M.DEFAULT_ENSEMBLE_W if ensemble_weights is None
+                   else M._normalise_weights(ensemble_weights))
     cache_opts = {"min_train": min_train,
                   "opponent_adjusted_xg": opponent_adjusted_xg,
-                  "league_seed": league_seed}
+                  "league_seed": league_seed,
+                  "hierarchical": hierarchical,
+                  "ensemble_weights": sorted(weights.items())}
     row_hash = WFC.row_hashes(df) if use_cache else None
     hits = misses = 0
     seen_keys: set[tuple[str, str]] = set()
@@ -171,7 +197,8 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
             # today's — the walk-forward must not leak future UEFA rankings.
             cutoff = str(test["date"].min())[:10]
             params = M.fit(train, opponent_adjusted_xg=opponent_adjusted_xg,
-                           league_seed=league_seed, coef_as_of=cutoff)
+                           league_seed=league_seed, coef_as_of=cutoff,
+                           hierarchical=hierarchical)
         except Exception:
             continue
         fold_rows: list[dict] = []
@@ -188,7 +215,7 @@ def walk_forward(min_train: int = 200, verbose: bool = False,
                     r.home, r.away, r.competition, str(r.date.date()), "ensemble",
                     bool(r.neutral), params=params,
                     fixture_id=getattr(r, "fixture_id", None),
-                    ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W),
+                    ensemble_weights=weights,
                 )
             except Exception:
                 skipped += 1
@@ -791,6 +818,131 @@ def opponent_xg_ab(test_from: str, test_to: str,
     return payload
 
 
+def hierarchical_ab(test_from: str, test_to: str,
+                    pooled_weight: float | None = None,
+                    write: bool = False, verbose: bool = True) -> dict:
+    """Reproducible fixed-window A/B for the E1 hierarchical pooled component.
+
+    Same shape as `opponent_xg_ab`, and for the same reason: both arms must
+    price the identical set of matches or the metric difference is measuring
+    the population, not the model. The evaluation-population hashes are
+    compared and a mismatch raises rather than being reported.
+
+    The candidate arm changes two things together — it fits the pooled
+    component AND gives it the incumbent `goals` weight. That is deliberate:
+    fitting it without using it is a no-op, and using it without fitting it is
+    impossible. What the arms must NOT differ in is anything else, so
+    `league_seed` and `opponent_adjusted_xg` are left at their production
+    defaults in both.
+    """
+    weights = dict(HIERARCHICAL_CANDIDATE_W)
+    if pooled_weight is not None:
+        # Move weight between the two goals models only; elo and xg hold.
+        share = max(0.0, min(0.20, float(pooled_weight)))
+        weights = {"goals": 0.20 - share, "elo": 0.40, "xg": 0.40,
+                   "pooled": share}
+
+    arms: dict[str, tuple[list[dict], dict]] = {}
+    for label, hier, wts in (("incumbent", False, dict(M.DEFAULT_ENSEMBLE_W)),
+                             ("hierarchical", True, weights)):
+        if verbose:
+            print(f"[hierarchical A/B] {label}  weights={wts}")
+        arms[label] = walk_forward(
+            verbose=verbose, hierarchical=hier, ensemble_weights=wts,
+            test_from=test_from, test_to=test_to,
+        )
+    incumbent_rows, incumbent = arms["incumbent"]
+    candidate_rows, candidate = arms["hierarchical"]
+    incumbent_hash = _evaluation_hash(incumbent_rows)
+    candidate_hash = _evaluation_hash(candidate_rows)
+    if len(incumbent_rows) != len(candidate_rows) or incumbent_hash != candidate_hash:
+        raise RuntimeError(
+            "hierarchical A/B arms produced different evaluation populations"
+        )
+
+    metric_names = ("brier", "log_loss", "brier_ou25", "brier_btts")
+    deltas = {metric: float(candidate[metric]) - float(incumbent[metric])
+              for metric in metric_names}
+    # §12.1-2: 1X2 Brier strictly lower, log-loss not worse. The OU2.5/BTTS
+    # figures are recorded because the gate tolerances cover them, but the
+    # promotion decision for a 1X2-facing component rests on the first two.
+    headline_pass = bool(deltas["brier"] < 0 and deltas["log_loss"] <= 0)
+
+    # §12.3, measured here rather than left to a follow-up command: each split's
+    # folds are a subset of the ones just computed, so the cache makes this
+    # nearly free and the evidence file ends up self-contained.
+    splits: list[dict] = []
+    for split in GATE_TIME_SPLITS:
+        if verbose:
+            print(f"[hierarchical A/B] time split {split}")
+        _rows_i, met_i = walk_forward(
+            verbose=False, hierarchical=False,
+            ensemble_weights=dict(M.DEFAULT_ENSEMBLE_W),
+            test_from=split, test_to=test_to,
+        )
+        _rows_c, met_c = walk_forward(
+            verbose=False, hierarchical=True, ensemble_weights=weights,
+            test_from=split, test_to=test_to,
+        )
+        delta = float(met_c["brier"]) - float(met_i["brier"])
+        splits.append({"split": split, "n": int(met_c.get("n", 0)),
+                       "incumbent_brier": float(met_i["brier"]),
+                       "candidate_brier": float(met_c["brier"]),
+                       "delta_brier": delta, "won": bool(delta < 0)})
+    wins = sum(1 for s in splits if s["won"])
+    worst = max((s["delta_brier"] for s in splits), default=0.0)
+    splits_pass = bool(wins >= GATE_MIN_SPLIT_WINS
+                       and worst <= GATE_MAX_SPLIT_REGRESSION)
+    promoted = bool(headline_pass and splits_pass)
+
+    fixture_frame = M.played(M.load_fixtures()).sort_values(
+        "date"
+    ).reset_index(drop=True)
+    data_hash = hashlib.sha256(
+        WFC.row_hashes(fixture_frame).tobytes()
+    ).hexdigest()[:20]
+    payload = {
+        "status": "promoted" if promoted else "retired",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "method": "monthly walk-forward with identical fixed folds",
+        "test_from": test_from,
+        "test_to": test_to,
+        "n": len(candidate_rows),
+        "evaluation_hash": candidate_hash,
+        "code_hash": WFC.code_fingerprint(),
+        "fixture_data_hash": data_hash,
+        "incumbent_weights": dict(M.DEFAULT_ENSEMBLE_W),
+        "candidate_weights": weights,
+        "incumbent": {metric: incumbent[metric] for metric in metric_names},
+        "hierarchical": {metric: candidate[metric] for metric in metric_names},
+        "deltas": deltas,
+        "gate_12_1_2_headline": headline_pass,
+        "gate_12_3_time_splits": {
+            "splits": splits,
+            "wins": wins,
+            "required_wins": GATE_MIN_SPLIT_WINS,
+            "worst_regression": worst,
+            "max_regression": GATE_MAX_SPLIT_REGRESSION,
+            "pass": splits_pass,
+        },
+        "decision": "promote" if promoted else "retire",
+        "gate_note": ("Covers §12.1-2 (strictly-lower 1X2 Brier, no worse "
+                      "log-loss) and §12.3 (time-split robustness). §12.4 "
+                      "(`--gate` still passes) is a separate check against "
+                      "promotion_baseline.json and must also pass, then the "
+                      "baseline is re-pinned with --update-baseline."),
+        "command": (
+            "python3 -m club_soccer.validate --hierarchical-ab "
+            f"--test-from {test_from} --test-to {test_to} --write-evidence"
+        ),
+    }
+    if write:
+        HIERARCHICAL_EVIDENCE.write_text(json.dumps(payload, indent=2) + "\n")
+        if verbose:
+            print(f"Evidence -> {HIERARCHICAL_EVIDENCE.name}")
+    return payload
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gate", action="store_true")
@@ -799,6 +951,12 @@ def main() -> None:
                          "fixed-window inputs are unchanged")
     ap.add_argument("--opponent-xg-ab", action="store_true",
                     help="run a fixed-window opponent-adjusted-xG A/B")
+    ap.add_argument("--hierarchical-ab", action="store_true",
+                    help="run a fixed-window A/B for the E1 pooled component")
+    ap.add_argument("--pooled-weight", type=float, default=None,
+                    help="with --hierarchical-ab, weight to move from the "
+                         "incumbent goals component to pooled (default 0.20, "
+                         "i.e. full substitution)")
     ap.add_argument("--test-from", default="2024-07-01")
     ap.add_argument("--test-to", default="2026-07-01")
     ap.add_argument("--write-evidence", action="store_true",
@@ -813,6 +971,13 @@ def main() -> None:
     if args.opponent_xg_ab:
         result = opponent_xg_ab(
             args.test_from, args.test_to, write=args.write_evidence
+        )
+        print(json.dumps(result, indent=2))
+        return
+    if args.hierarchical_ab:
+        result = hierarchical_ab(
+            args.test_from, args.test_to, pooled_weight=args.pooled_weight,
+            write=args.write_evidence,
         )
         print(json.dumps(result, indent=2))
         return

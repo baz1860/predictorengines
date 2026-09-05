@@ -104,13 +104,22 @@ def test_model_math():
     check("score matrix normalizes", abs(float(pred["matrix"].sum()) - 1.0) < 1e-9)
     parts = M.component_matrices(params, "Arsenal", "Chelsea", "Premier League", False)
     check("only production ensemble components remain",
-          set(parts) == {"goals", "elo", "xg"})
+          set(parts) == {"goals", "elo", "xg", "pooled"})
     check("retired models are absent from the public schema",
           set(ENGINE.cmd_schema()["models"]) == {"ensemble", "goals", "elo", "xg"})
     check("component matrices normalize",
           all(abs(float(mx.sum()) - 1.0) < 1e-9 for mx in parts.values()))
     check("production ensemble weights are fixed in code",
-          M.DEFAULT_ENSEMBLE_W == {"goals": 0.2, "elo": 0.4, "xg": 0.4})
+          M.DEFAULT_ENSEMBLE_W == {"goals": 0.0, "elo": 0.4, "xg": 0.4,
+                                   "pooled": 0.2})
+    # An ungated component must carry no weight. This is the invariant the
+    # weights check exists to protect: E1's `pooled` may sit in the ensemble
+    # while it is being evaluated, but a flag and a weight that disagree mean
+    # something is priced by a model nobody promoted — in either direction.
+    check("gated-off components carry zero ensemble weight",
+          M.HIERARCHICAL_DEFAULT == (M.DEFAULT_ENSEMBLE_W["pooled"] > 0.0))
+    check("ensemble weights sum to one",
+          abs(sum(M.DEFAULT_ENSEMBLE_W.values()) - 1.0) < 1e-12)
     try:
         M.predict("Not A Club", "Chelsea", "Premier League", params=params)
         check("unknown team raises", False)

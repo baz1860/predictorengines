@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+from itertools import repeat
 from pathlib import Path
 
 import numpy as np
@@ -70,13 +71,67 @@ RECENT_K = 6        # matches in the shots-on-target recency window
 XG_RATING_PRIOR = 8.0
 XG_RATING_ITERATIONS = 12
 
+# ── PROMOTED 2026-08-16 — E1 hierarchical pooled component ───────────────────
+# Replaces the `goals` component in the production blend. Promotion is recorded
+# here, in the code, like LEAGUE_SEED_DEFAULT and OPPONENT_ADJUSTED_XG_DEFAULT.
+# validate.walk_forward reads this same constant, so validation always measures
+# the model production actually runs.
+#
+# What it replaces: the `goals` component shrank each club toward a league
+# prior with a pseudo-count of exactly 4 (`stats[t]["gf"] + gf_prior * 4`), a
+# constant nobody fitted, and it ignored the opponent entirely — a club's
+# attack rating was its raw scoring rate whether it played Bayern or Burnley.
+# This fits the shrinkage strength by EM and estimates attack against the
+# defences actually faced.
+#
+# Evidence (data/hierarchical_evidence.json), fixed-window walk-forward,
+# identical folds and evaluation population in both arms
+# (n=26,969, evaluation_hash 2c9396c63ee078449c6f — the same sample
+# promotion_baseline.json pins):
+#     1X2 Brier    0.611777 -> 0.611016   (-0.000762)
+#     log-loss     1.020406 -> 1.019376   (-0.001029)
+#     OU2.5 Brier  0.245202 -> 0.245479   (+0.000277, inside the 0.0010 gate
+#                                          tolerance — a deliberate trade)
+#     BTTS Brier   0.246943 -> 0.246875   (-0.000069)
+# Time splits (§12.3): 3 of 3 won, worst delta -0.000603.
+#
+# Fitted on the full training set: sigma_attack 0.194 vs sigma_defence 0.150 —
+# attack varies more between clubs than defence does, which one shared
+# pseudo-count could not express. hfa 0.108 in log space.
+#
+# The gain is small (about a tenth of the gate's tolerance band). What makes it
+# credible is that every time split moved the same way, not its size.
+HIERARCHICAL_DEFAULT = True
+# Prior on league means. Fixed rather than fitted: leagues have hundreds of
+# matches each, so the data dominates this anyway, and it exists mainly to
+# identify the attack/defence additive shift that the likelihood cannot see.
+POOLED_PRIOR_TAU = 0.5
+POOLED_EM_ROUNDS = 5
+POOLED_MAX_ITER = 300
+POOLED_SIGMA_INIT = 0.30
+POOLED_SIGMA_FLOOR = 0.02
+
 
 # Ensemble blend (chosen by held-out walk-forward search, June 2026).
 # The former xg/xgf entries were two views of the same shot signal. They are
 # now one xg component containing their 50/50 matrix mixture. Giving that
 # component weight 0.40 is algebraically identical to the old 0.20 + 0.20
 # blend, so this removes a fake degree of freedom without changing a price.
-DEFAULT_ENSEMBLE_W = {"goals": 0.20, "elo": 0.40, "xg": 0.40}
+#
+# 2026-08-16: `pooled` took the `goals` weight when E1 promoted. This is the
+# exact blend the A/B measured — a clean substitution of one goals model for
+# the other, with elo and xg untouched. It is NOT the output of a weight
+# search: `tune_ensemble` was deleted when `ensemble_weight_tuner` was retired
+# (its nested holdout never promoted it), and searching a blend on the same
+# window the gate scores would be fitting the gate. Shipping precisely what
+# was validated is the honest option.
+#
+# `goals` stays in the ensemble at 0.0 rather than being deleted, so the A/B
+# can be re-run against it. Note the interaction with `_weights_for_match`:
+# when a low-shot-data club pulls weight off `xg`, that weight now
+# redistributes across elo and pooled instead of elo and goals — which is the
+# right home for it, since pooled is the component that works without shot data.
+DEFAULT_ENSEMBLE_W = {"goals": 0.0, "elo": 0.40, "xg": 0.40, "pooled": 0.20}
 ENSEMBLE_W = DEFAULT_ENSEMBLE_W
 ENSEMBLE_COMPONENTS = tuple(DEFAULT_ENSEMBLE_W)
 
@@ -205,6 +260,197 @@ def _opponent_adjusted_xg_ratings(
     return attack, defence
 
 
+def _fit_pooled(df: pd.DataFrame, w: np.ndarray, teams: list[str],
+                global_avg: float, team_league: dict[str, str]) -> dict | None:
+    """Hierarchical Poisson attack/defence, fitted by MAP with an EM step for
+    the pooling variance.
+
+    Model, on the same sign convention as `_lambdas_goals` (defence POSITIVE
+    means concedes more, so it ADDS to the opponent's rate):
+
+        goals_home ~ Poisson(mu0 * exp(att[h] + dfn[a] + hfa))
+        goals_away ~ Poisson(mu0 * exp(att[a] + dfn[h] - hfa))
+        att[t] ~ Normal(mu_att[league(t)], sigma_att^2)
+        dfn[t] ~ Normal(mu_dfn[league(t)], sigma_dfn^2)
+
+    Two things this buys over the incumbent `goals` component:
+
+    1. **The shrinkage is fitted.** `sigma` is estimated by EM — MAP solve,
+       then update sigma^2 from the realised spread of the ratings plus their
+       posterior variance (the Laplace diagonal). The incumbent's pseudo-count
+       of 4 is the same idea with the answer assumed.
+    2. **Attack is measured against the defences actually faced.** The
+       incumbent's `gf` is a raw weighted scoring rate, so a club in a weak
+       league and a club in a strong one are compared on unadjusted output.
+       `_opponent_adjusted_xg_ratings` already does this for the xG component;
+       the goals component never got it.
+
+    League means also remove the need for the hardcoded
+    `(strength(competition) - 0.75) * 0.12` competition bump: the level of a
+    league is estimated from its own matches, and a cross-league fixture takes
+    each side's rating from its own league without a correction term.
+
+    Returns None when scipy is unavailable or the fit fails to converge, which
+    leaves the component absent and its weight-0 slot harmless.
+    """
+    try:
+        from scipy.optimize import minimize
+    except ImportError:
+        return None
+    if df.empty or len(teams) < 2:
+        return None
+
+    tidx = {t: i for i, t in enumerate(teams)}
+    n_teams = len(teams)
+    leagues = sorted({team_league.get(t) or "" for t in teams})
+    lidx = {name: i for i, name in enumerate(leagues)}
+    n_leagues = len(leagues)
+    tl = np.array([lidx[team_league.get(t) or ""] for t in teams], dtype=int)
+
+    try:
+        home = df["home"].map(tidx).to_numpy(dtype=float)
+        away = df["away"].map(tidx).to_numpy(dtype=float)
+    except (KeyError, TypeError):
+        return None
+    if np.isnan(home).any() or np.isnan(away).any():
+        return None
+    home = home.astype(int)
+    away = away.astype(int)
+
+    hg = df["home_goals"].to_numpy(dtype=float)
+    ag = df["away_goals"].to_numpy(dtype=float)
+    at_home = 1.0 - df["neutral"].to_numpy(dtype=float)
+    wt = np.asarray(w, dtype=float)
+    if not (np.isfinite(hg).all() and np.isfinite(ag).all()):
+        return None
+    mu0 = float(global_avg)
+
+    n_att, n_dfn = n_teams, n_teams
+    off_dfn = n_att
+    off_mua = off_dfn + n_dfn
+    off_mud = off_mua + n_leagues
+    size = off_mud + n_leagues + 1
+    tau2 = POOLED_PRIOR_TAU ** 2
+
+    def _objective(x, sa2, sd2):
+        att = x[:n_att]
+        dfn = x[off_dfn:off_dfn + n_dfn]
+        mu_a = x[off_mua:off_mua + n_leagues]
+        mu_d = x[off_mud:off_mud + n_leagues]
+        hfa = x[-1]
+
+        adv = hfa * at_home
+        eta_h = att[home] + dfn[away] + adv
+        eta_a = att[away] + dfn[home] - adv
+        # Guard the exponential: a diverging step would overflow to inf and
+        # hand L-BFGS-B a nan gradient it cannot recover from.
+        lam_h = mu0 * np.exp(np.clip(eta_h, -20.0, 20.0))
+        lam_a = mu0 * np.exp(np.clip(eta_a, -20.0, 20.0))
+
+        # Poisson deviance up to a constant (the -g*log(mu0) terms do not
+        # depend on any parameter).
+        nll = float(np.sum(wt * (lam_h - hg * eta_h))
+                    + np.sum(wt * (lam_a - ag * eta_a)))
+        res_a = att - mu_a[tl]
+        res_d = dfn - mu_d[tl]
+        pen = float(0.5 * np.sum(res_a ** 2) / sa2
+                    + 0.5 * np.sum(res_d ** 2) / sd2
+                    + 0.5 * (np.sum(mu_a ** 2) + np.sum(mu_d ** 2)) / tau2)
+
+        gh = wt * (lam_h - hg)          # d nll / d eta_h
+        ga = wt * (lam_a - ag)
+        g_att = np.bincount(home, gh, n_att) + np.bincount(away, ga, n_att)
+        g_dfn = np.bincount(away, gh, n_dfn) + np.bincount(home, ga, n_dfn)
+        g_att += res_a / sa2
+        g_dfn += res_d / sd2
+        g_mua = -np.bincount(tl, res_a, n_leagues) / sa2 + mu_a / tau2
+        g_mud = -np.bincount(tl, res_d, n_leagues) / sd2 + mu_d / tau2
+        g_hfa = float(np.sum((gh - ga) * at_home))
+
+        grad = np.concatenate([g_att, g_dfn, g_mua, g_mud, [g_hfa]])
+        return nll + pen, grad
+
+    def _curvature(x):
+        """Diagonal of the Hessian — the Laplace posterior precision.
+
+        d2/datt[t]2 of the Poisson term is the sum of that side's fitted rate,
+        so no second-order autodiff is needed.
+        """
+        att = x[:n_att]
+        dfn = x[off_dfn:off_dfn + n_dfn]
+        hfa = x[-1]
+        adv = hfa * at_home
+        lam_h = mu0 * np.exp(np.clip(att[home] + dfn[away] + adv, -20.0, 20.0))
+        lam_a = mu0 * np.exp(np.clip(att[away] + dfn[home] - adv, -20.0, 20.0))
+        h_att = (np.bincount(home, wt * lam_h, n_att)
+                 + np.bincount(away, wt * lam_a, n_att))
+        h_dfn = (np.bincount(away, wt * lam_h, n_dfn)
+                 + np.bincount(home, wt * lam_a, n_dfn))
+        return h_att, h_dfn
+
+    x = np.zeros(size)
+    sigma_a = sigma_d = float(POOLED_SIGMA_INIT)
+    for _ in range(POOLED_EM_ROUNDS):
+        sa2, sd2 = sigma_a ** 2, sigma_d ** 2
+        res = minimize(_objective, x, args=(sa2, sd2), jac=True,
+                       method="L-BFGS-B",
+                       options={"maxiter": POOLED_MAX_ITER})
+        if not np.all(np.isfinite(res.x)):
+            return None
+        x = res.x
+        # EM update: the new variance is the realised spread of the ratings
+        # PLUS their posterior variance. Dropping the second term is the
+        # classic mistake — it treats point estimates as if they were known
+        # exactly and drives sigma to zero, collapsing the pooling.
+        att = x[:n_att]
+        dfn = x[off_dfn:off_dfn + n_dfn]
+        mu_a = x[off_mua:off_mua + n_leagues]
+        mu_d = x[off_mud:off_mud + n_leagues]
+        h_att, h_dfn = _curvature(x)
+        v_att = 1.0 / (h_att + 1.0 / sa2)
+        v_dfn = 1.0 / (h_dfn + 1.0 / sd2)
+        sigma_a = float(np.sqrt(max(
+            POOLED_SIGMA_FLOOR ** 2,
+            np.mean((att - mu_a[tl]) ** 2 + v_att))))
+        sigma_d = float(np.sqrt(max(
+            POOLED_SIGMA_FLOOR ** 2,
+            np.mean((dfn - mu_d[tl]) ** 2 + v_dfn))))
+
+    att = x[:n_att]
+    dfn = x[off_dfn:off_dfn + n_dfn]
+    mu_a = x[off_mua:off_mua + n_leagues]
+    mu_d = x[off_mud:off_mud + n_leagues]
+    if not (np.all(np.isfinite(att)) and np.all(np.isfinite(dfn))):
+        return None
+    # Laplace posterior variances at the converged solution. E1 uses these
+    # internally for the EM update and then throws them away; E2 needs them
+    # persisted, because they are the per-club uncertainty a variance-aware
+    # stake would size against. A club with few matches has a large variance
+    # here for the same reason its rating is shrunk.
+    h_att, h_dfn = _curvature(x)
+    var_att = 1.0 / (h_att + 1.0 / sigma_a ** 2)
+    var_dfn = 1.0 / (h_dfn + 1.0 / sigma_d ** 2)
+    # The reference scale a variance-aware stake measures a match against.
+    # Stored on the MODEL, not computed per card: derived from the day's
+    # fixtures it would make one bet's stake depend on which other matches
+    # happen to be playing, which is not a property of the bet.
+    eta_sd_reference = float(np.sqrt(np.median(var_att) + np.median(var_dfn)))
+    return {
+        "eta_sd_reference": eta_sd_reference,
+        "attack": {t: float(att[i]) for t, i in tidx.items()},
+        "defence": {t: float(dfn[i]) for t, i in tidx.items()},
+        "var_attack": {t: float(var_att[i]) for t, i in tidx.items()},
+        "var_defence": {t: float(var_dfn[i]) for t, i in tidx.items()},
+        "mu_attack": {name: float(mu_a[i]) for name, i in lidx.items()},
+        "mu_defence": {name: float(mu_d[i]) for name, i in lidx.items()},
+        "team_league": dict(team_league),
+        "hfa": float(x[-1]),
+        "sigma_attack": sigma_a,
+        "sigma_defence": sigma_d,
+        "global_avg": mu0,
+    }
+
+
 def _season_year(d) -> int:
     d = pd.Timestamp(d)
     return d.year if d.month >= 7 else d.year - 1
@@ -268,13 +514,55 @@ def fit(df: pd.DataFrame | None = None,
         half_life_days: float = HALF_LIFE_DAYS,
         opponent_adjusted_xg: bool | None = None,
         league_seed: bool | None = None,
-        coef_as_of: str | None = None) -> dict:
-    """Fit the promoted goals, Elo and opponent-adjusted xG model."""
-    df = played(load_fixtures() if df is None else df).sort_values("date")
+        coef_as_of: str | None = None,
+        row_weights=None,
+        hierarchical: bool | None = None) -> dict:
+    """Fit the promoted goals, Elo and opponent-adjusted xG model.
+
+    hierarchical: fit the E1 pooled component as well (default
+    HIERARCHICAL_DEFAULT, currently False). Adds `params["pooled"]`; the
+    ensemble weight for it is 0.0 until the §12 gate promotes it, so a fit
+    with this on still prices every match identically.
+
+    row_weights: optional per-match multiplier used by the E0 bootstrap probe
+    (`club_soccer/bootstrap_probe.py`) to resample the training set without
+    dropping any club. Accepts an array aligned with `df` as passed, or a
+    Series carrying `df`'s index; either way it is realigned to the frame
+    AFTER `played()` filtering and date sorting, so a caller cannot silently
+    pair weights with the wrong matches.
+
+    `None` is exactly the production fit — no allocation, and the two places
+    the multiplier lands (the time-decay weights, and the Elo update size) are
+    both identity at 1.0. Do not use this to ship a model: a weighted fit is a
+    diagnostic, and nothing under `season.py` may pass it.
+    """
+    source = load_fixtures() if df is None else df
+    df = played(source).sort_values("date")
     if df.empty:
         raise ValueError("No played fixtures available to fit the model.")
     teams = sorted(set(df["home"]) | set(df["away"]))
     w = _weights(df["date"], half_life_days)
+    boot = None
+    if row_weights is not None:
+        # Length is checked before the Series is built: constructing one with
+        # a mismatched index raises pandas' own message, which says nothing
+        # about row_weights and sends the reader to the wrong place.
+        if len(row_weights) != len(source):
+            raise ValueError(
+                f"row_weights has {len(row_weights)} entries for "
+                f"{len(source)} input matches"
+            )
+        series = (row_weights if isinstance(row_weights, pd.Series)
+                  else pd.Series(np.asarray(row_weights, dtype=float),
+                                 index=source.index))
+        boot = series.reindex(df.index).to_numpy(dtype=float)
+        if not np.all(np.isfinite(boot)):
+            raise ValueError("row_weights must be finite")
+        if np.any(boot < 0.0):
+            raise ValueError("row_weights must be non-negative")
+        # Time-decay and resampling weight compose multiplicatively: a match
+        # drawn twice counts twice at whatever recency it already had.
+        w = w * boot
     avg_home = float(np.average(df["home_goals"], weights=w))
     avg_away = float(np.average(df["away_goals"], weights=w))
     global_avg = max(0.8, (avg_home + avg_away) / 2)
@@ -378,10 +666,17 @@ def fit(df: pd.DataFrame | None = None,
         OPPONENT_ADJUSTED_XG_DEFAULT
         if opponent_adjusted_xg is None else bool(opponent_adjusted_xg)
     )
+    hierarchical_active = (
+        HIERARCHICAL_DEFAULT if hierarchical is None else bool(hierarchical)
+    )
     team_league: dict[str, str] = {}
     league_gf: dict[str, float] = {}
-    if league_seed_active:
+    # The pooled component needs the club -> league map too, and must not
+    # inherit it only when league seeding happens to be on: that would make
+    # E1's arms differ by whether P4b was active, confounding the A/B.
+    if league_seed_active or hierarchical_active:
         team_league = _primary_league_map(df)
+    if league_seed_active:
         sums: dict[str, list[float]] = {}
         for r, wt in zip(df.itertuples(index=False), w):
             comp = r.competition
@@ -472,7 +767,16 @@ def fit(df: pd.DataFrame | None = None,
             offset = (_sp(comp.country, comp.tier or 1, as_of=coef_as_of)
                       - LEAGUE_SEED_ANCHOR) * ELO_PER_STRENGTH
             elo[t] = BASE_ELO + offset
-    for r in df.itertuples(index=False):
+    # Elo is a sequential learner, so the resampling multiplier cannot ride on
+    # the time-decay weights the way it does for goals and xG — those weights
+    # never reach this loop. It scales the UPDATE SIZE instead: a match drawn
+    # twice moves the ratings twice as far, drawn zero times moves them not at
+    # all, which is the sequential analogue of counting it twice or dropping
+    # it. Without this the probe would leave the Elo component (40% of the
+    # default ensemble) identical across every resample and report a posterior
+    # spread that understates the real one.
+    boot_elo = repeat(1.0) if boot is None else boot
+    for r, bw in zip(df.itertuples(index=False), boot_elo):
         h, a = r.home, r.away
         adv = 0.0 if int(r.neutral) else HOME_ADV_ELO
         exp_h = 1.0 / (1.0 + 10 ** ((elo[a] - (elo[h] + adv)) / 400.0))
@@ -480,14 +784,21 @@ def fit(df: pd.DataFrame | None = None,
         margin = abs(float(r.home_goals) - float(r.away_goals))
         comp_k = 18 + 20 * strength(r.competition)
         k = comp_k * (1.0 if margin <= 1 else min(1.75, 1 + margin / 4))
-        delta = k * (actual_h - exp_h)
+        delta = k * (actual_h - exp_h) * bw
         elo[h] += delta
         elo[a] -= delta
+
+    pooled = (_fit_pooled(df, w, teams, global_avg, team_league)
+              if hierarchical_active else None)
 
     params = {"teams": teams, "global_avg": global_avg,
               "home_goal_adv": global_hfa,
               "global_hfa": global_hfa,
               "opponent_adjusted_xg_active": bool(opponent_adjusted_xg),
+              # Provenance for E1, on the same footing as the other arms: the
+              # flag records intent, `pooled` records whether it produced a
+              # fit. They differ when scipy is missing or the solve failed.
+              "hierarchical_active": bool(hierarchical_active),
               "attack": attack, "defence": defence,
               "attack_xg": attack_xg, "defence_xg": defence_xg,
               "fatk": fatk, "fdef": fdef, "conv": float(conv),
@@ -495,6 +806,7 @@ def fit(df: pd.DataFrame | None = None,
               "proxy_xg_coverage": round(proxy_xg_coverage, 6),
               "xg_source_counts": {str(k): int(v) for k, v in source.value_counts().items()},
               "elo": {k: float(v) for k, v in elo.items()},
+              "pooled": pooled,
               "fitted_matches": int(len(df)),
               # Provenance: a stored params file must say which model produced
               # it, so a cached artifact can never be mistaken for the other arm.
@@ -540,6 +852,7 @@ def training_fingerprint(df: pd.DataFrame | None = None) -> str:
     digest.update(WFC.code_fingerprint().encode())
     digest.update(str(LEAGUE_SEED_DEFAULT).encode())
     digest.update(str(OPPONENT_ADJUSTED_XG_DEFAULT).encode())
+    digest.update(str(HIERARCHICAL_DEFAULT).encode())
     digest.update(WFC.row_hashes(frame).tobytes())
     return digest.hexdigest()[:32]
 
@@ -595,6 +908,127 @@ def _lambdas_goals(params: dict, home: str, away: str, competition: str | None,
     # fixing it improved walk-forward Brier 0.6317 -> 0.6175.)
     return (base * math.exp(ah + da + home_adv + comp_adj),
             base * math.exp(aa + dh - home_adv + comp_adj))
+
+
+def _lambdas_pooled(params: dict, home: str, away: str,
+                    competition: str | None, neutral: bool,
+                    match_date=None) -> tuple[float, float]:
+    """Expected goals from the E1 hierarchical component.
+
+    Falls back to the incumbent `goals` lambdas whenever the pooled block is
+    absent — params fitted before E1 existed, a params file loaded from disk,
+    or a failed solve. The component carries weight 0.0 until promotion, so
+    the fallback costs nothing; it exists so an old artifact cannot raise.
+    """
+    pooled = params.get("pooled")
+    if not pooled:
+        return _lambdas_goals(params, home, away, competition, neutral,
+                              match_date)
+    base = float(pooled.get("global_avg", params["global_avg"]))
+    att = pooled["attack"]
+    dfn = pooled["defence"]
+    mu_a = pooled.get("mu_attack", {})
+    mu_d = pooled.get("mu_defence", {})
+    team_league = pooled.get("team_league", {})
+
+    def _att(team: str) -> float:
+        if team in att:
+            return float(att[team])
+        # Unseen club: its league mean is the honest estimate, which is what
+        # pooling gives a club with no matches of its own.
+        return float(mu_a.get(team_league.get(team, ""), 0.0))
+
+    def _dfn(team: str) -> float:
+        if team in dfn:
+            return float(dfn[team])
+        return float(mu_d.get(team_league.get(team, ""), 0.0))
+
+    hfa = 0.0 if neutral else float(pooled.get("hfa", 0.0))
+    # No competition bump: league level is already in each side's rating via
+    # the fitted league means, so adding one would double-count it.
+    eta_h = _att(home) + _dfn(away) + hfa
+    eta_a = _att(away) + _dfn(home) - hfa
+    return (base * math.exp(max(-20.0, min(20.0, eta_h))),
+            base * math.exp(max(-20.0, min(20.0, eta_a))))
+
+
+def posterior_eta_sd(params: dict, home: str, away: str) -> float | None:
+    """Posterior SD of the match's log-rate, and the scale it is judged against.
+
+    Returns the SD in eta (log-rate) space, which is where the parameter
+    uncertainty actually lives — one number per match, comparable to
+    `params["pooled"]["eta_sd_reference"]`. Staking uses this rather than the
+    probability-space `posterior_sd` because it needs a ratio against a stable
+    reference, and the reference is computable at fit time in eta space
+    without pricing anything.
+    """
+    pooled = params.get("pooled")
+    if not pooled:
+        return None
+    var_a = pooled.get("var_attack") or {}
+    var_d = pooled.get("var_defence") or {}
+    if not var_a or not var_d:
+        return None
+    fallback_a = max(var_a.values())
+    fallback_d = max(var_d.values())
+    v_h = float(var_a.get(home, fallback_a)) + float(var_d.get(away, fallback_d))
+    v_a = float(var_a.get(away, fallback_a)) + float(var_d.get(home, fallback_d))
+    value = math.sqrt(max(0.0, (v_h + v_a) / 2.0))
+    return value if math.isfinite(value) else None
+
+
+def posterior_sd(params: dict, home: str, away: str,
+                 competition: str | None = None, neutral: bool = False,
+                 match_date=None) -> dict[str, float] | None:
+    """Per-match posterior SD of the 1X2 probabilities, or None if unavailable.
+
+    Propagates the pooled component's Laplace variances from club ratings to
+    outcome probabilities by the delta method: Var(eta_h) = var_att[home] +
+    var_dfn[away] (treating the two as independent, which the diagonal Laplace
+    already assumes), then a finite-difference gradient of each probability
+    with respect to eta.
+
+    **Scope, stated plainly.** This measures only the `pooled` component's
+    parameter uncertainty. `elo` and `xg` carry 0.80 of the blend and have no
+    posterior at all, so the absolute numbers understate total model
+    uncertainty and must not be read as "the SD of p_model". What they are
+    good for is RANKING matches by how well-measured the clubs are, which is
+    what a variance-aware stake needs. E0 established that a bootstrap spread
+    covering every component predicts excess error; this is a cheap standing
+    proxy for the same quantity, available at prediction time without 120
+    refits.
+    """
+    pooled = params.get("pooled")
+    if not pooled:
+        return None
+    var_a = pooled.get("var_attack")
+    var_d = pooled.get("var_defence")
+    if not var_a or not var_d:
+        return None
+    # An unrated club has no variance entry. Its uncertainty is genuinely
+    # larger than any rated club's, so fall back to the widest one observed
+    # rather than to zero, which would read as perfect confidence.
+    fallback_a = max(var_a.values()) if var_a else 0.0
+    fallback_d = max(var_d.values()) if var_d else 0.0
+    v_h = float(var_a.get(home, fallback_a)) + float(var_d.get(away, fallback_d))
+    v_a = float(var_a.get(away, fallback_a)) + float(var_d.get(home, fallback_d))
+    if not (math.isfinite(v_h) and math.isfinite(v_a)):
+        return None
+
+    rho = _comp_rho(params, competition)
+    lam_h, lam_a = _lambdas_pooled(params, home, away, competition, neutral,
+                                   match_date)
+    base = probs_from_matrix(score_matrix(lam_h, lam_a, rho))
+    eps = 1e-4
+    up_h = probs_from_matrix(score_matrix(lam_h * math.exp(eps), lam_a, rho))
+    up_a = probs_from_matrix(score_matrix(lam_h, lam_a * math.exp(eps), rho))
+
+    out: dict[str, float] = {}
+    for key in ("home", "draw", "away", "over25", "btts_yes"):
+        g_h = (up_h[key] - base[key]) / eps
+        g_a = (up_a[key] - base[key]) / eps
+        out[key] = float(math.sqrt(max(0.0, g_h * g_h * v_h + g_a * g_a * v_a)))
+    return out
 
 
 def _lambdas_elo(params: dict, home: str, away: str, neutral: bool,
@@ -662,6 +1096,10 @@ def component_matrices(params: dict, home: str, away: str,
         )),
         # Exact collapse of the former 20% long-run + 20% recent-form pair.
         "xg": (xg_long + xg_form) / 2.0,
+        # E1, weight 0.0 until its gate passes.
+        "pooled": _m(_lambdas_pooled(
+            params, home, away, competition, neutral, match_date=match_date
+        )),
     }
 
 
