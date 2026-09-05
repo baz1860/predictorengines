@@ -8,11 +8,17 @@ market line**, and any value bets with quarter-Kelly stakes. Everything else in
 this package (`elo`, `power`, `predictor`, `edge`, …) is plumbing this drives;
 you should not need to call those directly for a normal week.
 
-    python3 -m cfb.season                    # price this week's card (uses cfb/odds.csv if filled)
+    python3 -m cfb.season                    # price the next 96h of games (uses cfb/odds.csv if filled)
     python3 -m cfb.season --odds-api         # pull NCAAF lines from The Odds API first
     python3 -m cfb.season --refresh          # refresh games/upcoming + refit power first
-    python3 -m cfb.season --days 7           # how far ahead the "week" reaches
+    python3 -m cfb.season --days 7           # how wide a fixture window to load before filtering
+    python3 -m cfb.season --hours 48         # only show games kicking off in the next 48h
     python3 -m cfb.season --min-edge 0.05    # stricter value threshold
+
+Card entries run in kickoff order and each game's model pick, ATS pick, total
+lean, and any value bets are kept together under that game's own heading
+(value bets ranked by model % within the game) — there is no separate
+top-of-card bets table.
 
 Lines come from The Odds API (`--odds-api`, key 'the-odds-api' in
 data/api_keys.json or THE_ODDS_API_KEY) or manually via `python3 -m cfb.edge
@@ -52,6 +58,7 @@ CARD_MD = os.path.join(HERE, "data", "card.md")
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 SPORT_KEY = "americanfootball_ncaaf"
+CARD_WINDOW_HOURS = 96.0
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -156,6 +163,35 @@ def load_slate(days: int = 7) -> pd.DataFrame:
     start = up["date"].min()
     up = up[up["date"] <= start + pd.Timedelta(days=days)]
     return up.sort_values("date").reset_index(drop=True)
+
+
+def _slate_within_hours(slate: pd.DataFrame, hours: float) -> pd.DataFrame:
+    """Keep only fixtures kicking off in [now, now+hours]; sort chronologically.
+
+    The schedule_<year>.json fallback carries a precise `commence_time`;
+    upcoming.csv (in season, from the cfbfastR-data mirror) only carries a
+    calendar `date` — those rows are windowed at day granularity instead.
+    """
+    now = pd.Timestamp.now(tz="UTC")
+    horizon = now + pd.Timedelta(hours=hours)
+    dates = pd.to_datetime(slate["date"])
+    if "commence_time" in slate.columns:
+        precise = pd.to_datetime(
+            slate["commence_time"], utc=True, errors="coerce").dt.tz_localize(None)
+    else:
+        precise = pd.Series(pd.NaT, index=slate.index)
+    has_precise = precise.notna()
+    kickoff = precise.where(has_precise, dates).dt.tz_localize("UTC")
+    keep = pd.Series(False, index=slate.index)
+    keep[has_precise] = (kickoff[has_precise] >= now) & (kickoff[has_precise] <= horizon)
+    coarse = ~has_precise
+    if coarse.any():
+        now_date = now.tz_localize(None).normalize()
+        horizon_date = horizon.tz_localize(None).normalize()
+        keep[coarse] = (dates[coarse] >= now_date) & (dates[coarse] <= horizon_date)
+    out = slate[keep].copy()
+    out["kickoff_ts"] = kickoff[keep]
+    return out.sort_values("kickoff_ts").reset_index(drop=True)
 
 
 # ── The Odds API → odds.csv (edge.py format, both sides of each market) ──────
@@ -318,10 +354,14 @@ def load_market(slate: pd.DataFrame) -> dict:
 
 def build_card(days: int = 7, min_edge: float = MIN_EDGE,
                bankroll: float | None = None, model: str = "blend",
-               slate: pd.DataFrame | None = None) -> dict:
+               slate: pd.DataFrame | None = None,
+               hours: float = CARD_WINDOW_HOURS) -> dict:
     # `slate` lets a caller that already loaded the week (e.g. --odds-api)
     # reuse it, so one run resolves the fixture list exactly once.
     slate = load_slate(days) if slate is None else slate.copy()
+    slate = _slate_within_hours(slate, hours)
+    if slate.empty:
+        raise SystemExit(f"no upcoming fixtures start within the next {hours:.0f}h")
     market = load_market(slate)
     seasons = sorted({int(s) for s in slate["season"].dropna().unique()})
     if len(seasons) != 1:
@@ -355,19 +395,18 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         state_meta["betting_eligible"] and recordable_quotes and slate_eligible)
     bk = bankroll if bankroll is not None else get_bankroll()
 
-    lines_md, value = [], []
+    games_meta, value = [], []
     ats_picks = 0
-    for g in slate.itertuples():
+    for idx, g in enumerate(slate.itertuples()):
         event_eligible = E.event_betting_eligible(
             state_meta, g.home_team, g.away_team)
         pred = blend_predict(eparams, pparams, g.home_team, g.away_team,
                              neutral=bool(g.neutral), model=model)
         fav = g.home_team if pred["margin"] >= 0 else g.away_team
         vs = "vs" if g.neutral else "at"
-        lines_md.append(f"### {g.date.date()} — {g.away_team} {vs} {g.home_team}")
-        lines_md.append(
-            f"- Model: **{fav}** -{abs(pred['margin']):.1f} "
-            f"(home win {pred['p1']*100:.1f}%) · total {pred['total']:.1f}")
+        header = f"### {g.date.date()} — {g.away_team} {vs} {g.home_team}"
+        model_line = (f"- Model: **{fav}** -{abs(pred['margin']):.1f} "
+                      f"(home win {pred['p1']*100:.1f}%) · total {pred['total']:.1f}")
 
         mkt = market.get((str(g.date.date()), g.home_team, g.away_team), {})
         sp = mkt.get("spread", {})
@@ -381,19 +420,19 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
             else:
                 pick, p_cover, line_s = g.away_team, 1.0 - p_home_cover, -home_line
             ats_picks += 1
-            lines_md.append(
-                f"- **ATS pick: {pick} {line_s:+g}** — cover {p_cover*100:.1f}% "
-                f"(market: {g.home_team} {home_line:+g})")
+            ats_line = (f"- **ATS pick: {pick} {line_s:+g}** — cover {p_cover*100:.1f}% "
+                        f"(market: {g.home_team} {home_line:+g})")
         else:
-            lines_md.append("- ATS pick: no market spread loaded")
+            ats_line = "- ATS pick: no market spread loaded"
 
         tot = mkt.get("total", {})
         t_line = next((v[0] for v in tot.values() if v[0] is not None), None)
+        total_line = None
         if t_line is not None:
             p_over = model_prob(pred, pparams, "total", "over", t_line)
             lean = "Over" if p_over >= 0.5 else "Under"
-            lines_md.append(f"- Total lean: {lean} {t_line:g} — "
-                            f"{max(p_over, 1-p_over)*100:.1f}%")
+            total_line = (f"- Total lean: {lean} {t_line:g} — "
+                          f"{max(p_over, 1-p_over)*100:.1f}%")
 
         # value: each selected executable quote already carries the de-vigged
         # implied probability from its same-book paired market.
@@ -424,10 +463,15 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
                                   and POLICY.recordable(mkey, market_policy) else 0.0),
                         "betting_eligible": bool(
                             betting_enabled and event_eligible and quote_eligible
-                            and POLICY.recordable(mkey, market_policy))})
-        lines_md.append("")
+                            and POLICY.recordable(mkey, market_policy)),
+                        "_game_idx": idx})
 
-    value.sort(key=lambda v: -v["edge"])
+        games_meta.append({
+            "idx": idx, "kickoff": g.kickoff_ts, "p1": pred["p1"],
+            "header": header, "model_line": model_line, "ats_line": ats_line,
+            "total_line": total_line,
+        })
+
     eligible = [v for v in value if v["betting_eligible"]]
     if eligible:
         try:
@@ -450,11 +494,39 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
                 # truthful, not just the stakes.
                 v["stake"], v["stake_capped"] = 0.0, True
                 v["betting_eligible"] = False
+
+    # Chronological order by kickoff, model home-win % as tiebreak for
+    # same-slot kickoffs; each game's value bets nest under it, ranked by
+    # model % so a game's predictions stay together instead of splitting
+    # into a separate top-of-card table.
+    games_meta.sort(key=lambda m: (m["kickoff"], -m["p1"]))
+    by_game: dict[int, list[dict]] = {}
+    for v in value:
+        by_game.setdefault(v["_game_idx"], []).append(v)
+    for bets in by_game.values():
+        bets.sort(key=lambda v: -v["p_model"])
+
+    lines_md = []
+    for m in games_meta:
+        lines_md.append(m["header"])
+        lines_md.append(m["model_line"])
+        lines_md.append(m["ats_line"])
+        if m["total_line"]:
+            lines_md.append(m["total_line"])
+        for v in by_game.get(m["idx"], []):
+            tail = (f", stake £{v['stake']:.2f}" if v["betting_eligible"]
+                    else " — diagnostic only")
+            lines_md.append(
+                f"- Value ({v['market_status']}): **{v['bet']}** @ {v['bookmaker']} "
+                f"{v['odds']:.2f} — model {v['p_model']*100:.1f}%, "
+                f"edge {v['edge']*100:+.1f}%{tail}")
+        lines_md.append("")
+
     state_label = (f"season {state_meta['model_season']} · state {state_meta['prior_mode']} · "
                    f"as of {state_meta['decision_date']} · snapshot {state_meta['snapshot_hash']}")
     md = [f"# CFB weekly card — {date.today()}",
-          f"_{len(slate)} FBS games · model: {model} · bankroll £{bk:.2f} · "
-          f"quarter-Kelly · min edge {min_edge:.0%}_",
+          f"_{len(slate)} FBS games in the next {hours:.0f}h · model: {model} · "
+          f"bankroll £{bk:.2f} · quarter-Kelly · min edge {min_edge:.0%}_",
           f"_{state_label}_", ""]
     if not betting_enabled:
         if not state_meta["betting_eligible"]:
@@ -467,20 +539,17 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         else:
             reason = "no CFB market is currently approved for real-money recording"
         md += [f"> **Staking disabled:** {reason}. Edges below are diagnostic only.", ""]
-    md.append("## Value bets" if betting_enabled
-              else "## Diagnostic edges — no staking")
+    n_value = sum(1 for v in value if v["betting_eligible"])
+    n_diag = sum(1 for v in value if not v["betting_eligible"])
     if value:
-        md.append("| Date | Game | Bet | Status | Book | Odds | Model % | Edge | Stake |")
-        md.append("|---|---|---|---|---|---|---|---|---|")
-        for v in value:
-            md.append(f"| {v['date']} | {v['game']} | **{v['bet']}** | {v['market_status']} "
-                      f"| {v['bookmaker']} | {v['odds']:.2f} "
-                      f"| {v['p_model']*100:.1f}% | {v['edge']*100:+.1f}% | £{v['stake']:.2f} |")
+        md.append(f"_{n_value} value bet(s), {n_diag} diagnostic edge(s) — "
+                  f"listed under each matchup below, ranked by model %._")
+    elif not market:
+        md.append("_No odds loaded — run with --odds-api or fill cfb/odds.csv; "
+                  "showing model picks only._")
     else:
-        md.append("_None at this threshold" +
-                  (" (no odds loaded — run with --odds-api or fill cfb/odds.csv)_"
-                   if not market else "._"))
-    md += ["", "## Matchups (straight-up + ATS)", ""] + lines_md
+        md.append(f"_None at the {min_edge:.0%} edge threshold._")
+    md += ["", "## Matchups (straight-up + ATS + value), by kickoff", ""] + lines_md
 
     text = "\n".join(md)
     manifest = {
@@ -499,6 +568,7 @@ def build_card(days: int = 7, min_edge: float = MIN_EDGE,
         "odds_sha256": _sha256_file(ODDS_CSV),
         "configuration": {
             "days": days,
+            "hours": hours,
             "minimum_edge": min_edge,
             "bankroll": bk,
         },
@@ -532,7 +602,10 @@ def main() -> None:
                     help="pull NCAAF ml/spread/total lines from The Odds API")
     ap.add_argument("--api-key", default=None)
     ap.add_argument("--regions", default="us")
-    ap.add_argument("--days", type=int, default=7)
+    ap.add_argument("--days", type=int, default=7,
+                    help="how wide a fixture window to load before the --hours filter")
+    ap.add_argument("--hours", type=float, default=CARD_WINDOW_HOURS,
+                    help="only show games kicking off within this many hours from now")
     ap.add_argument("--model", default="blend", choices=["blend", "elo", "power"])
     ap.add_argument("--min-edge", type=float, default=MIN_EDGE)
     ap.add_argument("--bankroll", type=float, default=None)
@@ -554,7 +627,7 @@ def main() -> None:
         slate = load_slate(args.days)
         fetch_odds_api(slate, key, args.regions)
 
-    build_card(days=args.days, min_edge=args.min_edge,
+    build_card(days=args.days, hours=args.hours, min_edge=args.min_edge,
                bankroll=args.bankroll, model=args.model, slate=slate)
     if args.odds_api:
         from . import live_evidence
