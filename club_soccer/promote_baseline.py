@@ -35,6 +35,23 @@ unless you pass --force, and --force records the override in the file.
 
 The superseded reference is retained inside the new baseline so that later
 nobody has to take on trust whether a re-pin was honest.
+
+Validated improvement (``--validated-improvement EVIDENCE.json``)
+-----------------------------------------------------------------
+A promoted model change (e.g. E1's pooled component) leaves the gate PASSING
+but loosened: the baseline still holds the incumbent's metrics, so the model
+may drift back by the gain plus tolerance before anything fails. That is
+neither a population change nor a regression, so the cases above refuse it.
+
+This third case ratchets the reference forward, and only on evidence. The
+evidence file must be a ``promote`` verdict from a §12 A/B (status
+"promoted", §12.1-2 headline and §12.3 time-splits passed) AND it must be
+about exactly this comparison: same evaluation window, row count and
+population hash as the pinned baseline; its incumbent metrics must equal the
+pinned reference; its candidate metrics must equal what the current model
+measures now. The measured model must also be strictly better on 1X2 Brier
+and no worse on log-loss. Anything else is refused. The evidence file's name
+and digest are recorded in the new baseline.
 """
 from __future__ import annotations
 
@@ -58,8 +75,60 @@ METRICS = ("brier", "log_loss", "brier_ou25", "brier_btts")
 PROMOTION_POPULATION = V.DATA / "promotion_population.json"
 
 
+# Metrics in the evidence file must reproduce the pinned / measured values to
+# this absolute tolerance. Both sides come from the same deterministic
+# walk-forward, so anything looser would admit a different sample or model.
+EVIDENCE_MATCH_TOL = 1e-4
+
+
+def verify_improvement_evidence(evidence: dict, measured: dict,
+                                previous: dict, population_hash: str) -> list[str]:
+    """Reasons the evidence does NOT justify a ratchet (empty = justified)."""
+    problems: list[str] = []
+    if evidence.get("status") != "promoted" or evidence.get("decision") != "promote":
+        problems.append("evidence verdict is not a promotion "
+                        f"(status={evidence.get('status')!r}, "
+                        f"decision={evidence.get('decision')!r})")
+    if not evidence.get("gate_12_1_2_headline"):
+        problems.append("evidence did not pass the §12.1-2 headline gate")
+    splits = evidence.get("gate_12_3_time_splits") or {}
+    if not splits.get("pass"):
+        problems.append("evidence did not pass the §12.3 time-split gate")
+    for key in ("test_from", "test_to", "n"):
+        if evidence.get(key) != previous.get(key):
+            problems.append(f"evidence {key} {evidence.get(key)!r} != "
+                            f"baseline {previous.get(key)!r}")
+    for label, value in (("evidence", evidence.get("evaluation_hash")),
+                         ("measured population", population_hash)):
+        if value != previous.get("evaluation_hash"):
+            problems.append(f"{label} hash {value} != baseline "
+                            f"{previous.get('evaluation_hash')}")
+    incumbent = evidence.get("incumbent") or {}
+    candidate = evidence.get("hierarchical") or evidence.get("candidate") or {}
+    for name in METRICS:
+        try:
+            if abs(float(incumbent[name]) - float(previous[name])) > EVIDENCE_MATCH_TOL:
+                problems.append(f"evidence incumbent {name} does not match "
+                                "the pinned baseline")
+            if abs(float(candidate[name]) - float(measured[name])) > EVIDENCE_MATCH_TOL:
+                problems.append(f"evidence candidate {name} does not match "
+                                "the current model's measurement")
+        except (KeyError, TypeError, ValueError):
+            problems.append(f"evidence lacks a usable {name}")
+    try:
+        if not float(measured["brier"]) < float(previous["brier"]):
+            problems.append("current 1X2 Brier is not strictly better than "
+                            "the baseline")
+        if float(measured["log_loss"]) > float(previous["log_loss"]):
+            problems.append("current log-loss is worse than the baseline")
+    except (KeyError, TypeError, ValueError):
+        problems.append("measured/baseline Brier or log-loss malformed")
+    return problems
+
+
 def build_payload(rows: list[dict], measured: dict, previous: dict | None,
-                  force: bool = False) -> dict:
+                  force: bool = False, improvement: dict | None = None,
+                  improvement_source: Path | None = None) -> dict:
     """The new baseline document, or raise explaining why it is refused."""
     if previous is None:
         raise ValueError(
@@ -67,12 +136,28 @@ def build_payload(rows: list[dict], measured: dict, previous: dict | None,
             "the first baseline deliberately in a commit"
         )
     failures = V.gate_failures(rows, measured, previous)
+    ratchet_reason: list[str] | None = None
     if not failures:
-        raise ValueError(
-            "gate already passes against the current baseline; nothing to "
-            "re-baseline"
-        )
-    population, metric = V.partition_gate_failures(failures)
+        if improvement is None:
+            raise ValueError(
+                "gate already passes against the current baseline; nothing "
+                "to re-baseline (to ratchet after a validated model "
+                "promotion, pass --validated-improvement EVIDENCE.json)"
+            )
+        problems = verify_improvement_evidence(
+            improvement, measured, previous, V._evaluation_hash(rows))
+        if problems:
+            raise ValueError("refusing to ratchet; the evidence does not "
+                             "justify it:\n  " + "\n  ".join(problems))
+        digest = hashlib.sha256(
+            json.dumps(improvement, sort_keys=True).encode()).hexdigest()[:20]
+        name = improvement_source.name if improvement_source else "<inline>"
+        ratchet_reason = [f"validated improvement: {name} ({digest}) — "
+                          f"brier {previous.get('brier'):.6f} -> "
+                          f"{float(measured['brier']):.6f}"]
+        population, metric = [], []
+    else:
+        population, metric = V.partition_gate_failures(failures)
     if metric and not force:
         raise ValueError(
             "refusing to re-baseline: these are metric regressions, not a "
@@ -106,10 +191,13 @@ def build_payload(rows: list[dict], measured: dict, previous: dict | None,
             "n": previous.get("n"),
             "evaluation_hash": previous.get("evaluation_hash"),
             "brier": previous.get("brier"),
-            "reason": population or ["forced past metric regression"],
+            "reason": (ratchet_reason or population
+                       or ["forced past metric regression"]),
             "forced": bool(metric and force),
         },
     })
+    if ratchet_reason:
+        payload["superseded"]["kind"] = "validated_improvement"
     return payload
 
 
@@ -121,7 +209,8 @@ def _window_fingerprint(previous: dict) -> str:
     return hashlib.sha256(WFC.row_hashes(window).tobytes()).hexdigest()[:20]
 
 
-def promote(force: bool = False, verbose: bool = True) -> dict:
+def promote(force: bool = False, verbose: bool = True,
+            improvement_path: Path | None = None) -> dict:
     """Pin a new baseline, and refuse if the data moved while measuring.
 
     The walk-forward takes minutes. fixtures.csv is written by the pipeline and
@@ -144,7 +233,11 @@ def promote(force: bool = False, verbose: bool = True) -> dict:
         verbose=verbose, test_from=previous.get("test_from"),
         test_to=previous.get("test_to"),
     )
-    payload = build_payload(rows, measured, previous, force=force)
+    improvement = (json.loads(Path(improvement_path).read_text())
+                   if improvement_path else None)
+    payload = build_payload(rows, measured, previous, force=force,
+                            improvement=improvement,
+                            improvement_source=improvement_path)
 
     M.load_fixtures.cache_clear() if hasattr(
         M.load_fixtures, "cache_clear") else None
@@ -182,11 +275,16 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--force", action="store_true",
                     help="re-pin even when a metric has regressed")
+    ap.add_argument("--validated-improvement", metavar="EVIDENCE.json",
+                    type=Path,
+                    help="ratchet the reference after a promoted model "
+                         "change, justified by a §12 A/B evidence file")
     args = ap.parse_args()
 
     previous = V.load_promotion_baseline() or {}
     try:
-        payload = promote(force=args.force)
+        payload = promote(force=args.force,
+                          improvement_path=args.validated_improvement)
     except ValueError as exc:
         sys.exit(str(exc))
 
