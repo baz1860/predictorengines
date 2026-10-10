@@ -1,9 +1,9 @@
 {
-  "brier": 0.6117767989380395,
-  "log_loss": 1.020404742411657,
+  "brier": 0.6110193058296601,
+  "log_loss": 1.019381023942951,
   "n": 26969,
-  "brier_ou25": 0.24520146850050392,
-  "brier_btts": 0.24694379129074598,
+  "brier_ou25": 0.24547777521969819,
+  "brier_btts": 0.246875168754128,
   "test_from": "2024-07-01",
   "test_to": "2026-07-01",
   "evaluation_hash": "2c9396c63ee078449c6f",
@@ -13,21 +13,22 @@
     "brier_ou25": 0.001,
     "brier_btts": 0.001
   },
-  "code_hash": "dbbd96bc5550a45a",
-  "fixture_data_hash": "420629d22bbad1dce139",
+  "code_hash": "05f44b35a7a509d7",
+  "fixture_data_hash": "c33a6f6b39a733b3bf07",
   "source": "fixed-window deduplicated canonical match identities",
   "owner": "nested-holdout promoter",
   "note": "PROMOTION GATE REFERENCE. The evaluation window, row count and identity/outcome hash are pinned so the gate cannot compare different samples. Validation never writes this file.",
-  "promoted_at_utc": "2026-08-15T12:36:41.354648+00:00",
-  "promoted_on_host": "bingo.local",
+  "promoted_at_utc": "2026-10-10T22:44:04.667389+00:00",
+  "promoted_on_host": "Lucky.local",
   "superseded": {
     "n": 26969,
-    "evaluation_hash": "f4c1edc9d1b4d6aac7f9",
-    "brier": 0.6117778479535777,
+    "evaluation_hash": "2c9396c63ee078449c6f",
+    "brier": 0.6117767989380395,
     "reason": [
-      "evaluation population hash 1428bcdd7562aef2067b != baseline f4c1edc9d1b4d6aac7f9"
+      "validated improvement: hierarchical_evidence.json (ad2b38fd779754336f51) \u2014 brier 0.611777 -> 0.611019"
     ],
-    "forced": false
+    "forced": false,
+    "kind": "validated_improvement"
   },
   "evaluation_hash_schema": "canonical-multiset-v2",
   "population_snapshot": {

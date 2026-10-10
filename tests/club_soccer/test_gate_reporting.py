@@ -125,6 +125,82 @@ def test_missing_previous_baseline_is_refused(isolated):
         PB.build_payload([{"x": 1}], _measured(), None)
 
 
+# --- validated improvement ratchet ----------------------------------------
+
+def _passing_base():
+    current = dict(BASE, n=26969, brier=0.6117768, log_loss=1.0204047,
+                   brier_ou25=0.2452015, brier_btts=0.2469438)
+    current["evaluation_hash_schema"] = V.EVALUATION_HASH_SCHEMA
+    return current
+
+
+def _evidence(**over):
+    ev = {
+        "status": "promoted", "decision": "promote",
+        "gate_12_1_2_headline": True,
+        "gate_12_3_time_splits": {"pass": True},
+        "test_from": "2024-07-01", "test_to": "2026-07-01", "n": 26969,
+        "evaluation_hash": BASE["evaluation_hash"],
+        "incumbent": {"brier": 0.6117768, "log_loss": 1.0204047,
+                      "brier_ou25": 0.2452015, "brier_btts": 0.2469438},
+        "hierarchical": {"brier": 0.6110155, "log_loss": 1.0193763,
+                         "brier_ou25": 0.2454786, "brier_btts": 0.2468750},
+    }
+    ev.update(over)
+    return ev
+
+
+@pytest.fixture
+def ratchet(isolated, monkeypatch):
+    monkeypatch.setattr(V, "_evaluation_hash",
+                        lambda rows: BASE["evaluation_hash"])
+    return _measured(brier=0.6110155, log_loss=1.0193763,
+                     brier_ou25=0.2454786, brier_btts=0.2468750)
+
+
+def test_validated_improvement_ratchets_the_reference(ratchet):
+    payload = PB.build_payload([{"x": 1}], ratchet, _passing_base(),
+                               improvement=_evidence())
+    assert payload["brier"] == 0.6110155
+    assert payload["superseded"]["kind"] == "validated_improvement"
+    assert payload["superseded"]["forced"] is False
+    assert payload["superseded"]["brier"] == 0.6117768
+    assert payload["tolerances"] == BASE["tolerances"]
+
+
+def test_improvement_without_evidence_still_refused(ratchet):
+    with pytest.raises(ValueError, match="nothing to re-baseline"):
+        PB.build_payload([{"x": 1}], ratchet, _passing_base())
+
+
+@pytest.mark.parametrize("over,match", [
+    ({"decision": "reject"}, "not a promotion"),
+    ({"gate_12_3_time_splits": {"pass": False}}, "time-split"),
+    ({"evaluation_hash": "other"}, "hash other"),
+    ({"n": 100}, "evidence n"),
+    ({"incumbent": {"brier": 0.5, "log_loss": 1.0204047,
+                    "brier_ou25": 0.2452015, "brier_btts": 0.2469438}},
+     "incumbent brier"),
+    ({"hierarchical": {"brier": 0.60, "log_loss": 1.0193763,
+                       "brier_ou25": 0.2454786, "brier_btts": 0.2468750}},
+     "candidate brier"),
+])
+def test_bad_evidence_is_refused(ratchet, over, match):
+    with pytest.raises(ValueError, match=match):
+        PB.build_payload([{"x": 1}], ratchet, _passing_base(),
+                         improvement=_evidence(**over))
+
+
+def test_evidence_cannot_ratchet_a_non_improvement(isolated, monkeypatch):
+    monkeypatch.setattr(V, "_evaluation_hash",
+                        lambda rows: BASE["evaluation_hash"])
+    same = _measured(brier=0.6117768, log_loss=1.0204047,
+                     brier_ou25=0.2452015, brier_btts=0.2469438)
+    ev = _evidence(hierarchical=_evidence()["incumbent"])
+    with pytest.raises(ValueError, match="not strictly better"):
+        PB.build_payload([{"x": 1}], same, _passing_base(), improvement=ev)
+
+
 # --- gate_pass reporting --------------------------------------------------
 
 def test_gate_pass_follows_the_gate_state_not_the_brier(tmp_path, monkeypatch):
